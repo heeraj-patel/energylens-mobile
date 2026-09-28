@@ -10,10 +10,16 @@ import 'photo_capture_service.dart';
 String? modelHintFromOcr(String? text) {
   if (text == null) return null;
   final labeled = RegExp(
-    r'\b(?:MODEL(?: NUMBER| NO)?|M/N|MDL)\s*[:#]?\s*([A-Z0-9][A-Z0-9-]{2,24})\b',
+    r'\b(?:MODEL(?:[ \t]+NUMBER|[ \t]+NO)?|M/N|MDL)[ \t]*[:#]?[ \t]*([A-Z0-9][A-Z0-9-]{2,24})\b',
     caseSensitive: false,
-  ).firstMatch(text);
-  return labeled?.group(1)?.toUpperCase();
+  ).allMatches(text);
+  for (final match in labeled) {
+    final model = match.group(1);
+    if (model != null && RegExp(r'\d').hasMatch(model)) {
+      return model.toUpperCase();
+    }
+  }
+  return null;
 }
 
 class ApplianceOnboardingScreen extends StatefulWidget {
@@ -55,6 +61,8 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   String _loadKind = 'appliance';
   String? _ocrText;
   String? _upc;
+  List<IdentificationCandidate> _photoCandidates = const [];
+  bool _candidateLookupFailed = false;
   Uint8List? _photoBytes;
   bool _confirmedModel = false;
   bool _busy = false;
@@ -141,12 +149,35 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       await widget.capture.discard(photo);
       if (!mounted) return;
       final hint = modelHintFromOcr(details[0]);
+      final ocr = details[0];
+      final boundedOcr = ocr?.substring(
+        0,
+        ocr.length > 1000 ? 1000 : ocr.length,
+      );
+      List<IdentificationCandidate> candidates = const [];
+      var lookupFailed = false;
+      if ((details[0]?.trim().isNotEmpty ?? false) || details[1] != null) {
+        try {
+          candidates = await widget.api.identifyCandidates(
+            _hub.text.trim(),
+            _token.text.trim(),
+            targetKind: widget.plugId == null ? 'appliance' : 'connected_load',
+            ocrText: boundedOcr,
+            upc: details[1],
+          );
+        } catch (_) {
+          lookupFailed = true;
+        }
+      }
+      if (!mounted) return;
       setState(() {
         _photoBytes = photo.bytes;
         _ocrText = details[0];
         _upc = details[1];
+        _photoCandidates = candidates;
+        _candidateLookupFailed = lookupFailed;
         _confirmedModel = false;
-        if (hint != null) _model.text = hint;
+        _model.text = hint ?? '';
       });
     } on CameraPermissionDeniedException {
       if (mounted) {
@@ -477,6 +508,33 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                 ),
                 if (_upc != null)
                   Text('Barcode found: $_upc · Model still needs confirmation'),
+                if (_photoCandidates.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Possible models',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  for (final candidate in _photoCandidates)
+                    ListTile(
+                      key: Key('photoCandidate-${candidate.model}'),
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        '${candidate.manufacturer.isEmpty ? '' : '${candidate.manufacturer} '}${candidate.model}',
+                      ),
+                      subtitle: Text(
+                        '${candidate.evidenceLabel}${candidate.category == null ? '' : ' · ${candidate.category}'} · Check against the label',
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => setState(() {
+                        _manufacturer.text = candidate.manufacturer;
+                        _model.text = candidate.model;
+                        _confirmedModel = false;
+                      }),
+                    ),
+                ] else if (_candidateLookupFailed)
+                  const Text(
+                    'Model suggestions unavailable. Enter or confirm the label model manually.',
+                  ),
               ],
             ],
             const SizedBox(height: 16),

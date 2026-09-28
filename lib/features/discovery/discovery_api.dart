@@ -1,6 +1,43 @@
 import 'dart:convert';
 import 'dart:io';
 
+class IdentificationCandidate {
+  const IdentificationCandidate({
+    required this.manufacturer,
+    required this.model,
+    required this.confidence,
+    required this.source,
+    required this.matchedKinds,
+    this.category,
+    this.sourceUrl,
+  });
+
+  factory IdentificationCandidate.fromJson(Map<String, dynamic> json) =>
+      IdentificationCandidate(
+        manufacturer: json['manufacturer'] as String,
+        model: json['model'] as String,
+        category: json['category'] as String?,
+        confidence: (json['confidence'] as num).toDouble(),
+        source: json['source'] as String,
+        sourceUrl: json['source_url'] as String?,
+        matchedKinds: (json['matched_kinds'] as List<dynamic>).cast<String>(),
+      );
+
+  final String manufacturer;
+  final String model;
+  final String? category;
+  final double confidence;
+  final String source;
+  final String? sourceUrl;
+  final List<String> matchedKinds;
+
+  String get evidenceLabel => switch (source) {
+    'upc_exact' => 'Reviewed catalog · exact barcode',
+    'ocr_catalog_exact' => 'Reviewed catalog · model text',
+    _ => 'Text read from label',
+  };
+}
+
 class DiscoveredPlug {
   const DiscoveredPlug({
     required this.id,
@@ -289,6 +326,30 @@ String energyRateDescription(EnergyEstimate estimate) {
 
 class DiscoveryApi {
   const DiscoveryApi();
+
+  Future<List<IdentificationCandidate>> identifyCandidates(
+    String baseUrl,
+    String token, {
+    required String targetKind,
+    String? ocrText,
+    String? upc,
+  }) async {
+    final body = <String, dynamic>{'target_kind': targetKind};
+    if (ocrText != null) body['ocr_text'] = ocrText;
+    if (upc != null) body['upc'] = upc;
+    final response = await _post(
+      baseUrl,
+      token,
+      '/v1/identification/candidates',
+      body,
+    );
+    return (response['candidates'] as List<dynamic>)
+        .map(
+          (item) =>
+              IdentificationCandidate.fromJson(item as Map<String, dynamic>),
+        )
+        .toList();
+  }
 
   Future<List<DiscoveredPlug>> scan(String baseUrl, String token) async {
     final response = await _post(baseUrl, token, '/v1/discovery/scans', {});

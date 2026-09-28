@@ -25,6 +25,29 @@ class FakeApi extends DiscoveryApi {
   final rows = <SavedAppliance>[];
 
   @override
+  Future<List<IdentificationCandidate>> identifyCandidates(
+    String baseUrl,
+    String token, {
+    required String targetKind,
+    String? ocrText,
+    String? upc,
+  }) async {
+    expect(targetKind, 'appliance');
+    expect(ocrText, contains('MODEL NO: ABC1234'));
+    expect(upc, '123456789012');
+    return const [
+      IdentificationCandidate(
+        manufacturer: 'Example',
+        model: 'ABC1234',
+        category: 'computer',
+        confidence: 0.95,
+        source: 'upc_exact',
+        matchedKinds: ['upc'],
+      ),
+    ];
+  }
+
+  @override
   Future<EnergyEstimate> estimate(
     String baseUrl,
     String token,
@@ -152,6 +175,8 @@ void main() {
   test('only labeled OCR model text creates a suggestion', () {
     expect(modelHintFromOcr('MODEL NO: ABC1234'), 'ABC1234');
     expect(modelHintFromOcr('SERIAL: ABC1234'), isNull);
+    expect(modelHintFromOcr('MODEL:\nSERIAL: ABC1234'), isNull);
+    expect(modelHintFromOcr('MODEL: NO\nMODEL NO: ABC1234'), 'ABC1234');
     expect(modelHintFromOcr(null), isNull);
   });
 
@@ -209,6 +234,13 @@ void main() {
     await tester.tap(find.text('Take photo'));
     await tester.pumpAndSettle();
     expect(capture.discarded, isTrue);
+    await scrollTo(tester, find.byKey(const Key('photoCandidate-ABC1234')));
+    expect(
+      find.textContaining('Reviewed catalog · exact barcode'),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('photoCandidate-ABC1234')));
+    await tester.pumpAndSettle();
     await scrollTo(tester, find.byKey(const Key('applianceName')));
     await tester.enterText(find.byKey(const Key('applianceName')), 'Desk lamp');
     await scrollTo(tester, find.byKey(const Key('applianceModel')));
