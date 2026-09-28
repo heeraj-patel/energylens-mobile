@@ -5,11 +5,12 @@ set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 hub_url=""
+postal_code=""
 device_ids=()
 
 usage() {
   cat <<'EOF'
-Usage: scripts/deploy-ios-simulator.sh --hub-url http://HUB_IP:PORT --device SIMULATOR_ID [--device SIMULATOR_ID]
+Usage: scripts/deploy-ios-simulator.sh --hub-url http://HUB_IP:PORT [--postal-code ZIP] --device SIMULATOR_ID [--device SIMULATOR_ID]
 
 Builds EnergyLens for iOS Simulator with ENERGYLENS_HUB_URL, then installs
 and launches it on each explicitly named simulator. Set ENERGYLENS_HUB_TOKEN
@@ -26,6 +27,9 @@ while (($#)); do
     --device)
       (($# >= 2)) || { usage >&2; exit 2; }
       device_ids+=("$2"); shift 2 ;;
+    --postal-code)
+      (($# >= 2)) || { usage >&2; exit 2; }
+      postal_code="$2"; shift 2 ;;
     --help|-h)
       usage; exit 0 ;;
     *)
@@ -38,11 +42,19 @@ done
   exit 2
 }
 ((${#device_ids[@]} > 0)) || { echo 'Pass at least one --device.' >&2; exit 2; }
+[[ -z "$postal_code" || "$postal_code" =~ ^[0-9]{5}$ ]] || {
+  echo 'Pass a five-digit ZIP code with --postal-code.' >&2
+  exit 2
+}
 command -v flutter >/dev/null || { echo 'Flutter is required.' >&2; exit 1; }
 command -v xcrun >/dev/null || { echo 'Xcode command tools are required.' >&2; exit 1; }
 
 cd "$repo_dir"
-flutter build ios --simulator --debug "--dart-define=ENERGYLENS_HUB_URL=$hub_url"
+build_args=("--dart-define=ENERGYLENS_HUB_URL=$hub_url")
+if [[ -n "$postal_code" ]]; then
+  build_args+=("--dart-define=ENERGYLENS_POSTAL_CODE=$postal_code")
+fi
+flutter build ios --simulator --debug "${build_args[@]}"
 app_path="$repo_dir/build/ios/iphonesimulator/Runner.app"
 if lipo -archs "$app_path/Runner" | grep -q x86_64; then
   arch -x86_64 /usr/bin/true >/dev/null 2>&1 || {

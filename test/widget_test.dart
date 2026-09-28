@@ -8,9 +8,16 @@ class _ConnectedCredentials extends DiscoveryCredentials {
   @override
   Future<(String?, String?)> read() async =>
       ('http://100.115.133.73:18787', 'test');
+
+  @override
+  Future<String?> readPostalCode() async => '78732';
 }
 
 class _ConnectedApi extends DiscoveryApi {
+  const _ConnectedApi({this.sourceKind = 'user_label'});
+
+  final String sourceKind;
+
   @override
   Future<List<SavedPlug>> saved(String baseUrl, String token) async => const [
     SavedPlug(
@@ -33,6 +40,34 @@ class _ConnectedApi extends DiscoveryApi {
       ),
     ),
   ];
+
+  @override
+  Future<EnergyEstimate> estimate(
+    String baseUrl,
+    String token,
+    int applianceId, {
+    String? postalCode,
+    double? rateUsdPerKwh,
+  }) async {
+    assert(applianceId == 1);
+    assert(postalCode == '78732');
+    return EnergyEstimate(
+      status: 'estimated',
+      estimatedKwh: 1.729,
+      estimatedCostUsd: 0.2745652,
+      rateSourceLabel: 'Texas average (EIA, published table)',
+      evidence: EnergyEvidence(
+        sourceKind: sourceKind,
+        datasetId: sourceKind == 'energy_star' ? 'epa_test' : 'bulb_label',
+        sourceUrl: '',
+        matchedBrand: 'Philips Hue',
+        matchedModel: '',
+        annualKwh: 20.748,
+        usageBasis: 'Two bulbs, 21 hours/week',
+        retrievedAt: 1,
+      ),
+    );
+  }
 }
 
 void main() {
@@ -84,6 +119,9 @@ void main() {
       200,
     );
     expect(find.text('Two-bulb Philips Hue White lamp'), findsOneWidget);
+    expect(find.text('Estimated total: \$0.27/month'), findsOneWidget);
+    expect(find.text('Bulb ratings you entered'), findsOneWidget);
+    expect(find.text('ENERGY STAR data (EPA)'), findsNothing);
     expect(
       tester
           .getSemantics(find.byKey(const Key('plug-expand-ks19')))
@@ -103,5 +141,29 @@ void main() {
     await tester.tap(find.byKey(const Key('plug-expand-ks19')));
     await tester.pumpAndSettle();
     expect(find.text('Two-bulb Philips Hue White lamp'), findsOneWidget);
+  });
+
+  testWidgets('shows EPA attribution only for a verified ENERGY STAR source', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          api: const _ConnectedApi(sourceKind: 'energy_star'),
+          credentials: _ConnectedCredentials(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Living Room Lamp KS19 · HS103(US)'),
+      200,
+    );
+    expect(find.text('Estimated total: \$0.27/month'), findsOneWidget);
+    expect(find.text('ENERGY STAR data (EPA)'), findsOneWidget);
   });
 }

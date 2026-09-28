@@ -89,6 +89,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _index = 0;
   bool _hubConnected = false;
   List<SavedPlug> _plugs = const [];
+  Map<int, EnergyEstimate> _estimates = const {};
+  int _refreshGeneration = 0;
 
   @override
   void initState() {
@@ -109,18 +111,54 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _refreshHub() async {
+    final generation = ++_refreshGeneration;
     try {
       final (address, token) = await widget.credentials.read();
       if (address == null || token == null) return;
       final plugs = await widget.api.saved(address, token);
-      if (mounted) {
+      if (mounted && generation == _refreshGeneration) {
         setState(() {
           _plugs = plugs;
           _hubConnected = true;
+          _estimates = const {};
         });
       }
+      String? postalCode;
+      try {
+        postalCode = await widget.credentials.readPostalCode();
+      } catch (_) {
+        // A saved plug remains visible when ZIP storage is unavailable.
+      }
+      const buildPostalCode = String.fromEnvironment('ENERGYLENS_POSTAL_CODE');
+      postalCode ??= buildPostalCode.isEmpty ? null : buildPostalCode;
+      if (postalCode != null && !RegExp(r'^\d{5}$').hasMatch(postalCode)) {
+        postalCode = null;
+      }
+      await Future.wait([
+        for (final plug in plugs)
+          if (plug.connectedAppliance case final appliance?)
+            () async {
+              try {
+                final estimate = await widget.api.estimate(
+                  address,
+                  token,
+                  appliance.id,
+                  postalCode: postalCode,
+                );
+                if (mounted && generation == _refreshGeneration) {
+                  setState(
+                    () => _estimates = {..._estimates, appliance.id: estimate},
+                  );
+                }
+              } catch (_) {
+                // One unavailable estimate must not hide the saved plug.
+              }
+            }(),
+      ]);
     } catch (_) {
-      if (mounted) setState(() => _hubConnected = false);
+      if (mounted && generation == _refreshGeneration) {
+        setState(() => _hubConnected = false);
+      }
     }
   }
 
@@ -151,7 +189,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 720;
     final content = switch (_index) {
-      0 => _PowerNow(plugs: _plugs, hubConnected: _hubConnected),
+      0 => _PowerNow(
+        plugs: _plugs,
+        hubConnected: _hubConnected,
+        estimates: _estimates,
+      ),
       1 => const _StopWaste(),
       2 => const _SleepCheck(),
       _ => _AskAndAdd(onDevicesChanged: _refreshHub),
@@ -505,11 +547,95 @@ class _InfoRow extends StatelessWidget {
   );
 }
 
+class _ConnectedLoadRow extends StatelessWidget {
+  const _ConnectedLoadRow({required this.appliance, required this.estimate});
+
+  final SavedAppliance appliance;
+  final EnergyEstimate? estimate;
+
+  @override
+  Widget build(BuildContext context) {
+    final evidence = estimate?.evidence;
+    final cost = estimate?.estimatedCostUsd;
+    final rateLabel = estimate?.rateSourceLabel;
+    final sourceLabel = evidence == null
+        ? 'Energy source unavailable'
+        : energySourceHeading(evidence);
+    return _Surface(
+      child: Row(
+        children: [
+          const _IconWell(Icons.lightbulb_outline),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  appliance.name,
+                  style: Theme.of(context).textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  cost != null
+                      ? 'Estimated total: \$${cost.toStringAsFixed(2)}/month'
+                      : estimate?.estimatedKwh != null
+                      ? 'Add your ZIP code or bill rate for cost'
+                      : 'Estimate unavailable',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: cost == null ? _secondary(context) : _green,
+                    fontWeight: cost == null
+                        ? FontWeight.normal
+                        : FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      evidence?.sourceKind == 'energy_star'
+                          ? Icons.verified_outlined
+                          : Icons.info_outline,
+                      size: 16,
+                      color: _secondary(context),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        sourceLabel,
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(color: _secondary(context)),
+                      ),
+                    ),
+                  ],
+                ),
+                if (cost != null && rateLabel != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Rate: $rateLabel',
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: _secondary(context)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PowerNow extends StatefulWidget {
-  const _PowerNow({required this.plugs, required this.hubConnected});
+  const _PowerNow({
+    required this.plugs,
+    required this.hubConnected,
+    required this.estimates,
+  });
 
   final List<SavedPlug> plugs;
   final bool hubConnected;
+  final Map<int, EnergyEstimate> estimates;
 
   @override
   State<_PowerNow> createState() => _PowerNowState();
@@ -623,10 +749,9 @@ class _PowerNowState extends State<_PowerNow> {
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: _InfoRow(
-                            Icons.lightbulb_outline,
-                            appliance.name,
-                            'Connected appliance · Estimated usage is available in Ask & Add.',
+                          child: _ConnectedLoadRow(
+                            appliance: appliance,
+                            estimate: widget.estimates[appliance.id],
                           ),
                         ),
                       ],

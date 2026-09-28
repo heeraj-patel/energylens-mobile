@@ -32,6 +32,7 @@ app. For example:
 ```sh
 ENERGYLENS_HUB_TOKEN="$(tailscale ssh nipatel@nipatel-solvzoom 'sed -n "s/^ENERGYLENS_DISCOVERY_TOKEN=//p" "$HOME/energylens-pilot/hub.env"')" \
   scripts/deploy-ios-simulator.sh --hub-url http://192.168.68.136:18787 \
+  --postal-code 78732 \
   --device 16A0C929-143E-494A-9BC7-546F39A0D3A7
 ```
 
