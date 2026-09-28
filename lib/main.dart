@@ -505,47 +505,138 @@ class _InfoRow extends StatelessWidget {
   );
 }
 
-class _PowerNow extends StatelessWidget {
+class _PowerNow extends StatefulWidget {
   const _PowerNow({required this.plugs, required this.hubConnected});
 
   final List<SavedPlug> plugs;
   final bool hubConnected;
 
+  @override
+  State<_PowerNow> createState() => _PowerNowState();
+}
+
+class _PowerNowState extends State<_PowerNow> {
+  final Set<String> _collapsedPlugIds = {};
+
   List<Widget> _savedDevices() => [
     _SectionTitle(
       'Where Your Power Is Going',
-      plugs.isEmpty
+      widget.plugs.isEmpty
           ? 'Saved devices'
-          : '${plugs.length} saved plug${plugs.length == 1 ? '' : 's'}',
+          : '${widget.plugs.length} saved plug${widget.plugs.length == 1 ? '' : 's'}',
     ),
     const SizedBox(height: 10),
-    if (plugs.isEmpty)
+    if (widget.plugs.isEmpty)
       _InfoRow(
         Icons.power_outlined,
-        hubConnected
+        widget.hubConnected
             ? 'No smart plugs saved on this hub'
             : 'Hub connection needed',
-        hubConnected
+        widget.hubConnected
             ? 'Use Ask & Add to discover and save a plug.'
             : 'Use Ask & Add to connect your EnergyLens hub.',
       )
     else
-      for (final plug in plugs) ...[
-        _InfoRow(
-          Icons.power_outlined,
-          '${plug.name} · ${plug.model}',
-          plug.meterStatus == 'absent'
-              ? 'No energy meter · ${plug.room.isEmpty ? 'Room not set' : plug.room}'
-              : 'Meter status: ${plug.meterStatus}',
+      for (final plug in widget.plugs) ...[
+        Builder(
+          builder: (context) {
+            final appliance = plug.connectedAppliance;
+            final expanded =
+                appliance != null && !_collapsedPlugIds.contains(plug.id);
+            final meterDetail = plug.meterStatus == 'absent'
+                ? 'No energy meter · ${plug.room.isEmpty ? 'Room not set' : plug.room}'
+                : 'Meter status: ${plug.meterStatus}';
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _Surface(
+                  child: Semantics(
+                    key: Key('plug-expand-${plug.id}'),
+                    button: appliance != null,
+                    expanded: expanded,
+                    label: '${plug.name}, ${plug.model}. $meterDetail',
+                    hint: appliance == null
+                        ? null
+                        : expanded
+                        ? 'Hide connected appliance ${appliance.name}'
+                        : 'Show connected appliance ${appliance.name}',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: appliance == null
+                          ? null
+                          : () => setState(() {
+                              if (expanded) {
+                                _collapsedPlugIds.add(plug.id);
+                              } else {
+                                _collapsedPlugIds.remove(plug.id);
+                              }
+                            }),
+                      child: Row(
+                        children: [
+                          _IconWell(Icons.power_outlined),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${plug.name} · ${plug.model}',
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  meterDetail,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(color: _secondary(context)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (appliance != null) ...[
+                            const SizedBox(width: 8),
+                            Icon(
+                              expanded ? Icons.expand_less : Icons.expand_more,
+                              semanticLabel: expanded
+                                  ? 'Hide connected appliance'
+                                  : 'Show connected appliance',
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (appliance != null && expanded) ...[
+                  const SizedBox(height: 6),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 26),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 2,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _InfoRow(
+                            Icons.lightbulb_outline,
+                            appliance.name,
+                            'Connected appliance · Estimated usage is available in Ask & Add.',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            );
+          },
         ),
-        if (plug.connectedAppliance case final load?) ...[
-          const SizedBox(height: 8),
-          _InfoRow(
-            Icons.lightbulb_outline,
-            load.name,
-            'Connected to ${plug.name} · Estimated usage is available in Ask & Add.',
-          ),
-        ],
         const SizedBox(height: 8),
       ],
   ];
@@ -569,9 +660,9 @@ class _PowerNow extends StatelessWidget {
                         ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                   Text(
-                    plugs.isEmpty
+                    widget.plugs.isEmpty
                         ? 'Connect a device to see how your electricity is being used.'
-                        : '${plugs.length} smart plug${plugs.length == 1 ? '' : 's'} saved on your hub.',
+                        : '${widget.plugs.length} smart plug${widget.plugs.length == 1 ? '' : 's'} saved on your hub.',
                     style: Theme.of(context).textTheme.bodySmall
                         ?.copyWith(color: _secondary(context)),
                   ),

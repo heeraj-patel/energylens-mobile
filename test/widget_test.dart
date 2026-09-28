@@ -62,7 +62,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('shows the saved Kasa plug and its separate connected lamp', (
+  testWidgets('shows the connected appliance as an expandable child row', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(390, 844);
@@ -84,7 +84,24 @@ void main() {
       200,
     );
     expect(find.text('Two-bulb Philips Hue White lamp'), findsOneWidget);
+    expect(
+      tester
+          .getSemantics(find.byKey(const Key('plug-expand-ks19')))
+          .getSemanticsData()
+          .flagsCollection
+          .isExpanded
+          .toBoolOrNull(),
+      isTrue,
+    );
+
+    await tester.tap(find.byKey(const Key('plug-expand-ks19')));
+    await tester.pumpAndSettle();
+    expect(find.text('Two-bulb Philips Hue White lamp'), findsNothing);
     expect(find.textContaining('No energy meter'), findsOneWidget);
     expect(find.textContaining('Waiting for a live reading'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('plug-expand-ks19')));
+    await tester.pumpAndSettle();
+    expect(find.text('Two-bulb Philips Hue White lamp'), findsOneWidget);
   });
 }
