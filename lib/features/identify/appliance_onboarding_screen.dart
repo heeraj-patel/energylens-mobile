@@ -86,10 +86,10 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     }
     try {
       final (address, token) = await widget.credentials.read();
-      if (!mounted || address == null || token == null) return;
-      _hub.text = address;
-      _token.text = token;
-      await _refresh();
+      if (!mounted) return;
+      if (address != null) _hub.text = address;
+      if (token != null) _token.text = token;
+      if (address != null && token != null) await _refresh();
     } catch (_) {
       // Hub details can be entered manually when secure storage is unavailable.
     }

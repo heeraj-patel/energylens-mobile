@@ -490,7 +490,7 @@ class DiscoveryApi {
         ip.type != InternetAddressType.IPv4 ||
         !_isPrivateIpv4(base.host)) {
       throw const FormatException(
-        'Enter the hub’s local HTTP address, such as http://192.168.68.136:18787',
+        'Enter the hub’s LAN or Tailscale HTTP address, such as http://100.115.133.73:18787',
       );
     }
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
@@ -528,6 +528,7 @@ bool _isPrivateIpv4(String value) {
     return false;
   }
   return parts[0] == 10 ||
+      (parts[0] == 100 && parts[1]! >= 64 && parts[1]! <= 127) ||
       (parts[0] == 172 && parts[1]! >= 16 && parts[1]! <= 31) ||
       (parts[0] == 192 && parts[1] == 168);
 }

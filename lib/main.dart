@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'features/discovery/discovery_screen.dart';
+import 'features/discovery/discovery_api.dart';
+import 'features/discovery/discovery_credentials.dart';
 import 'features/identify/appliance_onboarding_screen.dart';
 
 void main() => runApp(const EnergyLensApp());
@@ -70,14 +72,57 @@ class EnergyLensApp extends StatelessWidget {
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({
+    super.key,
+    this.api = const DiscoveryApi(),
+    this.credentials = const DiscoveryCredentials(),
+  });
+
+  final DiscoveryApi api;
+  final DiscoveryCredentials credentials;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _index = 0;
+  bool _hubConnected = false;
+  List<SavedPlug> _plugs = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshHub();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshHub();
+  }
+
+  Future<void> _refreshHub() async {
+    try {
+      final (address, token) = await widget.credentials.read();
+      if (address == null || token == null) return;
+      final plugs = await widget.api.saved(address, token);
+      if (mounted) {
+        setState(() {
+          _plugs = plugs;
+          _hubConnected = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _hubConnected = false);
+    }
+  }
 
   static const _destinations = <NavigationDestination>[
     NavigationDestination(
@@ -106,10 +151,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 720;
     final content = switch (_index) {
-      0 => const _PowerNow(),
+      0 => _PowerNow(plugs: _plugs, hubConnected: _hubConnected),
       1 => const _StopWaste(),
       2 => const _SleepCheck(),
-      _ => const _AskAndAdd(),
+      _ => _AskAndAdd(onDevicesChanged: _refreshHub),
     };
     return Scaffold(
       appBar: AppBar(
@@ -147,7 +192,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(width: 4),
                       Flexible(
                         child: Text(
-                          'HUB DISCONNECTED',
+                          _hubConnected ? 'HUB CONNECTED' : 'HUB DISCONNECTED',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.labelSmall
@@ -170,9 +215,9 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.only(right: 16),
             child: Center(
               child: Tooltip(
-                message: 'Hub disconnected',
+                message: _hubConnected ? 'Hub connected' : 'Hub disconnected',
                 child: Semantics(
-                  label: 'Hub disconnected',
+                  label: _hubConnected ? 'Hub connected' : 'Hub disconnected',
                   child: Container(
                     width: 36,
                     height: 36,
@@ -183,7 +228,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: Theme.of(context).colorScheme.outlineVariant,
                       ),
                     ),
-                    child: const Icon(Icons.power_off_outlined, size: 20),
+                    child: Icon(
+                      _hubConnected
+                          ? Icons.check_circle_outline
+                          : Icons.power_off_outlined,
+                      size: 20,
+                    ),
                   ),
                 ),
               ),
@@ -196,7 +246,10 @@ class _HomeScreenState extends State<HomeScreen> {
           if (wide)
             NavigationRail(
               selectedIndex: _index,
-              onDestinationSelected: (value) => setState(() => _index = value),
+              onDestinationSelected: (value) {
+                setState(() => _index = value);
+                _refreshHub();
+              },
               labelType: NavigationRailLabelType.all,
               destinations: _destinations
                   .map(
@@ -227,7 +280,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ? null
           : NavigationBar(
               selectedIndex: _index,
-              onDestinationSelected: (value) => setState(() => _index = value),
+              onDestinationSelected: (value) {
+                setState(() => _index = value);
+                _refreshHub();
+              },
               destinations: _destinations,
             ),
     );
@@ -450,7 +506,49 @@ class _InfoRow extends StatelessWidget {
 }
 
 class _PowerNow extends StatelessWidget {
-  const _PowerNow();
+  const _PowerNow({required this.plugs, required this.hubConnected});
+
+  final List<SavedPlug> plugs;
+  final bool hubConnected;
+
+  List<Widget> _savedDevices() => [
+    _SectionTitle(
+      'Where Your Power Is Going',
+      plugs.isEmpty
+          ? 'Saved devices'
+          : '${plugs.length} saved plug${plugs.length == 1 ? '' : 's'}',
+    ),
+    const SizedBox(height: 10),
+    if (plugs.isEmpty)
+      _InfoRow(
+        Icons.power_outlined,
+        hubConnected
+            ? 'No smart plugs saved on this hub'
+            : 'Hub connection needed',
+        hubConnected
+            ? 'Use Ask & Add to discover and save a plug.'
+            : 'Use Ask & Add to connect your EnergyLens hub.',
+      )
+    else
+      for (final plug in plugs) ...[
+        _InfoRow(
+          Icons.power_outlined,
+          '${plug.name} · ${plug.model}',
+          plug.meterStatus == 'absent'
+              ? 'No energy meter · ${plug.room.isEmpty ? 'Room not set' : plug.room}'
+              : 'Meter status: ${plug.meterStatus}',
+        ),
+        if (plug.connectedAppliance case final load?) ...[
+          const SizedBox(height: 8),
+          _InfoRow(
+            Icons.lightbulb_outline,
+            load.name,
+            'Connected to ${plug.name} · Estimated usage is available in Ask & Add.',
+          ),
+        ],
+        const SizedBox(height: 8),
+      ],
+  ];
 
   @override
   Widget build(BuildContext context) => Column(
@@ -471,7 +569,9 @@ class _PowerNow extends StatelessWidget {
                         ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                   Text(
-                    'Connect a device to see how your electricity is being used.',
+                    plugs.isEmpty
+                        ? 'Connect a device to see how your electricity is being used.'
+                        : '${plugs.length} smart plug${plugs.length == 1 ? '' : 's'} saved on your hub.',
                     style: Theme.of(context).textTheme.bodySmall
                         ?.copyWith(color: _secondary(context)),
                   ),
@@ -481,6 +581,8 @@ class _PowerNow extends StatelessWidget {
           ],
         ),
       ),
+      const SizedBox(height: 18),
+      ..._savedDevices(),
       const SizedBox(height: 18),
       _Surface(
         child: Column(
@@ -594,14 +696,6 @@ class _PowerNow extends StatelessWidget {
       ),
       const SizedBox(height: 18),
       const _Setup(),
-      const SizedBox(height: 24),
-      const _SectionTitle('Where Your Power Is Going', 'Measured devices'),
-      const SizedBox(height: 10),
-      const _InfoRow(
-        Icons.power_outlined,
-        'No devices connected yet',
-        'Device readings will appear here after hub setup.',
-      ),
     ],
   );
 }
@@ -870,7 +964,9 @@ class _SleepCheck extends StatelessWidget {
 enum _AskMode { ask, connect }
 
 class _AskAndAdd extends StatefulWidget {
-  const _AskAndAdd();
+  const _AskAndAdd({required this.onDevicesChanged});
+
+  final VoidCallback onDevicesChanged;
 
   @override
   State<_AskAndAdd> createState() => _AskAndAddState();
@@ -1000,9 +1096,12 @@ class _AskAndAddState extends State<_AskAndAdd> {
         ),
         const SizedBox(height: 12),
         FilledButton.icon(
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const DiscoveryScreen()),
-          ),
+          onPressed: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const DiscoveryScreen()),
+            );
+            widget.onDevicesChanged();
+          },
           icon: const Icon(Icons.radar),
           label: const Text('Find a smart plug'),
         ),

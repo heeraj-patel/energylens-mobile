@@ -49,10 +49,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
     try {
       final (address, token) = await widget.credentials.read();
-      if (!mounted || address == null || token == null) return;
-      _hub.text = address;
-      _token.text = token;
-      await _loadSaved();
+      if (!mounted) return;
+      if (address != null) _hub.text = address;
+      if (token != null) _token.text = token;
+      if (address != null && token != null) await _loadSaved();
     } catch (_) {
       // A device without secure storage support can still use manual entry.
     }
