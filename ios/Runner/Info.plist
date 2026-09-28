@@ -2,6 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>EnergyLens connects to your local hub to find smart plugs on your home network.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>EnergyLens uses your camera to read appliance and bulb model labels during setup.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>EnergyLens lets you choose an existing appliance-label photo to identify its model.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
