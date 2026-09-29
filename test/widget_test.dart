@@ -128,6 +128,8 @@ class _MeteredApi extends DiscoveryApi {
     String token,
     String plugId, {
     String period = 'day',
+    String? postalCode,
+    double? rateUsdPerKwh,
   }) async => const DeviceEnergy(
     status: 'measured',
     period: 'day',
@@ -135,6 +137,8 @@ class _MeteredApi extends DiscoveryApi {
     coverageFraction: 0.75,
     coveredSecs: 64800,
     latestWatts: 100,
+    observedCostUsd: 0.02,
+    rateSourceLabel: 'Texas average (EIA)',
   );
 }
 
@@ -345,6 +349,12 @@ void main() {
     expect(find.text('Recent meter reading · 100.0 W'), findsOneWidget);
     expect(
       find.text('0.125 kWh measured today · 75% time coverage'),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        '\$0.02 observed cost during covered time · Texas average (EIA)',
+      ),
       findsOneWidget,
     );
     expect(find.textContaining('No energy meter'), findsNothing);

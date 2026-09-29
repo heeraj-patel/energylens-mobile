@@ -186,6 +186,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
       if (address == null || token == null) return;
       final candidates = plugs ?? _plugs;
+      String? postalCode;
+      try {
+        postalCode = await widget.credentials.readPostalCode();
+      } catch (_) {
+        // Meter energy remains visible without an electricity rate.
+      }
+      const buildPostalCode = String.fromEnvironment('ENERGYLENS_POSTAL_CODE');
+      postalCode ??= buildPostalCode.isEmpty ? null : buildPostalCode;
+      if (postalCode != null && !RegExp(r'^\d{5}$').hasMatch(postalCode)) {
+        postalCode = null;
+      }
       await Future.wait([
         for (final plug in candidates)
           if (plug.meterStatus != 'absent' &&
@@ -196,6 +207,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   address!,
                   token!,
                   plug.id,
+                  postalCode: postalCode,
                 );
                 if (mounted && generation == _meterGeneration) {
                   setState(
@@ -1097,6 +1109,19 @@ class _PowerNowState extends State<_PowerNow> {
                                     style: Theme.of(context).textTheme.bodySmall
                                         ?.copyWith(color: _secondary(context)),
                                   ),
+                                  if (meter.observedCostUsd
+                                      case final cost?) ...[
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      '\$${cost.toStringAsFixed(2)} observed cost during covered time · ${meter.rateSourceLabel ?? 'Electricity rate'}',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: _secondary(context),
+                                          ),
+                                    ),
+                                  ],
                                 ],
                               ],
                             ),

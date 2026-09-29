@@ -134,6 +134,8 @@ class DeviceEnergy {
     required this.coverageFraction,
     required this.coveredSecs,
     this.latestWatts,
+    this.observedCostUsd,
+    this.rateSourceLabel,
   });
 
   factory DeviceEnergy.fromJson(Map<String, dynamic> json) => DeviceEnergy(
@@ -143,6 +145,8 @@ class DeviceEnergy {
     coverageFraction: (json['coverage_fraction'] as num).toDouble(),
     coveredSecs: (json['covered_secs'] as num).toDouble(),
     latestWatts: (json['latest_watts'] as num?)?.toDouble(),
+    observedCostUsd: (json['observed_cost_usd'] as num?)?.toDouble(),
+    rateSourceLabel: json['rate_source_label'] as String?,
   );
 
   final String status;
@@ -151,6 +155,8 @@ class DeviceEnergy {
   final double coverageFraction;
   final double coveredSecs;
   final double? latestWatts;
+  final double? observedCostUsd;
+  final String? rateSourceLabel;
 }
 
 class SavedAppliance {
@@ -426,14 +432,21 @@ class DiscoveryApi {
     String token,
     String plugId, {
     String period = 'day',
+    String? postalCode,
+    double? rateUsdPerKwh,
   }) async {
+    final query = <String, String>{'period': period};
+    if (postalCode != null) query['postal_code'] = postalCode;
+    if (rateUsdPerKwh != null) {
+      query['rate_usd_per_kwh'] = rateUsdPerKwh.toString();
+    }
     final response = await _request(
       baseUrl,
       token,
       '/v1/devices/${Uri.encodeComponent(plugId)}/energy',
       'GET',
       null,
-      {'period': period},
+      query,
     );
     return DeviceEnergy.fromJson(response as Map<String, dynamic>);
   }
