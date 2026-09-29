@@ -16,6 +16,12 @@ const _muted = Color(0xFF61738B);
 const _rose = Color(0xFFE11D48);
 const _line = Color(0xFFE1E8EE);
 
+String _sampleTime(DateTime ts) {
+  final utc = ts.toUtc();
+  String two(int value) => value.toString().padLeft(2, '0');
+  return 'sampled ${utc.year}-${two(utc.month)}-${two(utc.day)} ${two(utc.hour)}:${two(utc.minute)} UTC';
+}
+
 class EnergyLensApp extends StatelessWidget {
   const EnergyLensApp({super.key});
 
@@ -105,7 +111,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _refreshHub();
     _meterRefreshTimer = Timer.periodic(
       const Duration(seconds: 60),
-      (_) => unawaited(_refreshMetering()),
+      (_) => unawaited(_refreshConnectivityAndMetering()),
     );
   }
 
@@ -125,7 +131,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final generation = ++_refreshGeneration;
     try {
       final (address, token) = await widget.credentials.read();
-      if (address == null || token == null) return;
+      if (address == null || token == null) {
+        if (mounted && generation == _refreshGeneration) {
+          setState(() {
+            _hubConnected = false;
+            _meterReadings = const {};
+            ++_meterGeneration;
+          });
+        }
+        return;
+      }
       final plugs = await widget.api.saved(address, token);
       if (mounted && generation == _refreshGeneration) {
         setState(() {
@@ -136,17 +151,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         });
       }
       unawaited(_refreshMetering(plugs: plugs, address: address, token: token));
-      String? postalCode;
-      try {
-        postalCode = await widget.credentials.readPostalCode();
-      } catch (_) {
-        // A saved plug remains visible when ZIP storage is unavailable.
-      }
-      const buildPostalCode = String.fromEnvironment('ENERGYLENS_POSTAL_CODE');
-      postalCode ??= buildPostalCode.isEmpty ? null : buildPostalCode;
-      if (postalCode != null && !RegExp(r'^\d{5}$').hasMatch(postalCode)) {
-        postalCode = null;
-      }
       await Future.wait([
         for (final plug in plugs)
           if (plug.connectedAppliance case final appliance?)
@@ -156,7 +160,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   address,
                   token,
                   appliance.id,
-                  postalCode: postalCode,
                 );
                 if (mounted && generation == _refreshGeneration) {
                   setState(
@@ -170,7 +173,43 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ]);
     } catch (_) {
       if (mounted && generation == _refreshGeneration) {
-        setState(() => _hubConnected = false);
+        setState(() {
+          _hubConnected = false;
+          _meterReadings = const {};
+          ++_meterGeneration;
+        });
+      }
+    }
+  }
+
+  Future<void> _refreshConnectivityAndMetering() async {
+    final generation = ++_refreshGeneration;
+    try {
+      final (address, token) = await widget.credentials.read();
+      if (address == null || token == null) {
+        if (mounted && generation == _refreshGeneration) {
+          setState(() {
+            _hubConnected = false;
+            _meterReadings = const {};
+            ++_meterGeneration;
+          });
+        }
+        return;
+      }
+      final plugs = await widget.api.saved(address, token);
+      if (!mounted || generation != _refreshGeneration) return;
+      setState(() {
+        _hubConnected = true;
+        _plugs = plugs;
+      });
+      await _refreshMetering(plugs: plugs, address: address, token: token);
+    } catch (_) {
+      if (mounted && generation == _refreshGeneration) {
+        setState(() {
+          _hubConnected = false;
+          _meterReadings = const {};
+          ++_meterGeneration;
+        });
       }
     }
   }
@@ -187,28 +226,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
       if (address == null || token == null) return;
       final candidates = plugs ?? _plugs;
-      String? postalCode;
-      try {
-        postalCode = await widget.credentials.readPostalCode();
-      } catch (_) {
-        // Meter energy remains visible without an electricity rate.
-      }
-      const buildPostalCode = String.fromEnvironment('ENERGYLENS_POSTAL_CODE');
-      postalCode ??= buildPostalCode.isEmpty ? null : buildPostalCode;
-      if (postalCode != null && !RegExp(r'^\d{5}$').hasMatch(postalCode)) {
-        postalCode = null;
-      }
       await Future.wait([
         for (final plug in candidates)
           if (plug.meterStatus != 'absent' &&
-              plug.localProtocol == 'legacy_tcp')
+              const {
+                'legacy_tcp',
+                'shelly_gen2',
+                'tasmota',
+              }.contains(plug.localProtocol))
             () async {
               try {
                 final reading = await widget.api.deviceEnergy(
                   address!,
                   token!,
                   plug.id,
-                  postalCode: postalCode,
                 );
                 if (mounted && generation == _meterGeneration) {
                   setState(
@@ -552,7 +583,7 @@ class _Setup extends StatelessWidget {
                   ListTile(
                     leading: Text('3'),
                     title: Text(
-                      'The upcoming hub connection flow in this app.',
+                      'Use Ask & Add to find a plug through the hub, or enter its local IP address.',
                     ),
                   ),
                 ],
@@ -1379,7 +1410,7 @@ class _PowerNowState extends State<_PowerNow> {
             final meterDetail = plug.meterStatus == 'absent'
                 ? 'No energy meter · ${plug.room.isEmpty ? 'Room not set' : plug.room}'
                 : meter?.latestWatts != null
-                ? 'Recent meter reading · ${meter!.latestWatts!.toStringAsFixed(1)} W'
+                ? 'Recent meter reading · ${meter!.latestWatts!.toStringAsFixed(1)} W${meter.latestSample == null ? '' : ' · ${_sampleTime(meter.latestSample!.ts)}'}'
                 : meter?.status == 'measured'
                 ? 'Meter history available · no current reading'
                 : 'Waiting for a meter reading';
@@ -1430,7 +1461,7 @@ class _PowerNowState extends State<_PowerNow> {
                                 if (meter?.status == 'measured') ...[
                                   const SizedBox(height: 3),
                                   Text(
-                                    '${meter!.totalKwh.toStringAsFixed(3)} kWh measured today · ${(meter.coverageFraction * 100).round()}% time coverage',
+                                    '${meter!.totalKwh.toStringAsFixed(3)} kWh measured in the last 24 hours · ${(meter.coverageFraction * 100).round()}% time coverage',
                                     style: Theme.of(context).textTheme.bodySmall
                                         ?.copyWith(color: _secondary(context)),
                                   ),
@@ -2144,7 +2175,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
                           ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                     Text(
-                      'Find your Kasa HS103 through a local hub. It can show switch status but has no energy meter.',
+                      'Find a supported plug through your local hub. Kasa HS103 has no energy meter; choose a metering model for measured power.',
                       style: Theme.of(context).textTheme.bodyMedium
                           ?.copyWith(color: _secondary(context)),
                     ),

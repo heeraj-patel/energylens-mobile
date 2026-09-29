@@ -636,6 +636,12 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                   ? 'Use a rating label or bulb package. Review the suggested model before saving.'
                   : 'Enter the model from the appliance label or manual, then check it before saving. A model without a matching source can still be saved without an estimate.',
             ),
+            if (widget.plugId != null) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'For appliance-specific readings, connect only this appliance to the plug. A shared plug measures the combined load.',
+              ),
+            ],
             if (photo) ...[
               const SizedBox(height: 16),
               Wrap(
@@ -864,7 +870,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
               onChanged: (_) => setState(() {}),
               decoration: const InputDecoration(
                 labelText: 'Hub address',
-                hintText: 'http://192.168.68.136:18787',
+                hintText: 'https://192.168.68.136:18787#sha256=…',
                 border: OutlineInputBorder(),
               ),
             ),

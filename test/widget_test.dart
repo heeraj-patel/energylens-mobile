@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 class _ConnectedCredentials extends DiscoveryCredentials {
   @override
   Future<(String?, String?)> read() async =>
-      ('http://100.115.133.73:18787', 'test');
+      ('https://100.115.133.73:18787', 'test');
 
   @override
   Future<String?> readPostalCode() async => '78732';
@@ -79,7 +79,7 @@ class _ConnectedApi extends DiscoveryApi {
     double? rateUsdPerKwh,
   }) async {
     assert(applianceId == 1);
-    assert(postalCode == '78732');
+    assert(postalCode == null);
     final active = 19 * hours * 52 / 12000 * 0.1588;
     final standby = sourceKind == 'energy_star'
         ? 0.2 * 2 * (168 - hours) * 52 / 12000 * 0.1588
@@ -130,16 +130,95 @@ class _MeteredApi extends DiscoveryApi {
     String period = 'day',
     String? postalCode,
     double? rateUsdPerKwh,
-  }) async => const DeviceEnergy(
-    status: 'measured',
-    period: 'day',
-    totalKwh: 0.125,
-    coverageFraction: 0.75,
-    coveredSecs: 64800,
-    latestWatts: 100,
-    observedCostUsd: 0.02,
-    rateSourceLabel: 'Texas average (EIA)',
-  );
+  }) async {
+    assert(postalCode == null);
+    return DeviceEnergy.fromJson({
+      'status': 'measured',
+      'period': 'day',
+      'device_id': plugId,
+      'total_kwh': 0.125,
+      'coverage_fraction': 0.75,
+      'covered_secs': 64800,
+      'latest_watts': 100,
+      'observed_cost_usd': 0.02,
+      'rate_source_label': 'Texas average (EIA)',
+      'readings': [
+        {'ts': '2026-09-29T12:34:00Z', 'watts': 100, 'kwh_cumulative': 1.25},
+      ],
+    });
+  }
+}
+
+class _MultiProtocolApi extends _MeteredApi {
+  final requested = <String>[];
+  bool unavailable = false;
+
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async {
+    if (unavailable) throw StateError('hub offline');
+    return const [
+      SavedPlug(
+        id: 'kasa',
+        ip: '',
+        model: 'Kasa',
+        name: 'Kasa',
+        room: '',
+        meterStatus: 'verified',
+        localProtocol: 'legacy_tcp',
+        lastVerifiedAt: 1,
+      ),
+      SavedPlug(
+        id: 'shelly',
+        ip: '',
+        model: 'Shelly',
+        name: 'Shelly',
+        room: '',
+        meterStatus: 'verified',
+        localProtocol: 'shelly_gen2',
+        lastVerifiedAt: 1,
+      ),
+      SavedPlug(
+        id: 'tasmota',
+        ip: '',
+        model: 'Tasmota',
+        name: 'Tasmota',
+        room: '',
+        meterStatus: 'verified',
+        localProtocol: 'tasmota',
+        lastVerifiedAt: 1,
+      ),
+      SavedPlug(
+        id: 'absent',
+        ip: '',
+        model: 'No meter',
+        name: 'No meter',
+        room: '',
+        meterStatus: 'absent',
+        localProtocol: 'tasmota',
+        lastVerifiedAt: 1,
+      ),
+    ];
+  }
+
+  @override
+  Future<DeviceEnergy> deviceEnergy(
+    String baseUrl,
+    String token,
+    String plugId, {
+    String period = 'day',
+    String? postalCode,
+    double? rateUsdPerKwh,
+  }) async {
+    requested.add(plugId);
+    return super.deviceEnergy(
+      baseUrl,
+      token,
+      plugId,
+      period: period,
+      postalCode: postalCode,
+      rateUsdPerKwh: rateUsdPerKwh,
+    );
+  }
 }
 
 class _CycleApi extends _ConnectedApi {
@@ -609,9 +688,14 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Office meter · HS110'), 200);
-    expect(find.text('Recent meter reading · 100.0 W'), findsOneWidget);
     expect(
-      find.text('0.125 kWh measured today · 75% time coverage'),
+      find.text(
+        'Recent meter reading · 100.0 W · sampled 2026-09-29 12:34 UTC',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('0.125 kWh measured in the last 24 hours · 75% time coverage'),
       findsOneWidget,
     );
     expect(
@@ -621,6 +705,46 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('No energy meter'), findsNothing);
+  });
+
+  testWidgets(
+    'refreshes all hub metering protocols and clears stale connection badge',
+    (tester) async {
+      final api = _MultiProtocolApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeScreen(api: api, credentials: _ConnectedCredentials()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(api.requested.toSet(), {'kasa', 'shelly', 'tasmota'});
+      expect(find.text('HUB CONNECTED'), findsOneWidget);
+
+      api.unavailable = true;
+      await tester.pump(const Duration(seconds: 60));
+      await tester.pump();
+      expect(find.text('HUB DISCONNECTED'), findsOneWidget);
+    },
+  );
+
+  test('preserves meter sample times, watts, and counter values', () {
+    final energy = DeviceEnergy.fromJson({
+      'status': 'measured',
+      'period': 'day',
+      'device_id': 'meter-1',
+      'total_kwh': 0.1,
+      'coverage_fraction': 0.5,
+      'covered_secs': 43200,
+      'readings': [
+        {'ts': '2026-09-29T12:00:00Z', 'watts': 82, 'kwh_cumulative': 3.2},
+        {'ts': '2026-09-29T12:01:00Z', 'watts': 84, 'kwh_cumulative': 3.201},
+      ],
+    });
+    expect(energy.deviceId, 'meter-1');
+    expect(energy.readingCount, 2);
+    expect(energy.readings.first.ts.toUtc(), DateTime.utc(2026, 9, 29, 12));
+    expect(energy.latestSample!.watts, 84);
+    expect(energy.latestSample!.kwhCumulative, 3.201);
   });
 
   testWidgets('keeps measured 30-day cost separate from sourced estimates', (

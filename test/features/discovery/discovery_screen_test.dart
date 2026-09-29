@@ -323,7 +323,7 @@ void main() {
       'rate_fetched_at': 1775000000,
       'rate_is_stale': true,
       'readings': [
-        {'watts': 42},
+        {'ts': '2026-09-29T12:00:00Z', 'watts': 42, 'kwh_cumulative': null},
       ],
     });
     expect(energy.rateStatus, 'stale');
@@ -340,7 +340,7 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       final credentials = FakeCredentials()
-        ..address = 'http://192.168.1.20:8787'
+        ..address = 'https://192.168.1.20:8787'
         ..token = 'test-token';
       await tester.pumpWidget(
         MaterialApp(
@@ -389,7 +389,7 @@ void main() {
             connectedAppliance: api.appliance,
           ),
           api: api,
-          hubAddress: 'http://192.168.1.20:8787',
+          hubAddress: 'https://192.168.1.20:8787',
           token: 'test-token',
         ),
       ),
@@ -425,7 +425,7 @@ void main() {
             lastVerifiedAt: 100,
           ),
           api: api,
-          hubAddress: 'http://192.168.1.20:8787',
+          hubAddress: 'https://192.168.1.20:8787',
           token: 'test-token',
         ),
       ),
@@ -522,7 +522,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     final api = PersistingSettingsApi();
     final credentials = FakeCredentials()
-      ..address = 'http://192.168.1.20:8787'
+      ..address = 'https://192.168.1.20:8787'
       ..token = 'test-token';
     await tester.pumpWidget(
       MaterialApp(
@@ -595,7 +595,7 @@ void main() {
     final api = PersistingSettingsApi()
       ..settings = const ElectricitySettings(postalCode: '78732');
     final credentials = FakeCredentials()
-      ..address = 'http://192.168.1.20:8787'
+      ..address = 'https://192.168.1.20:8787'
       ..token = 'test-token';
     await tester.pumpWidget(
       MaterialApp(
@@ -627,7 +627,7 @@ void main() {
         lastVerifiedAt: 100,
       );
     final credentials = FakeCredentials()
-      ..address = 'http://192.168.1.20:8787'
+      ..address = 'https://192.168.1.20:8787'
       ..token = 'test-token';
     await tester.pumpWidget(
       MaterialApp(
@@ -644,7 +644,7 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('hubAddress')),
-      'http://192.168.1.30:8787',
+      'https://192.168.1.30:8787',
     );
     await tester.pumpAndSettle();
 
@@ -659,7 +659,7 @@ void main() {
     );
     await tester.enterText(
       find.byType(TextField).at(0),
-      'http://192.168.1.20:8787',
+      'https://192.168.1.20:8787',
     );
     await tester.enterText(find.byType(TextField).at(1), 'test-token');
     await tester.tap(find.text('Scan for plugs'));
@@ -697,7 +697,7 @@ void main() {
     );
     await tester.enterText(
       find.byType(TextField).at(0),
-      'http://192.168.1.20:8787',
+      'https://192.168.1.20:8787',
     );
     await tester.enterText(find.byType(TextField).at(1), 'test-token');
     await tester.tap(find.text('Scan for plugs'));
@@ -717,7 +717,7 @@ void main() {
     await tester.tap(find.text('Save plug'));
     await tester.pumpAndSettle();
     expect(api.plug?.name, 'Desk plug');
-    expect(credentials.address, 'http://192.168.1.20:8787');
+    expect(credentials.address, 'https://192.168.1.20:8787');
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(
@@ -753,7 +753,7 @@ void main() {
       lastVerifiedAt: 100,
     );
     final credentials = FakeCredentials()
-      ..address = 'http://192.168.1.20:8787'
+      ..address = 'https://192.168.1.20:8787'
       ..token = 'test-token';
     await tester.pumpWidget(
       MaterialApp(

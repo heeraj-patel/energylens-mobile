@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 class FakeCredentials extends DiscoveryCredentials {
   @override
   Future<(String?, String?)> read() async =>
-      ('http://192.168.1.20:8787', 'test-token');
+      ('https://192.168.1.20:8787', 'test-token');
   @override
   Future<void> save(String address, String token) async {}
 

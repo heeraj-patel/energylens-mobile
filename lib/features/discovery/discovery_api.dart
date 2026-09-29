@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
+
 class IdentificationCandidate {
   const IdentificationCandidate({
     required this.manufacturer,
@@ -145,6 +147,7 @@ class DeviceEnergy {
     this.rateIsStale = false,
     this.rateStatus,
     this.readingCount = 0,
+    this.readings = const [],
   });
 
   factory DeviceEnergy.fromJson(Map<String, dynamic> json) => DeviceEnergy(
@@ -164,6 +167,9 @@ class DeviceEnergy {
     rateFetchedAt: (json['rate_fetched_at'] as num?)?.toInt(),
     rateIsStale: json['rate_is_stale'] == true,
     rateStatus: json['rate_status'] as String?,
+    readings: (json['readings'] as List<dynamic>? ?? const [])
+        .map((item) => EnergyReading.fromJson(item as Map<String, dynamic>))
+        .toList(growable: false),
     readingCount: (json['readings'] as List<dynamic>?)?.length ?? 0,
   );
 
@@ -184,6 +190,27 @@ class DeviceEnergy {
   final bool rateIsStale;
   final String? rateStatus;
   final int readingCount;
+  final List<EnergyReading> readings;
+
+  EnergyReading? get latestSample => readings.isEmpty ? null : readings.last;
+}
+
+class EnergyReading {
+  const EnergyReading({
+    required this.ts,
+    required this.watts,
+    this.kwhCumulative,
+  });
+
+  factory EnergyReading.fromJson(Map<String, dynamic> json) => EnergyReading(
+    ts: DateTime.parse(json['ts'] as String),
+    watts: (json['watts'] as num).toDouble(),
+    kwhCumulative: (json['kwh_cumulative'] as num?)?.toDouble(),
+  );
+
+  final DateTime ts;
+  final double watts;
+  final double? kwhCumulative;
 }
 
 class SavedAppliance {
@@ -767,23 +794,32 @@ class DiscoveryApi {
     Map<String, dynamic>? body,
     Map<String, String>? query,
   ]) async {
-    final base = Uri.tryParse(baseUrl);
-    final ip = base == null ? null : InternetAddress.tryParse(base.host);
-    if (base == null ||
-        base.scheme != 'http' ||
-        base.userInfo.isNotEmpty ||
-        ip == null ||
-        ip.type != InternetAddressType.IPv4 ||
-        !_isPrivateIpv4(base.host)) {
-      throw const FormatException(
-        'Enter the hub’s LAN or Tailscale HTTP address, such as http://100.115.133.73:18787',
-      );
+    final endpoint = HubEndpoint.parse(baseUrl);
+    // An empty trust store makes the pin callback run even for CA-trusted
+    // certificates. Without a pin, HttpClient uses platform CA validation.
+    final client = HttpClient(
+      context: endpoint.pin == null
+          ? null
+          : SecurityContext(withTrustedRoots: false),
+    )..connectionTimeout = const Duration(seconds: 4);
+    if (endpoint.pin case final pin?) {
+      client.badCertificateCallback = (certificate, host, port) {
+        final now = DateTime.now();
+        return host == endpoint.uri.host &&
+            port == endpoint.uri.port &&
+            !now.isBefore(certificate.startValidity) &&
+            !now.isAfter(certificate.endValidity) &&
+            matchesHubCertificatePin(certificate.der, pin);
+      };
     }
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
     try {
       final request = await client
-          .openUrl(method, base.replace(path: path, queryParameters: query))
+          .openUrl(
+            method,
+            endpoint.uri.replace(path: path, queryParameters: query),
+          )
           .timeout(const Duration(seconds: 5));
+      request.followRedirects = false;
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
       if (body != null) {
         request.headers.contentType = ContentType.json;
@@ -807,13 +843,50 @@ class DiscoveryApi {
   }
 }
 
+class HubEndpoint {
+  const HubEndpoint(this.uri, this.pin);
+
+  final Uri uri;
+  final String? pin;
+
+  static HubEndpoint parse(String address) {
+    final base = Uri.tryParse(address);
+    final ip = base == null ? null : InternetAddress.tryParse(base.host);
+    final fragment = base?.fragment;
+    final pin =
+        fragment != null &&
+            fragment.isNotEmpty &&
+            RegExp(r'^sha256=[0-9a-f]{64}$').hasMatch(fragment)
+        ? fragment.substring(7)
+        : null;
+    if (base == null ||
+        base.scheme != 'https' ||
+        base.userInfo.isNotEmpty ||
+        base.hasQuery ||
+        (base.path.isNotEmpty && base.path != '/') ||
+        (base.hasFragment && pin == null) ||
+        ip == null ||
+        ip.type != InternetAddressType.IPv4 ||
+        !_isPrivateIpv4(base.host)) {
+      throw const FormatException(
+        'Enter a hub HTTPS address on your LAN or Tailscale network, such as https://100.115.133.73:18787#sha256=<64 lowercase hex digits>',
+      );
+    }
+    return HubEndpoint(base.removeFragment(), pin);
+  }
+}
+
+bool matchesHubCertificatePin(List<int> certificateDer, String pin) =>
+    sha256.convert(certificateDer).toString() == pin;
+
 bool _isPrivateIpv4(String value) {
   final parts = value.split('.').map(int.tryParse).toList();
   if (parts.length != 4 ||
       parts.any((part) => part == null || part < 0 || part > 255)) {
     return false;
   }
-  return parts[0] == 10 ||
+  return value == '127.0.0.1' ||
+      parts[0] == 10 ||
       (parts[0] == 100 && parts[1]! >= 64 && parts[1]! <= 127) ||
       (parts[0] == 172 && parts[1]! >= 16 && parts[1]! <= 31) ||
       (parts[0] == 192 && parts[1] == 168);

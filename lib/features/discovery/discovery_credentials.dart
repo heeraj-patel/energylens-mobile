@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'discovery_api.dart';
+
 /// Pilot hub credentials kept in platform-protected storage between launches.
 class DiscoveryCredentials {
   const DiscoveryCredentials();
@@ -36,6 +38,7 @@ class DiscoveryCredentials {
   }
 
   Future<void> save(String address, String token) async {
+    HubEndpoint.parse(address);
     await _storage.write(key: 'energylens.hub.address', value: address);
     await _storage.write(key: 'energylens.hub.discovery_token', value: token);
   }

@@ -10,7 +10,7 @@ device_ids=()
 
 usage() {
   cat <<'EOF'
-Usage: scripts/deploy-ios-simulator.sh --hub-url http://HUB_IP:PORT [--postal-code ZIP] --device SIMULATOR_ID [--device SIMULATOR_ID]
+Usage: scripts/deploy-ios-simulator.sh --hub-url 'https://HUB_IP:PORT#sha256=LEAF_CERT_SHA256' [--postal-code ZIP] --device SIMULATOR_ID [--device SIMULATOR_ID]
 
 Builds EnergyLens for iOS Simulator with ENERGYLENS_HUB_URL, then installs
 and launches it on each explicitly named simulator. Set ENERGYLENS_HUB_TOKEN
@@ -37,8 +37,9 @@ while (($#)); do
   esac
 done
 
-[[ "$hub_url" =~ ^http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+$ ]] || {
-  echo 'Pass an HTTP hub IPv4 address and port with --hub-url.' >&2
+hub_url_pattern='^https://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+(#sha256=[0-9a-f]{64})?$'
+[[ "$hub_url" =~ $hub_url_pattern ]] || {
+  echo 'Pass an HTTPS hub IPv4 address and port, with #sha256=<64 lowercase hex digits> for a self-signed certificate.' >&2
   exit 2
 }
 ((${#device_ids[@]} > 0)) || { echo 'Pass at least one --device.' >&2; exit 2; }

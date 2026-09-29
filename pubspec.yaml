@@ -38,6 +38,7 @@ dependencies:
   image_picker: ^1.1.2
   google_mlkit_text_recognition: ^0.17.0
   mobile_scanner: ^7.4.1
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:

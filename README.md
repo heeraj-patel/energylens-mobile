@@ -21,17 +21,20 @@ flutter run
 
 The self-contained `scripts/deploy-ios-simulator.sh` adapts the explicit-target
 build and deploy workflow from `kernel-app/scripts/run-kernel-app.sh`. It passes
-the hub IPv4 address at build time, installs the app, and launches it. For the
-Geekom on the same LAN, use `http://192.168.68.136:18787`; if the Mac can only
-reach the hub through Tailscale, use `http://100.115.133.73:18787`. The pilot
+the hub IPv4 address at build time, installs the app, and launches it. Use an
+HTTPS address whose certificate includes the address in its subject alternative
+names. For a self-signed certificate, append `#sha256=` and the 64 lowercase
+hexadecimal digits of the leaf certificate's DER SHA-256 digest. Verify that
+fingerprint through a trusted channel before pairing. The pilot
 token is supplied through `ENERGYLENS_HUB_TOKEN`, passed via a temporary file
 in the simulator app container, and stored in the simulator's Keychain. The
 app deletes the temporary file after reading it. It is not compiled into the
 app. For example:
 
 ```sh
+HUB_CERT_SHA256="$(openssl x509 -in /secure/path/to/hub.crt -outform DER | openssl dgst -sha256 | awk '{print $NF}')"
 ENERGYLENS_HUB_TOKEN="$(tailscale ssh nipatel@nipatel-solvzoom 'sed -n "s/^ENERGYLENS_DISCOVERY_TOKEN=//p" "$HOME/energylens-pilot/hub.env"')" \
-  scripts/deploy-ios-simulator.sh --hub-url http://192.168.68.136:18787 \
+  scripts/deploy-ios-simulator.sh --hub-url "https://192.168.68.136:18787#sha256=$HUB_CERT_SHA256" \
   --postal-code 78732 \
   --device 16A0C929-143E-494A-9BC7-546F39A0D3A7
 ```

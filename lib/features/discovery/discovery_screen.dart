@@ -194,6 +194,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       builder: (context) => SimpleDialog(
         title: const Text('Connected appliance or lamp'),
         children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 0, 24, 12),
+            child: Text(
+              'For appliance-specific readings, connect only that appliance to this plug. A shared plug measures the combined load.',
+            ),
+          ),
           for (final item in appliances)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, item.id),
@@ -433,7 +439,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Connect the plug to the same Wi-Fi network as your local hub. Scan for TP-Link Kasa plugs, or enter a local IP and choose Shelly Gen2 or Tasmota. Enter the hub address and temporary discovery token above.',
+              'Connect the plug to the same Wi-Fi network as your local hub. Scan for TP-Link Kasa plugs, or enter a local IP and choose Shelly Gen2 or Tasmota. Enter the hub HTTPS address and discovery token above. For a self-signed hub certificate, append #sha256= followed by its 64-digit lowercase certificate fingerprint.',
             ),
             const SizedBox(height: 18),
             TextField(
@@ -441,7 +447,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               controller: _hub,
               decoration: const InputDecoration(
                 labelText: 'Hub address',
-                hintText: 'http://192.168.68.136:18787',
+                hintText: 'https://192.168.68.136:18787#sha256=…',
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.url,
