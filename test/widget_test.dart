@@ -14,12 +14,13 @@ class _ConnectedCredentials extends DiscoveryCredentials {
 }
 
 class _ConnectedApi extends DiscoveryApi {
-  const _ConnectedApi({this.sourceKind = 'user_label'});
+  _ConnectedApi({this.sourceKind = 'user_label'});
 
   final String sourceKind;
+  double hours = 21;
 
   @override
-  Future<List<SavedPlug>> saved(String baseUrl, String token) async => const [
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async => [
     SavedPlug(
       id: 'ks19',
       ip: '192.168.68.92',
@@ -37,9 +38,37 @@ class _ConnectedApi extends DiscoveryApi {
         model: '',
         loadKind: 'replaceable_bulb',
         onboardingMethod: 'manual',
+        hoursPerWeek: hours,
+        initialHoursPerWeek: 21,
+        bulbCount: 2,
+        combinedInputWatts: 19,
       ),
     ),
   ];
+
+  @override
+  Future<SavedAppliance> updateApplianceHours(
+    String baseUrl,
+    String token,
+    int applianceId,
+    double hoursPerWeek,
+  ) async {
+    hours = hoursPerWeek;
+    return SavedAppliance(
+      id: applianceId,
+      name: 'Two-bulb Philips Hue White lamp',
+      room: '',
+      category: 'lighting',
+      manufacturer: 'Philips Hue',
+      model: '9290011369B',
+      loadKind: 'replaceable_bulb',
+      onboardingMethod: 'manual',
+      hoursPerWeek: hours,
+      initialHoursPerWeek: 21,
+      bulbCount: 2,
+      combinedInputWatts: 19,
+    );
+  }
 
   @override
   Future<EnergyEstimate> estimate(
@@ -51,18 +80,26 @@ class _ConnectedApi extends DiscoveryApi {
   }) async {
     assert(applianceId == 1);
     assert(postalCode == '78732');
+    final active = 19 * hours * 52 / 12000 * 0.1588;
+    final standby = sourceKind == 'energy_star'
+        ? 0.2 * 2 * (168 - hours) * 52 / 12000 * 0.1588
+        : null;
     return EnergyEstimate(
       status: 'estimated',
-      estimatedKwh: 1.729,
-      estimatedCostUsd: 0.2745652,
+      estimatedKwh: (active + (standby ?? 0)) / 0.1588,
+      estimatedCostUsd: active + (standby ?? 0),
+      activeCostUsd: active,
+      standbyCostUsd: standby,
+      rateUsdPerKwh: 0.1588,
       rateSourceLabel: 'Texas average (EIA, published table)',
       evidence: EnergyEvidence(
         sourceKind: sourceKind,
-        datasetId: sourceKind == 'energy_star' ? 'epa_test' : 'bulb_label',
+        datasetId: sourceKind == 'energy_star' ? 'msj5-kqfv' : 'bulb_label',
         sourceUrl: '',
         matchedBrand: 'Philips Hue',
         matchedModel: '',
-        annualKwh: 20.748,
+        annualKwh: sourceKind == 'energy_star' ? 10.374 : 20.748,
+        standbyWatts: sourceKind == 'energy_star' ? 0.2 : null,
         usageBasis: 'Two bulbs, 21 hours/week',
         retrievedAt: 1,
       ),
@@ -70,7 +107,81 @@ class _ConnectedApi extends DiscoveryApi {
   }
 }
 
+class _ManualDevicesApi extends DiscoveryApi {
+  final devices = <SavedAppliance>[
+    const SavedAppliance(
+      id: 7,
+      name: 'Desk fan',
+      room: 'Office',
+      category: 'fan',
+      manufacturer: '',
+      model: '',
+      loadKind: 'appliance',
+      onboardingMethod: 'manual',
+    ),
+    const SavedAppliance(
+      id: 8,
+      name: 'Photo lamp',
+      room: 'Living Room',
+      category: 'lighting',
+      manufacturer: '',
+      model: '',
+      loadKind: 'integrated_lamp',
+      onboardingMethod: 'photo',
+    ),
+  ];
+
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async => [];
+
+  @override
+  Future<List<SavedAppliance>> appliances(String baseUrl, String token) async =>
+      devices;
+
+  @override
+  Future<void> deleteManualAppliance(
+    String baseUrl,
+    String token,
+    int applianceId,
+  ) async {
+    devices.removeWhere((device) => device.id == applianceId);
+  }
+}
+
 void main() {
+  testWidgets('deletes a manual device from Ask & Add after confirmation', (
+    tester,
+  ) async {
+    final api = _ManualDevicesApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(api: api, credentials: _ConnectedCredentials()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ask & Add'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Connect Appliance'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('ask-delete-appliance-7')),
+      200,
+    );
+    expect(find.text('Desk fan'), findsOneWidget);
+    expect(find.byKey(const Key('ask-delete-appliance-8')), findsNothing);
+    await tester.tap(find.byKey(const Key('ask-delete-appliance-7')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(api.devices, hasLength(2));
+    await tester.tap(find.byKey(const Key('ask-delete-appliance-7')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(api.devices.map((device) => device.name), ['Photo lamp']);
+    expect(find.byKey(const Key('ask-delete-appliance-7')), findsNothing);
+  });
+
   testWidgets('shows the disconnected state without invented readings', (
     tester,
   ) async {
@@ -119,7 +230,7 @@ void main() {
       200,
     );
     expect(find.text('Two-bulb Philips Hue White lamp'), findsOneWidget);
-    expect(find.text('Estimated total: \$0.27/month'), findsOneWidget);
+    expect(find.text('Estimated on-time: \$0.27/month'), findsOneWidget);
     expect(find.text('Bulb ratings you entered'), findsOneWidget);
     expect(find.text('ENERGY STAR data (EPA)'), findsNothing);
     expect(
@@ -136,7 +247,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Two-bulb Philips Hue White lamp'), findsNothing);
     expect(find.textContaining('No energy meter'), findsOneWidget);
-    expect(find.textContaining('Waiting for a live reading'), findsOneWidget);
+    expect(find.text('ESTIMATED MONTHLY COST'), findsOneWidget);
+    expect(find.text('\$0.27 from 1 of 1 load'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('plug-expand-ks19')));
     await tester.pumpAndSettle();
@@ -146,16 +258,14 @@ void main() {
   testWidgets('shows EPA attribution only for a verified ENERGY STAR source', (
     tester,
   ) async {
+    final api = _ConnectedApi(sourceKind: 'energy_star');
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       MaterialApp(
-        home: HomeScreen(
-          api: const _ConnectedApi(sourceKind: 'energy_star'),
-          credentials: _ConnectedCredentials(),
-        ),
+        home: HomeScreen(api: api, credentials: _ConnectedCredentials()),
       ),
     );
     await tester.pumpAndSettle();
@@ -163,7 +273,24 @@ void main() {
       find.text('Living Room Lamp KS19 · HS103(US)'),
       200,
     );
-    expect(find.text('Estimated total: \$0.27/month'), findsOneWidget);
+    expect(find.text('Estimated total: \$0.32/month'), findsOneWidget);
+    expect(find.text('On-time use: \$0.27/month'), findsOneWidget);
+    expect(find.text('Standby use: \$0.04/month'), findsOneWidget);
     expect(find.text('ENERGY STAR data (EPA)'), findsOneWidget);
+    expect(find.text('On time: 21 hours/week'), findsOneWidget);
+    final slider = tester.widget<Slider>(
+      find.byKey(const Key('appliance-hours-1')),
+    );
+    slider.onChanged!(42);
+    slider.onChangeEnd!(42);
+    await tester.pumpAndSettle();
+    expect(api.hours, 42);
+    expect(find.text('On time: 42 hours/week'), findsOneWidget);
+    expect(find.text('Estimated total: \$0.58/month'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('reset-appliance-hours-1')));
+    await tester.pumpAndSettle();
+    expect(api.hours, 21);
+    expect(find.text('On time: 21 hours/week'), findsOneWidget);
+    expect(find.text('Estimated total: \$0.32/month'), findsOneWidget);
   });
 }

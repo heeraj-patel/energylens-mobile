@@ -66,7 +66,10 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   Uint8List? _photoBytes;
   bool _confirmedModel = false;
   bool _busy = false;
+  (String, String, String, String, String)? _checkedModelKey;
+  EnergyLookup? _modelCheck;
   String? _error;
+  String? _deleteError;
   List<SavedAppliance> _saved = const [];
   final Map<int, EnergyEstimate> _estimates = {};
   final Map<int, String> _lookupStatuses = {};
@@ -116,7 +119,16 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                   ? null
                   : _postal.text.trim(),
             );
-            if (mounted) setState(() => _estimates[item.id] = estimate);
+            if (mounted) {
+              setState(() {
+                _estimates[item.id] = estimate;
+                if (estimate.reason == 'no_match') {
+                  _lookupStatuses[item.id] = 'no_match';
+                } else if (estimate.evidence != null) {
+                  _lookupStatuses.remove(item.id);
+                }
+              });
+            }
           } catch (_) {
             // A single estimate failure does not hide the saved device list.
           }
@@ -128,6 +140,121 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
           () => _error = 'Could not load saved appliances from the hub.',
         );
       }
+    }
+  }
+
+  (String, String, String, String, String) get _modelKey => (
+    _category,
+    _manufacturer.text.trim(),
+    _model.text.trim(),
+    _hub.text.trim(),
+    _token.text.trim(),
+  );
+
+  Future<void> _checkModelBeforeSave() async {
+    if (_busy) return;
+    final key = _modelKey;
+    if (_hub.text.trim().isEmpty || _token.text.trim().isEmpty) {
+      setState(
+        () => _error = 'Enter the hub address and token to check the model.',
+      );
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final lookup = await widget.api.checkModel(
+        _hub.text.trim(),
+        _token.text.trim(),
+        category: key.$1,
+        manufacturer: key.$2,
+        model: key.$3,
+      );
+      if (mounted && _modelKey == key) {
+        setState(() {
+          _checkedModelKey = key;
+          _modelCheck = lookup;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = error is StateError ? error.message : 'Could not check the model. Try again when the hub is reachable.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _modelCheckMessage(EnergyLookup lookup) {
+    if (lookup.evidence case final source?) {
+      return '${source.sourceKind == 'oem_family' ? 'Family source' : 'Matched'} ${source.matchedBrand} ${source.matchedModel} · ${energySourceLabel(source)}';
+    }
+    return switch (lookup.status) {
+      'missing_identity' => 'No manufacturer and model to check. You can save without a sourced estimate.',
+      'source_unavailable' =>
+        'Energy source unavailable. You can save now and check again later.',
+      'ambiguous' || 'truncated' =>
+        'Model match needs review. You can save without a sourced estimate.',
+      'unsupported_category' => 'No energy model catalog for this category. You can save without a sourced estimate.',
+      'no_usable_energy' => 'A model record was found, but it has no usable energy figure. You can save without an estimate.',
+      _ =>
+        'No exact energy model found. You can save without a sourced estimate.',
+    };
+  }
+
+  Future<void> _deleteManualAppliance(SavedAppliance item) async {
+    if (_busy || item.onboardingMethod != 'manual') return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete device?'),
+        content: Text(
+          'Delete “${item.name}” from this hub? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _busy = true;
+      _deleteError = null;
+    });
+    try {
+      await widget.api.deleteManualAppliance(
+        _hub.text.trim(),
+        _token.text.trim(),
+        item.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _saved = _saved.where((row) => row.id != item.id).toList();
+        _estimates.remove(item.id);
+        _lookupStatuses.remove(item.id);
+      });
+      await _refresh();
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _deleteError = error is StateError
+              ? error.message
+              : 'Could not delete the device. Check the hub connection.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -233,6 +360,11 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       );
       return;
     }
+    if (widget.method == 'manual' && _checkedModelKey != _modelKey) {
+      setState(() => _error = 'Check this model before saving the device.');
+      return;
+    }
+    final checkedLookup = widget.method == 'manual' ? _modelCheck : null;
     setState(() {
       _busy = true;
       _error = null;
@@ -255,9 +387,38 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
         ),
       );
       if (!mounted) return;
-      setState(
-        () => _saved = [..._saved.where((item) => item.id != saved.id), saved],
-      );
+      setState(() {
+        _saved = [..._saved.where((item) => item.id != saved.id), saved];
+        if (checkedLookup != null) {
+          _lookupStatuses[saved.id] = checkedLookup.status;
+        }
+        _checkedModelKey = null;
+        _modelCheck = null;
+      });
+      if (checkedLookup != null) {
+        try {
+          final lookup = await widget.api.lookupEnergy(
+            _hub.text.trim(),
+            _token.text.trim(),
+            saved.id,
+          );
+          if (mounted && lookup.status != 'source_unavailable') {
+            setState(() => _lookupStatuses[saved.id] = lookup.status);
+          }
+          if (lookup.evidence != null) {
+            final estimate = await widget.api.estimate(
+              _hub.text.trim(),
+              _token.text.trim(),
+              saved.id,
+              rateUsdPerKwh: _enteredRate(),
+              postalCode: _enteredPostalCode(),
+            );
+            if (mounted) setState(() => _estimates[saved.id] = estimate);
+          }
+        } catch (_) {
+          // The saved record stays visible with its pre-save source result.
+        }
+      }
       if (widget.plugId != null) {
         final attached = await widget.api.attachAppliance(
           _hub.text.trim(),
@@ -338,6 +499,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
           item.id,
         );
         if (mounted) setState(() => _lookupStatuses[item.id] = lookup.status);
+        if (lookup.evidence == null) return;
       }
       final estimate = await widget.api.estimate(
         _hub.text.trim(),
@@ -398,7 +560,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
               const SizedBox(height: 10),
               if (source.sourceKind != 'user_label')
                 Text(
-                  'Matched model: ${source.matchedBrand} ${source.matchedModel}',
+                  '${source.sourceKind == 'oem_family' ? 'Source covers' : 'Matched model'}: ${source.matchedBrand} ${source.matchedModel}',
                 ),
               Text(
                 source.sourceKind == 'user_label'
@@ -472,7 +634,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             Text(
               photo
                   ? 'Use a rating label or bulb package. Review the suggested model before saving.'
-                  : 'Enter the model from the appliance label or manual. You can save it without a model; an estimate needs a matching source.',
+                  : 'Enter the model from the appliance label or manual, then check it before saving. A model without a matching source can still be saved without an estimate.',
             ),
             if (photo) ...[
               const SizedBox(height: 16),
@@ -638,6 +800,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             TextField(
               key: const Key('applianceManufacturer'),
               controller: _manufacturer,
+              onChanged: (_) => setState(() {}),
               decoration: const InputDecoration(
                 labelText: 'Manufacturer',
                 border: OutlineInputBorder(),
@@ -663,6 +826,25 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                 title: const Text('I checked this model against the label'),
                 contentPadding: EdgeInsets.zero,
               ),
+            if (!photo) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                key: const Key('checkModelBeforeSave'),
+                onPressed: _busy ? null : _checkModelBeforeSave,
+                icon: const Icon(Icons.search),
+                label: const Text('Check model'),
+              ),
+              if (_checkedModelKey == _modelKey && _modelCheck != null)
+                Text(
+                  _modelCheckMessage(_modelCheck!),
+                  key: const Key('modelCheckResult'),
+                  style: TextStyle(
+                    color: _modelCheck!.evidence == null
+                        ? theme.colorScheme.error
+                        : theme.colorScheme.primary,
+                  ),
+                ),
+            ],
             const SizedBox(height: 10),
             TextField(
               key: const Key('applianceHours'),
@@ -679,6 +861,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             TextField(
               key: const Key('hubAddress'),
               controller: _hub,
+              onChanged: (_) => setState(() {}),
               decoration: const InputDecoration(
                 labelText: 'Hub address',
                 hintText: 'http://192.168.68.136:18787',
@@ -689,6 +872,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             TextField(
               key: const Key('hubToken'),
               controller: _token,
+              onChanged: (_) => setState(() {}),
               obscureText: true,
               decoration: const InputDecoration(
                 labelText: 'Hub token',
@@ -707,6 +891,11 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             ),
             const SizedBox(height: 24),
             Text('Saved appliances', style: theme.textTheme.titleLarge),
+            if (_deleteError != null)
+              Text(
+                _deleteError!,
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
             TextButton(
               onPressed: _refresh,
               child: const Text('Refresh saved appliances'),
@@ -761,7 +950,11 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                         Text(
                           _estimates[item.id]!.estimatedCostUsd == null
                               ? 'Estimated monthly energy: ${_estimates[item.id]!.estimatedKwh!.toStringAsFixed(1)} kWh'
-                              : 'Estimated monthly cost: \$${_estimates[item.id]!.estimatedCostUsd!.toStringAsFixed(2)} · ${_estimates[item.id]!.estimatedKwh!.toStringAsFixed(1)} kWh',
+                              : '${source.sourceKind == 'energy_star_archive'
+                                    ? 'Historical test-profile cost'
+                                    : source.sourceKind == 'oem_family'
+                                    ? 'Manufacturer family test-profile cost'
+                                    : 'Estimated monthly cost'}: \$${_estimates[item.id]!.estimatedCostUsd!.toStringAsFixed(2)} · ${_estimates[item.id]!.estimatedKwh!.toStringAsFixed(1)} kWh',
                           style: theme.textTheme.titleSmall,
                         ),
                         TextButton.icon(
@@ -782,10 +975,23 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                         ),
                       ] else
                         Text(_estimateStatus(item.id)),
-                      TextButton(
-                        onPressed: _busy ? null : () => _checkEnergy(item),
-                        child: const Text('Check energy data'),
-                      ),
+                      if ((_lookupStatuses[item.id] ??
+                              _estimates[item.id]?.reason) !=
+                          'no_match')
+                        TextButton(
+                          onPressed: _busy ? null : () => _checkEnergy(item),
+                          child: const Text('Check energy data'),
+                        ),
+                      if (item.onboardingMethod == 'manual' &&
+                          widget.plugId == null)
+                        TextButton.icon(
+                          key: Key('delete-appliance-${item.id}'),
+                          onPressed: _busy
+                              ? null
+                              : () => _deleteManualAppliance(item),
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('Delete device'),
+                        ),
                     ],
                   ),
                 ),

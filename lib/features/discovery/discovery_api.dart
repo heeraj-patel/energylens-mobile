@@ -137,6 +137,7 @@ class SavedAppliance {
     required this.loadKind,
     required this.onboardingMethod,
     this.hoursPerWeek,
+    this.initialHoursPerWeek,
     this.bulbCount,
     this.combinedInputWatts,
   });
@@ -151,6 +152,7 @@ class SavedAppliance {
     loadKind: json['load_kind'] as String,
     onboardingMethod: json['onboarding_method'] as String,
     hoursPerWeek: (json['hours_per_week'] as num?)?.toDouble(),
+    initialHoursPerWeek: (json['initial_hours_per_week'] as num?)?.toDouble(),
     bulbCount: json['bulb_count'] as int?,
     combinedInputWatts: (json['combined_input_watts'] as num?)?.toDouble(),
   );
@@ -164,6 +166,7 @@ class SavedAppliance {
   final String loadKind;
   final String onboardingMethod;
   final double? hoursPerWeek;
+  final double? initialHoursPerWeek;
   final int? bulbCount;
   final double? combinedInputWatts;
 }
@@ -215,6 +218,7 @@ class EnergyEvidence {
     required this.matchedBrand,
     required this.matchedModel,
     required this.annualKwh,
+    this.standbyWatts,
     required this.usageBasis,
     required this.retrievedAt,
   });
@@ -226,6 +230,7 @@ class EnergyEvidence {
     matchedBrand: json['matched_brand'] as String,
     matchedModel: json['matched_model'] as String,
     annualKwh: (json['annual_kwh'] as num).toDouble(),
+    standbyWatts: (json['standby_watts'] as num?)?.toDouble(),
     usageBasis: json['usage_basis'] as String,
     retrievedAt: json['retrieved_at'] as int,
   );
@@ -236,13 +241,16 @@ class EnergyEvidence {
   final String matchedBrand;
   final String matchedModel;
   final double annualKwh;
+  final double? standbyWatts;
   final String usageBasis;
   final int retrievedAt;
 }
 
 String energySourceLabel(EnergyEvidence source) => switch (source.sourceKind) {
   'energy_star' => 'Estimated · ENERGY STAR data (EPA)',
+  'energy_star_archive' => 'Estimated · Historical ENERGY STAR data (EPA)',
   'oem' => 'Estimated · Manufacturer data',
+  'oem_family' => 'Estimated · Manufacturer family test data',
   'user_label' => 'Estimated · Bulb ratings you entered',
   _ => 'Estimated · Source details',
 };
@@ -250,7 +258,9 @@ String energySourceLabel(EnergyEvidence source) => switch (source.sourceKind) {
 String energySourceHeading(EnergyEvidence source) =>
     switch (source.sourceKind) {
       'energy_star' => 'ENERGY STAR data (EPA)',
+      'energy_star_archive' => 'Historical ENERGY STAR data (EPA)',
       'oem' => 'Manufacturer data',
+      'oem_family' => 'Manufacturer family test data',
       'user_label' => 'Bulb ratings you entered',
       _ => 'Source details',
     };
@@ -273,6 +283,10 @@ class EnergyEstimate {
     this.reason,
     this.estimatedKwh,
     this.estimatedCostUsd,
+    this.activeKwh,
+    this.standbyKwh,
+    this.activeCostUsd,
+    this.standbyCostUsd,
     this.rateSource,
     this.rateUsdPerKwh,
     this.rateSourceLabel,
@@ -287,6 +301,10 @@ class EnergyEstimate {
     reason: json['reason'] as String?,
     estimatedKwh: (json['estimated_kwh'] as num?)?.toDouble(),
     estimatedCostUsd: (json['estimated_cost_usd'] as num?)?.toDouble(),
+    activeKwh: (json['active_kwh'] as num?)?.toDouble(),
+    standbyKwh: (json['standby_kwh'] as num?)?.toDouble(),
+    activeCostUsd: (json['active_cost_usd'] as num?)?.toDouble(),
+    standbyCostUsd: (json['standby_cost_usd'] as num?)?.toDouble(),
     rateSource: json['rate_source'] as String?,
     rateUsdPerKwh: (json['rate_usd_per_kwh'] as num?)?.toDouble(),
     rateSourceLabel: json['rate_source_label'] as String?,
@@ -302,6 +320,10 @@ class EnergyEstimate {
   final String? reason;
   final double? estimatedKwh;
   final double? estimatedCostUsd;
+  final double? activeKwh;
+  final double? standbyKwh;
+  final double? activeCostUsd;
+  final double? standbyCostUsd;
   final String? rateSource;
   final double? rateUsdPerKwh;
   final String? rateSourceLabel;
@@ -425,6 +447,45 @@ class DiscoveryApi {
       input.toJson(),
     );
     return SavedAppliance.fromJson(response);
+  }
+
+  Future<EnergyLookup> checkModel(
+    String baseUrl,
+    String token, {
+    required String category,
+    required String manufacturer,
+    required String model,
+  }) async {
+    final response = await _post(baseUrl, token, '/v1/appliances/model-check', {
+      'category': category,
+      'manufacturer': manufacturer,
+      'model': model,
+    });
+    return EnergyLookup.fromJson(response);
+  }
+
+  Future<void> deleteManualAppliance(
+    String baseUrl,
+    String token,
+    int applianceId,
+  ) async {
+    await _request(baseUrl, token, '/v1/appliances/$applianceId', 'DELETE');
+  }
+
+  Future<SavedAppliance> updateApplianceHours(
+    String baseUrl,
+    String token,
+    int applianceId,
+    double hoursPerWeek,
+  ) async {
+    final response = await _request(
+      baseUrl,
+      token,
+      '/v1/appliances/$applianceId/hours',
+      'PATCH',
+      {'hours_per_week': hoursPerWeek},
+    );
+    return SavedAppliance.fromJson(response as Map<String, dynamic>);
   }
 
   Future<EnergyLookup> lookupEnergy(

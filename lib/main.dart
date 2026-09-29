@@ -162,6 +162,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _saveApplianceHours(int applianceId, double hoursPerWeek) async {
+    final (address, token) = await widget.credentials.read();
+    if (address == null || token == null) {
+      throw StateError('Hub connection needed');
+    }
+    await widget.api.updateApplianceHours(
+      address,
+      token,
+      applianceId,
+      hoursPerWeek,
+    );
+    await _refreshHub();
+  }
+
   static const _destinations = <NavigationDestination>[
     NavigationDestination(
       icon: Icon(Icons.bolt_outlined),
@@ -193,10 +207,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         plugs: _plugs,
         hubConnected: _hubConnected,
         estimates: _estimates,
+        onHoursChanged: _saveApplianceHours,
       ),
       1 => const _StopWaste(),
       2 => const _SleepCheck(),
-      _ => _AskAndAdd(onDevicesChanged: _refreshHub),
+      _ => _AskAndAdd(
+        api: widget.api,
+        credentials: widget.credentials,
+        onDevicesChanged: _refreshHub,
+      ),
     };
     return Scaffold(
       appBar: AppBar(
@@ -479,6 +498,135 @@ class _MetricTile extends StatelessWidget {
   );
 }
 
+class _CostMetricTile extends StatelessWidget {
+  const _CostMetricTile(
+    this.title,
+    this.amount,
+    this.detail, {
+    required this.color,
+  });
+  final String title;
+  final double? amount;
+  final String detail;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Expanded(
+    child: Container(
+      constraints: const BoxConstraints(minHeight: 112),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: _softSurface(context),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleSmall
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            amount == null
+                ? 'Unavailable'
+                : '\$${amount!.toStringAsFixed(2)}/month',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: color, fontWeight: FontWeight.w700),
+          ),
+          Text(
+            detail,
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: _secondary(context)),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _EstimatedCostSummary extends StatelessWidget {
+  const _EstimatedCostSummary({required this.plugs, required this.estimates});
+  final List<SavedPlug> plugs;
+  final Map<int, EnergyEstimate> estimates;
+
+  @override
+  Widget build(BuildContext context) {
+    final loadCount = plugs
+        .where((plug) => plug.connectedAppliance != null)
+        .length;
+    final values = [
+      for (final plug in plugs)
+        if (plug.connectedAppliance case final appliance?)
+          ?estimates[appliance.id],
+    ];
+    final pricedCount = values
+        .where((item) => item.estimatedCostUsd != null)
+        .length;
+    final loadLabel = loadCount == 1 ? 'load' : 'loads';
+    final active = values.fold<double>(
+      0,
+      (sum, item) => sum + (item.activeCostUsd ?? 0),
+    );
+    final standby = values.fold<double>(
+      0,
+      (sum, item) => sum + (item.standbyCostUsd ?? 0),
+    );
+    final hasStandby = values.any((item) => item.standbyCostUsd != null);
+    final total = values.fold<double>(
+      0,
+      (sum, item) => sum + (item.estimatedCostUsd ?? 0),
+    );
+    return _Surface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'ESTIMATED MONTHLY COST',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: _secondary(context),
+              letterSpacing: 1,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '\$${total.toStringAsFixed(2)} from $pricedCount of $loadCount $loadLabel',
+            style: Theme.of(context).textTheme.headlineSmall
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _CostMetricTile(
+                'Active use',
+                active,
+                'Known active estimates',
+                color: _green,
+              ),
+              const SizedBox(width: 8),
+              _CostMetricTile(
+                'Standby use',
+                hasStandby ? standby : null,
+                'Known standby estimates',
+                color: _rose,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Based on product ratings and entered use. Missing estimates are excluded; this is not a live meter reading.',
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: _secondary(context)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle(this.title, this.aside);
   final String title;
@@ -547,20 +695,113 @@ class _InfoRow extends StatelessWidget {
   );
 }
 
-class _ConnectedLoadRow extends StatelessWidget {
-  const _ConnectedLoadRow({required this.appliance, required this.estimate});
+class _ConnectedLoadRow extends StatefulWidget {
+  const _ConnectedLoadRow({
+    required this.appliance,
+    required this.estimate,
+    required this.onHoursChanged,
+  });
 
   final SavedAppliance appliance;
   final EnergyEstimate? estimate;
+  final Future<void> Function(int, double) onHoursChanged;
+
+  @override
+  State<_ConnectedLoadRow> createState() => _ConnectedLoadRowState();
+}
+
+class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
+  double? _previewHours;
+  bool _saving = false;
+  String? _saveError;
+
+  (double?, double?) _costSplit(double? hours) {
+    final estimate = widget.estimate;
+    final evidence = estimate?.evidence;
+    if (_previewHours == null || hours == null || evidence == null) {
+      return (estimate?.activeCostUsd, estimate?.standbyCostUsd);
+    }
+    final rate = estimate?.rateUsdPerKwh;
+    if (rate == null) return (null, null);
+    final appliance = widget.appliance;
+    if (evidence.datasetId == 'msj5-kqfv') {
+      final count = appliance.bulbCount ?? 1;
+      final active = evidence.annualKwh * count * hours / 21 / 12 * rate;
+      final standby = evidence.standbyWatts == null
+          ? null
+          : evidence.standbyWatts! * count * (168 - hours) * 52 / 12000 * rate;
+      return (active, standby);
+    }
+    if (evidence.sourceKind == 'user_label' &&
+        appliance.combinedInputWatts != null) {
+      return (appliance.combinedInputWatts! * hours * 52 / 12000 * rate, null);
+    }
+    return (estimate?.activeCostUsd, estimate?.standbyCostUsd);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ConnectedLoadRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.appliance.hoursPerWeek != oldWidget.appliance.hoursPerWeek) {
+      _previewHours = null;
+      _saveError = null;
+    }
+  }
+
+  Future<void> _commitHours(double value) async {
+    if (_saving || value == widget.appliance.hoursPerWeek) {
+      setState(() => _previewHours = null);
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
+    try {
+      await widget.onHoursChanged(widget.appliance.id, value);
+      if (mounted) setState(() => _previewHours = null);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _previewHours = null;
+          _saveError = 'Could not save hours. Try again.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final appliance = widget.appliance;
+    final estimate = widget.estimate;
     final evidence = estimate?.evidence;
-    final cost = estimate?.estimatedCostUsd;
+    final hours = _previewHours ?? appliance.hoursPerWeek;
+    final initialHours = appliance.initialHoursPerWeek;
+    final (activeCost, standbyCost) = _costSplit(hours);
+    final cost = _previewHours == null
+        ? estimate?.estimatedCostUsd
+        : activeCost == null
+        ? null
+        : activeCost + (standbyCost ?? 0);
     final rateLabel = estimate?.rateSourceLabel;
     final sourceLabel = evidence == null
         ? 'Energy source unavailable'
         : energySourceHeading(evidence);
+    final onTimeOnly =
+        standbyCost == null &&
+        (evidence?.sourceKind == 'user_label' ||
+            evidence?.datasetId == 'msj5-kqfv');
+    final costHeading = evidence?.sourceKind == 'energy_star_archive'
+        ? 'Historical test-profile cost'
+        : evidence?.sourceKind == 'oem_family'
+        ? 'Manufacturer family test-profile cost'
+        : onTimeOnly
+        ? 'Estimated on-time'
+        : standbyCost != null
+        ? 'Estimated total'
+        : 'Estimated monthly cost';
     return _Surface(
       child: Row(
         children: [
@@ -578,7 +819,7 @@ class _ConnectedLoadRow extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   cost != null
-                      ? 'Estimated total: \$${cost.toStringAsFixed(2)}/month'
+                      ? '$costHeading: \$${cost.toStringAsFixed(2)}/month'
                       : estimate?.estimatedKwh != null
                       ? 'Add your ZIP code or bill rate for cost'
                       : 'Estimate unavailable',
@@ -589,6 +830,21 @@ class _ConnectedLoadRow extends StatelessWidget {
                         : FontWeight.w700,
                   ),
                 ),
+                if (activeCost != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'On-time use: \$${activeCost.toStringAsFixed(2)}/month',
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: _secondary(context)),
+                  ),
+                  Text(
+                    standbyCost == null
+                        ? 'Standby use: unavailable'
+                        : 'Standby use: \$${standbyCost.toStringAsFixed(2)}/month',
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: _secondary(context)),
+                  ),
+                ],
                 const SizedBox(height: 4),
                 Row(
                   children: [
@@ -617,6 +873,57 @@ class _ConnectedLoadRow extends StatelessWidget {
                         ?.copyWith(color: _secondary(context)),
                   ),
                 ],
+                if (appliance.category == 'lighting' &&
+                    appliance.loadKind == 'replaceable_bulb' &&
+                    (evidence?.datasetId == 'msj5-kqfv' ||
+                        evidence?.sourceKind == 'user_label') &&
+                    hours != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'On time: ${hours.toStringAsFixed(0)} hours/week',
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: _secondary(context)),
+                  ),
+                  Slider(
+                    key: Key('appliance-hours-${appliance.id}'),
+                    value: hours.clamp(0, 168),
+                    min: 0,
+                    max: 168,
+                    divisions: 168,
+                    label: '${hours.toStringAsFixed(0)} hours/week',
+                    semanticFormatterCallback: (value) =>
+                        '${value.toStringAsFixed(0)} hours per week',
+                    onChanged: _saving
+                        ? null
+                        : (value) => setState(() {
+                            _previewHours = value;
+                            _saveError = null;
+                          }),
+                    onChangeEnd: _saving ? null : _commitHours,
+                  ),
+                  if (initialHours != null)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        key: Key('reset-appliance-hours-${appliance.id}'),
+                        onPressed: _saving || hours == initialHours
+                            ? null
+                            : () => _commitHours(initialHours),
+                        icon: const Icon(Icons.restore),
+                        label: Text(
+                          'Reset to ${initialHours.toStringAsFixed(0)} hours/week',
+                        ),
+                      ),
+                    ),
+                  if (_saving) const LinearProgressIndicator(),
+                  if (_saveError != null)
+                    Text(
+                      _saveError!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                ],
               ],
             ),
           ),
@@ -631,11 +938,13 @@ class _PowerNow extends StatefulWidget {
     required this.plugs,
     required this.hubConnected,
     required this.estimates,
+    required this.onHoursChanged,
   });
 
   final List<SavedPlug> plugs;
   final bool hubConnected;
   final Map<int, EnergyEstimate> estimates;
+  final Future<void> Function(int, double) onHoursChanged;
 
   @override
   State<_PowerNow> createState() => _PowerNowState();
@@ -752,6 +1061,7 @@ class _PowerNowState extends State<_PowerNow> {
                           child: _ConnectedLoadRow(
                             appliance: appliance,
                             estimate: widget.estimates[appliance.id],
+                            onHoursChanged: widget.onHoursChanged,
                           ),
                         ),
                       ],
@@ -800,110 +1110,123 @@ class _PowerNowState extends State<_PowerNow> {
       const SizedBox(height: 18),
       ..._savedDevices(),
       const SizedBox(height: 18),
-      _Surface(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'CURRENT PACE',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: _secondary(context),
-                          letterSpacing: 1,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        'Right Now in Your Home',
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              height: 1.12,
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 9),
-                const _IconWell(Icons.bolt_outlined, color: Color(0xFF193D5A)),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-              decoration: BoxDecoration(
-                color: _softSurface(context),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
+      if (widget.estimates.values.any((value) => value.activeCostUsd != null))
+        _EstimatedCostSummary(plugs: widget.plugs, estimates: widget.estimates)
+      else
+        _Surface(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '—',
-                    style: Theme.of(context).textTheme.headlineLarge
-                        ?.copyWith(color: _green, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
-                      'every hour',
-                      style: Theme.of(context).textTheme.bodySmall
-                          ?.copyWith(color: _secondary(context)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'CURRENT PACE',
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: _secondary(context),
+                                letterSpacing: 1,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          'Right Now in Your Home',
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                height: 1.12,
+                              ),
+                        ),
+                      ],
                     ),
                   ),
-                  Text(
-                    '— Watts',
-                    style: Theme.of(context).textTheme.labelSmall
-                        ?.copyWith(color: _secondary(context)),
+                  const SizedBox(width: 9),
+                  const _IconWell(
+                    Icons.bolt_outlined,
+                    color: Color(0xFF193D5A),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 15),
-            Container(
-              height: 12,
-              decoration: BoxDecoration(
-                color: _softSurface(context),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outlineVariant,
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 13,
                 ),
-                borderRadius: BorderRadius.circular(99),
+                decoration: BoxDecoration(
+                  color: _softSurface(context),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      '—',
+                      style: Theme.of(context).textTheme.headlineLarge
+                          ?.copyWith(
+                            color: _green,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'every hour',
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(color: _secondary(context)),
+                      ),
+                    ),
+                    Text(
+                      '— Watts',
+                      style: Theme.of(context).textTheme.labelSmall
+                          ?.copyWith(color: _secondary(context)),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _MetricTile(
-                  'Useful Power',
-                  'Activity and device context will show useful work.',
+              const SizedBox(height: 15),
+              Container(
+                height: 12,
+                decoration: BoxDecoration(
+                  color: _softSurface(context),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  borderRadius: BorderRadius.circular(99),
                 ),
-                SizedBox(width: 8),
-                _MetricTile(
-                  'Wasted Power',
-                  'Waste requires measured evidence from your home.',
-                  color: _rose,
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Waiting for a live reading from a connected device.',
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(color: _secondary(context)),
-            ),
-          ],
+              ),
+              const SizedBox(height: 12),
+              const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _MetricTile(
+                    'Useful Power',
+                    'Activity and device context will show useful work.',
+                  ),
+                  SizedBox(width: 8),
+                  _MetricTile(
+                    'Wasted Power',
+                    'Waste requires measured evidence from your home.',
+                    color: _rose,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Waiting for a live reading from a connected device.',
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: _secondary(context)),
+              ),
+            ],
+          ),
         ),
-      ),
       const SizedBox(height: 18),
       const _InfoRow(
         Icons.help_outline,
@@ -1180,8 +1503,14 @@ class _SleepCheck extends StatelessWidget {
 enum _AskMode { ask, connect }
 
 class _AskAndAdd extends StatefulWidget {
-  const _AskAndAdd({required this.onDevicesChanged});
+  const _AskAndAdd({
+    required this.api,
+    required this.credentials,
+    required this.onDevicesChanged,
+  });
 
+  final DiscoveryApi api;
+  final DiscoveryCredentials credentials;
   final VoidCallback onDevicesChanged;
 
   @override
@@ -1190,6 +1519,83 @@ class _AskAndAdd extends StatefulWidget {
 
 class _AskAndAddState extends State<_AskAndAdd> {
   _AskMode mode = _AskMode.ask;
+  List<SavedAppliance> _manualDevices = const [];
+  String? _deleteError;
+  int? _deletingId;
+
+  Future<void> _loadManualDevices() async {
+    try {
+      final (address, token) = await widget.credentials.read();
+      if (address == null || token == null) return;
+      final devices = await widget.api.appliances(address, token);
+      if (mounted) {
+        setState(
+          () => _manualDevices = devices
+              .where((device) => device.onboardingMethod == 'manual')
+              .toList(),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _deleteError = 'Could not load saved devices from the hub.',
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteManualDevice(SavedAppliance device) async {
+    if (_deletingId != null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete device?'),
+        content: Text(
+          'Delete “${device.name}” from this hub? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _deletingId = device.id;
+      _deleteError = null;
+    });
+    try {
+      final (address, token) = await widget.credentials.read();
+      if (address == null || token == null) {
+        throw StateError('Hub connection needed');
+      }
+      await widget.api.deleteManualAppliance(address, token, device.id);
+      if (!mounted) return;
+      setState(
+        () => _manualDevices = _manualDevices
+            .where((item) => item.id != device.id)
+            .toList(),
+      );
+      widget.onDevicesChanged();
+      await _loadManualDevices();
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _deleteError = error is StateError
+              ? error.message
+              : 'Could not delete the device. Check the hub connection.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deletingId = null);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Column(
@@ -1211,8 +1617,10 @@ class _AskAndAddState extends State<_AskAndAdd> {
           ),
         ],
         selected: {mode},
-        onSelectionChanged: (selection) =>
-            setState(() => mode = selection.first),
+        onSelectionChanged: (selection) {
+          setState(() => mode = selection.first);
+          if (mode == _AskMode.connect) _loadManualDevices();
+        },
       ),
       const SizedBox(height: 20),
       if (mode == _AskMode.ask) ...[
@@ -1316,6 +1724,8 @@ class _AskAndAddState extends State<_AskAndAdd> {
             await Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const DiscoveryScreen()),
             );
+            if (!mounted) return;
+            _loadManualDevices();
             widget.onDevicesChanged();
           },
           icon: const Icon(Icons.radar),
@@ -1323,24 +1733,67 @@ class _AskAndAddState extends State<_AskAndAdd> {
         ),
         const SizedBox(height: 8),
         OutlinedButton.icon(
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => const ApplianceOnboardingScreen(method: 'manual'),
-            ),
-          ),
+          onPressed: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    const ApplianceOnboardingScreen(method: 'manual'),
+              ),
+            );
+            if (!mounted) return;
+            _loadManualDevices();
+            widget.onDevicesChanged();
+          },
           icon: const Icon(Icons.edit_outlined),
           label: const Text('Enter device details'),
         ),
         const SizedBox(height: 8),
         OutlinedButton.icon(
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => const ApplianceOnboardingScreen(method: 'photo'),
-            ),
-          ),
+          onPressed: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    const ApplianceOnboardingScreen(method: 'photo'),
+              ),
+            );
+            if (!mounted) return;
+            _loadManualDevices();
+            widget.onDevicesChanged();
+          },
           icon: const Icon(Icons.photo_camera_outlined),
           label: const Text('Identify from a photo'),
         ),
+        if (_manualDevices.isNotEmpty || _deleteError != null) ...[
+          const SizedBox(height: 18),
+          Text(
+            'Manually added devices',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          if (_deleteError != null)
+            Text(
+              _deleteError!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          for (final device in _manualDevices)
+            Card(
+              child: ListTile(
+                title: Text(device.name),
+                subtitle: Text(
+                  device.room.isEmpty
+                      ? device.category
+                      : '${device.room} · ${device.category}',
+                ),
+                trailing: IconButton(
+                  key: Key('ask-delete-appliance-${device.id}'),
+                  tooltip: 'Delete ${device.name}',
+                  onPressed: _deletingId == null
+                      ? () => _deleteManualDevice(device)
+                      : null,
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ),
+            ),
+        ],
       ],
       const SizedBox(height: 18),
       const _Setup(),

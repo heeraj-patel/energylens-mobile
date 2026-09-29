@@ -23,6 +23,26 @@ class FakeCredentials extends DiscoveryCredentials {
 
 class FakeApi extends DiscoveryApi {
   final rows = <SavedAppliance>[];
+  final lookupStatuses = <int, String>{};
+
+  @override
+  Future<EnergyLookup> checkModel(
+    String baseUrl,
+    String token, {
+    required String category,
+    required String manufacturer,
+    required String model,
+  }) async => const EnergyLookup(status: 'no_match', evidence: null);
+
+  @override
+  Future<EnergyLookup> lookupEnergy(
+    String baseUrl,
+    String token,
+    int applianceId,
+  ) async {
+    lookupStatuses[applianceId] = 'no_match';
+    return const EnergyLookup(status: 'no_match', evidence: null);
+  }
 
   @override
   Future<List<IdentificationCandidate>> identifyCandidates(
@@ -54,12 +74,12 @@ class FakeApi extends DiscoveryApi {
     int id, {
     double? rateUsdPerKwh,
     String? postalCode,
-  }) async => const EnergyEstimate(
+  }) async => EnergyEstimate(
     status: 'no_estimate',
     estimatedKwh: null,
     estimatedCostUsd: null,
     evidence: null,
-    reason: 'not_checked',
+    reason: lookupStatuses[id] ?? 'not_checked',
   );
 
   @override
@@ -88,28 +108,53 @@ class FakeApi extends DiscoveryApi {
     rows.add(item);
     return item;
   }
+
+  @override
+  Future<void> deleteManualAppliance(
+    String baseUrl,
+    String token,
+    int applianceId,
+  ) async {
+    rows.removeWhere((item) => item.id == applianceId);
+  }
 }
 
 class SourceApi extends FakeApi {
-  SourceApi(this.kind) {
-    rows.add(
-      const SavedAppliance(
-        id: 1,
-        name: 'Office computer',
-        room: 'Office',
-        category: 'computer',
-        manufacturer: 'Dell',
-        model: 'XPS16',
-        loadKind: 'appliance',
-        onboardingMethod: 'manual',
-      ),
-    );
+  SourceApi(this.kind, {bool seedSaved = true}) {
+    if (seedSaved) {
+      rows.add(
+        const SavedAppliance(
+          id: 1,
+          name: 'Office computer',
+          room: 'Office',
+          category: 'computer',
+          manufacturer: 'Dell',
+          model: 'XPS16',
+          loadKind: 'appliance',
+          onboardingMethod: 'manual',
+        ),
+      );
+    }
   }
   final String kind;
 
+  @override
+  Future<EnergyLookup> checkModel(
+    String baseUrl,
+    String token, {
+    required String category,
+    required String manufacturer,
+    required String model,
+  }) async => EnergyLookup(status: 'matched', evidence: source);
+
   EnergyEvidence get source => EnergyEvidence(
     sourceKind: kind,
-    datasetId: kind == 'energy_star' ? 'rxdj-2c88' : 'curated_oem',
+    datasetId: switch (kind) {
+      'energy_star' => 'rxdj-2c88',
+      'energy_star_archive' => 'computers_v6_2018_archive',
+      'oem_family' => 'lenovo_t14_gen2_20xl_ecodeclaration_2021',
+      _ => 'curated_oem',
+    },
     sourceUrl: 'https://example.com/source',
     matchedBrand: 'Dell',
     matchedModel: 'XPS16',
@@ -204,15 +249,156 @@ void main() {
     await scrollTo(tester, find.byKey(const Key('saveAppliance')));
     await tester.tap(find.byKey(const Key('saveAppliance')));
     await tester.pumpAndSettle();
-    expect(api.rows, hasLength(1));
-    expect(api.rows.first.onboardingMethod, 'manual');
-    expect(api.rows.first.model, 'ABC1234');
-    await scrollTo(tester, find.text('No live readings'));
+    expect(api.rows, isEmpty);
     expect(
-      find.text('Estimate unavailable · Check energy data'),
+      find.text('Check this model before saving the device.'),
       findsOneWidget,
     );
+    await scrollTo(
+      tester,
+      find.byKey(const Key('checkModelBeforeSave')),
+      delta: -250,
+    );
+    await tester.tap(find.byKey(const Key('checkModelBeforeSave')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('No exact energy model found'), findsOneWidget);
+    await scrollTo(
+      tester,
+      find.byKey(const Key('applianceModel')),
+      delta: -250,
+    );
+    await tester.enterText(find.byKey(const Key('applianceModel')), 'ABC1235');
+    await scrollTo(tester, find.byKey(const Key('saveAppliance')));
+    await tester.tap(find.byKey(const Key('saveAppliance')));
+    await tester.pumpAndSettle();
+    expect(api.rows, isEmpty);
+    await scrollTo(
+      tester,
+      find.byKey(const Key('checkModelBeforeSave')),
+      delta: -250,
+    );
+    await tester.tap(find.byKey(const Key('checkModelBeforeSave')));
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('saveAppliance')));
+    await tester.tap(find.byKey(const Key('saveAppliance')));
+    await tester.pumpAndSettle();
+    expect(api.rows, hasLength(1));
+    expect(api.rows.first.onboardingMethod, 'manual');
+    expect(api.rows.first.model, 'ABC1235');
+    await scrollTo(tester, find.text('No live readings'));
+    expect(
+      find.text('Estimate unavailable · No exact source model match'),
+      findsOneWidget,
+    );
+    expect(find.text('Check energy data'), findsNothing);
     expect(find.text('computer · Manually added'), findsOneWidget);
+    await scrollTo(tester, find.byKey(const Key('delete-appliance-1')));
+    await tester.tap(find.byKey(const Key('delete-appliance-1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete device?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(api.rows, hasLength(1));
+    await tester.tap(find.byKey(const Key('delete-appliance-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(api.rows, isEmpty);
+    expect(find.text('No appliances saved on this hub yet.'), findsOneWidget);
+  });
+
+  testWidgets('no-match energy check hides the link after reload', (
+    tester,
+  ) async {
+    final api = FakeApi()
+      ..rows.add(
+        const SavedAppliance(
+          id: 1,
+          name: 'Office computer',
+          room: 'Office',
+          category: 'computer',
+          manufacturer: 'Example',
+          model: 'ABC1234',
+          loadKind: 'appliance',
+          onboardingMethod: 'manual',
+        ),
+      );
+    Widget screen() => MaterialApp(
+      home: ApplianceOnboardingScreen(
+        method: 'manual',
+        api: api,
+        credentials: FakeCredentials(),
+      ),
+    );
+
+    await tester.pumpWidget(screen());
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.text('Check energy data'));
+    await tester.tap(find.text('Check energy data'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Estimate unavailable · No exact source model match'),
+      findsOneWidget,
+    );
+    expect(find.text('Check energy data'), findsNothing);
+    expect(
+      find.textContaining('Try again when the hub is online'),
+      findsNothing,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(screen());
+    await tester.pumpAndSettle();
+    await scrollTo(
+      tester,
+      find.text('Estimate unavailable · No exact source model match'),
+    );
+    expect(find.text('Check energy data'), findsNothing);
+  });
+
+  testWidgets('matched manual model shows sourced energy after save', (
+    tester,
+  ) async {
+    final api = SourceApi('oem_family', seedSaved: false);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ApplianceOnboardingScreen(
+          method: 'manual',
+          api: api,
+          credentials: FakeCredentials(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('applianceName')));
+    await tester.enterText(find.byKey(const Key('applianceName')), 'ThinkPad');
+    await scrollTo(tester, find.byKey(const Key('applianceManufacturer')));
+    await tester.enterText(
+      find.byKey(const Key('applianceManufacturer')),
+      'Lenovo',
+    );
+    await scrollTo(tester, find.byKey(const Key('applianceModel')));
+    await tester.enterText(
+      find.byKey(const Key('applianceModel')),
+      '20XLS1H500',
+    );
+    await scrollTo(
+      tester,
+      find.byKey(const Key('checkModelBeforeSave')),
+      delta: -250,
+    );
+    await tester.tap(find.byKey(const Key('checkModelBeforeSave')));
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('saveAppliance')));
+    await tester.tap(find.byKey(const Key('saveAppliance')));
+    await tester.pumpAndSettle();
+    expect(api.rows, hasLength(1));
+    await scrollTo(tester, find.text('Estimated monthly energy: 10.0 kWh'));
+    expect(find.text('Estimated monthly energy: 10.0 kWh'), findsOneWidget);
+    expect(
+      find.text('Estimated · Manufacturer family test data'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('photo model needs user confirmation before saving', (
@@ -262,12 +448,18 @@ void main() {
     expect(api.rows, hasLength(1));
     expect(api.rows.first.onboardingMethod, 'photo');
     expect(api.rows.first.model, 'ABC1234');
+    expect(find.byKey(const Key('delete-appliance-1')), findsNothing);
   });
 
   testWidgets('source label follows the actual EPA or OEM evidence', (
     tester,
   ) async {
-    for (final kind in ['energy_star', 'oem']) {
+    for (final kind in [
+      'energy_star',
+      'energy_star_archive',
+      'oem',
+      'oem_family',
+    ]) {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpWidget(
         MaterialApp(
@@ -284,13 +476,19 @@ void main() {
       await scrollTo(tester, find.text('Check energy data'));
       await tester.tap(find.text('Check energy data'));
       await tester.pumpAndSettle();
-      await scrollTo(tester, find.textContaining('Estimated monthly cost:'));
-      expect(
-        find.textContaining('Estimated monthly cost: \$2.00'),
-        findsOneWidget,
-      );
+      final costLabel = kind == 'energy_star_archive'
+          ? 'Historical test-profile cost'
+          : kind == 'oem_family'
+          ? 'Manufacturer family test-profile cost'
+          : 'Estimated monthly cost';
+      await scrollTo(tester, find.textContaining('$costLabel:'));
+      expect(find.textContaining('$costLabel: \$2.00'), findsOneWidget);
       final label = kind == 'energy_star'
           ? 'Estimated · ENERGY STAR data (EPA)'
+          : kind == 'energy_star_archive'
+          ? 'Estimated · Historical ENERGY STAR data (EPA)'
+          : kind == 'oem_family'
+          ? 'Estimated · Manufacturer family test data'
           : 'Estimated · Manufacturer data';
       await scrollTo(tester, find.text(label));
       expect(find.text(label), findsOneWidget);
@@ -326,6 +524,13 @@ void main() {
     await tester.enterText(find.byKey(const Key('combinedBulbWatts')), '19');
     await scrollTo(tester, find.byKey(const Key('applianceHours')));
     await tester.enterText(find.byKey(const Key('applianceHours')), '21');
+    await scrollTo(
+      tester,
+      find.byKey(const Key('checkModelBeforeSave')),
+      delta: -250,
+    );
+    await tester.tap(find.byKey(const Key('checkModelBeforeSave')));
+    await tester.pumpAndSettle();
     await scrollTo(tester, find.byKey(const Key('saveAppliance')));
     await tester.tap(find.byKey(const Key('saveAppliance')));
     await tester.pumpAndSettle();
