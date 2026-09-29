@@ -133,30 +133,57 @@ class DeviceEnergy {
     required this.totalKwh,
     required this.coverageFraction,
     required this.coveredSecs,
+    this.deviceId,
     this.latestWatts,
     this.observedCostUsd,
     this.rateSourceLabel,
+    this.rateUsdPerKwh,
+    this.rateSource,
+    this.rateAsOf,
+    this.rateSourceUrl,
+    this.rateFetchedAt,
+    this.rateIsStale = false,
+    this.rateStatus,
+    this.readingCount = 0,
   });
 
   factory DeviceEnergy.fromJson(Map<String, dynamic> json) => DeviceEnergy(
     status: json['status'] as String,
     period: json['period'] as String,
+    deviceId: json['device_id'] as String?,
     totalKwh: (json['total_kwh'] as num).toDouble(),
     coverageFraction: (json['coverage_fraction'] as num).toDouble(),
     coveredSecs: (json['covered_secs'] as num).toDouble(),
     latestWatts: (json['latest_watts'] as num?)?.toDouble(),
     observedCostUsd: (json['observed_cost_usd'] as num?)?.toDouble(),
     rateSourceLabel: json['rate_source_label'] as String?,
+    rateUsdPerKwh: (json['rate_usd_per_kwh'] as num?)?.toDouble(),
+    rateSource: json['rate_source'] as String?,
+    rateAsOf: json['rate_as_of'] as String?,
+    rateSourceUrl: json['rate_source_url'] as String?,
+    rateFetchedAt: (json['rate_fetched_at'] as num?)?.toInt(),
+    rateIsStale: json['rate_is_stale'] == true,
+    rateStatus: json['rate_status'] as String?,
+    readingCount: (json['readings'] as List<dynamic>?)?.length ?? 0,
   );
 
   final String status;
   final String period;
+  final String? deviceId;
   final double totalKwh;
   final double coverageFraction;
   final double coveredSecs;
   final double? latestWatts;
   final double? observedCostUsd;
   final String? rateSourceLabel;
+  final double? rateUsdPerKwh;
+  final String? rateSource;
+  final String? rateAsOf;
+  final String? rateSourceUrl;
+  final int? rateFetchedAt;
+  final bool rateIsStale;
+  final String? rateStatus;
+  final int readingCount;
 }
 
 class SavedAppliance {
@@ -251,6 +278,7 @@ class EnergyEvidence {
     required this.matchedBrand,
     required this.matchedModel,
     required this.annualKwh,
+    this.energyStarModelIdentifier,
     this.standbyWatts,
     required this.usageBasis,
     required this.retrievedAt,
@@ -263,6 +291,7 @@ class EnergyEvidence {
     matchedBrand: json['matched_brand'] as String,
     matchedModel: json['matched_model'] as String,
     annualKwh: (json['annual_kwh'] as num).toDouble(),
+    energyStarModelIdentifier: json['energy_star_model_identifier'] as String?,
     standbyWatts: (json['standby_watts'] as num?)?.toDouble(),
     usageBasis: json['usage_basis'] as String,
     retrievedAt: json['retrieved_at'] as int,
@@ -274,14 +303,17 @@ class EnergyEvidence {
   final String matchedBrand;
   final String matchedModel;
   final double annualKwh;
+  final String? energyStarModelIdentifier;
   final double? standbyWatts;
   final String usageBasis;
   final int retrievedAt;
 }
 
 String energySourceLabel(EnergyEvidence source) => switch (source.sourceKind) {
+  'epa_exact' => 'Estimated · EPA rated energy data',
   'energy_star' => 'Estimated · ENERGY STAR data (EPA)',
   'energy_star_archive' => 'Estimated · Historical ENERGY STAR data (EPA)',
+  'oem_exact' => 'Estimated · Manufacturer model test data',
   'oem' => 'Estimated · Manufacturer data',
   'oem_family' => 'Estimated · Manufacturer family test data',
   'user_label' => 'Estimated · Bulb ratings you entered',
@@ -291,8 +323,10 @@ String energySourceLabel(EnergyEvidence source) => switch (source.sourceKind) {
 
 String energySourceHeading(EnergyEvidence source) =>
     switch (source.sourceKind) {
+      'epa_exact' => 'EPA rated energy data',
       'energy_star' => 'ENERGY STAR data (EPA)',
       'energy_star_archive' => 'Historical ENERGY STAR data (EPA)',
+      'oem_exact' => 'Manufacturer model test data',
       'oem' => 'Manufacturer data',
       'oem_family' => 'Manufacturer family test data',
       'user_label' => 'Bulb ratings you entered',
@@ -315,6 +349,7 @@ class EnergyLookup {
 class EnergyEstimate {
   const EnergyEstimate({
     required this.status,
+    this.period = 'month',
     this.reason,
     this.estimatedKwh,
     this.estimatedCostUsd,
@@ -331,9 +366,12 @@ class EnergyEstimate {
     this.bulbCount,
     this.evidence,
     this.measurementCoverageFraction,
+    this.fetchedAt,
+    this.isStale = false,
   });
   factory EnergyEstimate.fromJson(Map<String, dynamic> json) => EnergyEstimate(
     status: json['status'] as String,
+    period: json['period'] as String? ?? 'month',
     reason: json['reason'] as String?,
     estimatedKwh: (json['estimated_kwh'] as num?)?.toDouble(),
     estimatedCostUsd: (json['estimated_cost_usd'] as num?)?.toDouble(),
@@ -353,8 +391,12 @@ class EnergyEstimate {
         : EnergyEvidence.fromJson(json['evidence'] as Map<String, dynamic>),
     measurementCoverageFraction: (json['measurement_coverage_fraction'] as num?)
         ?.toDouble(),
+    fetchedAt: ((json['fetched_at'] ?? json['rate_fetched_at']) as num?)
+        ?.toInt(),
+    isStale: json['is_stale'] == true || json['rate_is_stale'] == true,
   );
   final String status;
+  final String period;
   final String? reason;
   final double? estimatedKwh;
   final double? estimatedCostUsd;
@@ -371,13 +413,35 @@ class EnergyEstimate {
   final int? bulbCount;
   final EnergyEvidence? evidence;
   final double? measurementCoverageFraction;
+  final int? fetchedAt;
+  final bool isStale;
+}
+
+class ElectricitySettings {
+  const ElectricitySettings({this.postalCode, this.rateUsdPerKwh});
+
+  factory ElectricitySettings.fromJson(Map<String, dynamic> json) =>
+      ElectricitySettings(
+        postalCode: json['postal_code'] as String?,
+        rateUsdPerKwh: (json['rate_usd_per_kwh'] as num?)?.toDouble(),
+      );
+
+  final String? postalCode;
+  final double? rateUsdPerKwh;
 }
 
 String energyRateDescription(EnergyEstimate estimate) {
+  final isStale = estimate.isStale || estimate.rateStatus == 'stale';
   if (estimate.rateUsdPerKwh case final rate?) {
     final label = estimate.rateSourceLabel ?? 'Electricity rate';
+    if (isStale) {
+      return '$label: \$${rate.toStringAsFixed(4)}/kWh · Cached regional rate${estimate.rateAsOf == null ? '' : ' from ${estimate.rateAsOf}'}; fresh regional rate unavailable.';
+    }
     final asOf = estimate.rateAsOf == null ? '' : ' · ${estimate.rateAsOf}';
     return '$label: \$${rate.toStringAsFixed(4)}/kWh$asOf';
+  }
+  if (isStale) {
+    return 'Cached regional rate is stale${estimate.rateAsOf == null ? '' : ' (from ${estimate.rateAsOf})'}; fresh regional rate unavailable.';
   }
   if (estimate.rateStatus == 'unavailable') {
     return 'Regional rate unavailable. Enter your bill rate for a cost estimate.';
@@ -418,6 +482,35 @@ class ApplianceUsageProfile {
 
 class DiscoveryApi {
   const DiscoveryApi();
+
+  Future<ElectricitySettings> electricitySettings(
+    String baseUrl,
+    String token,
+  ) async {
+    final response = await _request(
+      baseUrl,
+      token,
+      '/v1/settings/electricity',
+      'GET',
+    );
+    return ElectricitySettings.fromJson(response as Map<String, dynamic>);
+  }
+
+  Future<ElectricitySettings> updateElectricitySettings(
+    String baseUrl,
+    String token, {
+    required String? postalCode,
+    required double? rateUsdPerKwh,
+  }) async {
+    final response = await _request(
+      baseUrl,
+      token,
+      '/v1/settings/electricity',
+      'PUT',
+      {'postal_code': postalCode, 'rate_usd_per_kwh': rateUsdPerKwh},
+    );
+    return ElectricitySettings.fromJson(response as Map<String, dynamic>);
+  }
 
   Future<ApplianceUsageProfile> applianceUsageProfile(
     String baseUrl,
@@ -481,9 +574,15 @@ class DiscoveryApi {
         .toList();
   }
 
-  Future<DiscoveredPlug> probe(String baseUrl, String token, String ip) async {
+  Future<DiscoveredPlug> probe(
+    String baseUrl,
+    String token,
+    String ip, {
+    String protocol = 'kasa',
+  }) async {
     final response = await _post(baseUrl, token, '/v1/discovery/probes', {
       'ipv4': ip,
+      'protocol': protocol,
     });
     return DiscoveredPlug.fromJson(response);
   }
@@ -533,6 +632,7 @@ class DiscoveryApi {
       'name': name,
       'room': room,
       'acknowledge_no_meter': acknowledgeNoMeter,
+      'protocol': plug.localProtocol,
     });
     return SavedPlug.fromJson(response);
   }

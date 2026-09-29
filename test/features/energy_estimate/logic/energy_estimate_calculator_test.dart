@@ -123,6 +123,74 @@ void main() {
     );
   });
 
+  test('preview clamps usage to the hub slider range', () {
+    final fixture = estimatesOf(<DeviceEnergyEstimate>[
+      hoursRow('limited-tv', 'Limited TV', value: 21, max: 42),
+    ]);
+    final aboveRange = applyUsageOverrides(
+      fixture,
+      <String, double>{'limited-tv': 99},
+    );
+    final row = aboveRange.deviceById('limited-tv')!;
+
+    // The hub rejects saved usage outside the profile slider range. Keep the
+    // local preview and its displayed value within that same contract.
+    expect(row.usageValue, 42);
+    final expected = recomputeRow(
+      fixture.devices.single,
+      usageValue: 42,
+      rate: fixture.rate.rateUsdPerKwh,
+      period: fixture.period,
+    );
+    expect(row.kwh!.total, closeTo(expected.kwh!.total, 1e-9));
+    expect(aboveRange.totalCostUsd.total, closeTo(row.costUsd!.total, 1e-9));
+
+    final belowRange = applyUsageOverrides(
+      fixture,
+      <String, double>{'limited-tv': -5},
+    );
+    expect(belowRange.devices.single.usageValue, 0);
+  });
+
+  test('cycle preview clamps usage and recomputes household totals', () {
+    final row = DeviceEnergyEstimate(
+      deviceId: 'limited-washer',
+      name: 'Washer',
+      profileCategory: 'washer',
+      powerSource: EnergyPowerSource.categoryTypical,
+      usageKind: EnergyUsageKind.cyclesPerWeek,
+      slider: const EnergySlider(min: 1, max: 8, step: 1, defaultValue: 4),
+      usageValue: 4,
+      usageValueIsDefault: true,
+      standbyApplies: true,
+      activeWatts: 100,
+      standbyWatts: 1,
+      kwhPerCycle: 1.2,
+      cycleHours: 2,
+      kwh: const EnergySplit(active: 4.8, standby: 0.16, total: 4.96),
+      costUsd: const EnergySplit(active: 0.96, standby: 0.032, total: 0.992),
+    );
+    final fixture = estimatesOf(<DeviceEnergyEstimate>[row]);
+    final preview = applyUsageOverrides(
+      fixture,
+      <String, double>{'limited-washer': 20},
+    );
+    final updated = preview.devices.single;
+
+    expect(updated.usageValue, 8);
+    final weekly = weeklyKwhFor(row, 8)!;
+    final expectedTotal = (weekly.active + weekly.standby) * 52 / 12;
+    expect(updated.kwh!.total, closeTo(expectedTotal, 1e-9));
+    expect(
+      preview.totalKwh.total - fixture.totalKwh.total,
+      closeTo(updated.kwh!.total - row.kwh!.total, 1e-9),
+    );
+    expect(
+      preview.totalCostUsd.total - fixture.totalCostUsd.total,
+      closeTo(updated.costUsd!.total - row.costUsd!.total, 1e-9),
+    );
+  });
+
   test('overrides for rows without a slider are ignored', () {
     final e = sampleHousehold();
     final after = applyUsageOverrides(e, <String, double>{'fridge-1': 99});

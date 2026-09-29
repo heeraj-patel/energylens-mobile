@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'discovery_api.dart';
 import 'discovery_credentials.dart';
 import '../identify/appliance_onboarding_screen.dart';
+import 'device_energy_detail_screen.dart';
 
 /// Local discovery, adoption, and readback from the pilot hub.
 class DiscoveryScreen extends StatefulWidget {
@@ -23,16 +24,28 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   final _hub = TextEditingController();
   final _token = TextEditingController();
   final _ip = TextEditingController();
-  final _rate = TextEditingController();
-  final _postal = TextEditingController(
-    text: const String.fromEnvironment('ENERGYLENS_POSTAL_CODE'),
-  );
+  String _manualProtocol = 'kasa';
   List<DiscoveredPlug> _candidates = const [];
   List<SavedPlug> _saved = const [];
   final Map<int, EnergyEstimate> _estimates = {};
   bool _busy = false;
   bool _searched = false;
   String? _error;
+  void _invalidateHubData() {
+    if (_saved.isEmpty &&
+        _estimates.isEmpty &&
+        _candidates.isEmpty &&
+        !_searched) {
+      return;
+    }
+    setState(() {
+      _saved = const [];
+      _estimates.clear();
+      _candidates = const [];
+      _searched = false;
+      _error = null;
+    });
+  }
 
   @override
   void initState() {
@@ -42,17 +55,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   Future<void> _restore() async {
     try {
-      final postal = await widget.credentials.readPostalCode();
-      if (mounted && postal != null) _postal.text = postal;
-    } catch (_) {
-      // ZIP can be entered in the screen when storage is unavailable.
-    }
-    try {
       final (address, token) = await widget.credentials.read();
       if (!mounted) return;
       if (address != null) _hub.text = address;
       if (token != null) _token.text = token;
-      if (address != null && token != null) await _loadSaved();
+      if (address != null && token != null) {
+        await _loadSaved();
+      }
     } catch (_) {
       // A device without secure storage support can still use manual entry.
     }
@@ -74,9 +83,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               _hub.text.trim(),
               _token.text.trim(),
               appliance.id,
-              postalCode: _postal.text.trim().isEmpty
-                  ? null
-                  : _postal.text.trim(),
             );
             if (mounted) setState(() => _estimates[appliance.id] = estimate);
           } catch (_) {
@@ -96,18 +102,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   Future<void> _checkConnectedEnergy(SavedAppliance appliance) async {
     if (_busy) return;
-    final rateText = _rate.text.trim();
-    final rate = rateText.isEmpty ? null : double.tryParse(rateText);
-    final postal = _postal.text.trim();
-    if (rateText.isNotEmpty &&
-        (rate == null || !rate.isFinite || rate < 0 || rate > 5)) {
-      setState(() => _error = 'Enter a rate between 0 and 5 dollars per kWh.');
-      return;
-    }
-    if (postal.isNotEmpty && !RegExp(r'^\d{5}$').hasMatch(postal)) {
-      setState(() => _error = 'Enter a five-digit US ZIP code.');
-      return;
-    }
     setState(() {
       _busy = true;
       _error = null;
@@ -122,15 +116,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         _hub.text.trim(),
         _token.text.trim(),
         appliance.id,
-        rateUsdPerKwh: rate,
-        postalCode: postal.isEmpty ? null : postal,
       );
       if (mounted) setState(() => _estimates[appliance.id] = estimate);
-      if (postal.isNotEmpty) {
-        try {
-          await widget.credentials.savePostalCode(postal);
-        } catch (_) {}
-      }
     } catch (error) {
       if (mounted) {
         setState(
@@ -385,8 +372,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     _hub.dispose();
     _token.dispose();
     _ip.dispose();
-    _rate.dispose();
-    _postal.dispose();
     super.dispose();
   }
 
@@ -406,6 +391,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 _hub.text.trim(),
                 _token.text.trim(),
                 _ip.text.trim(),
+                protocol: _manualProtocol,
               ),
             ]
           : await widget.api.scan(_hub.text.trim(), _token.text.trim());
@@ -447,10 +433,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Put the HS103 on the same Wi-Fi network as your hub. Enter the hub address and its temporary discovery token.',
+              'Connect the plug to the same Wi-Fi network as your local hub. Scan for TP-Link Kasa plugs, or enter a local IP and choose Shelly Gen2 or Tasmota. Enter the hub address and temporary discovery token above.',
             ),
             const SizedBox(height: 18),
             TextField(
+              key: const Key('hubAddress'),
               controller: _hub,
               decoration: const InputDecoration(
                 labelText: 'Hub address',
@@ -459,6 +446,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               ),
               keyboardType: TextInputType.url,
               autocorrect: false,
+              onChanged: (_) => _invalidateHubData(),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -469,6 +457,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               ),
               obscureText: true,
               autocorrect: false,
+              onChanged: (_) => _invalidateHubData(),
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
@@ -490,6 +479,29 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              initialValue: _manualProtocol,
+              decoration: const InputDecoration(
+                labelText: 'Device type',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'kasa', child: Text('TP-Link Kasa')),
+                DropdownMenuItem(
+                  value: 'shelly_gen2',
+                  child: Text('Shelly Gen2'),
+                ),
+                DropdownMenuItem(value: 'tasmota', child: Text('Tasmota')),
+              ],
+              onChanged: _busy
+                  ? null
+                  : (value) {
+                      if (value != null) {
+                        setState(() => _manualProtocol = value);
+                      }
+                    },
             ),
             const SizedBox(height: 8),
             OutlinedButton(
@@ -523,31 +535,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             ),
             if (_saved.isEmpty)
               const Text('No smart plugs saved on this hub yet.'),
-            if (_saved.any((plug) => plug.connectedAppliance != null)) ...[
-              const SizedBox(height: 8),
-              TextField(
-                key: const Key('plugPostalCode'),
-                controller: _postal,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'ZIP code for regional electricity rate',
-                  hintText: '78732',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                key: const Key('plugElectricityRate'),
-                controller: _rate,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: const InputDecoration(
-                  labelText: 'Your electricity rate in USD/kWh (optional)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
             for (final plug in _saved) ...[
               const SizedBox(height: 10),
               Card(
@@ -572,6 +559,23 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             ? 'No energy monitoring'
                             : 'Meter status: ${plug.meterStatus}',
                       ),
+                      TextButton.icon(
+                        onPressed: () => Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (_) => DeviceEnergyDetailScreen(
+                              plug: plug,
+                              api: widget.api,
+                              hubAddress: _hub.text.trim(),
+                              token: _token.text.trim(),
+                              estimate: plug.connectedAppliance == null
+                                  ? null
+                                  : _estimates[plug.connectedAppliance!.id],
+                            ),
+                          ),
+                        ),
+                        icon: const Icon(Icons.electric_meter_outlined),
+                        label: const Text('View energy details'),
+                      ),
                       const Text(
                         'Connection not checked since last verification',
                       ),
@@ -593,6 +597,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                           '${appliance.category} · ${appliance.model.isEmpty ? 'Model unknown' : appliance.model}',
                         ),
                         const Text('Connected load · No live readings'),
+                        if (_estimates[appliance.id] case final estimate?)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              energyRateDescription(estimate),
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ),
                         if (_estimates[appliance.id]?.evidence
                             case final source?) ...[
                           Text(
@@ -604,7 +616,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             onPressed: () =>
                                 _showSource(source, _estimates[appliance.id]!),
                             icon: Icon(
-                              source.sourceKind == 'energy_star'
+                              source.sourceKind == 'energy_star' ||
+                                      source.sourceKind == 'epa_exact'
                                   ? Icons.verified_outlined
                                   : Icons.info_outline,
                             ),

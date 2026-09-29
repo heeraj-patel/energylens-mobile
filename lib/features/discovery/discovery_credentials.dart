@@ -47,4 +47,7 @@ class DiscoveryCredentials {
     key: 'energylens.household.postal_code',
     value: postalCode,
   );
+
+  Future<void> clearPostalCode() =>
+      _storage.delete(key: 'energylens.household.postal_code');
 }

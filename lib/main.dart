@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'features/discovery/discovery_screen.dart';
 import 'features/discovery/discovery_api.dart';
 import 'features/discovery/discovery_credentials.dart';
+import 'features/discovery/electricity_settings_screen.dart';
 import 'features/identify/appliance_onboarding_screen.dart';
 
 void main() => runApp(const EnergyLensApp());
@@ -372,6 +373,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ],
         ),
         actions: [
+          IconButton(
+            key: const Key('openElectricitySettings'),
+            tooltip: 'Electricity settings',
+            onPressed: () async {
+              await Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => ElectricitySettingsScreen(
+                    api: widget.api,
+                    credentials: widget.credentials,
+                    onSaved: _refreshHub,
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.tune),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: Center(

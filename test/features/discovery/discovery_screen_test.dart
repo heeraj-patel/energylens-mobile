@@ -1,11 +1,30 @@
+import 'dart:async';
+
 import 'package:energylens_mobile/features/discovery/discovery_api.dart';
 import 'package:energylens_mobile/features/discovery/discovery_credentials.dart';
 import 'package:energylens_mobile/features/discovery/discovery_screen.dart';
+import 'package:energylens_mobile/features/discovery/electricity_settings_screen.dart';
+import 'package:energylens_mobile/features/discovery/device_energy_detail_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class FakeDiscoveryApi extends DiscoveryApi {
   const FakeDiscoveryApi();
+
+  @override
+  Future<ElectricitySettings> electricitySettings(
+    String baseUrl,
+    String token,
+  ) async => const ElectricitySettings();
+
+  @override
+  Future<ElectricitySettings> updateElectricitySettings(
+    String baseUrl,
+    String token, {
+    required String? postalCode,
+    required double? rateUsdPerKwh,
+  }) async =>
+      ElectricitySettings(postalCode: postalCode, rateUsdPerKwh: rateUsdPerKwh);
 
   @override
   Future<List<DiscoveredPlug>> scan(String baseUrl, String token) async => [
@@ -21,6 +40,30 @@ class FakeDiscoveryApi extends DiscoveryApi {
       relayOn: true,
     ),
   ];
+}
+
+class PersistingSettingsApi extends FakeDiscoveryApi {
+  ElectricitySettings settings = const ElectricitySettings();
+
+  @override
+  Future<ElectricitySettings> electricitySettings(
+    String baseUrl,
+    String token,
+  ) async => settings;
+
+  @override
+  Future<ElectricitySettings> updateElectricitySettings(
+    String baseUrl,
+    String token, {
+    required String? postalCode,
+    required double? rateUsdPerKwh,
+  }) async {
+    settings = ElectricitySettings(
+      postalCode: postalCode,
+      rateUsdPerKwh: rateUsdPerKwh,
+    );
+    return settings;
+  }
 }
 
 class FakeCredentials extends DiscoveryCredentials {
@@ -45,6 +88,7 @@ class FakeCredentials extends DiscoveryCredentials {
 
 class SavingApi extends FakeDiscoveryApi {
   SavedPlug? plug;
+  int estimateCalls = 0;
   final appliance = const SavedAppliance(
     id: 7,
     name: 'Desk lamp',
@@ -122,11 +166,491 @@ class SavingApi extends FakeDiscoveryApi {
     int applianceId, {
     double? rateUsdPerKwh,
     String? postalCode,
-  }) async =>
-      const EnergyEstimate(status: 'no_estimate', reason: 'not_checked');
+  }) async {
+    estimateCalls++;
+    return const EnergyEstimate(status: 'no_estimate', reason: 'not_checked');
+  }
+}
+
+class FailingSettingsApi extends SavingApi {
+  @override
+  Future<ElectricitySettings> electricitySettings(
+    String baseUrl,
+    String token,
+  ) async => throw StateError('settings unavailable');
+}
+
+class DeviceDetailApi extends FakeDiscoveryApi {
+  int estimateCalls = 0;
+  final appliance = const SavedAppliance(
+    id: 31,
+    name: 'Desk fan',
+    room: 'Office',
+    category: 'fan',
+    manufacturer: 'Example',
+    model: 'F100',
+    loadKind: 'appliance',
+    onboardingMethod: 'manual',
+  );
+
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async => [
+    SavedPlug(
+      id: 'plug-detail',
+      ip: '192.168.1.42',
+      model: 'HS110',
+      name: 'Office meter',
+      room: 'Office',
+      meterStatus: 'verified',
+      lastVerifiedAt: 100,
+      connectedAppliance: appliance,
+    ),
+  ];
+
+  @override
+  Future<EnergyEstimate> estimate(
+    String baseUrl,
+    String token,
+    int applianceId, {
+    double? rateUsdPerKwh,
+    String? postalCode,
+  }) async {
+    estimateCalls++;
+    return const EnergyEstimate(
+      status: 'estimated',
+      estimatedKwh: 18,
+      estimatedCostUsd: 3.24,
+      evidence: EnergyEvidence(
+        sourceKind: 'epa_exact',
+        datasetId: 'epa-ratings',
+        sourceUrl: 'https://example.test/fan',
+        matchedBrand: 'Example',
+        matchedModel: 'F100',
+        annualKwh: 200,
+        usageBasis: 'rated',
+        retrievedAt: 1,
+      ),
+    );
+  }
+
+  @override
+  Future<DeviceEnergy> deviceEnergy(
+    String baseUrl,
+    String token,
+    String plugId, {
+    String period = 'day',
+    String? postalCode,
+    double? rateUsdPerKwh,
+  }) async => const DeviceEnergy(
+    status: 'measured',
+    period: 'day',
+    totalKwh: 0.2,
+    coverageFraction: 0.5,
+    coveredSecs: 43200,
+    latestWatts: null,
+    observedCostUsd: 0.04,
+    rateSourceLabel: 'Your electricity rate',
+    rateUsdPerKwh: 0.2,
+    rateSource: 'user',
+    readingCount: 2,
+  );
+}
+
+class MeasuredEstimateApi extends DeviceDetailApi {
+  @override
+  Future<EnergyEstimate> estimate(
+    String baseUrl,
+    String token,
+    int applianceId, {
+    double? rateUsdPerKwh,
+    String? postalCode,
+  }) async {
+    estimateCalls++;
+    return const EnergyEstimate(
+      status: 'measured',
+      estimatedKwh: 12.5,
+      estimatedCostUsd: 4.5,
+      rateSource: 'utility',
+      rateUsdPerKwh: 0.36,
+      rateSourceLabel: 'Texas average',
+      rateAsOf: '2026-01-01',
+      rateStatus: 'stale',
+      isStale: true,
+      measurementCoverageFraction: 0.35,
+    );
+  }
+}
+
+class PeriodRaceApi extends DeviceDetailApi {
+  final day = Completer<DeviceEnergy>();
+
+  @override
+  Future<DeviceEnergy> deviceEnergy(
+    String baseUrl,
+    String token,
+    String plugId, {
+    String period = 'day',
+    String? postalCode,
+    double? rateUsdPerKwh,
+  }) async {
+    if (period == 'day') return day.future;
+    return const DeviceEnergy(
+      status: 'measured',
+      period: 'week',
+      totalKwh: 0.7,
+      coverageFraction: 0.5,
+      coveredSecs: 302400,
+      latestWatts: 70,
+      readingCount: 2,
+    );
+  }
 }
 
 void main() {
+  test('parses explicit stale regional rate metadata and readings', () {
+    final energy = DeviceEnergy.fromJson({
+      'status': 'measured',
+      'period': 'day',
+      'total_kwh': 0.1,
+      'coverage_fraction': 0.4,
+      'covered_secs': 34560,
+      'latest_watts': null,
+      'observed_cost_usd': 0.02,
+      'rate_source_label': 'Regional rate',
+      'rate_status': 'stale',
+      'rate_source': 'utility',
+      'rate_as_of': '2026-04-01',
+      'rate_fetched_at': 1775000000,
+      'rate_is_stale': true,
+      'readings': [
+        {'watts': 42},
+      ],
+    });
+    expect(energy.rateStatus, 'stale');
+    expect(energy.rateIsStale, isTrue);
+    expect(energy.rateAsOf, '2026-04-01');
+    expect(energy.rateFetchedAt, 1775000000);
+    expect(energy.readingCount, 1);
+  });
+
+  testWidgets(
+    'opens measured detail with coverage and separate sourced estimate',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      final credentials = FakeCredentials()
+        ..address = 'http://192.168.1.20:8787'
+        ..token = 'test-token';
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(
+            api: DeviceDetailApi(),
+            credentials: credentials,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('View energy details').first,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('View energy details').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Live power unavailable'), findsOneWidget);
+      expect(find.text('0.200 kWh'), findsOneWidget);
+      expect(find.textContaining('50% coverage'), findsOneWidget);
+      expect(find.textContaining('remaining 12h'), findsOneWidget);
+      expect(find.textContaining('18.0 kWh'), findsOneWidget);
+      expect(find.textContaining('EPA rated energy data'), findsOneWidget);
+      expect(
+        find.textContaining('Older meter data is available'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('fetches attached estimate and labels measured month coverage', (
+    tester,
+  ) async {
+    final api = MeasuredEstimateApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DeviceEnergyDetailScreen(
+          plug: SavedPlug(
+            id: 'plug-detail',
+            ip: '192.168.1.42',
+            model: 'HS110',
+            name: 'Office meter',
+            room: 'Office',
+            meterStatus: 'verified',
+            lastVerifiedAt: 100,
+            connectedAppliance: api.appliance,
+          ),
+          api: api,
+          hubAddress: 'http://192.168.1.20:8787',
+          token: 'test-token',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(api.estimateCalls, 1);
+    expect(find.text('Measured 30-day energy · 12.5 kWh'), findsOneWidget);
+    expect(
+      find.text('Measurement coverage · 35% of the 30-day window'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Cached regional rate from 2026-01-01'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('ignores a slower response for an earlier selected period', (
+    tester,
+  ) async {
+    final api = PeriodRaceApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DeviceEnergyDetailScreen(
+          plug: const SavedPlug(
+            id: 'plug-detail',
+            ip: '192.168.1.42',
+            model: 'HS110',
+            name: 'Office meter',
+            room: 'Office',
+            meterStatus: 'verified',
+            lastVerifiedAt: 100,
+          ),
+          api: api,
+          hubAddress: 'http://192.168.1.20:8787',
+          token: 'test-token',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Week'));
+    await tester.pumpAndSettle();
+    expect(find.text('0.700 kWh'), findsOneWidget);
+
+    api.day.complete(
+      const DeviceEnergy(
+        status: 'measured',
+        period: 'day',
+        totalKwh: 0.1,
+        coverageFraction: 0.5,
+        coveredSecs: 43200,
+        latestWatts: 10,
+        readingCount: 2,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('0.700 kWh'), findsOneWidget);
+    expect(find.text('0.100 kWh'), findsNothing);
+  });
+
+  test('formats electricity rate provenance and unavailable feedback', () {
+    const source = EnergyEvidence(
+      sourceKind: 'epa_exact',
+      datasetId: 'epa-ratings',
+      sourceUrl: 'https://example.test/record',
+      matchedBrand: 'Example',
+      matchedModel: 'Lamp 1',
+      annualKwh: 20,
+      usageBasis: 'rated',
+      retrievedAt: 1,
+    );
+    expect(energySourceLabel(source), 'Estimated · EPA rated energy data');
+    expect(energySourceHeading(source), 'EPA rated energy data');
+    const manufacturerTest = EnergyEvidence(
+      sourceKind: 'oem_exact',
+      datasetId: 'manufacturer-pdf-ratings',
+      sourceUrl: 'https://example.test/model-test',
+      matchedBrand: 'Example',
+      matchedModel: 'Lamp 1',
+      annualKwh: 20,
+      usageBasis: 'rated',
+      retrievedAt: 1,
+    );
+    expect(
+      energySourceLabel(manufacturerTest),
+      'Estimated · Manufacturer model test data',
+    );
+    expect(
+      energySourceHeading(manufacturerTest),
+      'Manufacturer model test data',
+    );
+    expect(
+      energyRateDescription(
+        const EnergyEstimate(
+          status: 'estimated',
+          rateUsdPerKwh: 0.14,
+          rateSourceLabel: 'Regional utility rate',
+          rateAsOf: '2026-01-01',
+        ),
+      ),
+      'Regional utility rate: \$0.1400/kWh · 2026-01-01',
+    );
+    expect(
+      energyRateDescription(
+        const EnergyEstimate(
+          status: 'estimated',
+          rateUsdPerKwh: 0.14,
+          rateSourceLabel: 'Regional utility rate',
+          rateAsOf: '2026-01-01',
+          rateStatus: 'stale',
+          isStale: true,
+        ),
+      ),
+      'Regional utility rate: \$0.1400/kWh · Cached regional rate from 2026-01-01; fresh regional rate unavailable.',
+    );
+    expect(
+      energyRateDescription(
+        const EnergyEstimate(status: 'estimated', rateStatus: 'unavailable'),
+      ),
+      'Regional rate unavailable. Enter your bill rate for a cost estimate.',
+    );
+  });
+
+  testWidgets('saves and reloads ZIP and optional household rate', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final api = PersistingSettingsApi();
+    final credentials = FakeCredentials()
+      ..address = 'http://192.168.1.20:8787'
+      ..token = 'test-token';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ElectricitySettingsScreen(api: api, credentials: credentials),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('householdPostalCode')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.enterText(
+      find.byKey(const Key('householdPostalCode')),
+      '78732',
+    );
+    await tester.ensureVisible(
+      find.byKey(const Key('householdElectricityRate')),
+    );
+    await tester.enterText(
+      find.byKey(const Key('householdElectricityRate')),
+      '0.14',
+    );
+    await tester.ensureVisible(find.text('Save settings'));
+    await tester.tap(find.text('Save settings'));
+    await tester.pumpAndSettle();
+
+    expect(api.settings.postalCode, '78732');
+    expect(api.settings.rateUsdPerKwh, 0.14);
+    expect(
+      find.text('Electricity settings saved on this hub.'),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ElectricitySettingsScreen(api: api, credentials: credentials),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('householdElectricityRate')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('householdPostalCode')))
+          .controller!
+          .text,
+      '78732',
+    );
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('householdElectricityRate')))
+          .controller!
+          .text,
+      '0.14',
+    );
+  });
+
+  testWidgets('settings screen shows pending edits and validates ZIP codes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final api = PersistingSettingsApi()
+      ..settings = const ElectricitySettings(postalCode: '78732');
+    final credentials = FakeCredentials()
+      ..address = 'http://192.168.1.20:8787'
+      ..token = 'test-token';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ElectricitySettingsScreen(api: api, credentials: credentials),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pumpAndSettle();
+    expect(find.text('Settings loaded from this hub.'), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('householdPostalCode')), '123');
+    await tester.pump();
+    expect(find.textContaining('Unsaved changes.'), findsOneWidget);
+    await tester.tap(find.text('Save settings'));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter a five-digit US ZIP code.'), findsOneWidget);
+  });
+
+  testWidgets('clears old hub devices when the hub address changes', (
+    tester,
+  ) async {
+    final api = SavingApi()
+      ..plug = const SavedPlug(
+        id: 'old-plug',
+        ip: '192.168.1.42',
+        model: 'HS103',
+        name: 'Old hub plug',
+        room: 'Office',
+        meterStatus: 'absent',
+        lastVerifiedAt: 100,
+      );
+    final credentials = FakeCredentials()
+      ..address = 'http://192.168.1.20:8787'
+      ..token = 'test-token';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(api: api, credentials: credentials),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Old hub plug'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Old hub plug'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('hubAddress')),
+      'http://192.168.1.30:8787',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Old hub plug'), findsNothing);
+  });
+
   testWidgets('shows a discovered HS103 separately from its unknown load', (
     tester,
   ) async {

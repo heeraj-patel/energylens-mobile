@@ -392,6 +392,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.hoursPerWeek, 35);
   });
+  testWidgets('electricity settings are reachable from the home app bar', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          api: _ConnectedApi(),
+          credentials: _ConnectedCredentials(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('openElectricitySettings')));
+    await tester.pumpAndSettle();
+    expect(find.text('Electricity settings'), findsOneWidget);
+    expect(find.byKey(const Key('householdPostalCode')), findsOneWidget);
+  });
+
   testWidgets('cycles control saves and resets to initial value', (
     tester,
   ) async {

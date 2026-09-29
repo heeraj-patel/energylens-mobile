@@ -67,13 +67,23 @@ DeviceEnergyEstimate recomputeRow(
   required double rate,
   required String period,
 }) {
-  final weekly = weeklyKwhFor(row, usageValue);
+  final slider = row.slider;
+  if (slider == null) return row;
+  // Match the hub's usage-profile validation: a preview cannot represent a
+  // value outside the range that can be saved for this category. Hours also
+  // have a physical ceiling of 168 in weeklyKwhFor, so keep the displayed
+  // value consistent with that calculation if a malformed slider exceeds it.
+  var effectiveUsage = usageValue.clamp(slider.min, slider.max).toDouble();
+  if (row.usageKind == EnergyUsageKind.hoursPerWeek) {
+    effectiveUsage = effectiveUsage.clamp(0, kHoursPerWeek).toDouble();
+  }
+  final weekly = weeklyKwhFor(row, effectiveUsage);
   if (weekly == null) return row;
   final f = periodFactor(period);
   final active = weekly.active * f;
   final standby = weekly.standby * f;
   return row.copyWith(
-    usageValue: usageValue,
+    usageValue: effectiveUsage,
     usageValueIsDefault: false,
     kwh: EnergySplit(active: active, standby: standby, total: active + standby),
     costUsd: EnergySplit(
