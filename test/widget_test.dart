@@ -142,6 +142,85 @@ class _MeteredApi extends DiscoveryApi {
   );
 }
 
+class _CycleApi extends _ConnectedApi {
+  double cycles = 4.5;
+
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async => const [
+    SavedPlug(
+      id: 'ks19',
+      ip: '192.168.68.92',
+      model: 'HS103(US)',
+      name: 'Laundry plug',
+      room: 'Laundry',
+      meterStatus: 'absent',
+      lastVerifiedAt: 1,
+      connectedAppliance: SavedAppliance(
+        id: 1,
+        name: 'Washer',
+        room: 'Laundry',
+        category: 'washer',
+        manufacturer: '',
+        model: '',
+        loadKind: 'appliance',
+        onboardingMethod: 'manual',
+      ),
+    ),
+  ];
+
+  @override
+  Future<ApplianceUsageProfile> applianceUsageProfile(
+    String baseUrl,
+    String token,
+    int applianceId,
+  ) async => ApplianceUsageProfile(
+    applianceId: applianceId,
+    usageKind: 'cycles_per_week',
+    value: cycles,
+    initialValue: 4.5,
+    min: 0,
+    max: 21,
+    step: 0.5,
+  );
+
+  @override
+  Future<ApplianceUsageProfile> updateApplianceUsageProfile(
+    String baseUrl,
+    String token,
+    int applianceId,
+    String usageKind,
+    double value,
+  ) async {
+    cycles = value;
+    return applianceUsageProfile(baseUrl, token, applianceId);
+  }
+
+  @override
+  Future<EnergyEstimate> estimate(
+    String baseUrl,
+    String token,
+    int applianceId, {
+    String? postalCode,
+    double? rateUsdPerKwh,
+  }) async => EnergyEstimate(
+    status: 'estimated',
+    estimatedKwh: cycles * 52 * 0.4 / 12,
+    estimatedCostUsd: cycles * 52 * 0.4 / 12 * 0.2,
+    activeCostUsd: cycles * 52 * 0.4 / 12 * 0.2,
+    rateUsdPerKwh: 0.2,
+    evidence: const EnergyEvidence(
+      sourceKind: 'category_typical',
+      datasetId: 'energy_profiles_1.2.0',
+      sourceUrl: '',
+      matchedBrand: '',
+      matchedModel: 'Washer',
+      annualKwh: 93.6,
+      usageBasis: 'Category estimate',
+      retrievedAt: 1,
+    ),
+  );
+}
+
 class _MeasuredLoadApi extends _MeteredApi {
   @override
   Future<List<SavedPlug>> saved(String baseUrl, String token) async => const [
@@ -230,6 +309,39 @@ class _ManualDevicesApi extends DiscoveryApi {
 }
 
 void main() {
+  testWidgets('cycles control saves and resets to initial value', (
+    tester,
+  ) async {
+    final api = _CycleApi();
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(api: api, credentials: _ConnectedCredentials()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('appliance-cycles-1')),
+      200,
+    );
+    expect(find.text('Use: 4.5 cycles/week'), findsOneWidget);
+    final slider = tester.widget<Slider>(
+      find.byKey(const Key('appliance-cycles-1')),
+    );
+    slider.onChangeEnd!(6.0);
+    await tester.pumpAndSettle();
+    expect(api.cycles, 6.0);
+    expect(find.text('Use: 6.0 cycles/week'), findsOneWidget);
+    await tester.ensureVisible(
+      find.byKey(const Key('reset-appliance-cycles-1')),
+    );
+    await tester.tap(find.byKey(const Key('reset-appliance-cycles-1')));
+    await tester.pumpAndSettle();
+    expect(api.cycles, 4.5);
+  });
   testWidgets('deletes a manual device from Ask & Add after confirmation', (
     tester,
   ) async {

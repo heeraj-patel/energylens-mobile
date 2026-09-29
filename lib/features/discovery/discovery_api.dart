@@ -285,6 +285,7 @@ String energySourceLabel(EnergyEvidence source) => switch (source.sourceKind) {
   'oem' => 'Estimated · Manufacturer data',
   'oem_family' => 'Estimated · Manufacturer family test data',
   'user_label' => 'Estimated · Bulb ratings you entered',
+  'category_typical' => 'Estimated · Category typical use',
   _ => 'Estimated · Source details',
 };
 
@@ -295,6 +296,7 @@ String energySourceHeading(EnergyEvidence source) =>
       'oem' => 'Manufacturer data',
       'oem_family' => 'Manufacturer family test data',
       'user_label' => 'Bulb ratings you entered',
+      'category_typical' => 'Category typical use',
       _ => 'Source details',
     };
 
@@ -383,8 +385,70 @@ String energyRateDescription(EnergyEstimate estimate) {
   return 'Add a ZIP code or your bill rate to see estimated cost.';
 }
 
+class ApplianceUsageProfile {
+  const ApplianceUsageProfile({
+    required this.applianceId,
+    required this.usageKind,
+    required this.value,
+    required this.initialValue,
+    required this.min,
+    required this.max,
+    required this.step,
+  });
+
+  factory ApplianceUsageProfile.fromJson(Map<String, dynamic> json) =>
+      ApplianceUsageProfile(
+        applianceId: json['appliance_id'] as int,
+        usageKind: json['usage_kind'] as String,
+        value: (json['value'] as num).toDouble(),
+        initialValue: (json['initial_value'] as num).toDouble(),
+        min: (json['min'] as num).toDouble(),
+        max: (json['max'] as num).toDouble(),
+        step: (json['step'] as num).toDouble(),
+      );
+
+  final int applianceId;
+  final String usageKind;
+  final double value;
+  final double initialValue;
+  final double min;
+  final double max;
+  final double step;
+}
+
 class DiscoveryApi {
   const DiscoveryApi();
+
+  Future<ApplianceUsageProfile> applianceUsageProfile(
+    String baseUrl,
+    String token,
+    int applianceId,
+  ) async {
+    final response = await _request(
+      baseUrl,
+      token,
+      '/v1/appliances/$applianceId/usage-profile',
+      'GET',
+    );
+    return ApplianceUsageProfile.fromJson(response as Map<String, dynamic>);
+  }
+
+  Future<ApplianceUsageProfile> updateApplianceUsageProfile(
+    String baseUrl,
+    String token,
+    int applianceId,
+    String usageKind,
+    double value,
+  ) async {
+    final response = await _request(
+      baseUrl,
+      token,
+      '/v1/appliances/$applianceId/usage-profile',
+      'PUT',
+      {'usage_kind': usageKind, 'value': value},
+    );
+    return ApplianceUsageProfile.fromJson(response as Map<String, dynamic>);
+  }
 
   Future<List<IdentificationCandidate>> identifyCandidates(
     String baseUrl,

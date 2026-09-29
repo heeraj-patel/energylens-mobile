@@ -245,6 +245,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await _refreshHub();
   }
 
+  Future<ApplianceUsageProfile> _loadApplianceUsage(int applianceId) async {
+    final (address, token) = await widget.credentials.read();
+    if (address == null || token == null) {
+      throw StateError('Hub connection needed');
+    }
+    return widget.api.applianceUsageProfile(address, token, applianceId);
+  }
+
+  Future<ApplianceUsageProfile> _saveApplianceUsage(
+    int applianceId,
+    String usageKind,
+    double value,
+  ) async {
+    final (address, token) = await widget.credentials.read();
+    if (address == null || token == null) {
+      throw StateError('Hub connection needed');
+    }
+    final saved = await widget.api.updateApplianceUsageProfile(
+      address,
+      token,
+      applianceId,
+      usageKind,
+      value,
+    );
+    await _refreshHub();
+    return saved;
+  }
+
   static const _destinations = <NavigationDestination>[
     NavigationDestination(
       icon: Icon(Icons.bolt_outlined),
@@ -278,6 +306,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         estimates: _estimates,
         meterReadings: _meterReadings,
         onHoursChanged: _saveApplianceHours,
+        onLoadUsage: _loadApplianceUsage,
+        onUsageChanged: _saveApplianceUsage,
       ),
       1 => const _StopWaste(),
       2 => const _SleepCheck(),
@@ -820,11 +850,16 @@ class _ConnectedLoadRow extends StatefulWidget {
     required this.appliance,
     required this.estimate,
     required this.onHoursChanged,
+    required this.onLoadUsage,
+    required this.onUsageChanged,
   });
 
   final SavedAppliance appliance;
   final EnergyEstimate? estimate;
   final Future<void> Function(int, double) onHoursChanged;
+  final Future<ApplianceUsageProfile> Function(int) onLoadUsage;
+  final Future<ApplianceUsageProfile> Function(int, String, double)
+  onUsageChanged;
 
   @override
   State<_ConnectedLoadRow> createState() => _ConnectedLoadRowState();
@@ -832,8 +867,27 @@ class _ConnectedLoadRow extends StatefulWidget {
 
 class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
   double? _previewHours;
+  double? _previewCycles;
+  ApplianceUsageProfile? _usageProfile;
   bool _saving = false;
   String? _saveError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUsage();
+  }
+
+  Future<void> _loadUsage() async {
+    try {
+      final profile = await widget.onLoadUsage(widget.appliance.id);
+      if (mounted && profile.applianceId == widget.appliance.id) {
+        setState(() => _usageProfile = profile);
+      }
+    } catch (_) {
+      // Older hubs have no usage-profile route; keep the existing hours view.
+    }
+  }
 
   (double?, double?) _costSplit(double? hours) {
     final estimate = widget.estimate;
@@ -862,9 +916,47 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
   @override
   void didUpdateWidget(covariant _ConnectedLoadRow oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.appliance.id != oldWidget.appliance.id) {
+      _usageProfile = null;
+      _previewCycles = null;
+      _loadUsage();
+    }
     if (widget.appliance.hoursPerWeek != oldWidget.appliance.hoursPerWeek) {
       _previewHours = null;
       _saveError = null;
+    }
+  }
+
+  Future<void> _commitCycles(double value) async {
+    if (_saving || value == _usageProfile?.value) {
+      setState(() => _previewCycles = null);
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
+    try {
+      final saved = await widget.onUsageChanged(
+        widget.appliance.id,
+        'cycles_per_week',
+        value,
+      );
+      if (mounted) {
+        setState(() {
+          _usageProfile = saved;
+          _previewCycles = null;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _previewCycles = null;
+          _saveError = 'Could not save cycles. Try again.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -960,7 +1052,7 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
                 if (activeCost != null) ...[
                   const SizedBox(height: 4),
                   Text(
-                    'On-time use: \$${activeCost.toStringAsFixed(2)}/month',
+                    '${evidence?.sourceKind == 'category_typical' ? 'Active use' : 'On-time use'}: \$${activeCost.toStringAsFixed(2)}/month',
                     style: Theme.of(context).textTheme.bodySmall
                         ?.copyWith(color: _secondary(context)),
                   ),
@@ -1051,6 +1143,60 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
                       ),
                     ),
                 ],
+                if (_usageProfile?.usageKind == 'cycles_per_week') ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Use: ${(_previewCycles ?? _usageProfile!.value).toStringAsFixed(1)} cycles/week',
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: _secondary(context)),
+                  ),
+                  Slider(
+                    key: Key('appliance-cycles-${appliance.id}'),
+                    value: (_previewCycles ?? _usageProfile!.value).clamp(
+                      _usageProfile!.min,
+                      _usageProfile!.max,
+                    ),
+                    min: _usageProfile!.min,
+                    max: _usageProfile!.max,
+                    divisions:
+                        ((_usageProfile!.max - _usageProfile!.min) /
+                                _usageProfile!.step)
+                            .round(),
+                    label:
+                        '${(_previewCycles ?? _usageProfile!.value).toStringAsFixed(1)} cycles/week',
+                    onChanged: _saving
+                        ? null
+                        : (value) => setState(() {
+                            _previewCycles = value;
+                            _saveError = null;
+                          }),
+                    onChangeEnd: _saving ? null : _commitCycles,
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      key: Key('reset-appliance-cycles-${appliance.id}'),
+                      onPressed:
+                          _saving ||
+                              _usageProfile!.value ==
+                                  _usageProfile!.initialValue
+                          ? null
+                          : () => _commitCycles(_usageProfile!.initialValue),
+                      icon: const Icon(Icons.restore),
+                      label: Text(
+                        'Reset to ${_usageProfile!.initialValue.toStringAsFixed(1)} cycles/week',
+                      ),
+                    ),
+                  ),
+                  if (_saving) const LinearProgressIndicator(),
+                  if (_saveError != null)
+                    Text(
+                      _saveError!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                ],
               ],
             ),
           ),
@@ -1067,6 +1213,8 @@ class _PowerNow extends StatefulWidget {
     required this.estimates,
     required this.meterReadings,
     required this.onHoursChanged,
+    required this.onLoadUsage,
+    required this.onUsageChanged,
   });
 
   final List<SavedPlug> plugs;
@@ -1074,6 +1222,9 @@ class _PowerNow extends StatefulWidget {
   final Map<int, EnergyEstimate> estimates;
   final Map<String, DeviceEnergy> meterReadings;
   final Future<void> Function(int, double) onHoursChanged;
+  final Future<ApplianceUsageProfile> Function(int) onLoadUsage;
+  final Future<ApplianceUsageProfile> Function(int, String, double)
+  onUsageChanged;
 
   @override
   State<_PowerNow> createState() => _PowerNowState();
@@ -1217,6 +1368,8 @@ class _PowerNowState extends State<_PowerNow> {
                             appliance: appliance,
                             estimate: widget.estimates[appliance.id],
                             onHoursChanged: widget.onHoursChanged,
+                            onLoadUsage: widget.onLoadUsage,
+                            onUsageChanged: widget.onUsageChanged,
                           ),
                         ),
                       ],
