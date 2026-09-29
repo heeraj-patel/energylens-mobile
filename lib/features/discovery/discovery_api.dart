@@ -126,6 +126,33 @@ class SavedPlug {
   final int? httpPort;
 }
 
+class DeviceEnergy {
+  const DeviceEnergy({
+    required this.status,
+    required this.period,
+    required this.totalKwh,
+    required this.coverageFraction,
+    required this.coveredSecs,
+    this.latestWatts,
+  });
+
+  factory DeviceEnergy.fromJson(Map<String, dynamic> json) => DeviceEnergy(
+    status: json['status'] as String,
+    period: json['period'] as String,
+    totalKwh: (json['total_kwh'] as num).toDouble(),
+    coverageFraction: (json['coverage_fraction'] as num).toDouble(),
+    coveredSecs: (json['covered_secs'] as num).toDouble(),
+    latestWatts: (json['latest_watts'] as num?)?.toDouble(),
+  );
+
+  final String status;
+  final String period;
+  final double totalKwh;
+  final double coverageFraction;
+  final double coveredSecs;
+  final double? latestWatts;
+}
+
 class SavedAppliance {
   const SavedAppliance({
     required this.id,
@@ -392,6 +419,23 @@ class DiscoveryApi {
     return (response as List<dynamic>)
         .map((item) => SavedPlug.fromJson(item as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<DeviceEnergy> deviceEnergy(
+    String baseUrl,
+    String token,
+    String plugId, {
+    String period = 'day',
+  }) async {
+    final response = await _request(
+      baseUrl,
+      token,
+      '/v1/devices/${Uri.encodeComponent(plugId)}/energy',
+      'GET',
+      null,
+      {'period': period},
+    );
+    return DeviceEnergy.fromJson(response as Map<String, dynamic>);
   }
 
   Future<SavedPlug> adopt(

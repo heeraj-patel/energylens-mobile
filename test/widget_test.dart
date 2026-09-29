@@ -107,6 +107,37 @@ class _ConnectedApi extends DiscoveryApi {
   }
 }
 
+class _MeteredApi extends DiscoveryApi {
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async => const [
+    SavedPlug(
+      id: 'meter-1',
+      ip: '192.168.68.50',
+      model: 'HS110',
+      name: 'Office meter',
+      room: 'Office',
+      meterStatus: 'verified',
+      localProtocol: 'legacy_tcp',
+      lastVerifiedAt: 1,
+    ),
+  ];
+
+  @override
+  Future<DeviceEnergy> deviceEnergy(
+    String baseUrl,
+    String token,
+    String plugId, {
+    String period = 'day',
+  }) async => const DeviceEnergy(
+    status: 'measured',
+    period: 'day',
+    totalKwh: 0.125,
+    coverageFraction: 0.75,
+    coveredSecs: 64800,
+    latestWatts: 100,
+  );
+}
+
 class _ManualDevicesApi extends DiscoveryApi {
   final devices = <SavedAppliance>[
     const SavedAppliance(
@@ -292,5 +323,30 @@ void main() {
     expect(api.hours, 21);
     expect(find.text('On time: 21 hours/week'), findsOneWidget);
     expect(find.text('Estimated total: \$0.32/month'), findsOneWidget);
+  });
+
+  testWidgets('shows measured power with its actual time coverage', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          api: _MeteredApi(),
+          credentials: _ConnectedCredentials(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Office meter · HS110'), 200);
+    expect(find.text('Recent meter reading · 100.0 W'), findsOneWidget);
+    expect(
+      find.text('0.125 kWh measured today · 75% time coverage'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('No energy meter'), findsNothing);
   });
 }

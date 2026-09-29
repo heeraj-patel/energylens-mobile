@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'features/discovery/discovery_screen.dart';
@@ -90,18 +92,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _hubConnected = false;
   List<SavedPlug> _plugs = const [];
   Map<int, EnergyEstimate> _estimates = const {};
+  Map<String, DeviceEnergy> _meterReadings = const {};
   int _refreshGeneration = 0;
+  int _meterGeneration = 0;
+  Timer? _meterRefreshTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _refreshHub();
+    _meterRefreshTimer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => unawaited(_refreshMetering()),
+    );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _meterRefreshTimer?.cancel();
     super.dispose();
   }
 
@@ -121,8 +131,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _plugs = plugs;
           _hubConnected = true;
           _estimates = const {};
+          _meterReadings = const {};
         });
       }
+      unawaited(_refreshMetering(plugs: plugs, address: address, token: token));
       String? postalCode;
       try {
         postalCode = await widget.credentials.readPostalCode();
@@ -159,6 +171,51 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (mounted && generation == _refreshGeneration) {
         setState(() => _hubConnected = false);
       }
+    }
+  }
+
+  Future<void> _refreshMetering({
+    List<SavedPlug>? plugs,
+    String? address,
+    String? token,
+  }) async {
+    final generation = ++_meterGeneration;
+    try {
+      if (address == null || token == null) {
+        (address, token) = await widget.credentials.read();
+      }
+      if (address == null || token == null) return;
+      final candidates = plugs ?? _plugs;
+      await Future.wait([
+        for (final plug in candidates)
+          if (plug.meterStatus != 'absent' &&
+              plug.localProtocol == 'legacy_tcp')
+            () async {
+              try {
+                final reading = await widget.api.deviceEnergy(
+                  address!,
+                  token!,
+                  plug.id,
+                );
+                if (mounted && generation == _meterGeneration) {
+                  setState(
+                    () =>
+                        _meterReadings = {..._meterReadings, plug.id: reading},
+                  );
+                }
+              } catch (_) {
+                if (mounted && generation == _meterGeneration) {
+                  setState(() {
+                    final next = {..._meterReadings};
+                    next.remove(plug.id);
+                    _meterReadings = next;
+                  });
+                }
+              }
+            }(),
+      ]);
+    } catch (_) {
+      // A meter API failure must not hide saved plugs or sourced estimates.
     }
   }
 
@@ -207,6 +264,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         plugs: _plugs,
         hubConnected: _hubConnected,
         estimates: _estimates,
+        meterReadings: _meterReadings,
         onHoursChanged: _saveApplianceHours,
       ),
       1 => const _StopWaste(),
@@ -938,12 +996,14 @@ class _PowerNow extends StatefulWidget {
     required this.plugs,
     required this.hubConnected,
     required this.estimates,
+    required this.meterReadings,
     required this.onHoursChanged,
   });
 
   final List<SavedPlug> plugs;
   final bool hubConnected;
   final Map<int, EnergyEstimate> estimates;
+  final Map<String, DeviceEnergy> meterReadings;
   final Future<void> Function(int, double) onHoursChanged;
 
   @override
@@ -978,9 +1038,14 @@ class _PowerNowState extends State<_PowerNow> {
             final appliance = plug.connectedAppliance;
             final expanded =
                 appliance != null && !_collapsedPlugIds.contains(plug.id);
+            final meter = widget.meterReadings[plug.id];
             final meterDetail = plug.meterStatus == 'absent'
                 ? 'No energy meter · ${plug.room.isEmpty ? 'Room not set' : plug.room}'
-                : 'Meter status: ${plug.meterStatus}';
+                : meter?.latestWatts != null
+                ? 'Recent meter reading · ${meter!.latestWatts!.toStringAsFixed(1)} W'
+                : meter?.status == 'measured'
+                ? 'Meter history available · no current reading'
+                : 'Waiting for a meter reading';
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1025,6 +1090,14 @@ class _PowerNowState extends State<_PowerNow> {
                                   style: Theme.of(context).textTheme.bodySmall
                                       ?.copyWith(color: _secondary(context)),
                                 ),
+                                if (meter?.status == 'measured') ...[
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    '${meter!.totalKwh.toStringAsFixed(3)} kWh measured today · ${(meter.coverageFraction * 100).round()}% time coverage',
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(color: _secondary(context)),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
