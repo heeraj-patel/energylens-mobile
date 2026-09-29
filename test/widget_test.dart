@@ -221,6 +221,60 @@ class _CycleApi extends _ConnectedApi {
   );
 }
 
+class _HoursApi extends _CycleApi {
+  double hoursPerWeek = 35;
+
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async => const [
+    SavedPlug(
+      id: 'ks19',
+      ip: '192.168.68.92',
+      model: 'HS103(US)',
+      name: 'TV plug',
+      room: 'Living Room',
+      meterStatus: 'absent',
+      lastVerifiedAt: 1,
+      connectedAppliance: SavedAppliance(
+        id: 1,
+        name: 'TV',
+        room: 'Living Room',
+        category: 'tv',
+        manufacturer: '',
+        model: '',
+        loadKind: 'appliance',
+        onboardingMethod: 'manual',
+      ),
+    ),
+  ];
+
+  @override
+  Future<ApplianceUsageProfile> applianceUsageProfile(
+    String baseUrl,
+    String token,
+    int applianceId,
+  ) async => ApplianceUsageProfile(
+    applianceId: applianceId,
+    usageKind: 'hours_per_week',
+    value: hoursPerWeek,
+    initialValue: 35,
+    min: 0,
+    max: 168,
+    step: 1,
+  );
+
+  @override
+  Future<ApplianceUsageProfile> updateApplianceUsageProfile(
+    String baseUrl,
+    String token,
+    int applianceId,
+    String usageKind,
+    double value,
+  ) async {
+    hoursPerWeek = value;
+    return applianceUsageProfile(baseUrl, token, applianceId);
+  }
+}
+
 class _MeasuredLoadApi extends _MeteredApi {
   @override
   Future<List<SavedPlug>> saved(String baseUrl, String token) async => const [
@@ -309,6 +363,35 @@ class _ManualDevicesApi extends DiscoveryApi {
 }
 
 void main() {
+  testWidgets('category hours control saves and resets', (tester) async {
+    final api = _HoursApi();
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(api: api, credentials: _ConnectedCredentials()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('appliance-profile-hours-1')),
+      200,
+    );
+    final slider = tester.widget<Slider>(
+      find.byKey(const Key('appliance-profile-hours-1')),
+    );
+    slider.onChangeEnd!(40);
+    await tester.pumpAndSettle();
+    expect(api.hoursPerWeek, 40);
+    await tester.ensureVisible(
+      find.byKey(const Key('reset-appliance-profile-hours-1')),
+    );
+    await tester.tap(find.byKey(const Key('reset-appliance-profile-hours-1')));
+    await tester.pumpAndSettle();
+    expect(api.hoursPerWeek, 35);
+  });
   testWidgets('cycles control saves and resets to initial value', (
     tester,
   ) async {

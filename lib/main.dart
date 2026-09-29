@@ -984,6 +984,39 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
     }
   }
 
+  Future<void> _commitProfileHours(double value) async {
+    if (_saving || value == _usageProfile?.value) {
+      setState(() => _previewHours = null);
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
+    try {
+      final saved = await widget.onUsageChanged(
+        widget.appliance.id,
+        'hours_per_week',
+        value,
+      );
+      if (mounted) {
+        setState(() {
+          _usageProfile = saved;
+          _previewHours = null;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _previewHours = null;
+          _saveError = 'Could not save hours. Try again.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final appliance = widget.appliance;
@@ -992,6 +1025,13 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
     final measured = estimate?.status == 'measured';
     final hours = _previewHours ?? appliance.hoursPerWeek;
     final initialHours = appliance.initialHoursPerWeek;
+    final showProfileHours =
+        _usageProfile?.usageKind == 'hours_per_week' &&
+        !measured &&
+        (evidence?.sourceKind == 'category_typical' ||
+            evidence?.usageBasis.startsWith('hours_per_day:') == true) &&
+        !(appliance.category == 'lighting' &&
+            appliance.loadKind == 'replaceable_bulb');
     final (activeCost, standbyCost) = _costSplit(hours);
     final cost = _previewHours == null
         ? estimate?.estimatedCostUsd
@@ -1143,7 +1183,67 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
                       ),
                     ),
                 ],
-                if (_usageProfile?.usageKind == 'cycles_per_week') ...[
+                if (showProfileHours) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Use: ${(_previewHours ?? _usageProfile!.value).toStringAsFixed(0)} hours/week',
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: _secondary(context)),
+                  ),
+                  Slider(
+                    key: Key('appliance-profile-hours-${appliance.id}'),
+                    value: (_previewHours ?? _usageProfile!.value).clamp(
+                      _usageProfile!.min,
+                      _usageProfile!.max,
+                    ),
+                    min: _usageProfile!.min,
+                    max: _usageProfile!.max,
+                    divisions:
+                        ((_usageProfile!.max - _usageProfile!.min) /
+                                _usageProfile!.step)
+                            .round(),
+                    label:
+                        '${(_previewHours ?? _usageProfile!.value).toStringAsFixed(0)} hours/week',
+                    onChanged: _saving
+                        ? null
+                        : (value) => setState(() {
+                            _previewHours = value;
+                            _saveError = null;
+                          }),
+                    onChangeEnd: _saving ? null : _commitProfileHours,
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      key: Key('reset-appliance-profile-hours-${appliance.id}'),
+                      onPressed:
+                          _saving ||
+                              _usageProfile!.value ==
+                                  _usageProfile!.initialValue
+                          ? null
+                          : () => _commitProfileHours(
+                              _usageProfile!.initialValue,
+                            ),
+                      icon: const Icon(Icons.restore),
+                      label: Text(
+                        'Reset to ${_usageProfile!.initialValue.toStringAsFixed(0)} hours/week',
+                      ),
+                    ),
+                  ),
+                  if (_saving) const LinearProgressIndicator(),
+                  if (_saveError != null)
+                    Text(
+                      _saveError!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                ],
+                if (_usageProfile?.usageKind == 'cycles_per_week' &&
+                    !measured &&
+                    (evidence?.sourceKind == 'category_typical' ||
+                        evidence?.usageBasis.startsWith('cycles_per_year:') ==
+                            true)) ...[
                   const SizedBox(height: 8),
                   Text(
                     'Use: ${(_previewCycles ?? _usageProfile!.value).toStringAsFixed(1)} cycles/week',
