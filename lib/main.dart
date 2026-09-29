@@ -632,67 +632,117 @@ class _EstimatedCostSummary extends StatelessWidget {
         if (plug.connectedAppliance case final appliance?)
           ?estimates[appliance.id],
     ];
-    final pricedCount = values
-        .where((item) => item.estimatedCostUsd != null)
-        .length;
-    final loadLabel = loadCount == 1 ? 'load' : 'loads';
-    final active = values.fold<double>(
+    final measured = values
+        .where(
+          (item) => item.status == 'measured' && item.estimatedCostUsd != null,
+        )
+        .toList();
+    final sourced = values
+        .where(
+          (item) => item.status != 'measured' && item.estimatedCostUsd != null,
+        )
+        .toList();
+    final pricedCount = sourced.length;
+    final sourcedLoadCount =
+        loadCount - values.where((item) => item.status == 'measured').length;
+    final loadLabel = sourcedLoadCount == 1 ? 'load' : 'loads';
+    final active = sourced.fold<double>(
       0,
       (sum, item) => sum + (item.activeCostUsd ?? 0),
     );
-    final standby = values.fold<double>(
+    final standby = sourced.fold<double>(
       0,
       (sum, item) => sum + (item.standbyCostUsd ?? 0),
     );
-    final hasStandby = values.any((item) => item.standbyCostUsd != null);
-    final total = values.fold<double>(
+    final hasStandby = sourced.any((item) => item.standbyCostUsd != null);
+    final total = sourced.fold<double>(
       0,
       (sum, item) => sum + (item.estimatedCostUsd ?? 0),
     );
-    return _Surface(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'ESTIMATED MONTHLY COST',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: _secondary(context),
-              letterSpacing: 1,
-              fontWeight: FontWeight.w700,
+    final measuredTotal = measured.fold<double>(
+      0,
+      (sum, item) => sum + item.estimatedCostUsd!,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (measured.isNotEmpty) ...[
+          _Surface(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'OBSERVED LAST 30 DAYS',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: _secondary(context),
+                    letterSpacing: 1,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '\$${measuredTotal.toStringAsFixed(2)} from ${measured.length} metered ${measured.length == 1 ? 'load' : 'loads'}',
+                  style: Theme.of(context).textTheme.headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Only sampled intervals are counted. Each device shows its time coverage.',
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: _secondary(context)),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            '\$${total.toStringAsFixed(2)} from $pricedCount of $loadCount $loadLabel',
-            style: Theme.of(context).textTheme.headlineSmall
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _CostMetricTile(
-                'Active use',
-                active,
-                'Known active estimates',
-                color: _green,
-              ),
-              const SizedBox(width: 8),
-              _CostMetricTile(
-                'Standby use',
-                hasStandby ? standby : null,
-                'Known standby estimates',
-                color: _rose,
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Based on product ratings and entered use. Missing estimates are excluded; this is not a live meter reading.',
-            style: Theme.of(context).textTheme.bodySmall
-                ?.copyWith(color: _secondary(context)),
-          ),
+          if (sourced.isNotEmpty) const SizedBox(height: 12),
         ],
-      ),
+        if (sourced.isNotEmpty)
+          _Surface(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'ESTIMATED MONTHLY COST',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: _secondary(context),
+                    letterSpacing: 1,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '\$${total.toStringAsFixed(2)} from $pricedCount of $sourcedLoadCount $loadLabel',
+                  style: Theme.of(context).textTheme.headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    _CostMetricTile(
+                      'Active use',
+                      active,
+                      'Known active estimates',
+                      color: _green,
+                    ),
+                    const SizedBox(width: 8),
+                    _CostMetricTile(
+                      'Standby use',
+                      hasStandby ? standby : null,
+                      'Known standby estimates',
+                      color: _rose,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Based on product ratings and entered use. Missing estimates are excluded; this is not a live meter reading.',
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: _secondary(context)),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }
@@ -847,6 +897,7 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
     final appliance = widget.appliance;
     final estimate = widget.estimate;
     final evidence = estimate?.evidence;
+    final measured = estimate?.status == 'measured';
     final hours = _previewHours ?? appliance.hoursPerWeek;
     final initialHours = appliance.initialHoursPerWeek;
     final (activeCost, standbyCost) = _costSplit(hours);
@@ -856,14 +907,18 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
         ? null
         : activeCost + (standbyCost ?? 0);
     final rateLabel = estimate?.rateSourceLabel;
-    final sourceLabel = evidence == null
+    final sourceLabel = measured
+        ? 'Meter readings · ${((estimate?.measurementCoverageFraction ?? 0) * 100).round()}% of the last 30 days covered'
+        : evidence == null
         ? 'Energy source unavailable'
         : energySourceHeading(evidence);
     final onTimeOnly =
         standbyCost == null &&
         (evidence?.sourceKind == 'user_label' ||
             evidence?.datasetId == 'msj5-kqfv');
-    final costHeading = evidence?.sourceKind == 'energy_star_archive'
+    final costHeading = measured
+        ? 'Observed last 30 days'
+        : evidence?.sourceKind == 'energy_star_archive'
         ? 'Historical test-profile cost'
         : evidence?.sourceKind == 'oem_family'
         ? 'Manufacturer family test-profile cost'
@@ -889,7 +944,9 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
                 const SizedBox(height: 4),
                 Text(
                   cost != null
-                      ? '$costHeading: \$${cost.toStringAsFixed(2)}/month'
+                      ? measured
+                            ? '$costHeading: \$${cost.toStringAsFixed(2)}'
+                            : '$costHeading: \$${cost.toStringAsFixed(2)}/month'
                       : estimate?.estimatedKwh != null
                       ? 'Add your ZIP code or bill rate for cost'
                       : 'Estimate unavailable',
@@ -1208,8 +1265,19 @@ class _PowerNowState extends State<_PowerNow> {
       const SizedBox(height: 18),
       ..._savedDevices(),
       const SizedBox(height: 18),
-      if (widget.estimates.values.any((value) => value.activeCostUsd != null))
+      if (widget.estimates.values.any(
+        (value) => value.estimatedCostUsd != null,
+      ))
         _EstimatedCostSummary(plugs: widget.plugs, estimates: widget.estimates)
+      else if (widget.meterReadings.values.any(
+            (value) => value.status == 'measured',
+          ) ||
+          widget.estimates.values.any((value) => value.status == 'measured'))
+        const _InfoRow(
+          Icons.bolt_outlined,
+          'Meter readings received',
+          'Measured energy is shown above. Add a ZIP code or bill rate to see cost.',
+        )
       else
         _Surface(
           child: Column(

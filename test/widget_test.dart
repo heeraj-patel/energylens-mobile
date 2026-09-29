@@ -142,6 +142,52 @@ class _MeteredApi extends DiscoveryApi {
   );
 }
 
+class _MeasuredLoadApi extends _MeteredApi {
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async => const [
+    SavedPlug(
+      id: 'meter-1',
+      ip: '192.168.68.50',
+      model: 'HS110',
+      name: 'Office meter',
+      room: 'Office',
+      meterStatus: 'verified',
+      localProtocol: 'legacy_tcp',
+      lastVerifiedAt: 1,
+      connectedAppliance: SavedAppliance(
+        id: 9,
+        name: 'Desk lamp',
+        room: 'Office',
+        category: 'lighting',
+        manufacturer: 'Example',
+        model: 'L1',
+        loadKind: 'replaceable_bulb',
+        onboardingMethod: 'manual',
+        hoursPerWeek: 21,
+        initialHoursPerWeek: 21,
+        bulbCount: 1,
+        combinedInputWatts: 10,
+      ),
+    ),
+  ];
+
+  @override
+  Future<EnergyEstimate> estimate(
+    String baseUrl,
+    String token,
+    int applianceId, {
+    String? postalCode,
+    double? rateUsdPerKwh,
+  }) async => const EnergyEstimate(
+    status: 'measured',
+    estimatedKwh: 10,
+    estimatedCostUsd: 2,
+    rateUsdPerKwh: 0.2,
+    rateSourceLabel: 'Your electricity rate',
+    measurementCoverageFraction: 2 / 3,
+  );
+}
+
 class _ManualDevicesApi extends DiscoveryApi {
   final devices = <SavedAppliance>[
     const SavedAppliance(
@@ -358,5 +404,31 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('No energy meter'), findsNothing);
+  });
+
+  testWidgets('keeps measured 30-day cost separate from sourced estimates', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          api: _MeasuredLoadApi(),
+          credentials: _ConnectedCredentials(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Desk lamp'), 200);
+    expect(find.text('Observed last 30 days: \$2.00'), findsOneWidget);
+    expect(
+      find.text('Meter readings · 67% of the last 30 days covered'),
+      findsOneWidget,
+    );
+    expect(find.text('OBSERVED LAST 30 DAYS'), findsOneWidget);
+    expect(find.text('ESTIMATED MONTHLY COST'), findsNothing);
   });
 }

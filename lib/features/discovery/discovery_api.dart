@@ -328,6 +328,7 @@ class EnergyEstimate {
     this.rateStatus,
     this.bulbCount,
     this.evidence,
+    this.measurementCoverageFraction,
   });
   factory EnergyEstimate.fromJson(Map<String, dynamic> json) => EnergyEstimate(
     status: json['status'] as String,
@@ -348,6 +349,8 @@ class EnergyEstimate {
     evidence: json['evidence'] == null
         ? null
         : EnergyEvidence.fromJson(json['evidence'] as Map<String, dynamic>),
+    measurementCoverageFraction: (json['measurement_coverage_fraction'] as num?)
+        ?.toDouble(),
   );
   final String status;
   final String? reason;
@@ -365,6 +368,7 @@ class EnergyEstimate {
   final String? rateStatus;
   final int? bulbCount;
   final EnergyEvidence? evidence;
+  final double? measurementCoverageFraction;
 }
 
 String energyRateDescription(EnergyEstimate estimate) {
