@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'discovery_api.dart';
 import 'attachment_history_screen.dart';
@@ -39,6 +40,7 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
   String _period = 'day';
   DeviceEnergy? _energy;
   EnergyEstimate? _estimate;
+  ApplianceSpec? _spec;
   bool _loading = true;
   bool _estimateLoading = true;
   String? _error;
@@ -51,6 +53,22 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
     _estimate = widget.estimate;
     _load();
     _loadEstimate();
+    _loadSpec();
+  }
+
+  Future<void> _loadSpec() async {
+    final appliance = widget.plug.connectedAppliance;
+    if (appliance == null) return;
+    try {
+      final result = await widget.api.applianceSpec(
+        widget.hubAddress,
+        widget.token,
+        appliance.id,
+      );
+      if (mounted) setState(() => _spec = result);
+    } catch (_) {
+      // Older hubs and unavailable sources simply have no optional rating.
+    }
   }
 
   Future<void> _load() async {
@@ -181,6 +199,13 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
             )
           else if (_energy case final data?)
             _observedSection(context, data),
+          if (_spec?.status == 'matched' &&
+              _spec?.evidence?.sourceKind == 'oem_rated_input' &&
+              _spec!.evidence!.ratedInputWatts.isFinite &&
+              _spec!.evidence!.ratedInputWatts > 0) ...[
+            const SizedBox(height: 24),
+            _specSection(context, _spec!.evidence!),
+          ],
           const SizedBox(height: 24),
           Text('Appliance estimate', style: theme.textTheme.titleLarge),
           const SizedBox(height: 10),
@@ -207,6 +232,45 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
             label: const Text('Attachment history'),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _specSection(BuildContext context, ApplianceSpecEvidence evidence) {
+    final theme = Theme.of(context);
+    final source = Uri.tryParse(evidence.sourceUrl);
+    final canOpen =
+        source != null &&
+        (source.scheme == 'https' || source.scheme == 'http') &&
+        source.host.isNotEmpty;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'OEM rated input (nameplate)',
+              style: theme.textTheme.titleMedium,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${_watts(evidence.ratedInputWatts)} W',
+              style: theme.textTheme.headlineSmall,
+            ),
+            Text(
+              'Manufacturer rating for ${evidence.matchedBrand} ${evidence.matchedModel}. Actual draw is shown under Measured energy.',
+              style: theme.textTheme.bodySmall,
+            ),
+            if (canOpen)
+              TextButton.icon(
+                onPressed: () =>
+                    launchUrl(source, mode: LaunchMode.externalApplication),
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('Manufacturer source'),
+              ),
+          ],
+        ),
       ),
     );
   }

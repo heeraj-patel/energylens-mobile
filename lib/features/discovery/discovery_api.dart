@@ -597,6 +597,53 @@ class EnergyLookup {
   final EnergyEvidence? evidence;
 }
 
+class ApplianceSpecEvidence {
+  const ApplianceSpecEvidence({
+    required this.sourceKind,
+    required this.ratedInputWatts,
+    required this.sourceUrl,
+    required this.matchedBrand,
+    required this.matchedModel,
+    required this.usageBasis,
+    required this.retrievedAt,
+  });
+
+  factory ApplianceSpecEvidence.fromJson(Map<String, dynamic> json) =>
+      ApplianceSpecEvidence(
+        sourceKind: json['source_kind'] as String,
+        ratedInputWatts: (json['rated_input_watts'] as num).toDouble(),
+        sourceUrl: json['source_url'] as String,
+        matchedBrand: json['matched_brand'] as String,
+        matchedModel: json['matched_model'] as String,
+        usageBasis: json['usage_basis'] as String,
+        retrievedAt: (json['retrieved_at'] as num).toInt(),
+      );
+
+  final String sourceKind;
+  final double ratedInputWatts;
+  final String sourceUrl;
+  final String matchedBrand;
+  final String matchedModel;
+  final String usageBasis;
+  final int retrievedAt;
+}
+
+class ApplianceSpec {
+  const ApplianceSpec({required this.status, this.evidence});
+
+  factory ApplianceSpec.fromJson(Map<String, dynamic> json) => ApplianceSpec(
+    status: json['status'] as String,
+    evidence: json['evidence'] == null
+        ? null
+        : ApplianceSpecEvidence.fromJson(
+            json['evidence'] as Map<String, dynamic>,
+          ),
+  );
+
+  final String status;
+  final ApplianceSpecEvidence? evidence;
+}
+
 class EnergyEstimate {
   const EnergyEstimate({
     required this.status,
@@ -1128,6 +1175,20 @@ class DiscoveryApi {
       },
     );
     return EnergyEstimate.fromJson(response as Map<String, dynamic>);
+  }
+
+  Future<ApplianceSpec> applianceSpec(
+    String baseUrl,
+    String token,
+    int applianceId,
+  ) async {
+    final response = await _request(
+      baseUrl,
+      token,
+      '/v1/appliances/$applianceId/spec',
+      'GET',
+    );
+    return ApplianceSpec.fromJson(response as Map<String, dynamic>);
   }
 
   Future<Map<String, dynamic>> _post(

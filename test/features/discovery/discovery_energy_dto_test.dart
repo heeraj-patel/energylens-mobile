@@ -2,6 +2,38 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:energylens_mobile/features/discovery/discovery_api.dart';
 
 void main() {
+  group('manufacturer nameplate spec response', () {
+    test('parses a matched rated input without energy estimate fields', () {
+      final spec = ApplianceSpec.fromJson({
+        'status': 'matched',
+        'evidence': {
+          'source_kind': 'oem_rated_input',
+          'rated_input_watts': 1350,
+          'source_url': 'https://example.test/manual.pdf',
+          'matched_brand': 'Example',
+          'matched_model': 'Kettle 1',
+          'usage_basis': 'Nameplate input',
+          'retrieved_at': 1790000000,
+        },
+      });
+
+      expect(spec.status, 'matched');
+      expect(spec.evidence?.sourceKind, 'oem_rated_input');
+      expect(spec.evidence?.ratedInputWatts, 1350);
+      expect(spec.evidence?.sourceUrl, 'https://example.test/manual.pdf');
+      expect(spec.evidence?.matchedModel, 'Kettle 1');
+    });
+
+    test('parses no match without evidence', () {
+      final spec = ApplianceSpec.fromJson({
+        'status': 'not_found',
+        'evidence': null,
+      });
+      expect(spec.status, 'not_found');
+      expect(spec.evidence, isNull);
+    });
+  });
+
   test('parses baseline meter coverage without inferring computer state', () {
     final coverage = DeviceBaselineCoverage.fromJson({
       'device_id': 'meter/office',

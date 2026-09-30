@@ -647,6 +647,32 @@ void main() {
     expect(find.byKey(const Key('householdPostalCode')), findsOneWidget);
   });
 
+  testWidgets('meter readings cost prompt opens electricity settings', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          api: _MeteredApi(),
+          credentials: _ConnectedCredentials(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final cta = find.byKey(const Key('setElectricityRateFromMeterPrompt'));
+    await tester.scrollUntilVisible(cta, 300);
+    expect(find.text('Enter ZIP code or bill rate'), findsOneWidget);
+    await tester.tap(cta);
+    await tester.pumpAndSettle();
+    expect(find.text('Electricity settings'), findsOneWidget);
+    expect(find.byKey(const Key('householdPostalCode')), findsOneWidget);
+    expect(find.text('US ZIP code'), findsOneWidget);
+  });
+
   testWidgets('cycles control saves and resets to initial value', (
     tester,
   ) async {

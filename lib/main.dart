@@ -447,6 +447,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ),
   ];
 
+  Future<void> _openElectricitySettings() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ElectricitySettingsScreen(
+          api: widget.api,
+          credentials: widget.credentials,
+          onSaved: _refreshHub,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 720;
@@ -457,6 +469,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         estimates: _estimates,
         estimatesStale: !_hubConnected && _estimates.isNotEmpty,
         meterReadings: _meterReadings,
+        onOpenElectricitySettings: _openElectricitySettings,
         onHoursChanged: _saveApplianceHours,
         onLoadUsage: _loadApplianceUsage,
         onUsageChanged: _saveApplianceUsage,
@@ -530,21 +543,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ],
         ),
         actions: [
-          IconButton(
+          TextButton.icon(
             key: const Key('openElectricitySettings'),
-            tooltip: 'Electricity settings',
-            onPressed: () async {
-              await Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                  builder: (_) => ElectricitySettingsScreen(
-                    api: widget.api,
-                    credentials: widget.credentials,
-                    onSaved: _refreshHub,
-                  ),
-                ),
-              );
-            },
-            icon: const Icon(Icons.tune),
+            onPressed: _openElectricitySettings,
+            icon: const Icon(Icons.attach_money),
+            label: const Text('Rates'),
           ),
           Padding(
             padding: const EdgeInsets.only(right: 16),
@@ -984,11 +987,13 @@ class _InfoRow extends StatelessWidget {
     this.title,
     this.detail, {
     this.color = const Color(0xFF007FBE),
+    this.action,
   });
   final IconData icon;
   final String title;
   final String detail;
   final Color color;
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) => _Surface(
@@ -1011,6 +1016,7 @@ class _InfoRow extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall
                     ?.copyWith(color: _secondary(context)),
               ),
+              if (action != null) ...[const SizedBox(height: 8), action!],
             ],
           ),
         ),
@@ -1487,6 +1493,7 @@ class _PowerNow extends StatefulWidget {
     required this.estimates,
     required this.estimatesStale,
     required this.meterReadings,
+    required this.onOpenElectricitySettings,
     required this.onHoursChanged,
     required this.onLoadUsage,
     required this.onUsageChanged,
@@ -1497,6 +1504,7 @@ class _PowerNow extends StatefulWidget {
   final Map<int, EnergyEstimate> estimates;
   final bool estimatesStale;
   final Map<String, DeviceEnergy> meterReadings;
+  final VoidCallback onOpenElectricitySettings;
   final Future<void> Function(int, double) onHoursChanged;
   final Future<ApplianceUsageProfile> Function(int) onLoadUsage;
   final Future<ApplianceUsageProfile> Function(int, String, double)
@@ -1731,10 +1739,16 @@ class _PowerNowState extends State<_PowerNow> {
             (value) => value.status == 'measured',
           ) ||
           widget.estimates.values.any((value) => value.status == 'measured'))
-        const _InfoRow(
+        _InfoRow(
           Icons.bolt_outlined,
           'Meter readings received',
           'Measured energy is shown above. Add a ZIP code or bill rate to see cost.',
+          action: TextButton.icon(
+            key: const Key('setElectricityRateFromMeterPrompt'),
+            onPressed: widget.onOpenElectricitySettings,
+            icon: const Icon(Icons.attach_money),
+            label: const Text('Enter ZIP code or bill rate'),
+          ),
         )
       else
         _Surface(

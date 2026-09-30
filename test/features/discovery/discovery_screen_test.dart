@@ -244,6 +244,13 @@ class DeviceDetailApi extends FakeDiscoveryApi {
   );
 
   @override
+  Future<ApplianceSpec> applianceSpec(
+    String baseUrl,
+    String token,
+    int applianceId,
+  ) async => const ApplianceSpec(status: 'not_found');
+
+  @override
   Future<List<SavedPlug>> saved(String baseUrl, String token) async => [
     SavedPlug(
       id: 'plug-detail',
@@ -304,6 +311,29 @@ class DeviceDetailApi extends FakeDiscoveryApi {
     rateSource: 'user',
     readingCount: 2,
   );
+}
+
+class NameplateDetailApi extends DeviceDetailApi {
+  @override
+  Future<ApplianceSpec> applianceSpec(
+    String baseUrl,
+    String token,
+    int applianceId,
+  ) async {
+    expect(applianceId, 31);
+    return const ApplianceSpec(
+      status: 'matched',
+      evidence: ApplianceSpecEvidence(
+        sourceKind: 'oem_rated_input',
+        ratedInputWatts: 1350,
+        sourceUrl: 'https://example.test/manual.pdf',
+        matchedBrand: 'Example',
+        matchedModel: 'F100',
+        usageBasis: 'Nameplate input',
+        retrievedAt: 1790000000,
+      ),
+    );
+  }
 }
 
 class MeasuredEstimateApi extends DeviceDetailApi {
@@ -389,32 +419,69 @@ class PeriodRaceApi extends DeviceDetailApi {
 }
 
 void main() {
-  testWidgets('manual IPv4 field uses decimal keyboard and accepts dotted input', (
+  testWidgets('shows OEM nameplate rating separate from measured energy', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(800, 1200);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-
+    final api = NameplateDetailApi();
     await tester.pumpWidget(
-      MaterialApp(home: DiscoveryScreen(api: const FakeDiscoveryApi())),
+      MaterialApp(
+        home: DeviceEnergyDetailScreen(
+          plug: SavedPlug(
+            id: 'plug-detail',
+            ip: '192.168.1.42',
+            model: 'HS110',
+            name: 'Office meter',
+            room: 'Office',
+            meterStatus: 'verified',
+            lastVerifiedAt: 100,
+            connectedAppliance: api.appliance,
+          ),
+          api: api,
+          hubAddress: 'https://192.168.1.20:8787',
+          token: 'test-token',
+        ),
+      ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Enter a plug IP address'));
-    await tester.pumpAndSettle();
-
-    final ipField = find.byKey(const Key('manualPlugIp'));
-    final field = tester.widget<TextField>(ipField);
-    expect(
-      field.keyboardType,
-      const TextInputType.numberWithOptions(decimal: true),
+    await tester.scrollUntilVisible(
+      find.text('OEM rated input (nameplate)'),
+      300,
+      scrollable: find.byType(Scrollable).first,
     );
-
-    // Entering a complete address here exercises the same unrestricted edit
-    // path used by paste; validation remains with the hub.
-    await tester.enterText(ipField, '192.168.1.42');
-    expect(field.controller!.text, '192.168.1.42');
+    expect(find.text('OEM rated input (nameplate)'), findsOneWidget);
+    expect(find.text('1350 W'), findsOneWidget);
+    expect(find.text('Manufacturer source'), findsOneWidget);
+    expect(find.text('0.200 kWh'), findsOneWidget);
+    expect(find.textContaining('1350 kWh'), findsNothing);
   });
+
+  testWidgets(
+    'manual IPv4 field uses decimal keyboard and accepts dotted input',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await tester.pumpWidget(
+        MaterialApp(home: DiscoveryScreen(api: const FakeDiscoveryApi())),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Enter a plug IP address'));
+      await tester.pumpAndSettle();
+
+      final ipField = find.byKey(const Key('manualPlugIp'));
+      final field = tester.widget<TextField>(ipField);
+      expect(
+        field.keyboardType,
+        const TextInputType.numberWithOptions(decimal: true),
+      );
+
+      // Entering a complete address here exercises the same unrestricted edit
+      // path used by paste; validation remains with the hub.
+      await tester.enterText(ipField, '192.168.1.42');
+      expect(field.controller!.text, '192.168.1.42');
+    },
+  );
 
   test('parses explicit stale regional rate metadata and readings', () {
     final energy = DeviceEnergy.fromJson({
