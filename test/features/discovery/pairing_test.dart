@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 import 'package:energylens_mobile/features/discovery/discovery_api.dart';
 import 'package:energylens_mobile/features/discovery/discovery_credentials.dart';
+import 'package:energylens_mobile/features/discovery/hub_pairing_screen.dart';
 
 const _address =
     'https://192.168.1.20:18787#sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -30,9 +32,14 @@ class _FakePairingTransport implements PairingTransport {
         body: jsonEncode({'status': 'ok', 'api_version': '1', 'hub_id': hubId}),
       );
     }
-    return const PairingHttpResponse(
+    return PairingHttpResponse(
       statusCode: 200,
-      body: '{"hub_id":"hub-1","client_id":"app:test","token":"client-token","token_type":"Bearer"}',
+      body: jsonEncode({
+        'hub_id': 'hub-1',
+        'client_id': body?['client_id'] ?? 'app:test',
+        'token': 'client-token',
+        'token_type': 'Bearer',
+      }),
     );
   }
 }
@@ -165,5 +172,64 @@ void main() {
       jsonDecode(store.values['energylens.hub.pairing']!)['token'],
       'old-token',
     );
+  });
+
+  test('stored pairing checks the pinned hub identity on restart', () async {
+    final transport = _FakePairingTransport(hubId: 'different-hub');
+    await expectLater(
+      DiscoveryApi(pairingTransport: transport).verifyStoredPairing(
+        const StoredHubIdentity(address: _address, hubId: 'hub-1'),
+      ),
+      throwsA(isA<PairingException>()),
+    );
+    expect(transport.requests.map((request) => request.$2), ['/healthz']);
+  });
+
+  testWidgets('pasted operator JSON pairs and stores only the issued token', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final store = _MemorySecureStore();
+    final transport = _FakePairingTransport();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HubPairingScreen(
+          api: DiscoveryApi(pairingTransport: transport),
+          credentials: DiscoveryCredentials(storage: store),
+        ),
+      ),
+    );
+    await tester.enterText(
+      find.byKey(const Key('operatorPairingJson')),
+      jsonEncode({
+        'version': 1,
+        'address': _address,
+        'hub_id': 'hub-1',
+        'enrollment_secret': 'one-time-secret',
+        'expires_at': '2026-09-29T12:00:00Z',
+      }),
+    );
+    await tester.ensureVisible(find.text('Verify and pair'));
+    await tester.tap(find.text('Verify and pair'));
+    await tester.pumpAndSettle();
+    expect(transport.requests.map((request) => request.$2), [
+      '/healthz',
+      '/v1/pairing/claim',
+    ]);
+    expect(
+      transport.requests.last.$3?['client_id'],
+      matches(RegExp(r'^energylens-mobile-[0-9a-f]{32}$')),
+    );
+    expect(
+      store.values['energylens.hub.pairing'],
+      contains('client-token'),
+      reason: tester
+          .widgetList<Text>(find.byType(Text))
+          .map((widget) => widget.data)
+          .join(' | '),
+    );
+    expect(store.values.values.join(), isNot(contains('one-time-secret')));
   });
 }

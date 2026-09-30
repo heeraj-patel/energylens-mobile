@@ -14,11 +14,18 @@ class PairingDetails {
     if (json['version'] != null && json['version'] != 1) {
       throw const FormatException('Unsupported hub pairing details version.');
     }
+    final address = json['address'];
+    final hubId = json['hub_id'] ?? json['hubId'];
+    final secret = json['enrollment_secret'] ?? json['enrollmentSecret'];
+    if (address is! String || hubId is! String || secret is! String) {
+      throw const FormatException(
+        'Pairing JSON needs an address, hub ID, and enrollment secret.',
+      );
+    }
     return PairingDetails.fromManualFields(
-      address: json['address'] as String,
-      hubId: (json['hub_id'] ?? json['hubId']) as String,
-      enrollmentSecret:
-          (json['enrollment_secret'] ?? json['enrollmentSecret']) as String,
+      address: address,
+      hubId: hubId,
+      enrollmentSecret: secret,
     );
   }
 
@@ -695,6 +702,27 @@ class DiscoveryApi {
 
   final PairingTransport pairingTransport;
 
+  /// Rechecks the pinned endpoint and saved hub identity on app restart.
+  Future<void> verifyStoredPairing(StoredHubIdentity pairing) async {
+    final endpoint = HubEndpoint.parse(pairing.address);
+    if (endpoint.pin == null) {
+      throw const PairingException(
+        'Pair this hub again with its certificate pin.',
+      );
+    }
+    final health = await pairingTransport.send(
+      pairing.address,
+      '/healthz',
+      'GET',
+    );
+    final healthJson = _decodePairingResponse(health);
+    if (healthJson['hub_id'] != pairing.hubId) {
+      throw const PairingException(
+        'The saved hub identity has changed. Pair again.',
+      );
+    }
+  }
+
   /// Checks the out-of-band hub identity before sending the enrollment secret.
   Future<PairingClaim> claimPairing(
     PairingDetails details, {
@@ -1114,6 +1142,12 @@ class DiscoveryApi {
       client.close(force: true);
     }
   }
+}
+
+class StoredHubIdentity {
+  const StoredHubIdentity({required this.address, required this.hubId});
+  final String address;
+  final String hubId;
 }
 
 class HubEndpoint {

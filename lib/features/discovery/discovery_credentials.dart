@@ -57,7 +57,9 @@ class DiscoveryCredentials {
     required String clientId,
     required String token,
   }) async {
-    HubEndpoint.parse(address);
+    if (HubEndpoint.parse(address).pin == null) {
+      throw const FormatException('A certificate pin is required for pairing.');
+    }
     if (hubId.isEmpty || clientId.isEmpty || token.isEmpty) {
       throw ArgumentError('Hub ID, client ID, and token are required.');
     }
@@ -70,6 +72,8 @@ class DiscoveryCredentials {
         'token': token,
       }),
     );
+    await storage.delete('energylens.hub.address');
+    await storage.delete('energylens.hub.discovery_token');
   }
 
   Future<PairingClaim> claimAndStore(

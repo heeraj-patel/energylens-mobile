@@ -71,6 +71,9 @@ class FakeCredentials extends DiscoveryCredentials {
   String? token;
 
   @override
+  Future<StoredPairingCredential?> readPairing() async => null;
+
+  @override
   Future<(String?, String?)> read() async => (address, token);
 
   @override
@@ -84,6 +87,27 @@ class FakeCredentials extends DiscoveryCredentials {
 
   @override
   Future<void> savePostalCode(String postalCode) async {}
+}
+
+class OfflinePairedCredentials extends FakeCredentials {
+  @override
+  Future<StoredPairingCredential?> readPairing() async =>
+      const StoredPairingCredential(
+        address: 'https://192.168.1.20:8787#sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        hubId: 'hub-1',
+        clientId: 'client-1',
+        token: 'issued-token',
+      );
+}
+
+class OfflinePairingApi extends FakeDiscoveryApi {
+  int checks = 0;
+
+  @override
+  Future<void> verifyStoredPairing(StoredHubIdentity pairing) async {
+    checks++;
+    throw const PairingException('Hub temporarily unavailable.');
+  }
 }
 
 class SavingApi extends FakeDiscoveryApi {
@@ -948,5 +972,27 @@ void main() {
     expect(find.text('Connected load · No live readings'), findsOneWidget);
     expect(find.text('No energy monitoring'), findsOneWidget);
     expect(find.text('Change connected appliance'), findsOneWidget);
+  });
+
+  testWidgets('retains paired hub and retry when offline on restart', (
+    tester,
+  ) async {
+    final api = OfflinePairingApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(
+          api: api,
+          credentials: OfflinePairedCredentials(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Paired hub: hub-1'), findsOneWidget);
+    expect(find.text('Hub temporarily unavailable.'), findsOneWidget);
+    expect(find.text('Retry hub connection'), findsOneWidget);
+    expect(api.checks, 1);
+    await tester.tap(find.text('Retry hub connection'));
+    await tester.pumpAndSettle();
+    expect(api.checks, 2);
   });
 }

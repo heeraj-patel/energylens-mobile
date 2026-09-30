@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'discovery_api.dart';
 import 'plug_connection_status.dart';
 import 'discovery_credentials.dart';
+import 'hub_pairing_screen.dart';
 import '../identify/appliance_onboarding_screen.dart';
 import 'device_energy_detail_screen.dart';
 
@@ -31,6 +32,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   final Map<int, EnergyEstimate> _estimates = {};
   bool _busy = false;
   bool _hubConnected = false;
+  bool _paired = false;
+  String? _pairedHubId;
   bool _searched = false;
   final Set<String> _statusChecking = {};
   String? _error;
@@ -59,6 +62,21 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   Future<void> _restore() async {
     try {
+      final pairing = await widget.credentials.readPairing();
+      if (pairing != null) {
+        if (!mounted) return;
+        setState(() {
+          _paired = true;
+          _pairedHubId = pairing.hubId;
+          _hub.text = pairing.address;
+          _token.text = pairing.token;
+        });
+        await widget.api.verifyStoredPairing(
+          StoredHubIdentity(address: pairing.address, hubId: pairing.hubId),
+        );
+        await _loadSaved();
+        return;
+      }
       final (address, token) = await widget.credentials.read();
       if (!mounted) return;
       if (address != null) _hub.text = address;
@@ -66,8 +84,28 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (address != null && token != null) {
         await _loadSaved();
       }
-    } catch (_) {
-      // A device without secure storage support can still use manual entry.
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _hubConnected = false;
+          _error = error is PairingException
+              ? error.message
+              : 'Could not restore the hub connection. Pair again or retry.';
+        });
+      }
+    }
+  }
+
+  Future<void> _openPairing() async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) =>
+            HubPairingScreen(api: widget.api, credentials: widget.credentials),
+      ),
+    );
+    if (result == true && mounted) {
+      _invalidateHubData();
+      await _restore();
     }
   }
 
@@ -402,7 +440,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         _saved = [..._saved.where((item) => item.id != saved.id), saved];
       });
       try {
-        await widget.credentials.save(_hub.text.trim(), _token.text.trim());
+        if (!_paired) {
+          await widget.credentials.save(_hub.text.trim(), _token.text.trim());
+        }
       } catch (_) {
         if (mounted) {
           setState(
@@ -487,32 +527,54 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Connect the plug to the same Wi-Fi network as your local hub. Scan for TP-Link Kasa plugs, or enter a local IP and choose Shelly Gen2 or Tasmota. Enter the hub HTTPS address and discovery token above. For a self-signed hub certificate, append #sha256= followed by its 64-digit lowercase certificate fingerprint.',
+              'Connect the plug to the same Wi-Fi network as your local hub. Pair this phone with the hub, then scan for TP-Link Kasa plugs or enter a local plug IP.',
             ),
             const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: _busy ? null : _openPairing,
+              icon: const Icon(Icons.phonelink_lock),
+              label: Text(
+                _paired ? 'Pair with a different hub' : 'Pair with hub',
+              ),
+            ),
+            if (_pairedHubId != null) ...[
+              const SizedBox(height: 8),
+              Text('Paired hub: $_pairedHubId'),
+            ],
+            if (_paired && !_hubConnected) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _restore,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry hub connection'),
+              ),
+            ],
+            const SizedBox(height: 16),
             TextField(
               key: const Key('hubAddress'),
               controller: _hub,
-              decoration: const InputDecoration(
-                labelText: 'Hub address',
+              decoration: InputDecoration(
+                labelText: _paired ? 'Paired hub address' : 'Hub address',
                 hintText: 'https://192.168.68.136:18787#sha256=…',
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.url,
               autocorrect: false,
+              readOnly: _paired,
               onChanged: (_) => _invalidateHubData(),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _token,
-              decoration: const InputDecoration(
-                labelText: 'Discovery token',
-                border: OutlineInputBorder(),
+            if (!_paired)
+              TextField(
+                controller: _token,
+                decoration: const InputDecoration(
+                  labelText: 'Pilot discovery token',
+                  border: OutlineInputBorder(),
+                ),
+                obscureText: true,
+                autocorrect: false,
+                onChanged: (_) => _invalidateHubData(),
               ),
-              obscureText: true,
-              autocorrect: false,
-              onChanged: (_) => _invalidateHubData(),
-            ),
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: _busy ? null : () => _search(),
