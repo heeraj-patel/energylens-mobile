@@ -13,10 +13,12 @@ class DiscoveryScreen extends StatefulWidget {
     super.key,
     this.api = const DiscoveryApi(),
     this.credentials = const DiscoveryCredentials(),
+    this.autoScan = false,
   });
 
   final DiscoveryApi api;
   final DiscoveryCredentials credentials;
+  final bool autoScan;
 
   @override
   State<DiscoveryScreen> createState() => _DiscoveryScreenState();
@@ -33,6 +35,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   bool _busy = false;
   bool _hubConnected = false;
   bool _paired = false;
+  bool _showConnectionSettings = false;
+  bool _showManualEntry = false;
   String? _pairedHubId;
   bool _searched = false;
   final Set<String> _statusChecking = {};
@@ -62,6 +66,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   Future<void> _restore() async {
     try {
+      await widget.credentials.importDebugPairingFile();
       final pairing = await widget.credentials.readPairing();
       if (pairing != null) {
         if (!mounted) return;
@@ -75,6 +80,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           StoredHubIdentity(address: pairing.address, hubId: pairing.hubId),
         );
         await _loadSaved();
+        if (widget.autoScan) await _search();
         return;
       }
       final (address, token) = await widget.credentials.read();
@@ -83,6 +89,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (token != null) _token.text = token;
       if (address != null && token != null) {
         await _loadSaved();
+        if (widget.autoScan) await _search();
       }
     } catch (error) {
       if (mounted) {
@@ -497,6 +504,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         };
         _candidates = byId.values.toList();
         _searched = true;
+        _hubConnected = true;
+        if (_candidates.isEmpty) _showManualEntry = true;
       });
     } catch (error) {
       if (!mounted) return;
@@ -512,6 +521,48 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
   }
 
+  List<Widget> _detectedResults(ThemeData theme) {
+    final savedIds = _saved.map((plug) => plug.id).toSet();
+    final candidates = [..._candidates]
+      ..sort((left, right) {
+        final savedOrder = (savedIds.contains(right.id) ? 1 : 0).compareTo(
+          savedIds.contains(left.id) ? 1 : 0,
+        );
+        if (savedOrder != 0) return savedOrder;
+        final modelOrder = left.model.compareTo(right.model);
+        return modelOrder != 0 ? modelOrder : left.ip.compareTo(right.ip);
+      });
+    return [
+      const SizedBox(height: 24),
+      Text('Detected plugs', style: theme.textTheme.titleLarge),
+      const SizedBox(height: 4),
+      Text(
+        _searched
+            ? '${candidates.length} verified in this session · Tap a plug for details'
+            : 'Scan results will appear here. Detection does not save a plug yet.',
+        style: theme.textTheme.bodyMedium,
+      ),
+      if (_searched && candidates.isEmpty) ...[
+        const SizedBox(height: 8),
+        const Text(
+          'No verified plugs found. Check that the plug is powered on and try its IP address.',
+        ),
+      ],
+      for (final candidate in candidates) ...[
+        const SizedBox(height: 8),
+        _PlugCandidateCard(
+          candidate: candidate,
+          saved: savedIds.contains(candidate.id),
+          savedName: _saved
+              .where((plug) => plug.id == candidate.id)
+              .firstOrNull
+              ?.name,
+          onSave: _busy ? null : () => _adopt(candidate),
+        ),
+      ],
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -521,109 +572,150 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            Text(
-              'Connect to your local hub',
-              style: theme.textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Connect the plug to the same Wi-Fi network as your local hub. Pair this phone with the hub, then scan for TP-Link Kasa plugs or enter a local plug IP.',
-            ),
-            const SizedBox(height: 18),
-            FilledButton.icon(
-              onPressed: _busy ? null : _openPairing,
-              icon: const Icon(Icons.phonelink_lock),
-              label: Text(
-                _paired ? 'Pair with a different hub' : 'Pair with hub',
+            if (_hubConnected) ...[
+              Row(
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Hub connected',
+                      style: theme.textTheme.titleMedium,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(
+                      () => _showConnectionSettings = !_showConnectionSettings,
+                    ),
+                    child: Text(
+                      _showConnectionSettings
+                          ? 'Hide details'
+                          : 'Connection details',
+                    ),
+                  ),
+                ],
               ),
-            ),
-            if (_pairedHubId != null) ...[
-              const SizedBox(height: 8),
-              Text('Paired hub: $_pairedHubId'),
             ],
-            if (_paired && !_hubConnected) ...[
+            if (!_hubConnected || _showConnectionSettings) ...[
+              Text(
+                'Connect to your local hub',
+                style: theme.textTheme.titleLarge,
+              ),
               const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _busy ? null : _restore,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry hub connection'),
+              const Text(
+                'Connect the plug to the same Wi-Fi network as your local hub. Pair this phone with the hub, then scan for TP-Link Kasa plugs or enter a local plug IP.',
               ),
-            ],
-            const SizedBox(height: 16),
-            TextField(
-              key: const Key('hubAddress'),
-              controller: _hub,
-              decoration: InputDecoration(
-                labelText: _paired ? 'Paired hub address' : 'Hub address',
-                hintText: 'https://192.168.68.136:18787#sha256=…',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: _busy ? null : _openPairing,
+                icon: const Icon(Icons.phonelink_lock),
+                label: Text(
+                  _paired ? 'Pair with a different hub' : 'Pair with hub',
+                ),
               ),
-              keyboardType: TextInputType.url,
-              autocorrect: false,
-              readOnly: _paired,
-              onChanged: (_) => _invalidateHubData(),
-            ),
-            const SizedBox(height: 12),
-            if (!_paired)
+              if (_pairedHubId != null) ...[
+                const SizedBox(height: 8),
+                Text('Paired hub: $_pairedHubId'),
+              ],
+              if (_paired && !_hubConnected) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _restore,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry hub connection'),
+                ),
+              ],
+              const SizedBox(height: 16),
               TextField(
-                controller: _token,
-                decoration: const InputDecoration(
-                  labelText: 'Pilot discovery token',
+                key: const Key('hubAddress'),
+                controller: _hub,
+                decoration: InputDecoration(
+                  labelText: _paired ? 'Paired hub address' : 'Hub address',
+                  hintText: 'https://192.168.68.136:18787#sha256=…',
                   border: OutlineInputBorder(),
                 ),
-                obscureText: true,
+                keyboardType: TextInputType.url,
                 autocorrect: false,
+                readOnly: _paired,
                 onChanged: (_) => _invalidateHubData(),
               ),
+              const SizedBox(height: 12),
+              if (!_paired)
+                TextField(
+                  controller: _token,
+                  decoration: const InputDecoration(
+                    labelText: 'Pilot discovery token',
+                    border: OutlineInputBorder(),
+                  ),
+                  obscureText: true,
+                  autocorrect: false,
+                  onChanged: (_) => _invalidateHubData(),
+                ),
+            ],
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: _busy ? null : () => _search(),
               icon: const Icon(Icons.radar),
               label: const Text('Scan for plugs'),
             ),
+            ..._detectedResults(theme),
             const SizedBox(height: 14),
-            Text(
-              'If the scan misses your plug, enter its local IP address.',
-              style: theme.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _ip,
-              decoration: const InputDecoration(
-                labelText: 'Plug IP address',
-                hintText: '192.168.1.42',
-                border: OutlineInputBorder(),
+            TextButton.icon(
+              onPressed: () =>
+                  setState(() => _showManualEntry = !_showManualEntry),
+              icon: Icon(_showManualEntry ? Icons.expand_less : Icons.add_link),
+              label: Text(
+                _showManualEntry
+                    ? 'Hide manual IP entry'
+                    : 'Enter a plug IP address',
               ),
-              keyboardType: TextInputType.number,
             ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              initialValue: _manualProtocol,
-              decoration: const InputDecoration(
-                labelText: 'Device type',
-                border: OutlineInputBorder(),
+            if (_showManualEntry) ...[
+              const Text(
+                'If the scan misses your plug, enter its local IP address.',
               ),
-              items: const [
-                DropdownMenuItem(value: 'kasa', child: Text('TP-Link Kasa')),
-                DropdownMenuItem(
-                  value: 'shelly_gen2',
-                  child: Text('Shelly Gen2'),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _ip,
+                decoration: const InputDecoration(
+                  labelText: 'Plug IP address',
+                  hintText: '192.168.1.42',
+                  border: OutlineInputBorder(),
                 ),
-                DropdownMenuItem(value: 'tasmota', child: Text('Tasmota')),
-              ],
-              onChanged: _busy
-                  ? null
-                  : (value) {
-                      if (value != null) {
-                        setState(() => _manualProtocol = value);
-                      }
-                    },
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: _busy ? null : () => _search(manual: true),
-              child: const Text('Check this IP address'),
-            ),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: _manualProtocol,
+                decoration: const InputDecoration(
+                  labelText: 'Device type',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'kasa', child: Text('TP-Link Kasa')),
+                  DropdownMenuItem(
+                    value: 'shelly_gen2',
+                    child: Text('Shelly Gen2'),
+                  ),
+                  DropdownMenuItem(value: 'tasmota', child: Text('Tasmota')),
+                ],
+                onChanged: _busy
+                    ? null
+                    : (value) {
+                        if (value != null) {
+                          setState(() => _manualProtocol = value);
+                        }
+                      },
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: _busy ? null : () => _search(manual: true),
+                child: const Text('Check this IP address'),
+              ),
+            ],
             if (_busy) ...[
               const SizedBox(height: 18),
               const Center(child: CircularProgressIndicator()),
@@ -791,25 +883,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 ),
               ),
             ],
-            const SizedBox(height: 24),
-            Text('Detected plugs', style: theme.textTheme.titleLarge),
-            const SizedBox(height: 8),
-            if (_searched && _candidates.isEmpty)
-              const Text(
-                'No verified plugs found. Check that the plug is powered on and try its IP address.',
-              ),
-            if (!_searched)
-              const Text(
-                'Scan results will appear here. Detection does not save a plug yet.',
-              ),
-            for (final candidate in _candidates) ...[
-              const SizedBox(height: 12),
-              _PlugCandidateCard(
-                candidate: candidate,
-                saved: _saved.any((item) => item.id == candidate.id),
-                onSave: _busy ? null : () => _adopt(candidate),
-              ),
-            ],
           ],
         ),
       ),
@@ -821,11 +894,13 @@ class _PlugCandidateCard extends StatelessWidget {
   const _PlugCandidateCard({
     required this.candidate,
     required this.saved,
+    required this.savedName,
     required this.onSave,
   });
 
   final DiscoveredPlug candidate;
   final bool saved;
+  final String? savedName;
   final VoidCallback? onSave;
 
   @override
@@ -833,59 +908,69 @@ class _PlugCandidateCard extends StatelessWidget {
     final theme = Theme.of(context);
     final noMeter = candidate.meterStatus == 'absent';
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Smart plug', style: theme.textTheme.labelLarge),
-            const SizedBox(height: 4),
-            Text(
-              candidate.alias?.isNotEmpty == true
-                  ? candidate.alias!
-                  : candidate.model,
-              style: theme.textTheme.titleMedium,
-            ),
-            Text('${candidate.model} · ${candidate.ip}'),
-            if (candidate.mac != null) Text('MAC ${candidate.mac}'),
-            if (candidate.localProtocol == 'http')
-              Text('Local API · HTTP ${candidate.httpPort ?? 80}'),
-            const SizedBox(height: 6),
-            Text(
-              noMeter
-                  ? 'Detected · No energy monitoring'
-                  : candidate.meterStatus == 'verified'
-                  ? 'Detected · Energy meter verified'
-                  : 'Detected · Energy meter unknown',
-            ),
-            if (candidate.relayOn != null)
-              Text(
-                'Switch ${candidate.relayOn! ? 'on' : 'off'} · This is not a power reading',
-              ),
-            const Divider(height: 24),
-            Text(
-              'Connected appliance or lamp',
-              style: theme.textTheme.labelLarge,
-            ),
-            const Text(
-              'Not identified yet. Add its model after saving the plug to estimate cost.',
-            ),
-            const SizedBox(height: 10),
-            Text(
-              saved
-                  ? 'Already saved on this hub'
-                  : 'Detected for this scan · Not saved yet',
-              style: theme.textTheme.bodySmall,
-            ),
-            if (!saved) ...[
-              const SizedBox(height: 8),
-              FilledButton(
-                onPressed: onSave,
-                child: const Text('Save this plug'),
-              ),
-            ],
-          ],
+      child: ExpansionTile(
+        leading: Icon(
+          saved ? Icons.check_circle_outline : Icons.power_outlined,
+          color: saved ? theme.colorScheme.primary : null,
         ),
+        title: Text(
+          savedName?.isNotEmpty == true
+              ? savedName!
+              : candidate.alias?.isNotEmpty == true
+              ? candidate.alias!
+              : candidate.model,
+          style: theme.textTheme.titleMedium,
+        ),
+        subtitle: Text(
+          '${candidate.ip} · ${noMeter
+              ? 'No energy monitoring'
+              : candidate.meterStatus == 'verified'
+              ? 'Energy meter verified'
+              : 'Energy meter unknown'}${saved ? ' · Saved' : ''}',
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Detected · ${noMeter
+                ? 'No energy monitoring'
+                : candidate.meterStatus == 'verified'
+                ? 'Energy meter verified'
+                : 'Energy meter unknown'}',
+          ),
+          Text(
+            'Model ${candidate.model}${candidate.hardwareVersion == null ? '' : ' · Hardware ${candidate.hardwareVersion}'}',
+          ),
+          if (candidate.mac != null) Text('MAC ${candidate.mac}'),
+          if (candidate.localProtocol == 'http')
+            Text('Local API · HTTP ${candidate.httpPort ?? 80}'),
+          if (candidate.relayOn != null)
+            Text(
+              'Switch ${candidate.relayOn! ? 'on' : 'off'} · This is not a power reading',
+            ),
+          const SizedBox(height: 8),
+          Text(
+            'Connected appliance or lamp',
+            style: theme.textTheme.labelLarge,
+          ),
+          const Text(
+            'Not identified yet. Add its model after saving the plug to estimate cost.',
+          ),
+          const SizedBox(height: 8),
+          Text(
+            saved
+                ? 'Already saved on this hub'
+                : 'Detected for this scan · Not saved yet',
+            style: theme.textTheme.bodySmall,
+          ),
+          if (!saved) ...[
+            const SizedBox(height: 8),
+            FilledButton(
+              onPressed: onSave,
+              child: const Text('Save this plug'),
+            ),
+          ],
+        ],
       ),
     );
   }

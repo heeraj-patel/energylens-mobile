@@ -271,6 +271,26 @@ class _MultiProtocolApi extends _MeteredApi {
         lastVerifiedAt: 1,
       ),
       SavedPlug(
+        id: 'kasa-http',
+        ip: '',
+        model: 'Kasa KLAP meter',
+        name: 'Kasa HTTP',
+        room: '',
+        meterStatus: 'verified',
+        localProtocol: 'http',
+        lastVerifiedAt: 1,
+      ),
+      SavedPlug(
+        id: 'unverified-http',
+        ip: '',
+        model: 'Kasa KLAP unverified',
+        name: 'Unverified HTTP',
+        room: '',
+        meterStatus: 'unknown',
+        localProtocol: 'http',
+        lastVerifiedAt: 1,
+      ),
+      SavedPlug(
         id: 'shelly',
         ip: '',
         model: 'Shelly',
@@ -545,6 +565,37 @@ class _ManualDevicesApi extends DiscoveryApi {
 }
 
 void main() {
+  testWidgets('discovery preview starts in Ask & Add with home navigation', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          api: _ManualDevicesApi(),
+          credentials: _ConnectedCredentials(),
+          initialTabIndex: 3,
+          startInConnectAppliance: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ask & Add'), findsWidgets);
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.text('Find a smart plug'), findsOneWidget);
+    expect(find.text('Enter device details'), findsOneWidget);
+    expect(find.text('Desk fan'), findsOneWidget);
+
+    await tester.tap(find.text('Power Now'));
+    await tester.pumpAndSettle();
+    expect(find.text('Find a smart plug'), findsNothing);
+    expect(find.byType(NavigationBar), findsOneWidget);
+  });
+
   testWidgets('category hours control saves and resets', (tester) async {
     final api = _HoursApi();
     tester.view.physicalSize = const Size(390, 844);
@@ -892,7 +943,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(api.requested.toSet(), {'kasa', 'shelly', 'tasmota'});
+      expect(api.requested.toSet(), {'kasa', 'kasa-http', 'shelly', 'tasmota'});
       expect(find.text('HUB CONNECTED'), findsOneWidget);
 
       api.unavailable = true;

@@ -76,7 +76,16 @@ class EnergyLensApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: theme(Brightness.light),
       darkTheme: theme(Brightness.dark),
-      home: const HomeScreen(),
+      home: HomeScreen(
+        initialTabIndex:
+            const bool.fromEnvironment('ENERGYLENS_DISCOVERY_PREVIEW') ? 3 : 0,
+        autoScanDiscovery: const bool.fromEnvironment(
+          'ENERGYLENS_DISCOVERY_PREVIEW',
+        ),
+        startInConnectAppliance: const bool.fromEnvironment(
+          'ENERGYLENS_DISCOVERY_PREVIEW',
+        ),
+      ),
     );
   }
 }
@@ -86,17 +95,23 @@ class HomeScreen extends StatefulWidget {
     super.key,
     this.api = const DiscoveryApi(),
     this.credentials = const DiscoveryCredentials(),
+    this.initialTabIndex = 0,
+    this.autoScanDiscovery = false,
+    this.startInConnectAppliance = false,
   });
 
   final DiscoveryApi api;
   final DiscoveryCredentials credentials;
+  final int initialTabIndex;
+  final bool autoScanDiscovery;
+  final bool startInConnectAppliance;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  int _index = 0;
+  late int _index;
   bool _hubConnected = false;
   List<SavedPlug> _plugs = const [];
   Map<int, EnergyEstimate> _estimates = const {};
@@ -109,6 +124,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _index = widget.initialTabIndex.clamp(0, _destinations.length - 1).toInt();
     WidgetsBinding.instance.addObserver(this);
     _refreshHub();
     _meterRefreshTimer = Timer.periodic(
@@ -330,9 +346,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final candidates = plugs ?? _plugs;
       await Future.wait([
         for (final plug in candidates)
-          if (plug.meterStatus != 'absent' &&
+          if (plug.meterStatus == 'verified' &&
               const {
                 'legacy_tcp',
+                'http',
                 'shelly_gen2',
                 'tasmota',
               }.contains(plug.localProtocol))
@@ -454,6 +471,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         api: widget.api,
         credentials: widget.credentials,
         onDevicesChanged: _refreshHub,
+        autoScanDiscovery: widget.autoScanDiscovery,
+        startInConnectAppliance: widget.startInConnectAppliance,
       ),
     };
     return Scaffold(
@@ -1527,6 +1546,8 @@ class _PowerNowState extends State<_PowerNow> {
             );
             final meterDetail = plug.meterStatus == 'absent'
                 ? 'No energy meter · ${plug.room.isEmpty ? 'Room not set' : plug.room}'
+                : plug.meterStatus != 'verified'
+                ? 'Energy meter unverified'
                 : plug.connectionStatus == 'disconnected' ||
                       plug.connectionStatus == 'identity_changed'
                 ? 'No current meter reading'
@@ -2183,21 +2204,32 @@ class _AskAndAdd extends StatefulWidget {
     required this.api,
     required this.credentials,
     required this.onDevicesChanged,
+    required this.autoScanDiscovery,
+    required this.startInConnectAppliance,
   });
 
   final DiscoveryApi api;
   final DiscoveryCredentials credentials;
   final VoidCallback onDevicesChanged;
+  final bool autoScanDiscovery;
+  final bool startInConnectAppliance;
 
   @override
   State<_AskAndAdd> createState() => _AskAndAddState();
 }
 
 class _AskAndAddState extends State<_AskAndAdd> {
-  _AskMode mode = _AskMode.ask;
+  late _AskMode mode;
   List<SavedAppliance> _manualDevices = const [];
   String? _deleteError;
   int? _deletingId;
+
+  @override
+  void initState() {
+    super.initState();
+    mode = widget.startInConnectAppliance ? _AskMode.connect : _AskMode.ask;
+    if (mode == _AskMode.connect) unawaited(_loadManualDevices());
+  }
 
   Future<void> _loadManualDevices() async {
     try {
@@ -2398,7 +2430,10 @@ class _AskAndAddState extends State<_AskAndAdd> {
         FilledButton.icon(
           onPressed: () async {
             await Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const DiscoveryScreen()),
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    DiscoveryScreen(autoScan: widget.autoScanDiscovery),
+              ),
             );
             if (!mounted) return;
             _loadManualDevices();

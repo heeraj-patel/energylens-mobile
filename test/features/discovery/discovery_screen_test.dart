@@ -788,6 +788,13 @@ void main() {
     );
     expect(find.text('Old hub plug'), findsOneWidget);
 
+    await tester.scrollUntilVisible(
+      find.text('Connection details'),
+      -300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Connection details'));
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const Key('hubAddress')),
       'https://192.168.1.30:8787',
@@ -856,13 +863,15 @@ void main() {
     await tester.tap(find.text('Scan for plugs'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
-      find.text('Smart plug'),
+      find.text('Desk plug'),
       220,
       scrollable: find.byType(Scrollable).first,
     );
     await tester.pumpAndSettle();
+    expect(find.textContaining('No energy monitoring'), findsWidgets);
+    await tester.tap(find.text('Desk plug'));
+    await tester.pumpAndSettle();
 
-    expect(find.text('Smart plug'), findsOneWidget);
     expect(find.text('Desk plug'), findsOneWidget);
     expect(find.text('MAC 00:31:92:43:c5:28'), findsOneWidget);
     expect(find.text('Local API · HTTP 80'), findsOneWidget);
@@ -894,10 +903,12 @@ void main() {
     await tester.tap(find.text('Scan for plugs'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
-      find.text('Save this plug'),
+      find.text('Desk plug'),
       220,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.tap(find.text('Desk plug'));
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Save this plug'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save this plug'));

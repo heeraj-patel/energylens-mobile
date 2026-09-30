@@ -16,7 +16,7 @@ class DiscoveryCredentials {
   static const _pairingStorageKey = 'energylens.hub.pairing';
   static const _buildHubUrl = String.fromEnvironment('ENERGYLENS_HUB_URL');
 
-  Future<(String?, String?)> read() async {
+  Future<void> importDebugPairingFile() async {
     if (kDebugMode && Platform.isIOS) {
       final pairingFile = File(
         '${Directory.systemTemp.path}/energylens-pairing.json',
@@ -29,11 +29,15 @@ class DiscoveryCredentials {
         final devAddress = data['address'] as String?;
         final devToken = data['token'] as String?;
         if (devAddress != null && devToken != null && devToken.isNotEmpty) {
+          await storage.delete(_pairingStorageKey);
           await save(devAddress, devToken);
-          return (devAddress, devToken);
         }
       }
     }
+  }
+
+  Future<(String?, String?)> read() async {
+    await importDebugPairingFile();
     final pairing = await readPairing();
     if (pairing != null) return (pairing.address, pairing.token);
     final address = await storage.read('energylens.hub.address');
