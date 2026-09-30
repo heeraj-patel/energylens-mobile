@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'features/discovery/discovery_screen.dart';
 import 'features/discovery/discovery_api.dart';
 import 'features/discovery/discovery_credentials.dart';
+import 'features/discovery/plug_connection_status.dart';
 import 'features/discovery/electricity_settings_screen.dart';
 import 'features/identify/appliance_onboarding_screen.dart';
 
@@ -100,6 +101,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<SavedPlug> _plugs = const [];
   Map<int, EnergyEstimate> _estimates = const {};
   Map<String, DeviceEnergy> _meterReadings = const {};
+  Map<String, DeviceBaselineCoverage> _baselineCoverage = const {};
   int _refreshGeneration = 0;
   int _meterGeneration = 0;
   Timer? _meterRefreshTimer;
@@ -136,6 +138,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           setState(() {
             _hubConnected = false;
             _meterReadings = const {};
+            _baselineCoverage = const {};
             ++_meterGeneration;
           });
         }
@@ -148,34 +151,53 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _hubConnected = true;
           _estimates = const {};
           _meterReadings = const {};
+          _baselineCoverage = const {};
         });
       }
+      unawaited(
+        _refreshBaselineCoverage(
+          plugs: plugs,
+          address: address,
+          token: token,
+          generation: generation,
+        ),
+      );
       unawaited(_refreshMetering(plugs: plugs, address: address, token: token));
+      unawaited(_refreshPlugStatuses(plugs, address, token, generation));
       await Future.wait([
         for (final plug in plugs)
           if (plug.connectedAppliance case final appliance?)
-            () async {
-              try {
-                final estimate = await widget.api.estimate(
-                  address,
-                  token,
-                  appliance.id,
-                );
-                if (mounted && generation == _refreshGeneration) {
-                  setState(
-                    () => _estimates = {..._estimates, appliance.id: estimate},
+            if (plug.connectionStatus != 'identity_changed')
+              () async {
+                try {
+                  final estimate = await widget.api.estimate(
+                    address,
+                    token,
+                    appliance.id,
                   );
+                  if (mounted &&
+                      generation == _refreshGeneration &&
+                      !_plugs.any(
+                        (current) =>
+                            current.id == plug.id &&
+                            current.connectionStatus == 'identity_changed',
+                      )) {
+                    setState(
+                      () =>
+                          _estimates = {..._estimates, appliance.id: estimate},
+                    );
+                  }
+                } catch (_) {
+                  // One unavailable estimate must not hide the saved plug.
                 }
-              } catch (_) {
-                // One unavailable estimate must not hide the saved plug.
-              }
-            }(),
+              }(),
       ]);
     } catch (_) {
       if (mounted && generation == _refreshGeneration) {
         setState(() {
           _hubConnected = false;
           _meterReadings = const {};
+          _baselineCoverage = const {};
           ++_meterGeneration;
         });
       }
@@ -191,6 +213,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           setState(() {
             _hubConnected = false;
             _meterReadings = const {};
+            _baselineCoverage = const {};
             ++_meterGeneration;
           });
         }
@@ -201,17 +224,96 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         _hubConnected = true;
         _plugs = plugs;
+        _baselineCoverage = const {};
       });
+      unawaited(
+        _refreshBaselineCoverage(
+          plugs: plugs,
+          address: address,
+          token: token,
+          generation: generation,
+        ),
+      );
       await _refreshMetering(plugs: plugs, address: address, token: token);
+      await _refreshPlugStatuses(plugs, address, token, generation);
     } catch (_) {
       if (mounted && generation == _refreshGeneration) {
         setState(() {
           _hubConnected = false;
           _meterReadings = const {};
+          _baselineCoverage = const {};
           ++_meterGeneration;
         });
       }
     }
+  }
+
+  Future<void> _refreshPlugStatuses(
+    List<SavedPlug> plugs,
+    String address,
+    String token,
+    int generation,
+  ) async {
+    for (final plug in plugs) {
+      if (!mounted || generation != _refreshGeneration) return;
+      try {
+        final refreshed = await widget.api.refreshPlugStatus(
+          address,
+          token,
+          plug.id,
+        );
+        if (!mounted || generation != _refreshGeneration) return;
+        setState(() {
+          _plugs = [
+            for (final current in _plugs)
+              if (current.id == refreshed.id) refreshed else current,
+          ];
+          if (refreshed.connectionStatus == 'identity_changed') {
+            final applianceId = refreshed.connectedAppliance?.id;
+            if (applianceId != null) {
+              final next = {..._estimates};
+              next.remove(applianceId);
+              _estimates = next;
+            }
+          }
+        });
+      } catch (_) {
+        // A failed check leaves the previous timestamp and status intact.
+      }
+    }
+  }
+
+  Future<void> _refreshBaselineCoverage({
+    required List<SavedPlug> plugs,
+    required String address,
+    required String token,
+    required int generation,
+  }) async {
+    final computers = plugs.where(
+      (plug) => plug.connectedAppliance?.category == 'computer',
+    );
+    await Future.wait([
+      for (final plug in computers)
+        () async {
+          try {
+            final coverage = await widget.api.deviceBaselineCoverage(
+              address,
+              token,
+              plug.id,
+            );
+            if (mounted && generation == _refreshGeneration) {
+              setState(
+                () => _baselineCoverage = {
+                  ..._baselineCoverage,
+                  plug.id: coverage,
+                },
+              );
+            }
+          } catch (_) {
+            // Keep missing coverage unavailable; never infer a state from it.
+          }
+        }(),
+    ]);
   }
 
   Future<void> _refreshMetering({
@@ -336,13 +438,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         plugs: _plugs,
         hubConnected: _hubConnected,
         estimates: _estimates,
+        estimatesStale: !_hubConnected && _estimates.isNotEmpty,
         meterReadings: _meterReadings,
         onHoursChanged: _saveApplianceHours,
         onLoadUsage: _loadApplianceUsage,
         onUsageChanged: _saveApplianceUsage,
       ),
       1 => const _StopWaste(),
-      2 => const _SleepCheck(),
+      2 => _SleepCheck(
+        plugs: _plugs,
+        baselineCoverage: _baselineCoverage,
+        hubConnected: _hubConnected,
+      ),
       _ => _AskAndAdd(
         api: widget.api,
         credentials: widget.credentials,
@@ -1359,6 +1466,7 @@ class _PowerNow extends StatefulWidget {
     required this.plugs,
     required this.hubConnected,
     required this.estimates,
+    required this.estimatesStale,
     required this.meterReadings,
     required this.onHoursChanged,
     required this.onLoadUsage,
@@ -1368,6 +1476,7 @@ class _PowerNow extends StatefulWidget {
   final List<SavedPlug> plugs;
   final bool hubConnected;
   final Map<int, EnergyEstimate> estimates;
+  final bool estimatesStale;
   final Map<String, DeviceEnergy> meterReadings;
   final Future<void> Function(int, double) onHoursChanged;
   final Future<ApplianceUsageProfile> Function(int) onLoadUsage;
@@ -1406,9 +1515,21 @@ class _PowerNowState extends State<_PowerNow> {
             final appliance = plug.connectedAppliance;
             final expanded =
                 appliance != null && !_collapsedPlugIds.contains(plug.id);
-            final meter = widget.meterReadings[plug.id];
+            final meter =
+                widget.hubConnected &&
+                    plug.connectionStatus != 'disconnected' &&
+                    plug.connectionStatus != 'identity_changed'
+                ? widget.meterReadings[plug.id]
+                : null;
+            final connectionLabel = plugConnectionLabel(
+              plug,
+              hubConnected: widget.hubConnected,
+            );
             final meterDetail = plug.meterStatus == 'absent'
                 ? 'No energy meter · ${plug.room.isEmpty ? 'Room not set' : plug.room}'
+                : plug.connectionStatus == 'disconnected' ||
+                      plug.connectionStatus == 'identity_changed'
+                ? 'No current meter reading'
                 : meter?.latestWatts != null
                 ? 'Recent meter reading · ${meter!.latestWatts!.toStringAsFixed(1)} W${meter.latestSample == null ? '' : ' · ${_sampleTime(meter.latestSample!.ts)}'}'
                 : meter?.status == 'measured'
@@ -1422,7 +1543,8 @@ class _PowerNowState extends State<_PowerNow> {
                     key: Key('plug-expand-${plug.id}'),
                     button: appliance != null,
                     expanded: expanded,
-                    label: '${plug.name}, ${plug.model}. $meterDetail',
+                    label:
+                        '${plug.name}, ${plug.model}. $connectionLabel. ${plugConnectionDetail(plug)}. $meterDetail',
                     hint: appliance == null
                         ? null
                         : expanded
@@ -1455,6 +1577,12 @@ class _PowerNowState extends State<_PowerNow> {
                                 const SizedBox(height: 3),
                                 Text(
                                   meterDetail,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(color: _secondary(context)),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  '$connectionLabel · ${plugConnectionDetail(plug)}',
                                   style: Theme.of(context).textTheme.bodySmall
                                       ?.copyWith(color: _secondary(context)),
                                 ),
@@ -1563,6 +1691,14 @@ class _PowerNowState extends State<_PowerNow> {
           ],
         ),
       ),
+      if (widget.estimatesStale) ...[
+        const SizedBox(height: 8),
+        const _InfoRow(
+          Icons.cloud_off_outlined,
+          'Hub disconnected · showing cached estimates',
+          'These amounts were saved from the last hub refresh and may be out of date.',
+        ),
+      ],
       const SizedBox(height: 18),
       ..._savedDevices(),
       const SizedBox(height: 18),
@@ -1838,7 +1974,64 @@ class _SleepMetric extends StatelessWidget {
 }
 
 class _SleepCheck extends StatelessWidget {
-  const _SleepCheck();
+  const _SleepCheck({
+    required this.plugs,
+    required this.baselineCoverage,
+    required this.hubConnected,
+  });
+
+  final List<SavedPlug> plugs;
+  final Map<String, DeviceBaselineCoverage> baselineCoverage;
+  final bool hubConnected;
+
+  String _coverageDetail(DeviceBaselineCoverage? coverage) {
+    if (coverage == null) {
+      return hubConnected
+          ? 'Meter coverage is unavailable. The hub could not confirm the coverage window.'
+          : 'Meter coverage is unavailable while the hub is disconnected.';
+    }
+    if (coverage.status == 'sufficient_meter_coverage') {
+      return '${coverage.coveredDays}/${coverage.requiredDays} covered days · '
+          '${(coverage.coverageFraction * 100).round()}% of the seven-day window. '
+          'Coverage describes sampled time only; it does not identify computer activity or savings.';
+    }
+    if (coverage.status == 'collecting') {
+      return 'Collecting meter history · ${coverage.coveredDays}/${coverage.requiredDays} '
+          'covered days · ${(coverage.coverageFraction * 100).round()}% of the seven-day window. '
+          'Coverage does not identify computer activity or savings.';
+    }
+    final reason = switch (coverage.reason) {
+      'meter_required' => 'This device does not have a supported energy meter.',
+      'computer_required' =>
+        'Attach a computer to this meter to check its coverage.',
+      'attachment_required' || 'attach_a_computer' =>
+        'Attach this meter to a computer to check coverage.',
+      'stale_meter_stream' =>
+        'The meter stream is stale, so coverage is unavailable.',
+      _ => 'The hub cannot confirm meter coverage for this device.',
+    };
+    return '$reason Coverage does not identify computer activity or savings.';
+  }
+
+  Widget _computerCoverage(BuildContext context, SavedPlug plug) {
+    final coverage = baselineCoverage[plug.id];
+    final status = switch (coverage?.status) {
+      'sufficient_meter_coverage' => 'Sufficient meter coverage',
+      'collecting' => 'Collecting meter history',
+      _ => 'Meter coverage unavailable',
+    };
+    final color = coverage?.status == 'sufficient_meter_coverage'
+        ? _green
+        : coverage?.status == 'collecting'
+        ? const Color(0xFF007FBE)
+        : _secondary(context);
+    return _InfoRow(
+      Icons.sensors_outlined,
+      '${plug.connectedAppliance!.name} · $status',
+      _coverageDetail(coverage),
+      color: color,
+    );
+  }
 
   @override
   Widget build(BuildContext context) => Column(
@@ -1954,12 +2147,28 @@ class _SleepCheck extends StatelessWidget {
         color: _green,
       ),
       const SizedBox(height: 24),
-      const _SectionTitle('What Ran Overnight', 'No devices yet'),
+      _SectionTitle(
+        'Meter Coverage',
+        plugs.any((plug) => plug.connectedAppliance?.category == 'computer')
+            ? 'Attached computers'
+            : 'No attached computer',
+      ),
       const SizedBox(height: 10),
+      if (plugs.any((plug) => plug.connectedAppliance?.category == 'computer'))
+        for (final plug in plugs.where(
+          (plug) => plug.connectedAppliance?.category == 'computer',
+        )) ...[_computerCoverage(context, plug), const SizedBox(height: 10)]
+      else
+        const _InfoRow(
+          Icons.schedule_outlined,
+          'No attached computer',
+          'Attach a computer to a monitored meter to check whether enough meter history has been collected.',
+        ),
+      const SizedBox(height: 8),
       const _InfoRow(
         Icons.schedule_outlined,
-        'Nothing to review yet',
-        'Connect a monitored device to begin collecting overnight history.',
+        'No overnight activity summary',
+        'Meter coverage shows data continuity only. Computer activity and avoidable use are not classified.',
       ),
       const SizedBox(height: 18),
       const _Setup(),

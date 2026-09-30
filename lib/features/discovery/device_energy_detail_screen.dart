@@ -225,6 +225,11 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
                       ? 'The latest reading is not fresh enough to show as live.'
                       : 'Live power · fresh meter reading',
                 ),
+                if (data.latestWatts != null && data.latestSample != null)
+                  Text(
+                    'Sampled ${_sampleTime(context, data.latestSample!.ts)}',
+                    style: theme.textTheme.bodySmall,
+                  ),
                 const Divider(height: 24),
                 Text(
                   '${data.totalKwh.toStringAsFixed(3)} kWh',
@@ -330,6 +335,22 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(appliance.name, style: theme.textTheme.titleMedium),
+            if (_estimateError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6, bottom: 2),
+                child: Row(
+                  children: [
+                    const Icon(Icons.cloud_off_outlined, size: 16),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Could not refresh · showing cached estimate',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 6),
             Text(
               '$unit energy · ${estimate.estimatedKwh!.toStringAsFixed(1)} kWh',
@@ -377,6 +398,14 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
   String _watts(double value) => value == value.roundToDouble()
       ? value.toStringAsFixed(0)
       : value.toStringAsFixed(1);
+
+  String _sampleTime(BuildContext context, DateTime timestamp) {
+    final local = timestamp.toLocal();
+    final date = MaterialLocalizations.of(context).formatMediumDate(local);
+    final time = MaterialLocalizations.of(context)
+        .formatTimeOfDay(TimeOfDay.fromDateTime(local));
+    return '$date · $time';
+  }
 
   String _duration(double hours) {
     final roundedMinutes = (hours * 60).round();

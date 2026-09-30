@@ -3,6 +3,135 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
+class PairingDetails {
+  const PairingDetails._({
+    required this.address,
+    required this.hubId,
+    required this.enrollmentSecret,
+  });
+
+  factory PairingDetails.fromJson(Map<String, dynamic> json) {
+    if (json['version'] != null && json['version'] != 1) {
+      throw const FormatException('Unsupported hub pairing details version.');
+    }
+    return PairingDetails.fromManualFields(
+      address: json['address'] as String,
+      hubId: (json['hub_id'] ?? json['hubId']) as String,
+      enrollmentSecret:
+          (json['enrollment_secret'] ?? json['enrollmentSecret']) as String,
+    );
+  }
+
+  factory PairingDetails.fromManualFields({
+    required String address,
+    required String hubId,
+    required String enrollmentSecret,
+  }) {
+    final endpoint = HubEndpoint.parse(address);
+    if (endpoint.pin == null) {
+      throw const FormatException(
+        'Include the hub certificate SHA-256 pin in the address.',
+      );
+    }
+    if (hubId.trim().isEmpty || enrollmentSecret.isEmpty) {
+      throw const FormatException('Hub ID and enrollment secret are required.');
+    }
+    return PairingDetails._(
+      address: address.trim(),
+      hubId: hubId.trim(),
+      enrollmentSecret: enrollmentSecret,
+    );
+  }
+
+  final String address;
+  final String hubId;
+  final String enrollmentSecret;
+}
+
+class PairingClaim {
+  const PairingClaim({
+    required this.hubId,
+    required this.clientId,
+    required this.token,
+  });
+
+  final String hubId;
+  final String clientId;
+  final String token;
+}
+
+class PairingException implements Exception {
+  const PairingException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+class PairingHttpResponse {
+  const PairingHttpResponse({required this.statusCode, required this.body});
+
+  final int statusCode;
+  final String body;
+}
+
+abstract interface class PairingTransport {
+  Future<PairingHttpResponse> send(
+    String address,
+    String path,
+    String method, {
+    Map<String, dynamic>? body,
+  });
+}
+
+class IoPairingTransport implements PairingTransport {
+  const IoPairingTransport();
+
+  @override
+  Future<PairingHttpResponse> send(
+    String address,
+    String path,
+    String method, {
+    Map<String, dynamic>? body,
+  }) async {
+    final endpoint = HubEndpoint.parse(address);
+    final client = HttpClient(
+      context: endpoint.pin == null
+          ? null
+          : SecurityContext(withTrustedRoots: false),
+    )..connectionTimeout = const Duration(seconds: 4);
+    if (endpoint.pin case final pin?) {
+      client.badCertificateCallback = (certificate, host, port) {
+        final now = DateTime.now();
+        return host == endpoint.uri.host &&
+            port == endpoint.uri.port &&
+            !now.isBefore(certificate.startValidity) &&
+            !now.isAfter(certificate.endValidity) &&
+            matchesHubCertificatePin(certificate.der, pin);
+      };
+    }
+    try {
+      final request = await client
+          .openUrl(method, endpoint.uri.replace(path: path))
+          .timeout(const Duration(seconds: 5));
+      request.followRedirects = false;
+      if (body != null) {
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode(body));
+      }
+      final response = await request.close().timeout(
+        const Duration(seconds: 20),
+      );
+      return PairingHttpResponse(
+        statusCode: response.statusCode,
+        body: await utf8.decoder.bind(response).join(),
+      );
+    } finally {
+      client.close(force: true);
+    }
+  }
+}
+
 class IdentificationCandidate {
   const IdentificationCandidate({
     required this.manufacturer,
@@ -91,6 +220,8 @@ class SavedPlug {
     required this.room,
     required this.meterStatus,
     required this.lastVerifiedAt,
+    this.connectionStatus = 'unverified',
+    this.statusCheckedAt,
     this.connectedAppliance,
     this.mac,
     this.localProtocol,
@@ -105,6 +236,8 @@ class SavedPlug {
     room: json['room'] as String,
     meterStatus: json['meter_status'] as String,
     lastVerifiedAt: json['last_verified_at'] as int,
+    connectionStatus: json['connection_status'] as String? ?? 'unverified',
+    statusCheckedAt: json['status_checked_at'] as int?,
     mac: json['mac'] as String?,
     localProtocol: json['local_protocol'] as String?,
     httpPort: json['http_port'] as int?,
@@ -122,6 +255,8 @@ class SavedPlug {
   final String room;
   final String meterStatus;
   final int lastVerifiedAt;
+  final String connectionStatus;
+  final int? statusCheckedAt;
   final SavedAppliance? connectedAppliance;
   final String? mac;
   final String? localProtocol;
@@ -193,6 +328,54 @@ class DeviceEnergy {
   final List<EnergyReading> readings;
 
   EnergyReading? get latestSample => readings.isEmpty ? null : readings.last;
+}
+
+class DeviceBaselineCoverage {
+  const DeviceBaselineCoverage({
+    required this.deviceId,
+    required this.applianceId,
+    required this.windowStart,
+    required this.windowEnd,
+    required this.latestSampleAt,
+    required this.sampleCount,
+    required this.coveredSecs,
+    required this.coverageFraction,
+    required this.coveredDays,
+    required this.requiredDays,
+    required this.status,
+    required this.reason,
+  });
+
+  factory DeviceBaselineCoverage.fromJson(Map<String, dynamic> json) =>
+      DeviceBaselineCoverage(
+        deviceId: json['device_id'] as String,
+        applianceId: json['appliance_id'] as int?,
+        windowStart: DateTime.parse(json['window_start'] as String),
+        windowEnd: DateTime.parse(json['window_end'] as String),
+        latestSampleAt: json['latest_sample_at'] == null
+            ? null
+            : DateTime.parse(json['latest_sample_at'] as String),
+        sampleCount: json['sample_count'] as int,
+        coveredSecs: (json['covered_secs'] as num).toDouble(),
+        coverageFraction: (json['coverage_fraction'] as num).toDouble(),
+        coveredDays: json['covered_days'] as int,
+        requiredDays: json['required_days'] as int,
+        status: json['status'] as String,
+        reason: json['reason'] as String,
+      );
+
+  final String deviceId;
+  final int? applianceId;
+  final DateTime windowStart;
+  final DateTime windowEnd;
+  final DateTime? latestSampleAt;
+  final int sampleCount;
+  final double coveredSecs;
+  final double coverageFraction;
+  final int coveredDays;
+  final int requiredDays;
+  final String status;
+  final String reason;
 }
 
 class EnergyReading {
@@ -508,7 +691,69 @@ class ApplianceUsageProfile {
 }
 
 class DiscoveryApi {
-  const DiscoveryApi();
+  const DiscoveryApi({this.pairingTransport = const IoPairingTransport()});
+
+  final PairingTransport pairingTransport;
+
+  /// Checks the out-of-band hub identity before sending the enrollment secret.
+  Future<PairingClaim> claimPairing(
+    PairingDetails details, {
+    required String clientId,
+  }) async {
+    final health = await pairingTransport.send(
+      details.address,
+      '/healthz',
+      'GET',
+    );
+    final healthJson = _decodePairingResponse(health);
+    if (healthJson['hub_id'] != details.hubId) {
+      throw const PairingException('The hub identity does not match.');
+    }
+
+    final claim = await pairingTransport.send(
+      details.address,
+      '/v1/pairing/claim',
+      'POST',
+      body: {
+        'hub_id': details.hubId,
+        'enrollment_secret': details.enrollmentSecret,
+        'client_id': clientId,
+      },
+    );
+    final claimJson = _decodePairingResponse(claim);
+    final token = claimJson['token'];
+    if (claimJson['hub_id'] != details.hubId ||
+        claimJson['client_id'] != clientId ||
+        claimJson['token_type'] != 'Bearer' ||
+        token is! String ||
+        token.isEmpty) {
+      throw const PairingException('The hub returned no client token.');
+    }
+    return PairingClaim(hubId: details.hubId, clientId: clientId, token: token);
+  }
+
+  static Map<String, dynamic> _decodePairingResponse(
+    PairingHttpResponse response,
+  ) {
+    final dynamic decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } on FormatException {
+      throw const PairingException('The hub returned an invalid response.');
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw PairingException(
+        decoded is Map<String, dynamic> && decoded['error'] is Map
+            ? (decoded['error'] as Map)['message'] as String? ??
+                  'Hub pairing failed.'
+            : 'Hub pairing failed.',
+      );
+    }
+    if (decoded is! Map<String, dynamic>) {
+      throw const PairingException('The hub returned an invalid response.');
+    }
+    return decoded;
+  }
 
   Future<ElectricitySettings> electricitySettings(
     String baseUrl,
@@ -621,6 +866,20 @@ class DiscoveryApi {
         .toList();
   }
 
+  Future<SavedPlug> refreshPlugStatus(
+    String baseUrl,
+    String token,
+    String plugId,
+  ) async {
+    final response = await _post(
+      baseUrl,
+      token,
+      '/v1/devices/${Uri.encodeComponent(plugId)}/status/refresh',
+      {},
+    );
+    return SavedPlug.fromJson(response);
+  }
+
   Future<DeviceEnergy> deviceEnergy(
     String baseUrl,
     String token,
@@ -643,6 +902,20 @@ class DiscoveryApi {
       query,
     );
     return DeviceEnergy.fromJson(response as Map<String, dynamic>);
+  }
+
+  Future<DeviceBaselineCoverage> deviceBaselineCoverage(
+    String baseUrl,
+    String token,
+    String deviceId,
+  ) async {
+    final response = await _request(
+      baseUrl,
+      token,
+      '/v1/devices/${Uri.encodeComponent(deviceId)}/baseline-coverage',
+      'GET',
+    );
+    return DeviceBaselineCoverage.fromJson(response as Map<String, dynamic>);
   }
 
   Future<SavedPlug> adopt(

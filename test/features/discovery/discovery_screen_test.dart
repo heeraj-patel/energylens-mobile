@@ -89,6 +89,8 @@ class FakeCredentials extends DiscoveryCredentials {
 class SavingApi extends FakeDiscoveryApi {
   SavedPlug? plug;
   int estimateCalls = 0;
+  int statusRefreshCalls = 0;
+  String refreshedStatus = 'connected';
   final appliance = const SavedAppliance(
     id: 7,
     name: 'Desk lamp',
@@ -128,6 +130,30 @@ class SavingApi extends FakeDiscoveryApi {
   @override
   Future<List<SavedPlug>> saved(String baseUrl, String token) async =>
       plug == null ? [] : [plug!];
+
+  @override
+  Future<SavedPlug> refreshPlugStatus(
+    String baseUrl,
+    String token,
+    String plugId,
+  ) async {
+    statusRefreshCalls++;
+    final before = plug!;
+    expect(plugId, before.id);
+    plug = SavedPlug(
+      id: before.id,
+      ip: before.ip,
+      model: before.model,
+      name: before.name,
+      room: before.room,
+      meterStatus: before.meterStatus,
+      lastVerifiedAt: before.lastVerifiedAt,
+      connectionStatus: refreshedStatus,
+      statusCheckedAt: 200,
+      connectedAppliance: before.connectedAppliance,
+    );
+    return plug!;
+  }
 
   @override
   Future<List<SavedAppliance>> appliances(String baseUrl, String token) async =>
@@ -281,6 +307,38 @@ class MeasuredEstimateApi extends DeviceDetailApi {
   }
 }
 
+class TimestampApi extends DeviceDetailApi {
+  @override
+  Future<DeviceEnergy> deviceEnergy(
+    String baseUrl,
+    String token,
+    String plugId, {
+    String period = 'day',
+    String? postalCode,
+    double? rateUsdPerKwh,
+  }) async => DeviceEnergy(
+    status: 'measured',
+    period: period,
+    totalKwh: 0.2,
+    coverageFraction: 0.5,
+    coveredSecs: 43200,
+    latestWatts: 42,
+    readingCount: 1,
+    readings: [EnergyReading(ts: DateTime.utc(2026, 9, 29, 12), watts: 42)],
+  );
+}
+
+class OfflineEstimateApi extends DeviceDetailApi {
+  @override
+  Future<EnergyEstimate> estimate(
+    String baseUrl,
+    String token,
+    int applianceId, {
+    double? rateUsdPerKwh,
+    String? postalCode,
+  }) async => throw StateError('hub unavailable');
+}
+
 class PeriodRaceApi extends DeviceDetailApi {
   final day = Completer<DeviceEnergy>();
 
@@ -404,6 +462,70 @@ void main() {
     );
     expect(
       find.textContaining('Cached regional rate from 2026-01-01'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('shows the timestamp of the latest live meter sample', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DeviceEnergyDetailScreen(
+          plug: const SavedPlug(
+            id: 'plug-detail',
+            ip: '192.168.1.42',
+            model: 'HS110',
+            name: 'Office meter',
+            room: 'Office',
+            meterStatus: 'verified',
+            lastVerifiedAt: 100,
+          ),
+          api: TimestampApi(),
+          hubAddress: 'https://192.168.1.20:8787',
+          token: 'test-token',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('42 W'), findsOneWidget);
+    expect(find.textContaining('Sampled '), findsOneWidget);
+    expect(find.textContaining('Sep 29'), findsOneWidget);
+  });
+
+  testWidgets('marks a retained estimate as cached when the hub is offline', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DeviceEnergyDetailScreen(
+          plug: SavedPlug(
+            id: 'plug-detail',
+            ip: '192.168.1.42',
+            model: 'HS110',
+            name: 'Office meter',
+            room: 'Office',
+            meterStatus: 'verified',
+            lastVerifiedAt: 100,
+            connectedAppliance: DeviceDetailApi().appliance,
+          ),
+          api: OfflineEstimateApi(),
+          hubAddress: 'https://192.168.1.20:8787',
+          token: 'test-token',
+          estimate: const EnergyEstimate(
+            status: 'estimated',
+            estimatedKwh: 18,
+            estimatedCostUsd: 3.24,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('18.0 kWh'), findsOneWidget);
+    expect(
+      find.text('Could not refresh · showing cached estimate'),
       findsOneWidget,
     );
   });
@@ -650,6 +772,51 @@ void main() {
 
     expect(find.text('Old hub plug'), findsNothing);
   });
+
+  testWidgets(
+    'checks a saved plug on demand and keeps meter capability separate',
+    (tester) async {
+      final api = SavingApi()
+        ..plug = const SavedPlug(
+          id: 'plug-1',
+          ip: '192.168.1.42',
+          model: 'HS103',
+          name: 'Living room plug',
+          room: 'Living room',
+          meterStatus: 'absent',
+          lastVerifiedAt: 100,
+        );
+      final credentials = FakeCredentials()
+        ..address = 'https://192.168.1.20:8787'
+        ..token = 'test-token';
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(api: api, credentials: credentials),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Check plug connection'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Plug connection not checked'), findsOneWidget);
+      await tester.tap(find.text('Check plug connection'));
+      await tester.pumpAndSettle();
+      expect(api.statusRefreshCalls, 1);
+      expect(find.text('Plug connected'), findsOneWidget);
+      expect(find.text('No energy monitoring'), findsOneWidget);
+
+      api.refreshedStatus = 'identity_changed';
+      await tester.tap(find.text('Check plug connection'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Needs verification · different plug at this address'),
+        findsOneWidget,
+      );
+      expect(find.text('No energy monitoring'), findsOneWidget);
+    },
+  );
 
   testWidgets('shows a discovered HS103 separately from its unknown load', (
     tester,

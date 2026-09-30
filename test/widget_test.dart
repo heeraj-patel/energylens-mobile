@@ -107,6 +107,16 @@ class _ConnectedApi extends DiscoveryApi {
   }
 }
 
+class _OutageAfterFirstLoadApi extends _ConnectedApi {
+  bool unavailable = false;
+
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async {
+    if (unavailable) throw StateError('hub offline');
+    return super.saved(baseUrl, token);
+  }
+}
+
 class _MeteredApi extends DiscoveryApi {
   @override
   Future<List<SavedPlug>> saved(String baseUrl, String token) async => const [
@@ -145,6 +155,99 @@ class _MeteredApi extends DiscoveryApi {
       'readings': [
         {'ts': '2026-09-29T12:34:00Z', 'watts': 100, 'kwh_cumulative': 1.25},
       ],
+    });
+  }
+}
+
+class _StatusRefreshApi extends DiscoveryApi {
+  int checks = 0;
+  String status = 'connected';
+
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async => const [
+    SavedPlug(
+      id: 'living-room-plug',
+      ip: '192.168.1.42',
+      model: 'HS103',
+      name: 'Living room plug',
+      room: 'Living room',
+      meterStatus: 'absent',
+      lastVerifiedAt: 100,
+    ),
+  ];
+
+  @override
+  Future<SavedPlug> refreshPlugStatus(
+    String baseUrl,
+    String token,
+    String plugId,
+  ) async {
+    checks++;
+    expect(plugId, 'living-room-plug');
+    return SavedPlug(
+      id: plugId,
+      ip: '192.168.1.42',
+      model: 'HS103',
+      name: 'Living room plug',
+      room: 'Living room',
+      meterStatus: 'absent',
+      lastVerifiedAt: 100,
+      connectionStatus: status,
+      statusCheckedAt: 200 + checks,
+    );
+  }
+}
+
+class _ComputerCoverageApi extends DiscoveryApi {
+  _ComputerCoverageApi(this.status);
+  final String status;
+  final requestedDevices = <String>[];
+
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async => const [
+    SavedPlug(
+      id: 'computer-meter',
+      ip: '192.168.68.51',
+      model: 'Meter plug',
+      name: 'Office meter',
+      room: 'Office',
+      meterStatus: 'verified',
+      lastVerifiedAt: 1,
+      connectedAppliance: SavedAppliance(
+        id: 42,
+        name: 'Workstation',
+        room: 'Office',
+        category: 'computer',
+        manufacturer: 'Example',
+        model: 'Desktop',
+        loadKind: 'computer',
+        onboardingMethod: 'manual',
+      ),
+    ),
+  ];
+
+  @override
+  Future<DeviceBaselineCoverage> deviceBaselineCoverage(
+    String baseUrl,
+    String token,
+    String deviceId,
+  ) async {
+    requestedDevices.add(deviceId);
+    return DeviceBaselineCoverage.fromJson({
+      'device_id': deviceId,
+      'appliance_id': 42,
+      'window_start': '2026-09-22T12:00:00Z',
+      'window_end': '2026-09-29T12:00:00Z',
+      'latest_sample_at': '2026-09-29T11:59:00Z',
+      'sample_count': 10081,
+      'covered_secs': status == 'collecting' ? 250000 : 475200,
+      'coverage_fraction': status == 'collecting' ? 0.41 : 0.79,
+      'covered_days': status == 'collecting' ? 2 : 5,
+      'required_days': 5,
+      'status': status,
+      'reason': status == 'collecting'
+          ? 'needs_more_covered_days'
+          : 'coverage_gate_met',
     });
   }
 }
@@ -585,6 +688,47 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'Sleep Check reports meter coverage without classifying activity',
+    (tester) async {
+      final api = _ComputerCoverageApi('collecting');
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeScreen(api: api, credentials: _ConnectedCredentials()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sleep Check'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.textContaining('Workstation ·'),
+        200,
+      );
+
+      expect(api.requestedDevices, isNotEmpty);
+      expect(api.requestedDevices.toSet(), {'computer-meter'});
+      expect(
+        find.textContaining('Workstation · Collecting meter history'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('2/5 covered days'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Coverage does not identify computer activity or savings.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('active'), findsNothing);
+      expect(find.textContaining('idle'), findsNothing);
+      expect(find.textContaining('standby'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('shows the connected appliance as an expandable child row', (
     tester,
   ) async {
@@ -630,6 +774,37 @@ void main() {
     await tester.tap(find.byKey(const Key('plug-expand-ks19')));
     await tester.pumpAndSettle();
     expect(find.text('Two-bulb Philips Hue White lamp'), findsOneWidget);
+  });
+
+  testWidgets('Sleep Check labels sufficient and unavailable coverage states', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final status in ['sufficient_meter_coverage', 'unavailable']) {
+      final api = _ComputerCoverageApi(status);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeScreen(api: api, credentials: _ConnectedCredentials()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sleep Check'));
+      await tester.pumpAndSettle();
+      final label = status == 'sufficient_meter_coverage'
+          ? 'Workstation · Sufficient meter coverage'
+          : 'Workstation · Meter coverage unavailable';
+      await tester.scrollUntilVisible(find.text(label), 200);
+      expect(find.text(label), findsOneWidget);
+      expect(
+        find.textContaining('computer activity or savings'),
+        findsOneWidget,
+      );
+    }
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('shows EPA attribution only for a verified ENERGY STAR source', (
@@ -726,6 +901,74 @@ void main() {
       expect(find.text('HUB DISCONNECTED'), findsOneWidget);
     },
   );
+
+  testWidgets('refreshes saved plug status on startup and each minute', (
+    tester,
+  ) async {
+    final api = _StatusRefreshApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(api: api, credentials: _ConnectedCredentials()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(api.checks, 1);
+    expect(
+      find.textContaining('Plug connected · Last checked'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('No energy meter'), findsOneWidget);
+
+    api.status = 'disconnected';
+    await tester.pump(const Duration(seconds: 60));
+    await tester.pumpAndSettle();
+    expect(api.checks, 2);
+    expect(
+      find.textContaining('Plug disconnected · Last checked'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('No energy meter'), findsOneWidget);
+  });
+
+  testWidgets('labels retained Home estimates as cached during hub outage', (
+    tester,
+  ) async {
+    final api = _OutageAfterFirstLoadApi();
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(api: api, credentials: _ConnectedCredentials()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Estimated on-time: \$0.27/month'),
+      200,
+    );
+    expect(find.text('Estimated on-time: \$0.27/month'), findsOneWidget);
+
+    api.unavailable = true;
+    await tester.pump(const Duration(seconds: 60));
+    await tester.pumpAndSettle();
+
+    expect(find.text('HUB DISCONNECTED'), findsOneWidget);
+    expect(find.text('Estimated on-time: \$0.27/month'), findsOneWidget);
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 1000));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Hub disconnected · showing cached estimates'),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'These amounts were saved from the last hub refresh and may be out of date.',
+      ),
+      findsOneWidget,
+    );
+  });
 
   test('preserves meter sample times, watts, and counter values', () {
     final energy = DeviceEnergy.fromJson({

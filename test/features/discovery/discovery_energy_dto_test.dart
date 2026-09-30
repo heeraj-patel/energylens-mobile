@@ -2,6 +2,33 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:energylens_mobile/features/discovery/discovery_api.dart';
 
 void main() {
+  test('parses baseline meter coverage without inferring computer state', () {
+    final coverage = DeviceBaselineCoverage.fromJson({
+      'device_id': 'meter/office',
+      'appliance_id': 42,
+      'window_start': '2026-09-22T12:00:00Z',
+      'window_end': '2026-09-29T12:00:00Z',
+      'latest_sample_at': '2026-09-29T11:59:00Z',
+      'sample_count': 10081,
+      'covered_secs': 475200,
+      'coverage_fraction': 0.785714,
+      'covered_days': 5,
+      'required_days': 5,
+      'status': 'sufficient_meter_coverage',
+      'reason': 'coverage_gate_met',
+    });
+
+    expect(coverage.deviceId, 'meter/office');
+    expect(coverage.applianceId, 42);
+    expect(coverage.latestSampleAt, DateTime.utc(2026, 9, 29, 11, 59));
+    expect(coverage.coveredSecs, 475200);
+    expect(coverage.coverageFraction, closeTo(0.785714, 1e-7));
+    expect(coverage.coveredDays, 5);
+    expect(coverage.requiredDays, 5);
+    expect(coverage.status, 'sufficient_meter_coverage');
+    expect(coverage.reason, 'coverage_gate_met');
+  });
+
   group('hub device energy response', () {
     test('parses measured energy and stale regional-rate metadata', () {
       final energy = DeviceEnergy.fromJson(<String, dynamic>{

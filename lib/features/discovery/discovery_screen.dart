@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'discovery_api.dart';
+import 'plug_connection_status.dart';
 import 'discovery_credentials.dart';
 import '../identify/appliance_onboarding_screen.dart';
 import 'device_energy_detail_screen.dart';
@@ -29,7 +30,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   List<SavedPlug> _saved = const [];
   final Map<int, EnergyEstimate> _estimates = {};
   bool _busy = false;
+  bool _hubConnected = false;
   bool _searched = false;
+  final Set<String> _statusChecking = {};
   String? _error;
   void _invalidateHubData() {
     if (_saved.isEmpty &&
@@ -40,6 +43,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
     setState(() {
       _saved = const [];
+      _hubConnected = false;
       _estimates.clear();
       _candidates = const [];
       _searched = false;
@@ -74,10 +78,18 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         _token.text.trim(),
       );
       if (mounted) {
-        setState(() => _saved = plugs);
+        setState(() {
+          _saved = plugs;
+          _hubConnected = true;
+          _error = null;
+        });
         for (final plug in plugs) {
           final appliance = plug.connectedAppliance;
           if (appliance == null) continue;
+          if (plug.connectionStatus == 'identity_changed') {
+            _estimates.remove(appliance.id);
+            continue;
+          }
           try {
             final estimate = await widget.api.estimate(
               _hub.text.trim(),
@@ -92,11 +104,47 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       }
     } catch (_) {
       if (mounted) {
+        setState(() {
+          _hubConnected = false;
+          _error =
+              'Could not load saved plugs from the hub. Check its connection.';
+        });
+      }
+    }
+  }
+
+  Future<void> _refreshPlugStatus(SavedPlug plug) async {
+    if (_statusChecking.contains(plug.id)) return;
+    setState(() {
+      _statusChecking.add(plug.id);
+      _error = null;
+    });
+    try {
+      final refreshed = await widget.api.refreshPlugStatus(
+        _hub.text.trim(),
+        _token.text.trim(),
+        plug.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _saved = [
+          for (final current in _saved)
+            if (current.id == refreshed.id) refreshed else current,
+        ];
+        if (refreshed.connectionStatus == 'identity_changed') {
+          final applianceId = refreshed.connectedAppliance?.id;
+          if (applianceId != null) _estimates.remove(applianceId);
+        }
+      });
+    } catch (_) {
+      if (mounted) {
         setState(
           () => _error =
-              'Could not load saved plugs from the hub. Check its connection.',
+              'Could not check ${plug.name}. Check the hub connection and retry.',
         );
       }
+    } finally {
+      if (mounted) setState(() => _statusChecking.remove(plug.id));
     }
   }
 
@@ -582,12 +630,31 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         icon: const Icon(Icons.electric_meter_outlined),
                         label: const Text('View energy details'),
                       ),
-                      const Text(
-                        'Connection not checked since last verification',
+                      Text(
+                        plugConnectionLabel(plug, hubConnected: _hubConnected),
                       ),
                       Text(
-                        'Last verified ${DateTime.fromMillisecondsSinceEpoch(plug.lastVerifiedAt * 1000).toLocal()}',
+                        plugConnectionDetail(plug),
                         style: theme.textTheme.bodySmall,
+                      ),
+                      TextButton.icon(
+                        onPressed: _statusChecking.contains(plug.id)
+                            ? null
+                            : () => _refreshPlugStatus(plug),
+                        icon: _statusChecking.contains(plug.id)
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.refresh),
+                        label: Text(
+                          _statusChecking.contains(plug.id)
+                              ? 'Checking plug…'
+                              : 'Check plug connection',
+                        ),
                       ),
                       const Divider(height: 24),
                       Text(
@@ -603,7 +670,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                           '${appliance.category} · ${appliance.model.isEmpty ? 'Model unknown' : appliance.model}',
                         ),
                         const Text('Connected load · No live readings'),
-                        if (_estimates[appliance.id] case final estimate?)
+                        if (plug.connectionStatus == 'identity_changed')
+                          const Text(
+                            'Estimate hidden until this plug is verified.',
+                          )
+                        else if (_estimates[appliance.id] case final estimate?)
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Text(
@@ -611,28 +682,32 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                               style: theme.textTheme.bodySmall,
                             ),
                           ),
-                        if (_estimates[appliance.id]?.evidence
-                            case final source?) ...[
-                          Text(
-                            _estimates[appliance.id]!.estimatedCostUsd == null
-                                ? 'Estimated monthly energy: ${_estimates[appliance.id]!.estimatedKwh!.toStringAsFixed(1)} kWh'
-                                : 'Estimated monthly cost: \$${_estimates[appliance.id]!.estimatedCostUsd!.toStringAsFixed(2)} · ${_estimates[appliance.id]!.estimatedKwh!.toStringAsFixed(1)} kWh',
-                          ),
-                          TextButton.icon(
-                            onPressed: () =>
-                                _showSource(source, _estimates[appliance.id]!),
-                            icon: Icon(
-                              source.sourceKind == 'energy_star' ||
-                                      source.sourceKind == 'epa_exact'
-                                  ? Icons.verified_outlined
-                                  : Icons.info_outline,
+                        if (plug.connectionStatus != 'identity_changed') ...[
+                          if (_estimates[appliance.id]?.evidence
+                              case final source?) ...[
+                            Text(
+                              _estimates[appliance.id]!.estimatedCostUsd == null
+                                  ? 'Estimated monthly energy: ${_estimates[appliance.id]!.estimatedKwh!.toStringAsFixed(1)} kWh'
+                                  : 'Estimated monthly cost: \$${_estimates[appliance.id]!.estimatedCostUsd!.toStringAsFixed(2)} · ${_estimates[appliance.id]!.estimatedKwh!.toStringAsFixed(1)} kWh',
                             ),
-                            label: Text(energySourceLabel(source)),
-                          ),
-                        ] else
-                          const Text(
-                            'Estimate unavailable · Exact model/source needed',
-                          ),
+                            TextButton.icon(
+                              onPressed: () => _showSource(
+                                source,
+                                _estimates[appliance.id]!,
+                              ),
+                              icon: Icon(
+                                source.sourceKind == 'energy_star' ||
+                                        source.sourceKind == 'epa_exact'
+                                    ? Icons.verified_outlined
+                                    : Icons.info_outline,
+                              ),
+                              label: Text(energySourceLabel(source)),
+                            ),
+                          ] else
+                            const Text(
+                              'Estimate unavailable · Exact model/source needed',
+                            ),
+                        ],
                         TextButton(
                           onPressed: _busy
                               ? null
