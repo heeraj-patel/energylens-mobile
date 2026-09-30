@@ -1029,6 +1029,7 @@ class _ConnectedLoadRow extends StatefulWidget {
   const _ConnectedLoadRow({
     required this.appliance,
     required this.estimate,
+    required this.onOpenElectricitySettings,
     required this.onHoursChanged,
     required this.onLoadUsage,
     required this.onUsageChanged,
@@ -1036,6 +1037,7 @@ class _ConnectedLoadRow extends StatefulWidget {
 
   final SavedAppliance appliance;
   final EnergyEstimate? estimate;
+  final VoidCallback onOpenElectricitySettings;
   final Future<void> Function(int, double) onHoursChanged;
   final Future<ApplianceUsageProfile> Function(int) onLoadUsage;
   final Future<ApplianceUsageProfile> Function(int, String, double)
@@ -1254,21 +1256,33 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
                       ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  cost != null
-                      ? measured
-                            ? '$costHeading: \$${cost.toStringAsFixed(2)}'
-                            : '$costHeading: \$${cost.toStringAsFixed(2)}/month'
-                      : estimate?.estimatedKwh != null
-                      ? 'Add your ZIP code or bill rate for cost'
-                      : 'Estimate unavailable',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: cost == null ? _secondary(context) : _green,
-                    fontWeight: cost == null
-                        ? FontWeight.normal
-                        : FontWeight.w700,
+                if (cost == null && estimate?.estimatedKwh != null)
+                  TextButton.icon(
+                    key: Key('setElectricityRateFromEstimate-${appliance.id}'),
+                    onPressed: widget.onOpenElectricitySettings,
+                    icon: const Icon(Icons.attach_money, size: 18),
+                    label: const Text('Add ZIP code or bill rate for cost'),
+                    style: TextButton.styleFrom(
+                      alignment: Alignment.centerLeft,
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 40),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  )
+                else
+                  Text(
+                    cost != null
+                        ? measured
+                              ? '$costHeading: \$${cost.toStringAsFixed(2)}'
+                              : '$costHeading: \$${cost.toStringAsFixed(2)}/month'
+                        : 'Estimate unavailable',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: cost == null ? _secondary(context) : _green,
+                      fontWeight: cost == null
+                          ? FontWeight.normal
+                          : FontWeight.w700,
+                    ),
                   ),
-                ),
                 if (activeCost != null) ...[
                   const SizedBox(height: 4),
                   Text(
@@ -1672,6 +1686,8 @@ class _PowerNowState extends State<_PowerNow> {
                           child: _ConnectedLoadRow(
                             appliance: appliance,
                             estimate: widget.estimates[appliance.id],
+                            onOpenElectricitySettings:
+                                widget.onOpenElectricitySettings,
                             onHoursChanged: widget.onHoursChanged,
                             onLoadUsage: widget.onLoadUsage,
                             onUsageChanged: widget.onUsageChanged,

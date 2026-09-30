@@ -5,19 +5,56 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _ConnectedCredentials extends DiscoveryCredentials {
+  String? postalCode = '78732';
+
   @override
   Future<(String?, String?)> read() async =>
       ('https://100.115.133.73:18787', 'test');
 
   @override
-  Future<String?> readPostalCode() async => '78732';
+  Future<String?> readPostalCode() async => postalCode;
+
+  @override
+  Future<void> savePostalCode(String postalCode) async {
+    this.postalCode = postalCode;
+  }
+
+  @override
+  Future<void> clearPostalCode() async {
+    postalCode = null;
+  }
 }
 
 class _ConnectedApi extends DiscoveryApi {
-  _ConnectedApi({this.sourceKind = 'user_label'});
+  _ConnectedApi({this.sourceKind = 'user_label', this.withoutRate = false});
 
   final String sourceKind;
+  bool withoutRate;
   double hours = 21;
+  int estimateCalls = 0;
+
+  @override
+  Future<ElectricitySettings> electricitySettings(
+    String baseUrl,
+    String token,
+  ) async => ElectricitySettings(
+    postalCode: withoutRate ? null : '78732',
+    rateUsdPerKwh: withoutRate ? null : 0.1588,
+  );
+
+  @override
+  Future<ElectricitySettings> updateElectricitySettings(
+    String baseUrl,
+    String token, {
+    required String? postalCode,
+    required double? rateUsdPerKwh,
+  }) async {
+    withoutRate = postalCode == null && rateUsdPerKwh == null;
+    return ElectricitySettings(
+      postalCode: postalCode,
+      rateUsdPerKwh: rateUsdPerKwh,
+    );
+  }
 
   @override
   Future<List<SavedPlug>> saved(String baseUrl, String token) async => [
@@ -78,6 +115,7 @@ class _ConnectedApi extends DiscoveryApi {
     String? postalCode,
     double? rateUsdPerKwh,
   }) async {
+    estimateCalls++;
     assert(applianceId == 1);
     assert(postalCode == null);
     final active = 19 * hours * 52 / 12000 * 0.1588;
@@ -87,11 +125,13 @@ class _ConnectedApi extends DiscoveryApi {
     return EnergyEstimate(
       status: 'estimated',
       estimatedKwh: (active + (standby ?? 0)) / 0.1588,
-      estimatedCostUsd: active + (standby ?? 0),
-      activeCostUsd: active,
-      standbyCostUsd: standby,
-      rateUsdPerKwh: 0.1588,
-      rateSourceLabel: 'Texas average (EIA, published table)',
+      estimatedCostUsd: withoutRate ? null : active + (standby ?? 0),
+      activeCostUsd: withoutRate ? null : active,
+      standbyCostUsd: withoutRate ? null : standby,
+      rateUsdPerKwh: withoutRate ? null : 0.1588,
+      rateSourceLabel: withoutRate
+          ? null
+          : 'Texas average (EIA, published table)',
       evidence: EnergyEvidence(
         sourceKind: sourceKind,
         datasetId: sourceKind == 'energy_star' ? 'msj5-kqfv' : 'bulb_label',
@@ -671,6 +711,52 @@ void main() {
     expect(find.text('Electricity settings'), findsOneWidget);
     expect(find.byKey(const Key('householdPostalCode')), findsOneWidget);
     expect(find.text('US ZIP code'), findsOneWidget);
+  });
+
+  testWidgets('estimated appliance cost prompt opens electricity settings', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = _ConnectedApi(withoutRate: true);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(api: api, credentials: _ConnectedCredentials()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final cta = find.byKey(const Key('setElectricityRateFromEstimate-1'));
+    await tester.scrollUntilVisible(cta, 200);
+    expect(find.text('Add ZIP code or bill rate for cost'), findsOneWidget);
+    await tester.tap(cta);
+    await tester.pumpAndSettle();
+    expect(find.text('Electricity settings'), findsOneWidget);
+    expect(find.byKey(const Key('householdPostalCode')), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('householdPostalCode')),
+      '78732',
+    );
+    tester.testTextInput.hide();
+    await tester.tap(find.text('Save settings'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      find.text('Electricity settings saved on this hub.'),
+      findsOneWidget,
+    );
+    await tester.pageBack();
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(api.withoutRate, isFalse);
+    expect(api.estimateCalls, greaterThan(1));
+    final refreshedCta = find.byKey(
+      const Key('setElectricityRateFromEstimate-1'),
+    );
+    expect(refreshedCta, findsNothing);
+    expect(find.textContaining('Estimated on-time: \$'), findsOneWidget);
   });
 
   testWidgets('cycles control saves and resets to initial value', (
