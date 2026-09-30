@@ -389,6 +389,33 @@ class PeriodRaceApi extends DeviceDetailApi {
 }
 
 void main() {
+  testWidgets('manual IPv4 field uses decimal keyboard and accepts dotted input', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      MaterialApp(home: DiscoveryScreen(api: const FakeDiscoveryApi())),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Enter a plug IP address'));
+    await tester.pumpAndSettle();
+
+    final ipField = find.byKey(const Key('manualPlugIp'));
+    final field = tester.widget<TextField>(ipField);
+    expect(
+      field.keyboardType,
+      const TextInputType.numberWithOptions(decimal: true),
+    );
+
+    // Entering a complete address here exercises the same unrestricted edit
+    // path used by paste; validation remains with the hub.
+    await tester.enterText(ipField, '192.168.1.42');
+    expect(field.controller!.text, '192.168.1.42');
+  });
+
   test('parses explicit stale regional rate metadata and readings', () {
     final energy = DeviceEnergy.fromJson({
       'status': 'measured',
@@ -477,8 +504,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-
     expect(api.estimateCalls, 1);
+    await tester.scrollUntilVisible(
+      find.text('Measured 30-day energy · 12.5 kWh'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Measured 30-day energy · 12.5 kWh'), findsOneWidget);
     expect(
       find.text('Measurement coverage · 35% of the 30-day window'),

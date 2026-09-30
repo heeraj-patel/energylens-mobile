@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'discovery_api.dart';
+import 'attachment_history_screen.dart';
 
 /// Measured energy and the separately sourced appliance estimate for one plug.
 class DeviceEnergyDetailScreen extends StatefulWidget {
@@ -156,6 +157,11 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
           const SizedBox(height: 12),
           if (_loading)
             const _LoadingMetrics()
+          else if (plug.meterStatus == 'absent')
+            const _MessagePanel(
+              icon: Icons.electrical_services_outlined,
+              message: 'This plug does not provide energy monitoring.',
+            )
           else if (_error case final message?)
             _MessagePanel(
               icon: Icons.cloud_off_outlined,
@@ -166,10 +172,12 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
                 label: const Text('Try again'),
               ),
             )
-          else if (plug.meterStatus == 'absent')
+          else if (plug.meterStatus == 'unknown' &&
+              (_energy == null || _energy!.readingCount == 0))
             const _MessagePanel(
-              icon: Icons.electrical_services_outlined,
-              message: 'This plug does not provide energy monitoring.',
+              icon: Icons.help_outline,
+              message: 'Meter capability has not been confirmed for this plug.',
+              detail: 'No readings are available yet. This does not confirm that the plug lacks a meter.',
             )
           else if (_energy case final data?)
             _observedSection(context, data),
@@ -183,6 +191,21 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
             )
           else
             _estimateSection(context, plug.connectedAppliance!),
+          const SizedBox(height: 20),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => AttachmentHistoryScreen(
+                  plug: plug,
+                  api: widget.api,
+                  hubAddress: widget.hubAddress,
+                  token: widget.token,
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.history),
+            label: const Text('Attachment history'),
+          ),
         ],
       ),
     );
@@ -205,6 +228,11 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
       _ => 24.0 * 30,
     };
     final coverage = (data.coverageFraction * 100).clamp(0, 100).round();
+    final hasValidCoverage =
+        data.coveredSecs.isFinite &&
+        data.coveredSecs > 0 &&
+        data.coverageFraction.isFinite &&
+        data.coverageFraction > 0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -237,7 +265,7 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
                 ),
                 const Text('Observed energy during covered time'),
                 const SizedBox(height: 12),
-                if (data.observedCostUsd != null)
+                if (data.observedCostUsd != null && hasValidCoverage)
                   Text(
                     'Observed cost · \$${data.observedCostUsd!.toStringAsFixed(2)}',
                     style: theme.textTheme.titleMedium,

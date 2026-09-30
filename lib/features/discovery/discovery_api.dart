@@ -270,6 +270,40 @@ class SavedPlug {
   final int? httpPort;
 }
 
+class AttachmentHistoryEntry {
+  const AttachmentHistoryEntry({
+    required this.applianceId,
+    required this.attachedAt,
+    this.detachedAt,
+    this.snapshotVersion,
+    this.snapshotRecordedAt,
+    this.applianceSnapshot,
+    this.evidenceSnapshot,
+    this.estimateSnapshot,
+  });
+
+  factory AttachmentHistoryEntry.fromJson(Map<String, dynamic> json) =>
+      AttachmentHistoryEntry(
+        applianceId: json['appliance_id'] as int,
+        attachedAt: json['attached_at'] as int,
+        detachedAt: json['detached_at'] as int?,
+        snapshotVersion: json['snapshot_version'] as int?,
+        snapshotRecordedAt: json['snapshot_recorded_at'] as int?,
+        applianceSnapshot: json['appliance_snapshot'] as Map<String, dynamic>?,
+        evidenceSnapshot: json['evidence_snapshot'] as Map<String, dynamic>?,
+        estimateSnapshot: json['estimate_snapshot'] as Map<String, dynamic>?,
+      );
+
+  final int applianceId;
+  final int attachedAt;
+  final int? detachedAt;
+  final int? snapshotVersion;
+  final int? snapshotRecordedAt;
+  final Map<String, dynamic>? applianceSnapshot;
+  final Map<String, dynamic>? evidenceSnapshot;
+  final Map<String, dynamic>? estimateSnapshot;
+}
+
 class DeviceEnergy {
   const DeviceEnergy({
     required this.status,
@@ -979,6 +1013,25 @@ class DiscoveryApi {
       {'appliance_id': applianceId},
     );
     return SavedPlug.fromJson(response as Map<String, dynamic>);
+  }
+
+  Future<List<AttachmentHistoryEntry>> attachmentHistory(
+    String baseUrl,
+    String token,
+    String plugId,
+  ) async {
+    final response = await _request(
+      baseUrl,
+      token,
+      '/v1/devices/${Uri.encodeComponent(plugId)}/appliance/history',
+      'GET',
+    );
+    return (response as List<dynamic>)
+        .map(
+          (item) =>
+              AttachmentHistoryEntry.fromJson(item as Map<String, dynamic>),
+        )
+        .toList(growable: false);
   }
 
   Future<List<SavedAppliance>> appliances(String baseUrl, String token) async {

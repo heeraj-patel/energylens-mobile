@@ -679,13 +679,19 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               ),
               const SizedBox(height: 8),
               TextField(
+                key: const Key('manualPlugIp'),
                 controller: _ip,
                 decoration: const InputDecoration(
                   labelText: 'Plug IP address',
                   hintText: '192.168.1.42',
                   border: OutlineInputBorder(),
                 ),
-                keyboardType: TextInputType.number,
+                // iOS maps this to the decimal pad, which includes the period
+                // needed for dotted IPv4 addresses. Leave input unrestricted
+                // so users can paste a complete address; the hub validates it.
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
