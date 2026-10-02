@@ -31,6 +31,15 @@ String? modelHintFromOcr(String? text) {
 /// Returns only a likely maker name; serials and the full OCR text stay local.
 String? manufacturerHintFromOcr(String? text) {
   if (text == null) return null;
+  final lines = text.split(RegExp(r'[\r\n]+'));
+  var modelLine = -1;
+  for (var index = 0; index < lines.length; index++) {
+    if (modelHintFromOcr(lines[index]) != null) {
+      modelLine = index;
+      break;
+    }
+  }
+  if (modelLine < 0) return null;
   const known = <String, String>{
     'LG': 'LG',
     'SAMSUNG': 'Samsung',
@@ -47,7 +56,11 @@ String? manufacturerHintFromOcr(String? text) {
     'PHILIPS': 'Philips',
     'MIDEA': 'Midea',
   };
-  for (final rawLine in text.split(RegExp(r'[\r\n]+'))) {
+  final suggestions = <String>{};
+  final first = modelLine - 2 < 0 ? 0 : modelLine - 2;
+  final last = modelLine + 2 >= lines.length ? lines.length - 1 : modelLine + 2;
+  for (var index = first; index <= last; index++) {
+    final rawLine = lines[index];
     final line = rawLine
         .split(
           RegExp(r'\b(?:SERIAL|S/N|SN|MODEL)\b\s*[:#]?', caseSensitive: false),
@@ -60,18 +73,23 @@ String? manufacturerHintFromOcr(String? text) {
       caseSensitive: false,
     ).firstMatch(line);
     final candidate = (labeled?.group(1) ?? line).trim().toUpperCase();
+    String? suggestion;
     for (final entry in known.entries) {
       if (candidate == entry.key ||
-          candidate.startsWith('${entry.key} ') ||
-          candidate.startsWith('${entry.key} ELECTRONICS')) {
-        return entry.value;
+          candidate == '${entry.key} ELECTRONICS' ||
+          candidate.startsWith('${entry.key} ELECTRONICS ')) {
+        suggestion = entry.value;
+        break;
       }
     }
-    if (labeled != null && !RegExp(r'\d').hasMatch(candidate)) {
-      return labeled.group(1)!.trim();
+    if (suggestion == null &&
+        labeled != null &&
+        !RegExp(r'\d').hasMatch(candidate)) {
+      suggestion = labeled.group(1)!.trim();
     }
+    if (suggestion != null) suggestions.add(suggestion);
   }
-  return null;
+  return suggestions.length == 1 ? suggestions.single : null;
 }
 
 class ApplianceOnboardingScreen extends StatefulWidget {
@@ -878,7 +896,9 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             const SizedBox(height: 8),
             Text(
               photo
-                  ? 'Take a photo or choose the one you already took. EnergyLens reads the model on the phone and checks reviewed suggestions. Confirm the exact label model before saving.'
+                  ? _cloudOnly
+                        ? 'Take a photo or choose the one you already took. EnergyLens reads the model on the phone and checks reviewed suggestions. Confirm the exact label model before saving.'
+                        : 'Take a photo or choose the one you already took. Label recognition stays on this phone. Confirm the exact model and maker; a paired local hub is needed to check suggestions or save this device. This does not add it to a Cloud home.'
                   : _cloudOnly
                   ? 'Enter the full model from its label and confirm its fuel. This saves an inventory record to your cloud home; energy source matching comes later.'
                   : 'Enter the model from the appliance label or manual, then check it before saving. A model without a matching source can still be saved without an estimate.',

@@ -40,7 +40,12 @@ String _sampleTime(DateTime ts) {
 }
 
 class EnergyLensApp extends StatelessWidget {
-  const EnergyLensApp({super.key});
+  const EnergyLensApp({
+    super.key,
+    this.localPilot = const bool.fromEnvironment('ENERGYLENS_LOCAL_PILOT'),
+  });
+
+  final bool localPilot;
 
   @override
   Widget build(BuildContext context) {
@@ -92,24 +97,33 @@ class EnergyLensApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: theme(Brightness.light),
       darkTheme: theme(Brightness.dark),
-      home: CloudEntryGate(
-        homeBuilder: (cloudHome, signOut, changeHome, cloudApi) => HomeScreen(
-          cloudHome: cloudHome,
-          cloudApi: cloudApi,
-          onCloudSignOut: signOut,
-          onCloudChangeHome: changeHome,
-          initialTabIndex:
-              const bool.fromEnvironment('ENERGYLENS_DISCOVERY_PREVIEW')
-              ? 3
-              : 0,
-          autoScanDiscovery: const bool.fromEnvironment(
-            'ENERGYLENS_DISCOVERY_PREVIEW',
-          ),
-          startInConnectAppliance: const bool.fromEnvironment(
-            'ENERGYLENS_DISCOVERY_PREVIEW',
-          ),
-        ),
-      ),
+      home: localPilot
+          ? const HomeScreen(
+              localPilotMode: true,
+              initialTabIndex: 3,
+              startInConnectAppliance: true,
+            )
+          : CloudEntryGate(
+              homeBuilder: (cloudHome, signOut, changeHome, cloudApi) =>
+                  HomeScreen(
+                    cloudHome: cloudHome,
+                    cloudApi: cloudApi,
+                    onCloudSignOut: signOut,
+                    onCloudChangeHome: changeHome,
+                    initialTabIndex:
+                        const bool.fromEnvironment(
+                          'ENERGYLENS_DISCOVERY_PREVIEW',
+                        )
+                        ? 3
+                        : 0,
+                    autoScanDiscovery: const bool.fromEnvironment(
+                      'ENERGYLENS_DISCOVERY_PREVIEW',
+                    ),
+                    startInConnectAppliance: const bool.fromEnvironment(
+                      'ENERGYLENS_DISCOVERY_PREVIEW',
+                    ),
+                  ),
+            ),
     );
   }
 }
@@ -126,6 +140,7 @@ class HomeScreen extends StatefulWidget {
     this.onCloudChangeHome,
     this.cloudHome,
     this.cloudApi,
+    this.localPilotMode = false,
   });
 
   final DiscoveryApi api;
@@ -137,6 +152,7 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback? onCloudChangeHome;
   final CloudHome? cloudHome;
   final CloudApiClient? cloudApi;
+  final bool localPilotMode;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -735,6 +751,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      if (widget.localPilotMode) ...[
+                        Card(
+                          key: const Key('localPilotNotice'),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Text(
+                              'Local photo pilot · No Cloud account is connected. Label recognition stays on this phone; saving a device needs a paired local hub. Cloud inventory, estimates, and recommendations are unavailable.',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
                       if (widget.cloudHome != null) ...[
                         Card(
                           child: Padding(

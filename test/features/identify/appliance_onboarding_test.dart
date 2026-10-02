@@ -278,6 +278,18 @@ void main() {
       'LG',
     );
     expect(manufacturerHintFromOcr('MODEL: WM3070HWA\nSERIAL: LG8249'), isNull);
+    expect(
+      manufacturerHintFromOcr('LG\nMODEL NO: WM3070HWA\nSERIAL: PRIVATE8249'),
+      'LG',
+    );
+    expect(
+      manufacturerHintFromOcr(
+        'LG\nSafety instructions\nService center\nMODEL NO: WM3070HWA',
+      ),
+      isNull,
+    );
+    expect(manufacturerHintFromOcr('Samsung\nLG\nMODEL NO: WM3070HWA'), isNull);
+    expect(manufacturerHintFromOcr('LG\nSERIAL: PRIVATE8249'), isNull);
   });
 
   testWidgets('manual appliance saves without a live-reading claim', (

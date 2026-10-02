@@ -682,6 +682,27 @@ void main() {
     expect(find.text('Take photo'), findsOneWidget);
   });
 
+  testWidgets('Release local pilot reaches phone-only photo entry', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const EnergyLensApp(localPilot: true));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('localPilotNotice')), findsOneWidget);
+    expect(
+      find.textContaining('No Cloud account is connected'),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(find.text('Identify from a photo'));
+    await tester.tap(find.text('Identify from a photo'));
+    await tester.pumpAndSettle();
+    expect(find.text('Take photo'), findsOneWidget);
+    expect(find.text('Choose photo'), findsOneWidget);
+    expect(
+      find.textContaining('This does not add it to a Cloud home'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('discovery preview starts in Ask & Add with home navigation', (
     tester,
   ) async {
