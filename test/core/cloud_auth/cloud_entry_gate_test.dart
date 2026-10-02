@@ -2,6 +2,7 @@ import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_entry_gate.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -35,7 +36,68 @@ class Auth implements CloudAuthenticator {
       const CloudTokens(accessToken: 'token');
 }
 
+class FailingAuth extends Auth {
+  FailingAuth(this.error);
+  final Object error;
+
+  @override
+  Future<CloudTokens> signIn(CloudAuthConfig config) async => throw error;
+}
+
 void main() {
+  testWidgets('sign-in reports user cancellation separately from failures', (
+    tester,
+  ) async {
+    final failures = <(Object, String)>[
+      (
+        FlutterAppAuthUserCancelledException(
+          code: 'user_cancelled',
+          platformErrorDetails: FlutterAppAuthPlatformErrorDetails(),
+        ),
+        'Sign-in cancelled. Tap Sign in when ready.',
+      ),
+      (
+        FlutterAppAuthPlatformException(
+          code: 'discovery_failed',
+          platformErrorDetails: FlutterAppAuthPlatformErrorDetails(),
+        ),
+        'Could not start secure sign-in. Check your connection or app configuration.',
+      ),
+      (
+        StateError('unavailable'),
+        'Could not complete Cloud sign-in. Try again or ask for help with app configuration.',
+      ),
+    ];
+    for (final (failure, message) in failures) {
+      final store = Store()..tokens = null;
+      final session = CloudSession(
+        config: config,
+        store: store,
+        authenticator: FailingAuth(failure),
+      );
+      final api = CloudApiClient(
+        session: session,
+        client: MockClient((_) async => http.Response('', 500)),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CloudEntryGate(
+            session: session,
+            api: api,
+            homeBuilder: (_, _, _, _) => const Text('Private Home'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sign in'));
+      await tester.pumpAndSettle();
+      expect(find.text(message), findsOneWidget);
+      expect(store.tokens, isNull);
+      api.close();
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
   testWidgets('required disclosure gates home creation until accepted', (
     tester,
   ) async {

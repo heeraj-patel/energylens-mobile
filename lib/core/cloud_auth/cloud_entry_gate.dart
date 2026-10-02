@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_appauth/flutter_appauth.dart';
 
 import '../cloud_api/cloud_api_client.dart';
 import '../cloud_api/cloud_home.dart';
@@ -173,10 +174,20 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     try {
       await _session.signIn();
       await _validate();
+    } on FlutterAppAuthUserCancelledException {
+      if (mounted) {
+        setState(() => _message = 'Sign-in cancelled. Tap Sign in when ready.');
+      }
+    } on FlutterAppAuthPlatformException {
+      if (mounted) {
+        setState(
+          () => _message = 'Could not start secure sign-in. Check your connection or app configuration.',
+        );
+      }
     } catch (_) {
       if (mounted) {
         setState(
-          () => _message = 'Sign-in was cancelled or failed. Please try again.',
+          () => _message = 'Could not complete Cloud sign-in. Try again or ask for help with app configuration.',
         );
       }
     } finally {
@@ -265,6 +276,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                   Text(
                     _session.config.isConfigured
                         ? 'Sign in to your account to continue.'
+                        : _session.config.hasPlaceholderEndpoint
+                        ? 'This build uses placeholder Cloud settings. Install a Release build configured with a real OIDC issuer, public client ID, and Cloud API URL.'
                         : 'Cloud sign-in is not configured for this build.',
                     textAlign: TextAlign.center,
                   ),

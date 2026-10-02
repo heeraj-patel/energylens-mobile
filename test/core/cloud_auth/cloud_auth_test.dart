@@ -66,6 +66,32 @@ void main() {
     },
   );
 
+  test('placeholder issuer and API hosts cannot start cloud sign-in', () async {
+    for (final placeholder in [
+      'https://invalid',
+      'https://auth.example.invalid',
+    ]) {
+      for (final invalidIssuer in [true, false]) {
+        final candidate = CloudAuthConfig(
+          issuer: invalidIssuer ? placeholder : config.issuer,
+          audience: config.audience,
+          clientId: config.clientId,
+          redirectUrl: config.redirectUrl,
+          apiUrl: invalidIssuer ? config.apiUrl : placeholder,
+        );
+        expect(candidate.hasPlaceholderEndpoint, isTrue);
+        expect(candidate.isConfigured, isFalse);
+        final session = CloudSession(
+          config: candidate,
+          store: MemoryStore(),
+          authenticator: FakeAuthenticator(),
+        );
+        await expectLater(session.signIn(), throwsStateError);
+      }
+    }
+    expect(config.hasPlaceholderEndpoint, isFalse);
+  });
+
   test(
     'expired access token refreshes once and persists rotated token',
     () async {

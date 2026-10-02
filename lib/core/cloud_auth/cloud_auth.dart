@@ -27,11 +27,21 @@ class CloudAuthConfig {
   final String redirectUrl;
   final String apiUrl;
 
+  bool get hasPlaceholderEndpoint {
+    bool isPlaceholder(String value) {
+      final host = Uri.tryParse(value)?.host.toLowerCase() ?? '';
+      return host == 'invalid' || host.endsWith('.invalid');
+    }
+
+    return isPlaceholder(issuer) || isPlaceholder(apiUrl);
+  }
+
   bool get isConfigured {
     final issuerUri = Uri.tryParse(issuer);
     final apiUri = Uri.tryParse(apiUrl);
     final redirectUri = Uri.tryParse(redirectUrl);
-    return issuerUri?.scheme == 'https' &&
+    return !hasPlaceholderEndpoint &&
+        issuerUri?.scheme == 'https' &&
         issuerUri!.host.isNotEmpty &&
         apiUri?.scheme == 'https' &&
         apiUri!.host.isNotEmpty &&
