@@ -155,6 +155,138 @@ void main() {
     api.close();
   });
 
+  test('gas tariffs accept only selected-home therm revisions', () async {
+    Map<String, dynamic> gasRow({
+      String fuel = 'natural_gas',
+      String unit = 'therm',
+      String? homeId,
+    }) => {
+      'id': '22222222-2222-4222-8222-222222222222',
+      'home_id': homeId ?? home.id,
+      'revision': 1,
+      'fuel': fuel,
+      'rate': '1.25',
+      'rate_unit': unit,
+      'currency': 'USD',
+      'rate_kind': 'user_tariff',
+      'source_ref': 'Customer-entered natural gas bill',
+      'source_as_of': '2026-10-01T00:00:00Z',
+      'is_fallback': false,
+      'effective_from': '2026-10-01T00:00:00Z',
+    };
+
+    for (final badRow in [
+      gasRow(unit: 'kWh'),
+      gasRow(homeId: '33333333-3333-4333-8333-333333333333'),
+    ]) {
+      final api = _api(
+        MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'tariffs': [badRow],
+            }),
+            200,
+          ),
+        ),
+      );
+      await expectLater(api.gasTariffs(home.id), throwsFormatException);
+      api.close();
+    }
+    final api = _api(
+      MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'tariffs': [gasRow(), gasRow(fuel: 'electricity', unit: 'kWh')],
+          }),
+          200,
+        ),
+      ),
+    );
+    final rows = await api.gasTariffs(home.id);
+    expect(rows, hasLength(1));
+    expect(rows.single.rate, '1.25');
+    api.close();
+  });
+
+  testWidgets(
+    'gas bill rate saves USD per therm with stable retry and no usage claim',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1500);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final posted = <http.Request>[];
+      final api = _api(
+        MockClient((request) async {
+          expect(request.url.path, '/v1/homes/${home.id}/tariffs');
+          expect(request.headers['authorization'], 'Bearer owner');
+          if (request.method == 'GET') {
+            return http.Response('{"tariffs":[]}', 200);
+          }
+          posted.add(request);
+          if (posted.length == 1) {
+            return http.Response('{"code":"unavailable"}', 503);
+          }
+          return http.Response(
+            jsonEncode({
+              'id': '22222222-2222-4222-8222-222222222222',
+              'home_id': home.id,
+              'revision': 1,
+              ...jsonDecode(request.body) as Map<String, dynamic>,
+            }),
+            201,
+          );
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CloudGasRateScreen(api: api, home: home),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Cloud gas rate'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'A rate alone does not establish gas consumption, Useful cost, Waste',
+        ),
+        findsOneWidget,
+      );
+      await tester.enterText(find.byKey(const Key('cloudRate')), '1.25');
+      await tester.tap(find.text('Save Cloud gas rate'));
+      await tester.pumpAndSettle();
+      expect(posted, isEmpty);
+      final today = DateTime.now().toUtc().toIso8601String().substring(0, 10);
+      await tester.enterText(
+        find.byKey(const Key('cloudRateSourceDate')),
+        today,
+      );
+      await tester.enterText(
+        find.byKey(const Key('cloudRateEffectiveDate')),
+        today,
+      );
+      await tester.ensureVisible(find.text('Save Cloud gas rate'));
+      await tester.tap(find.text('Save Cloud gas rate'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('cloudRateError')), findsOneWidget);
+      await tester.tap(find.text('Save Cloud gas rate'));
+      await tester.pumpAndSettle();
+      expect(posted, hasLength(2));
+      expect(posted.last.body, posted.first.body);
+      expect(
+        posted.last.headers['idempotency-key'],
+        posted.first.headers['idempotency-key'],
+      );
+      final payload = jsonDecode(posted.last.body) as Map<String, dynamic>;
+      expect(payload['fuel'], 'natural_gas');
+      expect(payload['rate'], '1.25');
+      expect(payload['rate_unit'], 'therm');
+      expect(payload['fixed_charge'], isNull);
+      expect(payload['source_ref'], 'Customer-entered natural gas bill');
+      expect(find.textContaining('Cloud gas rate saved'), findsOneWidget);
+      api.close();
+    },
+  );
+
   testWidgets('Cloud rate saves owner-home bill details with stable retry', (
     tester,
   ) async {

@@ -188,7 +188,13 @@ class CloudApiClient {
     return appliances;
   }
 
-  Future<List<CloudTariff>> electricityTariffs(String homeId) async {
+  Future<List<CloudTariff>> electricityTariffs(String homeId) =>
+      _tariffs(homeId, 'electricity');
+
+  Future<List<CloudTariff>> gasTariffs(String homeId) =>
+      _tariffs(homeId, 'natural_gas');
+
+  Future<List<CloudTariff>> _tariffs(String homeId, String fuel) async {
     final response = await get(
       '/v1/homes/${Uri.encodeComponent(homeId)}/tariffs',
     );
@@ -199,16 +205,43 @@ class CloudApiClient {
       throw const FormatException('Invalid tariff list');
     }
     return rows
-        .where(
-          (row) => row is Map<String, dynamic> && row['fuel'] == 'electricity',
+        .where((row) => row is Map<String, dynamic> && row['fuel'] == fuel)
+        .map(
+          (row) => CloudTariff.fromJson(
+            row as Map<String, dynamic>,
+            homeId,
+            fuel: fuel,
+          ),
         )
-        .map((row) => CloudTariff.fromJson(row as Map<String, dynamic>, homeId))
         .toList();
   }
 
   Future<CloudTariff> createElectricityTariff(
     String homeId,
     Map<String, dynamic> body, {
+    required String idempotencyKey,
+  }) => _createTariff(
+    homeId,
+    body,
+    fuel: 'electricity',
+    idempotencyKey: idempotencyKey,
+  );
+
+  Future<CloudTariff> createGasTariff(
+    String homeId,
+    Map<String, dynamic> body, {
+    required String idempotencyKey,
+  }) => _createTariff(
+    homeId,
+    body,
+    fuel: 'natural_gas',
+    idempotencyKey: idempotencyKey,
+  );
+
+  Future<CloudTariff> _createTariff(
+    String homeId,
+    Map<String, dynamic> body, {
+    required String fuel,
     required String idempotencyKey,
   }) async {
     final response = await _request(
@@ -220,6 +253,7 @@ class CloudApiClient {
     return CloudTariff.fromJson(
       jsonDecode(response.body) as Map<String, dynamic>,
       homeId,
+      fuel: fuel,
     );
   }
 

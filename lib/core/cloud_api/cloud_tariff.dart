@@ -11,7 +11,12 @@ class CloudTariff {
   final DateTime sourceAsOf;
   final DateTime effectiveFrom;
 
-  factory CloudTariff.fromJson(Map<String, dynamic> json, String homeId) {
+  factory CloudTariff.fromJson(
+    Map<String, dynamic> json,
+    String homeId, {
+    String fuel = 'electricity',
+  }) {
+    final rateUnit = fuel == 'natural_gas' ? 'therm' : 'kWh';
     final sourceAsOf = DateTime.tryParse(
       json['source_as_of'] is String ? json['source_as_of'] as String : '',
     );
@@ -22,8 +27,8 @@ class CloudTariff {
         json['home_id'] != homeId ||
         json['revision'] is! int ||
         (json['revision'] as int) < 1 ||
-        json['fuel'] != 'electricity' ||
-        json['rate_unit'] != 'kWh' ||
+        json['fuel'] != fuel ||
+        json['rate_unit'] != rateUnit ||
         json['currency'] != 'USD' ||
         json['rate'] is! String ||
         !RegExp(r'^(0|[1-9][0-9]{0,9})(\.[0-9]{1,8})?$')
@@ -38,7 +43,7 @@ class CloudTariff {
         json['is_fallback'] is! bool ||
         sourceAsOf == null ||
         effectiveFrom == null) {
-      throw const FormatException('Invalid cloud electricity tariff');
+      throw const FormatException('Invalid cloud tariff');
     }
     return CloudTariff(
       homeId: homeId,

@@ -9,14 +9,21 @@ class CloudElectricityRateScreen extends StatefulWidget {
     super.key,
     required this.api,
     required this.home,
+    this.gas = false,
   });
 
   final CloudApiClient api;
   final CloudHome home;
+  final bool gas;
 
   @override
   State<CloudElectricityRateScreen> createState() =>
       _CloudElectricityRateScreenState();
+}
+
+class CloudGasRateScreen extends CloudElectricityRateScreen {
+  const CloudGasRateScreen({super.key, required super.api, required super.home})
+    : super(gas: true);
 }
 
 class _CloudElectricityRateScreenState
@@ -31,6 +38,10 @@ class _CloudElectricityRateScreenState
   bool _saving = false;
   String? _pendingKey;
   Map<String, dynamic>? _pendingBody;
+
+  String get _fuelLabel => widget.gas ? 'natural gas' : 'electricity';
+  String get _unit => widget.gas ? 'therm' : 'kWh';
+  String get _title => widget.gas ? 'Cloud gas rate' : 'Cloud electricity rate';
 
   @override
   void initState() {
@@ -59,16 +70,15 @@ class _CloudElectricityRateScreenState
       _current = null;
     });
     try {
-      final tariffs = await widget.api.electricityTariffs(widget.home.id);
+      final tariffs = widget.gas
+          ? await widget.api.gasTariffs(widget.home.id)
+          : await widget.api.electricityTariffs(widget.home.id);
       if (mounted) {
         setState(() => _current = tariffs.isEmpty ? null : tariffs.single);
       }
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error =
-              'Could not load this home’s Cloud electricity rate. Retry.',
-        );
+        setState(() => _error = 'Could not load this home’s $_title. Retry.');
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -94,18 +104,19 @@ class _CloudElectricityRateScreenState
         source.isBefore(now.subtract(const Duration(days: 540))) ||
         effective.isAfter(now)) {
       setState(
-        () => _error = 'Enter a nonnegative USD/kWh rate, a recent bill date, and the date this rate began (YYYY-MM-DD).',
+        () => _error =
+            'Enter a nonnegative USD/$_unit rate, a recent bill date, and the date this rate began (YYYY-MM-DD).',
       );
       return;
     }
     _pendingKey ??= newCloudIdempotencyKey();
     _pendingBody ??= {
-      'fuel': 'electricity',
+      'fuel': widget.gas ? 'natural_gas' : 'electricity',
       'rate': rate,
-      'rate_unit': 'kWh',
+      'rate_unit': _unit,
       'currency': 'USD',
       'rate_kind': 'user_tariff',
-      'source_ref': 'Customer-entered electricity bill',
+      'source_ref': 'Customer-entered $_fuelLabel bill',
       'source_as_of': source.toIso8601String(),
       'is_fallback': false,
       'fixed_charge': null,
@@ -118,17 +129,23 @@ class _CloudElectricityRateScreenState
       _message = null;
     });
     try {
-      final saved = await widget.api.createElectricityTariff(
-        widget.home.id,
-        _pendingBody!,
-        idempotencyKey: _pendingKey!,
-      );
+      final saved = widget.gas
+          ? await widget.api.createGasTariff(
+              widget.home.id,
+              _pendingBody!,
+              idempotencyKey: _pendingKey!,
+            )
+          : await widget.api.createElectricityTariff(
+              widget.home.id,
+              _pendingBody!,
+              idempotencyKey: _pendingKey!,
+            );
       if (!mounted) return;
       setState(() {
         _current = saved;
         _pendingKey = null;
         _pendingBody = null;
-        _message = 'Cloud electricity rate saved for ${widget.home.name}.';
+        _message = '$_title saved for ${widget.home.name}.';
       });
     } on CloudApiException catch (error) {
       if (mounted) {
@@ -151,7 +168,7 @@ class _CloudElectricityRateScreenState
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Cloud electricity rate')),
+    appBar: AppBar(title: Text(_title)),
     body: SafeArea(
       child: Center(
         child: ConstrainedBox(
@@ -164,17 +181,19 @@ class _CloudElectricityRateScreenState
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Save a rate from a recent electricity bill for this Cloud home. It is separate from local hub settings. Fixed charges are excluded; this rate does not establish your actual bill or savings.',
+              Text(
+                widget.gas
+                    ? 'Enter the marginal natural gas rate from a recent bill in USD per therm for this Cloud home. Exclude fixed charges. A rate alone does not establish gas consumption, Useful cost, Waste, your actual bill, or savings.'
+                    : 'Save a rate from a recent electricity bill for this Cloud home. It is separate from local hub settings. Fixed charges are excluded; this rate does not establish your actual bill or savings.',
               ),
               const SizedBox(height: 12),
               if (_loading) const LinearProgressIndicator(),
               if (_current case final current?)
                 Text(
-                  'Current Cloud rate: ${current.rate} USD/kWh · bill dated ${current.sourceAsOf.toUtc().toIso8601String().substring(0, 10)} · effective from ${current.effectiveFrom.toUtc().toIso8601String().substring(0, 10)}',
+                  'Current Cloud rate: ${current.rate} USD/$_unit · bill dated ${current.sourceAsOf.toUtc().toIso8601String().substring(0, 10)} · effective from ${current.effectiveFrom.toUtc().toIso8601String().substring(0, 10)}',
                 ),
               if (!_loading && _current == null)
-                const Text('No current Cloud electricity rate is available.'),
+                Text('No current $_title is available.'),
               TextButton(
                 onPressed: _saving ? null : _load,
                 child: const Text('Refresh rate'),
@@ -186,8 +205,9 @@ class _CloudElectricityRateScreenState
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                decoration: const InputDecoration(
-                  labelText: 'Electricity rate (USD/kWh)',
+                decoration: InputDecoration(
+                  labelText:
+                      '${widget.gas ? 'Gas' : 'Electricity'} rate (USD/$_unit)',
                 ),
               ),
               const SizedBox(height: 12),
@@ -217,7 +237,7 @@ class _CloudElectricityRateScreenState
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: _saving || _loading ? null : _save,
-                child: const Text('Save Cloud electricity rate'),
+                child: Text('Save $_title'),
               ),
             ],
           ),

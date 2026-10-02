@@ -345,6 +345,19 @@ class _CloudPreferencesScreenState extends State<CloudPreferencesScreen> {
                       icon: const Icon(Icons.bolt_outlined),
                       label: const Text('Cloud electricity rate'),
                     ),
+                    TextButton.icon(
+                      key: const Key('openCloudGasRate'),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => CloudGasRateScreen(
+                            api: widget.api,
+                            home: widget.home!,
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.local_fire_department_outlined),
+                      label: const Text('Cloud gas rate'),
+                    ),
                     const SizedBox(height: 12),
                     Text(
                       'Preferences for ${widget.home!.name}',
