@@ -372,7 +372,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
                 if (_delivery == null && !preview.isStale) ...[
                   const SizedBox(height: 16),
                   const Text(
-                    'Request this snapshot by email. You choose the recipients and explicitly approve this exact preview. A request is queued for later processing; delivery is not confirmed.',
+                    'Request this snapshot by email. You choose the recipients and explicitly approve this exact preview. A request is queued; email delivery availability and completion are not confirmed here.',
                   ),
                   TextField(
                     key: const Key('reportRecipients'),
@@ -398,7 +398,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
                       'I approve this report preview for the recipients above from ${widget.home.name}.',
                     ),
                     subtitle: const Text(
-                      'This is a one-time request. No recurring email is enabled.',
+                      'This is a one-time request. No recurring email is enabled. A forwarded copy cannot be revoked.',
                     ),
                   ),
                   FilledButton(
@@ -414,12 +414,14 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
                 if (_delivery case final delivery?) ...[
                   const SizedBox(height: 16),
                   Text(
-                    'Report request queued · pending',
+                    'Report request queued · delivery pending',
                     key: const Key('reportDeliveryStatus'),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   Text('Recipients: ${delivery.recipients.join(', ')}'),
-                  const Text('Delivery has not been confirmed.'),
+                  const Text(
+                    'Delivery availability and completion are unknown. The request may remain pending if email delivery is disabled.',
+                  ),
                 ],
                 TextButton(
                   onPressed: _busy ? null : _refreshPreview,
