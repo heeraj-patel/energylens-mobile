@@ -51,6 +51,9 @@ class CloudCatalogProduct {
     required this.fuel,
     required this.matchQuality,
     required this.facts,
+    this.queryMatch,
+    this.matchedModel,
+    this.variantMatch,
   });
   final String id;
   final String category;
@@ -61,7 +64,11 @@ class CloudCatalogProduct {
   final String fuel;
   final String matchQuality;
   final List<CloudCatalogFact> facts;
+  final String? queryMatch;
+  final String? matchedModel;
+  final String? variantMatch;
   bool get isConfirmedExact => matchQuality == 'confirmed_exact';
+  bool get isDocumentedFamilyCandidate => queryMatch == 'documented_family';
 
   factory CloudCatalogProduct.fromJson(Map<String, dynamic> json) {
     final facts = json['facts'];
@@ -73,7 +80,19 @@ class CloudCatalogProduct {
         json['match_quality'] is! String ||
         facts is! List ||
         json['variant'] != null && json['variant'] is! String ||
-        json['region'] != null && json['region'] is! String) {
+        json['region'] != null && json['region'] is! String ||
+        json['query_match'] != null && json['query_match'] is! String ||
+        json['matched_model'] != null && json['matched_model'] is! String ||
+        json['variant_match'] != null && json['variant_match'] is! String ||
+        json['query_match'] == 'documented_family' &&
+            (json['match_quality'] != 'documented_variant_family' ||
+                json['matched_model'] is! String ||
+                (json['matched_model'] as String).isEmpty ||
+                !const [
+                  'confirmed',
+                  'unresolved',
+                ].contains(json['variant_match']) ||
+                facts.isNotEmpty)) {
       throw const FormatException('Invalid reviewed catalog product');
     }
     return CloudCatalogProduct(
@@ -85,6 +104,9 @@ class CloudCatalogProduct {
       region: json['region'] as String?,
       fuel: json['fuel'] as String,
       matchQuality: json['match_quality'] as String,
+      queryMatch: json['query_match'] as String?,
+      matchedModel: json['matched_model'] as String?,
+      variantMatch: json['variant_match'] as String?,
       facts: facts
           .map(
             (fact) => CloudCatalogFact.fromJson(fact as Map<String, dynamic>),

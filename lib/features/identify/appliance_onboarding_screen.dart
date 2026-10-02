@@ -316,6 +316,15 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
 
   Future<void> _openCatalogProduct(CloudCatalogProduct result) async {
     if (_catalogBusy || _busy) return;
+    if (result.isDocumentedFamilyCandidate) {
+      setState(() {
+        _catalogDetail = result;
+        _selectedCatalogProduct = null;
+        _confirmedModel = false;
+        _catalogMessage = null;
+      });
+      return;
+    }
     setState(() {
       _catalogBusy = true;
       _catalogMessage = null;
@@ -1181,6 +1190,8 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                     subtitle: Text(
                       product.isConfirmedExact
                           ? 'Reviewed exact model · ${product.fuel}'
+                          : product.isDocumentedFamilyCandidate
+                          ? 'Documented family candidate for ${product.matchedModel} · representative SKU ${product.fullModel} · ${product.fuel}'
                           : 'Documented family or unresolved model · ${product.fuel}',
                     ),
                     trailing: const Icon(Icons.chevron_right),
@@ -1198,6 +1209,10 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                 Text(
                   '${detail.brand} ${detail.fullModel}${detail.variant == null ? '' : ' · ${detail.variant}'} · ${detail.fuel}${detail.region == null ? '' : ' · ${detail.region}'} · ${detail.category}',
                 ),
+                if (detail.isDocumentedFamilyCandidate)
+                  Text(
+                    'Entered model: ${detail.matchedModel}. Representative catalog SKU: ${detail.fullModel}. ${detail.variantMatch == 'confirmed' ? 'Variant matched to the documented family.' : 'Variant remains unresolved.'} Confirm the model and fuel from the appliance label before saving. This family candidate will not be linked or used for an energy cost estimate.',
+                  ),
                 Text(
                   detail.isConfirmedExact
                       ? 'Exact reviewed identity. Select it only if the full label model and fuel agree.'

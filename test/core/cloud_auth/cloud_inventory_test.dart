@@ -114,6 +114,57 @@ void main() {
     api.close();
   });
 
+  test(
+    'family candidate search rejects attached representative facts',
+    () async {
+      final api = _api(
+        MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'products': [
+                {
+                  'id': '44444444-4444-4444-8444-444444444444',
+                  'category': 'washer',
+                  'brand': 'LG',
+                  'full_model': 'WM3070HWA',
+                  'variant': null,
+                  'region': 'US',
+                  'fuel': 'electricity',
+                  'match_quality': 'documented_variant_family',
+                  'query_match': 'documented_family',
+                  'matched_model': 'WM3070HXA',
+                  'variant_match': 'unresolved',
+                  'facts': [
+                    {
+                      'kind': 'annual_energy',
+                      'value': '111',
+                      'unit': 'kWh',
+                      'source_kind': 'oem_family',
+                      'source_url': 'https://example.test/family',
+                      'test_basis': <String, Object>{},
+                      'reviewed_at': '2026-09-30T00:00:00Z',
+                    },
+                  ],
+                },
+              ],
+            }),
+            200,
+          ),
+        ),
+      );
+      await expectLater(
+        api.searchCatalogModels(
+          brand: 'LG',
+          model: 'WM3070HXA',
+          fuel: 'electricity',
+          region: 'US',
+        ),
+        throwsFormatException,
+      );
+      api.close();
+    },
+  );
+
   testWidgets('cloud inventory save stops when disclosure is not accepted', (
     tester,
   ) async {
@@ -387,6 +438,144 @@ void main() {
       api.close();
     },
   );
+
+  testWidgets('family search candidate stays unlinked when saved', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1500);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const productId = '44444444-4444-4444-8444-444444444444';
+    var detailGets = 0;
+    http.Request? created;
+    final api = _api(
+      MockClient((request) async {
+        if (request.url.path == '/v1/catalog/model-search') {
+          return http.Response(
+            jsonEncode({
+              'products': [
+                {
+                  'id': productId,
+                  'category': 'washer',
+                  'brand': 'LG',
+                  'full_model': 'WM3070HWA',
+                  'variant': null,
+                  'region': 'US',
+                  'fuel': 'electricity',
+                  'match_quality': 'documented_variant_family',
+                  'facts': <Object>[],
+                  'query_match': 'documented_family',
+                  'matched_model': 'WM3070HXA',
+                  'variant_match': 'unresolved',
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/v1/catalog/products/$productId') {
+          detailGets++;
+          return http.Response('{}', 500);
+        }
+        if (request.url.path == '/v1/me/preferences') {
+          return http.Response(
+            '{"version":2,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}',
+            200,
+            headers: {'etag': '"2"'},
+          );
+        }
+        if (request.url.path.endsWith('/questions/answers')) {
+          return http.Response('{"answers":[]}', 200);
+        }
+        if (request.url.path.endsWith('/questions')) {
+          return http.Response('{"questions":[]}', 200);
+        }
+        created = request;
+        return http.Response(
+          jsonEncode({
+            'id': '22222222-2222-4222-8222-222222222222',
+            'home_id': _home.id,
+            'name': 'Washer',
+            'category': 'other',
+            'room': null,
+            'identity': {
+              'brand': 'LG',
+              'full_model': 'WM3070HXA',
+              'fuel': 'electricity',
+              'variant': null,
+              'region': null,
+              'match_quality': 'unresolved',
+              'catalog_product_id': null,
+            },
+            'version': 1,
+            'created_at': '2026-09-30T00:00:00Z',
+            'updated_at': '2026-09-30T00:00:00Z',
+            'archived_at': null,
+          }),
+          201,
+        );
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ApplianceOnboardingScreen(
+          method: 'manual',
+          cloudHome: _home,
+          cloudApi: api,
+        ),
+      ),
+    );
+    await tester.enterText(find.byKey(const Key('applianceName')), 'Washer');
+    await tester.enterText(
+      find.byKey(const Key('applianceManufacturer')),
+      'LG',
+    );
+    await tester.enterText(
+      find.byKey(const Key('applianceModel')),
+      'WM3070HXA',
+    );
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('searchReviewedCatalog')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byKey(const Key('searchReviewedCatalog')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('catalogProduct-$productId')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.textContaining('candidate for WM3070HXA'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('catalogProduct-$productId')));
+    await tester.pumpAndSettle();
+    expect(detailGets, 0);
+    expect(
+      find.textContaining('Representative catalog SKU: WM3070HWA'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('selectExactCatalogProduct')), findsNothing);
+    await tester.scrollUntilVisible(
+      find.text('I checked this full model and fuel against the label'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(
+      find.text('I checked this full model and fuel against the label'),
+    );
+    await tester.ensureVisible(find.byKey(const Key('saveAppliance')));
+    await tester.tap(find.byKey(const Key('saveAppliance')));
+    await tester.pumpAndSettle();
+    final payload = jsonDecode(created!.body) as Map<String, dynamic>;
+    expect(payload['identity'], {
+      'brand': 'LG',
+      'full_model': 'WM3070HXA',
+      'fuel': 'electricity',
+      'match_quality': 'confirmed_exact',
+    });
+    api.close();
+  });
 
   test(
     'owned cloud inventory list parses identity without adding local devices',
