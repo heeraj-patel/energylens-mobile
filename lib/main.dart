@@ -565,7 +565,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onLoadUsage: _loadApplianceUsage,
         onUsageChanged: _saveApplianceUsage,
       ),
-      1 => const _StopWaste(),
+      1 =>
+        widget.cloudHome != null && widget.cloudApi != null
+            ? _CloudStopWaste(
+                home: widget.cloudHome!,
+                api: widget.cloudApi!,
+                onViewEstimates: () => setState(() => _index = 0),
+              )
+            : const _StopWaste(),
       2 => _SleepCheck(
         plugs: _plugs,
         baselineCoverage: _baselineCoverage,
@@ -2212,6 +2219,74 @@ class _StopWaste extends StatelessWidget {
         'Verified wins will live here',
         'Compare observed use before and after an action to see the result.',
         color: _green,
+      ),
+    ],
+  );
+}
+
+class _CloudStopWaste extends StatelessWidget {
+  const _CloudStopWaste({
+    required this.home,
+    required this.api,
+    required this.onViewEstimates,
+  });
+
+  final CloudHome home;
+  final CloudApiClient api;
+  final VoidCallback onViewEstimates;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _Surface(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Explore ways to reduce use',
+              style: Theme.of(context).textTheme.headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'For ${home.name}, review suggested actions and ask questions using saved appliance details and reviewed evidence when available.',
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Waste is not yet assessed. Suggestions and modeled costs are not measured savings or proof of avoidable use.',
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 16),
+      OutlinedButton.icon(
+        key: const Key('stopWasteCloudActions'),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => CloudRecommendationsScreen(api: api, home: home),
+          ),
+        ),
+        icon: const Icon(Icons.lightbulb_outline),
+        label: const Text('Actions to consider'),
+      ),
+      const SizedBox(height: 8),
+      OutlinedButton.icon(
+        key: const Key('stopWasteCloudFaq'),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => CloudFaqScreen(api: api, home: home),
+          ),
+        ),
+        icon: const Icon(Icons.question_answer_outlined),
+        label: const Text('Ask about this cloud home'),
+      ),
+      const SizedBox(height: 8),
+      TextButton.icon(
+        key: const Key('stopWasteCloudEstimates'),
+        onPressed: onViewEstimates,
+        icon: const Icon(Icons.calculate_outlined),
+        label: const Text('Review modeled estimates in Power Now'),
       ),
     ],
   );
