@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_estimate.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:energylens_mobile/features/energy/cloud_estimates_section.dart';
 import 'package:flutter/material.dart';
@@ -44,7 +45,11 @@ class _Auth implements CloudAuthenticator {
   ) async => const CloudTokens(accessToken: 'owner');
 }
 
-Map<String, dynamic> _appliance(String id, String name) => {
+Map<String, dynamic> _appliance(
+  String id,
+  String name, {
+  String fuel = 'electricity',
+}) => {
   'id': id,
   'home_id': _home.id,
   'name': name,
@@ -53,7 +58,7 @@ Map<String, dynamic> _appliance(String id, String name) => {
   'identity': {
     'brand': 'Acme',
     'full_model': 'A123',
-    'fuel': 'electricity',
+    'fuel': fuel,
     'match_quality': 'confirmed_exact',
   },
   'version': 1,
@@ -206,7 +211,7 @@ void main() {
       expect(find.text('Waste: not yet assessed'), findsNWidgets(3));
       expect(
         find.text(
-          'No reviewed annual energy fact is available for this exact product.',
+          'No reviewed energy fact is available for this exact product.',
         ),
         findsOneWidget,
       );
@@ -252,6 +257,147 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('cloudEstimatesError')), findsOneWidget);
     expect(find.text('Estimated operating cost'), findsNothing);
+    api.close();
+  });
+
+  test('priced estimate validates fuel and energy unit as a pair', () {
+    const id = '22222222-2222-4222-8222-222222222222';
+    Map<String, dynamic> withEnergy(String fuel, String unit) => _run(
+      '44444444-4444-4444-8444-444444444444',
+      id,
+      'estimated_useful_cost',
+    )..['energy'] = {'value': '7.750000', 'fuel': fuel, 'unit': unit};
+
+    final gas = CloudEstimate.fromJson(withEnergy('natural_gas', 'therm'));
+    expect(gas.energy?.fuel, 'natural_gas');
+    expect(gas.energy?.unit, 'therm');
+    for (final (fuel, unit) in [
+      ('natural_gas', 'kWh'),
+      ('electricity', 'therm'),
+      ('propane', 'therm'),
+    ]) {
+      expect(
+        () => CloudEstimate.fromJson(withEnergy(fuel, unit)),
+        throwsFormatException,
+      );
+    }
+  });
+
+  testWidgets('reviewed gas cycle estimate shows therms and assessed status', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const dryerId = '66666666-6666-4666-8666-666666666666';
+    final gasRun =
+        _run(
+            'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            dryerId,
+            'estimated_useful_cost',
+          )
+          ..['energy'] = {
+            'value': '7.750000',
+            'unit': 'therm',
+            'fuel': 'natural_gas',
+          }
+          ..['cost'] = {
+            'value': '9.300000',
+            'currency': 'USD',
+            'rate_kind': 'user_tariff',
+          };
+    final api = CloudApiClient(
+      session: CloudSession(
+        config: _config,
+        store: _Store(),
+        authenticator: _Auth(),
+      ),
+      client: MockClient(
+        (request) async => request.url.path.endsWith('/appliances')
+            ? http.Response(
+                jsonEncode({
+                  'appliances': [
+                    _appliance(dryerId, 'Gas Dryer', fuel: 'natural_gas'),
+                  ],
+                }),
+                200,
+              )
+            : http.Response(
+                jsonEncode({
+                  'as_of': '2026-10-01T12:01:00Z',
+                  'estimates': [gasRun],
+                }),
+                200,
+              ),
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: CloudEstimatesSection(api: api, home: _home),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Estimated useful gas cost'), findsOneWidget);
+    expect(find.text('9.300000 USD · 7.750000 therm'), findsOneWidget);
+    expect(find.text('Waste: not yet assessed'), findsOneWidget);
+    expect(find.textContaining('totals are not combined'), findsOneWidget);
+    expect(find.text('Estimated useful cost'), findsNothing);
+    api.close();
+  });
+
+  testWidgets('mismatched appliance and estimate fuel fails closed', (
+    tester,
+  ) async {
+    const dryerId = '66666666-6666-4666-8666-666666666666';
+    final gasRun =
+        _run(
+            'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            dryerId,
+            'estimated_useful_cost',
+          )
+          ..['energy'] = {
+            'value': '7.750000',
+            'unit': 'therm',
+            'fuel': 'natural_gas',
+          };
+    final api = CloudApiClient(
+      session: CloudSession(
+        config: _config,
+        store: _Store(),
+        authenticator: _Auth(),
+      ),
+      client: MockClient(
+        (request) async => request.url.path.endsWith('/appliances')
+            ? http.Response(
+                jsonEncode({
+                  'appliances': [_appliance(dryerId, 'Electric Dryer')],
+                }),
+                200,
+              )
+            : http.Response(
+                jsonEncode({
+                  'as_of': '2026-10-01T12:01:00Z',
+                  'estimates': [gasRun],
+                }),
+                200,
+              ),
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CloudEstimatesSection(api: api, home: _home),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('cloudEstimatesError')), findsOneWidget);
+    expect(find.text('Estimated useful gas cost'), findsNothing);
     api.close();
   });
 }

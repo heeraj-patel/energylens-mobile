@@ -5,14 +5,19 @@ import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_api/cloud_estimate.dart';
 import '../../core/cloud_api/cloud_home.dart';
 
-String cloudEstimateUnavailableReason(String? reason) => switch (reason) {
+String cloudEstimateUnavailableReason(
+  String? reason, {
+  String? fuel,
+}) => switch (reason) {
   'identity_unresolved' =>
     'Confirm an exact model and reviewed product before estimating.',
   'source_unreviewed' =>
-    'No reviewed annual energy fact is available for this exact product.',
+    'No reviewed energy fact is available for this exact product.',
   'usage_unknown' => 'More confirmed usage information is needed.',
   'rate_unavailable' =>
-    'No current comparable electricity rate is available for this home.',
+    fuel == 'natural_gas'
+        ? 'No current comparable natural gas rate in USD/therm is available for this home.'
+        : 'No current comparable electricity rate is available for this home.',
   'basis_incomparable' =>
     'The energy source and rate cannot be compared for this period.',
   _ => 'The estimate is unavailable. Refresh for the latest reason.',
@@ -81,10 +86,16 @@ class _CloudEstimatesSectionState extends State<CloudEstimatesSection> {
       final byId = {for (final appliance in inventory) appliance.id: appliance};
       final latest = <String, CloudEstimate>{};
       for (final estimate in batch.estimates) {
-        if (!byId.containsKey(estimate.applianceId)) {
+        final appliance = byId[estimate.applianceId];
+        if (appliance == null) {
           throw const FormatException(
             'Estimate is outside selected home inventory',
           );
+        }
+        if (estimate.energy case final energy?) {
+          if (energy.fuel != appliance.fuel) {
+            throw const FormatException('Estimate fuel differs from appliance');
+          }
         }
         final old = latest[estimate.applianceId];
         if (old == null || estimate.asOf.isAfter(old.asOf)) {
@@ -155,11 +166,18 @@ class _CloudEstimatesSectionState extends State<CloudEstimatesSection> {
             ),
             if (estimate.kind == 'unavailable') ...[
               const Text('Estimated cost unavailable'),
-              Text(cloudEstimateUnavailableReason(estimate.unavailableReason)),
+              Text(
+                cloudEstimateUnavailableReason(
+                  estimate.unavailableReason,
+                  fuel: appliance.fuel,
+                ),
+              ),
             ] else ...[
               Text(
                 estimate.kind == 'estimated_useful_cost'
-                    ? 'Estimated useful cost'
+                    ? estimate.energy!.fuel == 'natural_gas'
+                          ? 'Estimated useful gas cost'
+                          : 'Estimated useful cost'
                     : 'Estimated operating cost',
               ),
               Text(

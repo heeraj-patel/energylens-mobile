@@ -10,9 +10,14 @@ class CloudEstimatePeriod {
 }
 
 class CloudEstimateQuantity {
-  const CloudEstimateQuantity({required this.value, required this.unit});
+  const CloudEstimateQuantity({
+    required this.value,
+    required this.unit,
+    required this.fuel,
+  });
   final String value;
   final String unit;
+  final String fuel;
 }
 
 class CloudEstimateRef {
@@ -102,7 +107,11 @@ class CloudEstimate {
             (energy is! Map<String, dynamic> ||
                 energy['value'] is! String ||
                 energy['unit'] is! String ||
-                energy['fuel'] is! String) ||
+                energy['fuel'] is! String ||
+                !((energy['fuel'] == 'electricity' &&
+                        energy['unit'] == 'kWh') ||
+                    (energy['fuel'] == 'natural_gas' &&
+                        energy['unit'] == 'therm'))) ||
         cost != null &&
             (cost is! Map<String, dynamic> ||
                 cost['value'] is! String ||
@@ -136,6 +145,7 @@ class CloudEstimate {
           : CloudEstimateQuantity(
               value: energy['value'] as String,
               unit: energy['unit'] as String,
+              fuel: energy['fuel'] as String,
             ),
       cost: cost == null ? null : cost['value'] as String,
       currency: cost == null ? null : cost['currency'] as String,
