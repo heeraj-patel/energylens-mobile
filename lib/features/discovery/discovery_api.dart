@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
+import '../../core/cloud_api/cloud_hub_claim.dart';
+
 class PairingDetails {
   const PairingDetails._({
     required this.address,
@@ -88,6 +90,7 @@ abstract interface class PairingTransport {
     String path,
     String method, {
     Map<String, dynamic>? body,
+    String? bearerToken,
   });
 }
 
@@ -100,6 +103,7 @@ class IoPairingTransport implements PairingTransport {
     String path,
     String method, {
     Map<String, dynamic>? body,
+    String? bearerToken,
   }) async {
     final endpoint = HubEndpoint.parse(address);
     final client = HttpClient(
@@ -122,6 +126,12 @@ class IoPairingTransport implements PairingTransport {
           .openUrl(method, endpoint.uri.replace(path: path))
           .timeout(const Duration(seconds: 5));
       request.followRedirects = false;
+      if (bearerToken != null) {
+        request.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Bearer $bearerToken',
+        );
+      }
       if (body != null) {
         request.headers.contentType = ContentType.json;
         request.write(jsonEncode(body));
@@ -567,6 +577,7 @@ String energySourceLabel(EnergyEvidence source) => switch (source.sourceKind) {
   'oem_exact' => 'Estimated · Manufacturer model test data',
   'oem' => 'Estimated · Manufacturer data',
   'oem_family' => 'Estimated · Manufacturer family test data',
+  'energuide_family' => 'Estimated · Historical EnerGuide family test data',
   'user_label' => 'Estimated · Bulb ratings you entered',
   'category_typical' => 'Estimated · Category typical use',
   _ => 'Estimated · Source details',
@@ -580,6 +591,7 @@ String energySourceHeading(EnergyEvidence source) =>
       'oem_exact' => 'Manufacturer model test data',
       'oem' => 'Manufacturer data',
       'oem_family' => 'Manufacturer family test data',
+      'energuide_family' => 'Historical EnerGuide family test data',
       'user_label' => 'Bulb ratings you entered',
       'category_typical' => 'Category typical use',
       _ => 'Source details',
@@ -782,6 +794,37 @@ class DiscoveryApi {
   const DiscoveryApi({this.pairingTransport = const IoPairingTransport()});
 
   final PairingTransport pairingTransport;
+
+  Future<HubClaimProof> claimProof(
+    HubClaimChallenge challenge, {
+    required String address,
+    required String hubId,
+    required String token,
+  }) async {
+    await verifyStoredPairing(
+      StoredHubIdentity(address: address, hubId: hubId),
+    );
+    if (challenge.localHubId != hubId) {
+      throw const PairingException(
+        'The cloud challenge is for a different hub.',
+      );
+    }
+    final response = await pairingTransport.send(
+      address,
+      '/v1/cloud/claim-proofs',
+      'POST',
+      body: challenge.toJson(),
+      bearerToken: token,
+    );
+    final json = _decodePairingResponse(response);
+    final proof = HubClaimProof.fromJson(json);
+    if (proof.claimId != challenge.claimId || proof.localHubId != hubId) {
+      throw const PairingException(
+        'The hub returned a proof for a different claim.',
+      );
+    }
+    return proof;
+  }
 
   /// Rechecks the pinned endpoint and saved hub identity on app restart.
   Future<void> verifyStoredPairing(StoredHubIdentity pairing) async {

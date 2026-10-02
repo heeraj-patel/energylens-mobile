@@ -53,7 +53,7 @@ class FakeApi extends DiscoveryApi {
     String? upc,
   }) async {
     expect(targetKind, 'appliance');
-    expect(ocrText, contains('MODEL NO: ABC1234'));
+    expect(ocrText, 'MODEL NO: ABC1234');
     expect(upc, '123456789012');
     return const [
       IdentificationCandidate(
@@ -153,6 +153,7 @@ class SourceApi extends FakeApi {
       'energy_star' => 'rxdj-2c88',
       'energy_star_archive' => 'computers_v6_2018_archive',
       'oem_family' => 'lenovo_t14_gen2_20xl_ecodeclaration_2021',
+      'energuide_family' => 'energuide_historical_family_tests',
       _ => 'curated_oem',
     },
     sourceUrl: 'https://example.com/source',
@@ -177,12 +178,16 @@ class SourceApi extends FakeApi {
     int id, {
     double? rateUsdPerKwh,
     String? postalCode,
-  }) async => EnergyEstimate(
-    status: 'estimated',
-    estimatedKwh: 10,
-    estimatedCostUsd: rateUsdPerKwh == null ? null : 10 * rateUsdPerKwh,
-    evidence: source,
-  );
+  }) async {
+    expect(rateUsdPerKwh, isNull);
+    expect(postalCode, isNull);
+    return EnergyEstimate(
+      status: 'estimated',
+      estimatedKwh: 10,
+      estimatedCostUsd: 2,
+      evidence: source,
+    );
+  }
 }
 
 class FakeCapture extends PhotoCaptureService {
@@ -193,7 +198,8 @@ class FakeCapture extends PhotoCaptureService {
     bytes: Uint8List.fromList([1, 2, 3]),
   );
   @override
-  Future<String?> extractTextHint(String path) async => 'MODEL NO: ABC1234';
+  Future<String?> extractTextHint(String path) async =>
+      'Manufacturer: LG  Serial: PRIVATE123\nMODEL NO: ABC1234';
   @override
   Future<String?> detectUpc(String path) async => '123456789012';
   @override
@@ -223,6 +229,19 @@ void main() {
     expect(modelHintFromOcr('MODEL:\nSERIAL: ABC1234'), isNull);
     expect(modelHintFromOcr('MODEL: NO\nMODEL NO: ABC1234'), 'ABC1234');
     expect(modelHintFromOcr(null), isNull);
+    expect(
+      manufacturerHintFromOcr(
+        'LG Electronics\nMODEL NO: WM3070HWA\nSERIAL: 8249',
+      ),
+      'LG',
+    );
+    expect(
+      manufacturerHintFromOcr(
+        'Manufacturer: LG  Serial: 8249\nMODEL: WM3070HWA',
+      ),
+      'LG',
+    );
+    expect(manufacturerHintFromOcr('MODEL: WM3070HWA\nSERIAL: LG8249'), isNull);
   });
 
   testWidgets('manual appliance saves without a live-reading claim', (
@@ -261,7 +280,7 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('checkModelBeforeSave')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('No exact energy model found'), findsOneWidget);
+    expect(find.textContaining('No energy rating was found'), findsOneWidget);
     await scrollTo(
       tester,
       find.byKey(const Key('applianceModel')),
@@ -299,12 +318,67 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(api.rows, hasLength(1));
+    await scrollTo(tester, find.byKey(const Key('delete-appliance-1')));
     await tester.tap(find.byKey(const Key('delete-appliance-1')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
     expect(api.rows, isEmpty);
     expect(find.text('No appliances saved on this hub yet.'), findsOneWidget);
+  });
+
+  testWidgets('standalone save returns the saved appliance to its caller', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = FakeApi();
+    SavedAppliance? returned;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Column(
+              children: [
+                const Text('Ask & Add'),
+                FilledButton(
+                  onPressed: () async {
+                    returned = await Navigator.of(context).push<SavedAppliance>(
+                      MaterialPageRoute(
+                        builder: (_) => ApplianceOnboardingScreen(
+                          method: 'manual',
+                          api: api,
+                          credentials: FakeCredentials(),
+                          capture: FakeCapture(),
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Open onboarding'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open onboarding'));
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('applianceName')));
+    await tester.enterText(find.byKey(const Key('applianceName')), 'Desk lamp');
+    await scrollTo(tester, find.byKey(const Key('checkModelBeforeSave')));
+    await tester.tap(find.byKey(const Key('checkModelBeforeSave')));
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('saveAppliance')), delta: 650);
+    await tester.tap(find.byKey(const Key('saveAppliance')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ask & Add'), findsOneWidget);
+    expect(returned, isNotNull);
+    expect(returned!.name, 'Desk lamp');
+    expect(returned!.id, 1);
   });
 
   testWidgets('no-match energy check hides the link after reload', (
@@ -393,12 +467,45 @@ void main() {
     await tester.tap(find.byKey(const Key('saveAppliance')));
     await tester.pumpAndSettle();
     expect(api.rows, hasLength(1));
-    await scrollTo(tester, find.text('Estimated monthly energy: 10.0 kWh'));
-    expect(find.text('Estimated monthly energy: 10.0 kWh'), findsOneWidget);
+    await scrollTo(
+      tester,
+      find.textContaining('Manufacturer family test-profile cost:'),
+    );
+    expect(find.textContaining('\$2.00 · 10.0 kWh'), findsOneWidget);
     expect(
       find.text('Estimated · Manufacturer family test data'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('manual model miss offers a web search with clear rating copy', (
+    tester,
+  ) async {
+    final api = FakeApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ApplianceOnboardingScreen(
+          method: 'manual',
+          api: api,
+          credentials: FakeCredentials(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('applianceName')));
+    await tester.enterText(find.byKey(const Key('applianceName')), 'Dryer');
+    await scrollTo(tester, find.byKey(const Key('applianceManufacturer')));
+    await tester.enterText(
+      find.byKey(const Key('applianceManufacturer')),
+      'LG',
+    );
+    await tester.enterText(find.byKey(const Key('applianceModel')), 'DLGX5171');
+    await scrollTo(tester, find.byKey(const Key('checkModelBeforeSave')));
+    await tester.tap(find.byKey(const Key('checkModelBeforeSave')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('No energy rating was found'), findsOneWidget);
+    expect(find.text('Search web'), findsOneWidget);
   });
 
   testWidgets('photo model needs user confirmation before saving', (
@@ -420,7 +527,21 @@ void main() {
     await tester.tap(find.text('Take photo'));
     await tester.pumpAndSettle();
     expect(capture.discarded, isTrue);
-    await scrollTo(tester, find.byKey(const Key('photoCandidate-ABC1234')));
+    expect(
+      find.textContaining('Maker suggested from label: LG'),
+      findsOneWidget,
+    );
+    await scrollTo(tester, find.byKey(const Key('applianceManufacturer')));
+    final makerField = tester.widget<TextField>(
+      find.byKey(const Key('applianceManufacturer')),
+    );
+    expect(makerField.controller!.text, 'LG');
+    expect(find.textContaining('PRIVATE123'), findsNothing);
+    await scrollTo(
+      tester,
+      find.byKey(const Key('photoCandidate-ABC1234')),
+      delta: -300,
+    );
     expect(
       find.textContaining('Reviewed catalog · exact barcode'),
       findsOneWidget,
@@ -448,6 +569,7 @@ void main() {
     expect(api.rows, hasLength(1));
     expect(api.rows.first.onboardingMethod, 'photo');
     expect(api.rows.first.model, 'ABC1234');
+    expect(api.lookupStatuses[api.rows.first.id], 'no_match');
     expect(find.byKey(const Key('delete-appliance-1')), findsNothing);
   });
 
@@ -459,6 +581,7 @@ void main() {
       'energy_star_archive',
       'oem',
       'oem_family',
+      'energuide_family',
     ]) {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpWidget(
@@ -471,8 +594,6 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await scrollTo(tester, find.byKey(const Key('electricityRate')));
-      await tester.enterText(find.byKey(const Key('electricityRate')), '0.20');
       await scrollTo(tester, find.text('Check energy data'));
       await tester.tap(find.text('Check energy data'));
       await tester.pumpAndSettle();
@@ -480,6 +601,8 @@ void main() {
           ? 'Historical test-profile cost'
           : kind == 'oem_family'
           ? 'Manufacturer family test-profile cost'
+          : kind == 'energuide_family'
+          ? 'Historical EnerGuide family test-profile cost'
           : 'Estimated monthly cost';
       await scrollTo(tester, find.textContaining('$costLabel:'));
       expect(find.textContaining('$costLabel: \$2.00'), findsOneWidget);
@@ -489,6 +612,8 @@ void main() {
           ? 'Estimated · Historical ENERGY STAR data (EPA)'
           : kind == 'oem_family'
           ? 'Estimated · Manufacturer family test data'
+          : kind == 'energuide_family'
+          ? 'Estimated · Historical EnerGuide family test data'
           : 'Estimated · Manufacturer data';
       await scrollTo(tester, find.text(label));
       expect(find.text(label), findsOneWidget);

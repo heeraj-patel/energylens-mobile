@@ -2,12 +2,28 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'core/cloud_auth/cloud_entry_gate.dart';
+import 'core/cloud_auth/cloud_preferences_screen.dart';
+import 'core/cloud_api/cloud_home.dart';
+import 'core/cloud_api/cloud_api_client.dart';
+import 'core/cloud_api/cloud_appliance.dart';
+
 import 'features/discovery/discovery_screen.dart';
 import 'features/discovery/discovery_api.dart';
 import 'features/discovery/discovery_credentials.dart';
 import 'features/discovery/plug_connection_status.dart';
 import 'features/discovery/electricity_settings_screen.dart';
+import 'features/energy/useful_waste_cost_card.dart';
+import 'features/energy/cloud_estimates_section.dart';
+import 'features/energy/cloud_metered_history_screen.dart';
+import 'features/energy/cloud_kasa_runtime_screen.dart';
+import 'features/energy/cloud_metered_summary_screen.dart';
+import 'features/energy/cloud_faq_screen.dart';
+import 'features/energy/cloud_recommendations_screen.dart';
+import 'features/energy/cloud_programs_screen.dart';
+import 'features/energy/cloud_report_preview_screen.dart';
 import 'features/identify/appliance_onboarding_screen.dart';
+import 'features/identify/cloud_usage_questions_screen.dart';
 
 void main() => runApp(const EnergyLensApp());
 
@@ -76,14 +92,22 @@ class EnergyLensApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: theme(Brightness.light),
       darkTheme: theme(Brightness.dark),
-      home: HomeScreen(
-        initialTabIndex:
-            const bool.fromEnvironment('ENERGYLENS_DISCOVERY_PREVIEW') ? 3 : 0,
-        autoScanDiscovery: const bool.fromEnvironment(
-          'ENERGYLENS_DISCOVERY_PREVIEW',
-        ),
-        startInConnectAppliance: const bool.fromEnvironment(
-          'ENERGYLENS_DISCOVERY_PREVIEW',
+      home: CloudEntryGate(
+        homeBuilder: (cloudHome, signOut, changeHome, cloudApi) => HomeScreen(
+          cloudHome: cloudHome,
+          cloudApi: cloudApi,
+          onCloudSignOut: signOut,
+          onCloudChangeHome: changeHome,
+          initialTabIndex:
+              const bool.fromEnvironment('ENERGYLENS_DISCOVERY_PREVIEW')
+              ? 3
+              : 0,
+          autoScanDiscovery: const bool.fromEnvironment(
+            'ENERGYLENS_DISCOVERY_PREVIEW',
+          ),
+          startInConnectAppliance: const bool.fromEnvironment(
+            'ENERGYLENS_DISCOVERY_PREVIEW',
+          ),
         ),
       ),
     );
@@ -98,6 +122,10 @@ class HomeScreen extends StatefulWidget {
     this.initialTabIndex = 0,
     this.autoScanDiscovery = false,
     this.startInConnectAppliance = false,
+    this.onCloudSignOut,
+    this.onCloudChangeHome,
+    this.cloudHome,
+    this.cloudApi,
   });
 
   final DiscoveryApi api;
@@ -105,6 +133,10 @@ class HomeScreen extends StatefulWidget {
   final int initialTabIndex;
   final bool autoScanDiscovery;
   final bool startInConnectAppliance;
+  final VoidCallback? onCloudSignOut;
+  final VoidCallback? onCloudChangeHome;
+  final CloudHome? cloudHome;
+  final CloudApiClient? cloudApi;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -114,9 +146,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late int _index;
   bool _hubConnected = false;
   List<SavedPlug> _plugs = const [];
+  List<SavedAppliance> _appliances = const [];
   Map<int, EnergyEstimate> _estimates = const {};
   Map<String, DeviceEnergy> _meterReadings = const {};
   Map<String, DeviceBaselineCoverage> _baselineCoverage = const {};
+  ElectricitySettings? _householdSettings;
+  bool _zipPromptDismissed = false;
   int _refreshGeneration = 0;
   int _meterGeneration = 0;
   Timer? _meterRefreshTimer;
@@ -161,15 +196,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         return;
       }
       final plugs = await widget.api.saved(address, token);
+      List<SavedAppliance> appliances;
+      try {
+        appliances = await widget.api.appliances(address, token);
+      } catch (_) {
+        appliances = [for (final plug in plugs) ?plug.connectedAppliance];
+      }
       if (mounted && generation == _refreshGeneration) {
         setState(() {
           _plugs = plugs;
+          _appliances = appliances;
           _hubConnected = true;
+          _householdSettings = null;
           _estimates = const {};
           _meterReadings = const {};
           _baselineCoverage = const {};
         });
       }
+      unawaited(_refreshHouseholdSettings(address, token, generation));
       unawaited(
         _refreshBaselineCoverage(
           plugs: plugs,
@@ -181,32 +225,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       unawaited(_refreshMetering(plugs: plugs, address: address, token: token));
       unawaited(_refreshPlugStatuses(plugs, address, token, generation));
       await Future.wait([
-        for (final plug in plugs)
-          if (plug.connectedAppliance case final appliance?)
-            if (plug.connectionStatus != 'identity_changed')
-              () async {
-                try {
-                  final estimate = await widget.api.estimate(
-                    address,
-                    token,
-                    appliance.id,
+        for (final appliance in appliances)
+          if (!plugs.any(
+            (plug) =>
+                plug.connectedAppliance?.id == appliance.id &&
+                plug.connectionStatus == 'identity_changed',
+          ))
+            () async {
+              try {
+                final estimate = await widget.api.estimate(
+                  address,
+                  token,
+                  appliance.id,
+                );
+                if (mounted &&
+                    generation == _refreshGeneration &&
+                    !_plugs.any(
+                      (current) =>
+                          current.connectedAppliance?.id == appliance.id &&
+                          current.connectionStatus == 'identity_changed',
+                    )) {
+                  setState(
+                    () => _estimates = {..._estimates, appliance.id: estimate},
                   );
-                  if (mounted &&
-                      generation == _refreshGeneration &&
-                      !_plugs.any(
-                        (current) =>
-                            current.id == plug.id &&
-                            current.connectionStatus == 'identity_changed',
-                      )) {
-                    setState(
-                      () =>
-                          _estimates = {..._estimates, appliance.id: estimate},
-                    );
-                  }
-                } catch (_) {
-                  // One unavailable estimate must not hide the saved plug.
                 }
-              }(),
+              } catch (_) {
+                // One unavailable estimate must not hide the saved plug.
+              }
+            }(),
       ]);
     } catch (_) {
       if (mounted && generation == _refreshGeneration) {
@@ -217,6 +263,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ++_meterGeneration;
         });
       }
+    }
+  }
+
+  Future<void> _refreshHouseholdSettings(
+    String address,
+    String token,
+    int generation,
+  ) async {
+    try {
+      final settings = await widget.api.electricitySettings(address, token);
+      final dismissed = await widget.credentials.readZipPromptDismissed();
+      if (mounted && generation == _refreshGeneration) {
+        setState(() {
+          _householdSettings = settings;
+          _zipPromptDismissed = dismissed;
+        });
+      }
+    } catch (_) {
+      // An unavailable profile must not be mistaken for a missing ZIP.
+      if (mounted && generation == _refreshGeneration) {
+        setState(() => _householdSettings = null);
+      }
+    }
+  }
+
+  Future<void> _dismissZipPrompt() async {
+    setState(() => _zipPromptDismissed = true);
+    try {
+      await widget.credentials.dismissZipPrompt();
+    } catch (_) {
+      // The current screen still honors the dismissal.
     }
   }
 
@@ -236,10 +313,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         return;
       }
       final plugs = await widget.api.saved(address, token);
+      List<SavedAppliance> appliances;
+      try {
+        appliances = await widget.api.appliances(address, token);
+      } catch (_) {
+        appliances = _appliances;
+      }
       if (!mounted || generation != _refreshGeneration) return;
       setState(() {
         _hubConnected = true;
         _plugs = plugs;
+        _appliances = appliances;
         _baselineCoverage = const {};
       });
       unawaited(
@@ -465,10 +549,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final content = switch (_index) {
       0 => _PowerNow(
         plugs: _plugs,
+        appliances: _appliances,
         hubConnected: _hubConnected,
         estimates: _estimates,
         estimatesStale: !_hubConnected && _estimates.isNotEmpty,
         meterReadings: _meterReadings,
+        showZipPrompt:
+            _hubConnected &&
+            _householdSettings != null &&
+            (_householdSettings!.postalCode?.isEmpty ?? true) &&
+            !_zipPromptDismissed,
+        onDismissZipPrompt: _dismissZipPrompt,
         onOpenElectricitySettings: _openElectricitySettings,
         onHoursChanged: _saveApplianceHours,
         onLoadUsage: _loadApplianceUsage,
@@ -483,6 +574,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _ => _AskAndAdd(
         api: widget.api,
         credentials: widget.credentials,
+        cloudHome: widget.cloudHome,
+        cloudApi: widget.cloudApi,
         onDevicesChanged: _refreshHub,
         autoScanDiscovery: widget.autoScanDiscovery,
         startInConnectAppliance: widget.startInConnectAppliance,
@@ -543,11 +636,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ],
         ),
         actions: [
+          if (widget.cloudApi != null && widget.cloudHome != null)
+            IconButton(
+              tooltip: 'Cloud settings',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => CloudPreferencesScreen(
+                    api: widget.cloudApi!,
+                    home: widget.cloudHome,
+                  ),
+                ),
+              ),
+              icon: const Icon(Icons.tune),
+            ),
+          if (widget.onCloudChangeHome != null)
+            IconButton(
+              tooltip: 'Change cloud home',
+              onPressed: widget.onCloudChangeHome,
+              icon: const Icon(Icons.home_outlined),
+            ),
+          if (widget.onCloudSignOut != null)
+            IconButton(
+              tooltip: 'Sign out',
+              onPressed: widget.onCloudSignOut,
+              icon: const Icon(Icons.logout),
+            ),
           TextButton.icon(
             key: const Key('openElectricitySettings'),
             onPressed: _openElectricitySettings,
-            icon: const Icon(Icons.attach_money),
-            label: const Text('Rates'),
+            icon: const Icon(Icons.person_outline),
+            label: const Text('Profile'),
           ),
           Padding(
             padding: const EdgeInsets.only(right: 16),
@@ -607,7 +725,127 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: SingleChildScrollView(
                   key: ValueKey(_index),
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 36),
-                  child: content,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (widget.cloudHome != null) ...[
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(
+                              'Cloud home: ${widget.cloudHome!.name}. Local device data below has not synced to Cloud yet.',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_index == 0 && widget.cloudApi != null) ...[
+                          CloudEstimatesSection(
+                            api: widget.cloudApi!,
+                            home: widget.cloudHome!,
+                          ),
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => CloudMeteredHistoryScreen(
+                                  api: widget.cloudApi!,
+                                  home: widget.cloudHome!,
+                                ),
+                              ),
+                            ),
+                            icon: const Icon(Icons.history),
+                            label: const Text('View Cloud meter history'),
+                          ),
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => CloudMeteredSummaryScreen(
+                                  api: widget.cloudApi!,
+                                  home: widget.cloudHome!,
+                                ),
+                              ),
+                            ),
+                            icon: const Icon(Icons.bar_chart),
+                            label: const Text('View Cloud meter summaries'),
+                          ),
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => CloudKasaRuntimeScreen(
+                                  api: widget.cloudApi!,
+                                  home: widget.cloudHome!,
+                                ),
+                              ),
+                            ),
+                            icon: const Icon(Icons.timer_outlined),
+                            label: const Text('View Cloud Kasa runtime'),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        if (_index == 3 && widget.cloudApi != null) ...[
+                          OutlinedButton.icon(
+                            key: const Key('openCloudReportPreview'),
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => CloudReportPreviewScreen(
+                                  api: widget.cloudApi!,
+                                  home: widget.cloudHome!,
+                                ),
+                              ),
+                            ),
+                            icon: const Icon(Icons.description_outlined),
+                            label: const Text('Private report preview'),
+                          ),
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            key: const Key('openCloudRecommendations'),
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => CloudRecommendationsScreen(
+                                  api: widget.cloudApi!,
+                                  home: widget.cloudHome!,
+                                ),
+                              ),
+                            ),
+                            icon: const Icon(Icons.lightbulb_outline),
+                            label: const Text('Actions to consider'),
+                          ),
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            key: const Key('openCloudPrograms'),
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => CloudProgramsScreen(
+                                  api: widget.cloudApi!,
+                                  home: widget.cloudHome!,
+                                ),
+                              ),
+                            ),
+                            icon: const Icon(Icons.local_offer_outlined),
+                            label: const Text('Reviewed programs'),
+                          ),
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            key: const Key('openCloudFaq'),
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => CloudFaqScreen(
+                                  api: widget.cloudApi!,
+                                  home: widget.cloudHome!,
+                                ),
+                              ),
+                            ),
+                            icon: const Icon(Icons.question_answer_outlined),
+                            label: const Text('Ask about this cloud home'),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                      ],
+                      content,
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -725,56 +963,6 @@ class _Setup extends StatelessWidget {
   );
 }
 
-class _MetricTile extends StatelessWidget {
-  const _MetricTile(this.title, this.detail, {this.color = _green});
-  final String title;
-  final String detail;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Expanded(
-    child: Container(
-      constraints: const BoxConstraints(minHeight: 126),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: _softSurface(context),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(radius: 4, backgroundColor: color),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 7),
-          Text(
-            detail,
-            style: Theme.of(context).textTheme.bodySmall
-                ?.copyWith(color: _secondary(context)),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '— unavailable',
-            style: Theme.of(context).textTheme.labelMedium
-                ?.copyWith(color: color, fontWeight: FontWeight.w700),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
 class _CostMetricTile extends StatelessWidget {
   const _CostMetricTile(
     this.title,
@@ -825,19 +1013,17 @@ class _CostMetricTile extends StatelessWidget {
 }
 
 class _EstimatedCostSummary extends StatelessWidget {
-  const _EstimatedCostSummary({required this.plugs, required this.estimates});
-  final List<SavedPlug> plugs;
+  const _EstimatedCostSummary({
+    required this.appliances,
+    required this.estimates,
+  });
+  final List<SavedAppliance> appliances;
   final Map<int, EnergyEstimate> estimates;
 
   @override
   Widget build(BuildContext context) {
-    final loadCount = plugs
-        .where((plug) => plug.connectedAppliance != null)
-        .length;
     final values = [
-      for (final plug in plugs)
-        if (plug.connectedAppliance case final appliance?)
-          ?estimates[appliance.id],
+      for (final appliance in appliances) ?estimates[appliance.id],
     ];
     final measured = values
         .where(
@@ -851,16 +1037,17 @@ class _EstimatedCostSummary extends StatelessWidget {
         .toList();
     final pricedCount = sourced.length;
     final sourcedLoadCount =
-        loadCount - values.where((item) => item.status == 'measured').length;
-    final loadLabel = sourcedLoadCount == 1 ? 'load' : 'loads';
-    final active = sourced.fold<double>(
+        appliances.length -
+        values.where((item) => item.status == 'measured').length;
+    final loadLabel = sourcedLoadCount == 1 ? 'device' : 'devices';
+    final split = sourced.where((item) => item.activeCostUsd != null).toList();
+    final active = split.fold<double>(
       0,
-      (sum, item) => sum + (item.activeCostUsd ?? 0),
+      (sum, item) => sum + item.activeCostUsd!,
     );
-    final standby = sourced.fold<double>(
-      0,
-      (sum, item) => sum + (item.standbyCostUsd ?? 0),
-    );
+    final standby = sourced
+        .where((item) => item.standbyCostUsd != null)
+        .fold<double>(0, (sum, item) => sum + item.standbyCostUsd!);
     final hasStandby = sourced.any((item) => item.standbyCostUsd != null);
     final total = sourced.fold<double>(
       0,
@@ -873,6 +1060,27 @@ class _EstimatedCostSummary extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        UsefulWasteCostPanel(
+          scopeLabel: 'Tracked devices · ${appliances.length} saved',
+          periodLabel: 'Estimated monthly cost',
+          usefulCostUsd: null,
+          wasteCostUsd: null,
+          unclassifiedCostUsd: sourced.isEmpty ? null : total,
+          detail:
+              'Product ratings and entered use do not establish which energy was useful or wasted. Only ${sourced.length} of ${appliances.length} saved devices have a priced estimate.',
+        ),
+        const SizedBox(height: 12),
+        if (measured.isNotEmpty) ...[
+          UsefulWasteCostPanel(
+            scopeLabel: 'Metered devices · ${measured.length} tracked',
+            periodLabel: 'Observed last 30 days, covered time only',
+            usefulCostUsd: null,
+            wasteCostUsd: null,
+            unclassifiedCostUsd: measuredTotal,
+            detail: 'Meter readings show draw and cost, but device activity is needed to classify useful and wasted use.',
+          ),
+          const SizedBox(height: 12),
+        ],
         if (measured.isNotEmpty) ...[
           _Surface(
             child: Column(
@@ -888,7 +1096,7 @@ class _EstimatedCostSummary extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '\$${measuredTotal.toStringAsFixed(2)} from ${measured.length} metered ${measured.length == 1 ? 'load' : 'loads'}',
+                  '\$${measuredTotal.toStringAsFixed(2)} from ${measured.length} metered ${measured.length == 1 ? 'device' : 'devices'}',
                   style: Theme.of(context).textTheme.headlineSmall
                       ?.copyWith(fontWeight: FontWeight.w700),
                 ),
@@ -927,7 +1135,7 @@ class _EstimatedCostSummary extends StatelessWidget {
                   children: [
                     _CostMetricTile(
                       'Active use',
-                      active,
+                      split.isEmpty ? null : active,
                       'Known active estimates',
                       color: _green,
                     ),
@@ -1029,7 +1237,6 @@ class _ConnectedLoadRow extends StatefulWidget {
   const _ConnectedLoadRow({
     required this.appliance,
     required this.estimate,
-    required this.onOpenElectricitySettings,
     required this.onHoursChanged,
     required this.onLoadUsage,
     required this.onUsageChanged,
@@ -1037,7 +1244,6 @@ class _ConnectedLoadRow extends StatefulWidget {
 
   final SavedAppliance appliance;
   final EnergyEstimate? estimate;
-  final VoidCallback onOpenElectricitySettings;
   final Future<void> Function(int, double) onHoursChanged;
   final Future<ApplianceUsageProfile> Function(int) onLoadUsage;
   final Future<ApplianceUsageProfile> Function(int, String, double)
@@ -1236,6 +1442,8 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
         ? 'Historical test-profile cost'
         : evidence?.sourceKind == 'oem_family'
         ? 'Manufacturer family test-profile cost'
+        : evidence?.sourceKind == 'energuide_family'
+        ? 'Historical EnerGuide family test-profile cost'
         : onTimeOnly
         ? 'Estimated on-time'
         : standbyCost != null
@@ -1256,33 +1464,21 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
                       ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 4),
-                if (cost == null && estimate?.estimatedKwh != null)
-                  TextButton.icon(
-                    key: Key('setElectricityRateFromEstimate-${appliance.id}'),
-                    onPressed: widget.onOpenElectricitySettings,
-                    icon: const Icon(Icons.attach_money, size: 18),
-                    label: const Text('Add ZIP code or bill rate for cost'),
-                    style: TextButton.styleFrom(
-                      alignment: Alignment.centerLeft,
-                      padding: EdgeInsets.zero,
-                      minimumSize: const Size(0, 40),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  )
-                else
-                  Text(
-                    cost != null
-                        ? measured
-                              ? '$costHeading: \$${cost.toStringAsFixed(2)}'
-                              : '$costHeading: \$${cost.toStringAsFixed(2)}/month'
-                        : 'Estimate unavailable',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: cost == null ? _secondary(context) : _green,
-                      fontWeight: cost == null
-                          ? FontWeight.normal
-                          : FontWeight.w700,
-                    ),
+                Text(
+                  cost != null
+                      ? measured
+                            ? '$costHeading: \$${cost.toStringAsFixed(2)}'
+                            : '$costHeading: \$${cost.toStringAsFixed(2)}/month'
+                      : estimate?.estimatedKwh != null
+                      ? 'Cost unavailable'
+                      : 'Estimate unavailable',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: cost == null ? _secondary(context) : _green,
+                    fontWeight: cost == null
+                        ? FontWeight.normal
+                        : FontWeight.w700,
                   ),
+                ),
                 if (activeCost != null) ...[
                   const SizedBox(height: 4),
                   Text(
@@ -1326,6 +1522,18 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
                         ?.copyWith(color: _secondary(context)),
                   ),
                 ],
+                const SizedBox(height: 10),
+                UsefulWasteCostPanel(
+                  scopeLabel: 'Cost for ${appliance.name}',
+                  periodLabel: measured
+                      ? 'Observed last 30 days, covered time only'
+                      : 'Estimated monthly cost',
+                  usefulCostUsd: null,
+                  wasteCostUsd: null,
+                  unclassifiedCostUsd: cost,
+                  detail:
+                      'Useful and wasted use need device activity evidence.',
+                ),
                 if (appliance.category == 'lighting' &&
                     appliance.loadKind == 'replaceable_bulb' &&
                     (evidence?.datasetId == 'msj5-kqfv' ||
@@ -1503,10 +1711,13 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
 class _PowerNow extends StatefulWidget {
   const _PowerNow({
     required this.plugs,
+    required this.appliances,
     required this.hubConnected,
     required this.estimates,
     required this.estimatesStale,
     required this.meterReadings,
+    required this.showZipPrompt,
+    required this.onDismissZipPrompt,
     required this.onOpenElectricitySettings,
     required this.onHoursChanged,
     required this.onLoadUsage,
@@ -1514,10 +1725,13 @@ class _PowerNow extends StatefulWidget {
   });
 
   final List<SavedPlug> plugs;
+  final List<SavedAppliance> appliances;
   final bool hubConnected;
   final Map<int, EnergyEstimate> estimates;
   final bool estimatesStale;
   final Map<String, DeviceEnergy> meterReadings;
+  final bool showZipPrompt;
+  final VoidCallback onDismissZipPrompt;
   final VoidCallback onOpenElectricitySettings;
   final Future<void> Function(int, double) onHoursChanged;
   final Future<ApplianceUsageProfile> Function(int) onLoadUsage;
@@ -1531,15 +1745,35 @@ class _PowerNow extends StatefulWidget {
 class _PowerNowState extends State<_PowerNow> {
   final Set<String> _collapsedPlugIds = {};
 
+  List<SavedAppliance> get _allAppliances {
+    final byId = <int, SavedAppliance>{
+      for (final appliance in widget.appliances) appliance.id: appliance,
+    };
+    for (final plug in widget.plugs) {
+      if (plug.connectedAppliance case final appliance?) {
+        byId.putIfAbsent(appliance.id, () => appliance);
+      }
+    }
+    return byId.values.toList(growable: false);
+  }
+
+  List<SavedAppliance> get _standaloneAppliances {
+    final attachedIds = {
+      for (final plug in widget.plugs)
+        if (plug.connectedAppliance case final appliance?) appliance.id,
+    };
+    return _allAppliances
+        .where((item) => !attachedIds.contains(item.id))
+        .toList();
+  }
+
   List<Widget> _savedDevices() => [
     _SectionTitle(
       'Where Your Power Is Going',
-      widget.plugs.isEmpty
-          ? 'Saved devices'
-          : '${widget.plugs.length} saved plug${widget.plugs.length == 1 ? '' : 's'}',
+      '${widget.plugs.length} plug${widget.plugs.length == 1 ? '' : 's'} · ${_standaloneAppliances.length} standalone',
     ),
     const SizedBox(height: 10),
-    if (widget.plugs.isEmpty)
+    if (widget.plugs.isEmpty && _standaloneAppliances.isEmpty)
       _InfoRow(
         Icons.power_outlined,
         widget.hubConnected
@@ -1549,7 +1783,7 @@ class _PowerNowState extends State<_PowerNow> {
             ? 'Use Ask & Add to discover and save a plug.'
             : 'Use Ask & Add to connect your EnergyLens hub.',
       )
-    else
+    else ...[
       for (final plug in widget.plugs) ...[
         Builder(
           builder: (context) {
@@ -1686,8 +1920,6 @@ class _PowerNowState extends State<_PowerNow> {
                           child: _ConnectedLoadRow(
                             appliance: appliance,
                             estimate: widget.estimates[appliance.id],
-                            onOpenElectricitySettings:
-                                widget.onOpenElectricitySettings,
                             onHoursChanged: widget.onHoursChanged,
                             onLoadUsage: widget.onLoadUsage,
                             onUsageChanged: widget.onUsageChanged,
@@ -1703,6 +1935,17 @@ class _PowerNowState extends State<_PowerNow> {
         ),
         const SizedBox(height: 8),
       ],
+      for (final appliance in _standaloneAppliances) ...[
+        _ConnectedLoadRow(
+          appliance: appliance,
+          estimate: widget.estimates[appliance.id],
+          onHoursChanged: widget.onHoursChanged,
+          onLoadUsage: widget.onLoadUsage,
+          onUsageChanged: widget.onUsageChanged,
+        ),
+        const SizedBox(height: 8),
+      ],
+    ],
   ];
 
   @override
@@ -1724,9 +1967,9 @@ class _PowerNowState extends State<_PowerNow> {
                         ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                   Text(
-                    widget.plugs.isEmpty
+                    widget.plugs.isEmpty && _allAppliances.isEmpty
                         ? 'Connect a device to see how your electricity is being used.'
-                        : '${widget.plugs.length} smart plug${widget.plugs.length == 1 ? '' : 's'} saved on your hub.',
+                        : '${_allAppliances.length} appliance${_allAppliances.length == 1 ? '' : 's'} and ${widget.plugs.length} smart plug${widget.plugs.length == 1 ? '' : 's'} saved on your hub.',
                     style: Theme.of(context).textTheme.bodySmall
                         ?.copyWith(color: _secondary(context)),
                   ),
@@ -1744,29 +1987,44 @@ class _PowerNowState extends State<_PowerNow> {
           'These amounts were saved from the last hub refresh and may be out of date.',
         ),
       ],
+      if (widget.showZipPrompt) ...[
+        const SizedBox(height: 12),
+        _InfoRow(
+          Icons.location_on_outlined,
+          'Add your home ZIP code',
+          'Save it once in your profile to use a regional electricity rate for all devices.',
+          action: Wrap(
+            spacing: 8,
+            children: [
+              TextButton(
+                key: const Key('setHouseholdZip'),
+                onPressed: widget.onOpenElectricitySettings,
+                child: const Text('Open profile'),
+              ),
+              TextButton(
+                key: const Key('dismissHouseholdZip'),
+                onPressed: widget.onDismissZipPrompt,
+                child: const Text('Later'),
+              ),
+            ],
+          ),
+        ),
+      ],
+      const SizedBox(height: 18),
+      _EstimatedCostSummary(
+        appliances: _allAppliances,
+        estimates: widget.estimates,
+      ),
       const SizedBox(height: 18),
       ..._savedDevices(),
       const SizedBox(height: 18),
-      if (widget.estimates.values.any(
-        (value) => value.estimatedCostUsd != null,
-      ))
-        _EstimatedCostSummary(plugs: widget.plugs, estimates: widget.estimates)
-      else if (widget.meterReadings.values.any(
+      if (!widget.estimates.values.any(
+            (value) => value.estimatedCostUsd != null,
+          ) &&
+          !widget.meterReadings.values.any(
             (value) => value.status == 'measured',
-          ) ||
-          widget.estimates.values.any((value) => value.status == 'measured'))
-        _InfoRow(
-          Icons.bolt_outlined,
-          'Meter readings received',
-          'Measured energy is shown above. Add a ZIP code or bill rate to see cost.',
-          action: TextButton.icon(
-            key: const Key('setElectricityRateFromMeterPrompt'),
-            onPressed: widget.onOpenElectricitySettings,
-            icon: const Icon(Icons.attach_money),
-            label: const Text('Enter ZIP code or bill rate'),
-          ),
-        )
-      else
+          ) &&
+          !widget.estimates.values.any((value) => value.status == 'measured'))
         _Surface(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1855,22 +2113,6 @@ class _PowerNowState extends State<_PowerNow> {
                   ),
                   borderRadius: BorderRadius.circular(99),
                 ),
-              ),
-              const SizedBox(height: 12),
-              const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _MetricTile(
-                    'Useful Power',
-                    'Activity and device context will show useful work.',
-                  ),
-                  SizedBox(width: 8),
-                  _MetricTile(
-                    'Wasted Power',
-                    'Waste requires measured evidence from your home.',
-                    color: _rose,
-                  ),
-                ],
               ),
               const SizedBox(height: 12),
               Text(
@@ -2236,6 +2478,8 @@ class _AskAndAdd extends StatefulWidget {
     required this.onDevicesChanged,
     required this.autoScanDiscovery,
     required this.startInConnectAppliance,
+    this.cloudHome,
+    this.cloudApi,
   });
 
   final DiscoveryApi api;
@@ -2243,6 +2487,8 @@ class _AskAndAdd extends StatefulWidget {
   final VoidCallback onDevicesChanged;
   final bool autoScanDiscovery;
   final bool startInConnectAppliance;
+  final CloudHome? cloudHome;
+  final CloudApiClient? cloudApi;
 
   @override
   State<_AskAndAdd> createState() => _AskAndAddState();
@@ -2251,14 +2497,67 @@ class _AskAndAdd extends StatefulWidget {
 class _AskAndAddState extends State<_AskAndAdd> {
   late _AskMode mode;
   List<SavedAppliance> _manualDevices = const [];
+  List<CloudAppliance> _cloudDevices = const [];
+  String? _cloudInventoryError;
+  bool _cloudInventoryLoading = false;
   String? _deleteError;
   int? _deletingId;
+
+  Future<void> _openPhotoOnboarding() async {
+    await Navigator.of(context).push<SavedAppliance>(
+      MaterialPageRoute<SavedAppliance>(
+        builder: (_) => ApplianceOnboardingScreen(
+          method: 'photo',
+          cloudHome: widget.cloudHome,
+          cloudApi: widget.cloudApi,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    _loadManualDevices();
+    _loadCloudDevices();
+    widget.onDevicesChanged();
+  }
 
   @override
   void initState() {
     super.initState();
     mode = widget.startInConnectAppliance ? _AskMode.connect : _AskMode.ask;
     if (mode == _AskMode.connect) unawaited(_loadManualDevices());
+    if (widget.cloudHome != null && widget.cloudApi != null) {
+      unawaited(_loadCloudDevices());
+    }
+  }
+
+  Future<void> _loadCloudDevices() async {
+    final home = widget.cloudHome;
+    final api = widget.cloudApi;
+    if (home == null || api == null) return;
+    if (mounted) {
+      setState(() {
+        _cloudInventoryLoading = true;
+        _cloudInventoryError = null;
+      });
+    }
+    try {
+      final devices = await api.appliances(home.id);
+      if (mounted) {
+        setState(() {
+          _cloudDevices = devices;
+          _cloudInventoryError = null;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _cloudDevices = const [];
+          _cloudInventoryError =
+              'Could not load Cloud inventory. Refresh to try again.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _cloudInventoryLoading = false);
+    }
   }
 
   Future<void> _loadManualDevices() async {
@@ -2362,6 +2661,19 @@ class _AskAndAddState extends State<_AskAndAdd> {
       ),
       const SizedBox(height: 20),
       if (mode == _AskMode.ask) ...[
+        FilledButton.icon(
+          key: const Key('searchUsingPhoto'),
+          onPressed: _openPhotoOnboarding,
+          icon: const Icon(Icons.photo_camera_outlined),
+          label: const Text('Search using a photo'),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Choose the label photo you took or take a new one. EnergyLens reads the model and checks reviewed suggestions.',
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: _secondary(context)),
+        ),
+        const SizedBox(height: 18),
         _Surface(
           child: Row(
             children: [
@@ -2461,8 +2773,11 @@ class _AskAndAddState extends State<_AskAndAdd> {
           onPressed: () async {
             await Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) =>
-                    DiscoveryScreen(autoScan: widget.autoScanDiscovery),
+                builder: (_) => DiscoveryScreen(
+                  autoScan: widget.autoScanDiscovery,
+                  cloudHome: widget.cloudHome,
+                  cloudApi: widget.cloudApi,
+                ),
               ),
             );
             if (!mounted) return;
@@ -2475,14 +2790,18 @@ class _AskAndAddState extends State<_AskAndAdd> {
         const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: () async {
-            await Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    const ApplianceOnboardingScreen(method: 'manual'),
+            await Navigator.of(context).push<SavedAppliance>(
+              MaterialPageRoute<SavedAppliance>(
+                builder: (_) => ApplianceOnboardingScreen(
+                  method: 'manual',
+                  cloudHome: widget.cloudHome,
+                  cloudApi: widget.cloudApi,
+                ),
               ),
             );
             if (!mounted) return;
             _loadManualDevices();
+            _loadCloudDevices();
             widget.onDevicesChanged();
           },
           icon: const Icon(Icons.edit_outlined),
@@ -2490,24 +2809,14 @@ class _AskAndAddState extends State<_AskAndAdd> {
         ),
         const SizedBox(height: 8),
         OutlinedButton.icon(
-          onPressed: () async {
-            await Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    const ApplianceOnboardingScreen(method: 'photo'),
-              ),
-            );
-            if (!mounted) return;
-            _loadManualDevices();
-            widget.onDevicesChanged();
-          },
+          onPressed: _openPhotoOnboarding,
           icon: const Icon(Icons.photo_camera_outlined),
           label: const Text('Identify from a photo'),
         ),
         if (_manualDevices.isNotEmpty || _deleteError != null) ...[
           const SizedBox(height: 18),
           Text(
-            'Manually added devices',
+            'Devices saved on this hub',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           if (_deleteError != null)
@@ -2535,6 +2844,48 @@ class _AskAndAddState extends State<_AskAndAdd> {
               ),
             ),
         ],
+      ],
+      if (widget.cloudHome != null && widget.cloudApi != null) ...[
+        const SizedBox(height: 18),
+        Text(
+          'Cloud inventory · ${widget.cloudHome!.name}',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const Text(
+          'These records belong to this cloud home. Local hub devices are separate until an explicit import or attachment sync is available.',
+        ),
+        TextButton.icon(
+          onPressed: _cloudInventoryLoading ? null : _loadCloudDevices,
+          icon: const Icon(Icons.refresh),
+          label: const Text('Refresh Cloud inventory'),
+        ),
+        if (_cloudInventoryLoading) const LinearProgressIndicator(),
+        if (_cloudInventoryError != null)
+          Text(_cloudInventoryError!, key: const Key('cloudInventoryError')),
+        if (!_cloudInventoryLoading &&
+            _cloudInventoryError == null &&
+            _cloudDevices.isEmpty)
+          const Text('No cloud appliances saved yet.'),
+        for (final device in _cloudDevices)
+          Card(
+            child: ListTile(
+              key: Key('cloudAppliance-${device.id}'),
+              title: Text(device.name),
+              subtitle: Text(
+                '${device.brand} ${device.fullModel} · ${device.category}${device.room == null ? '' : ' · ${device.room}'}',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => CloudUsageQuestionsScreen(
+                    home: widget.cloudHome!,
+                    appliance: device,
+                    api: widget.cloudApi!,
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
       const SizedBox(height: 18),
       const _Setup(),

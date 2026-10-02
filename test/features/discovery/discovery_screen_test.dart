@@ -726,6 +726,24 @@ void main() {
       energySourceHeading(manufacturerTest),
       'Manufacturer model test data',
     );
+    const enerGuideFamily = EnergyEvidence(
+      sourceKind: 'energuide_family',
+      datasetId: 'energuide-historical-family-tests',
+      sourceUrl: 'https://example.test/energuide-family-test',
+      matchedBrand: 'Example',
+      matchedModel: 'Family X',
+      annualKwh: 20,
+      usageBasis: 'Historical family test figure',
+      retrievedAt: 1,
+    );
+    expect(
+      energySourceLabel(enerGuideFamily),
+      'Estimated · Historical EnerGuide family test data',
+    );
+    expect(
+      energySourceHeading(enerGuideFamily),
+      'Historical EnerGuide family test data',
+    );
     expect(
       energyRateDescription(
         const EnergyEstimate(

@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'discovery_api.dart';
 import 'attachment_history_screen.dart';
+import '../energy/useful_waste_cost_card.dart';
 
 /// Measured energy and the separately sourced appliance estimate for one plug.
 class DeviceEnergyDetailScreen extends StatefulWidget {
@@ -199,6 +200,18 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
             )
           else if (_energy case final data?)
             _observedSection(context, data),
+          const SizedBox(height: 12),
+          UsefulWasteCostPanel(
+            scopeLabel: plug.connectedAppliance?.name ?? plug.name,
+            periodLabel:
+                'Observed ${_periods[_period]!.toLowerCase()}, covered time only',
+            usefulCostUsd: null,
+            wasteCostUsd: null,
+            unclassifiedCostUsd: _energy?.status == 'measured'
+                ? _energy?.observedCostUsd
+                : null,
+            detail: 'Meter draw alone cannot tell which device activity was useful or wasted.',
+          ),
           if (_spec?.status == 'matched' &&
               _spec?.evidence?.sourceKind == 'oem_rated_input' &&
               _spec!.evidence!.ratedInputWatts.isFinite &&
@@ -216,6 +229,19 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
             )
           else
             _estimateSection(context, plug.connectedAppliance!),
+          if (plug.connectedAppliance != null) ...[
+            const SizedBox(height: 12),
+            UsefulWasteCostPanel(
+              scopeLabel: plug.connectedAppliance!.name,
+              periodLabel: _estimate?.status == 'measured'
+                  ? 'Observed last 30 days, covered time only'
+                  : 'Estimated monthly cost',
+              usefulCostUsd: null,
+              wasteCostUsd: null,
+              unclassifiedCostUsd: _estimate?.estimatedCostUsd,
+              detail: 'A sourced rating estimates consumption; it does not classify useful or wasted use.',
+            ),
+          ],
           const SizedBox(height: 20),
           OutlinedButton.icon(
             onPressed: () => Navigator.of(context).push<void>(

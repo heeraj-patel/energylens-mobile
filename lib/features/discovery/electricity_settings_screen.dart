@@ -178,7 +178,7 @@ class _ElectricitySettingsScreenState extends State<ElectricitySettingsScreen> {
     final theme = Theme.of(context);
     final connected = _address != null && _token != null;
     return Scaffold(
-      appBar: AppBar(title: const Text('Electricity settings')),
+      appBar: AppBar(title: const Text('Home profile')),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -186,10 +186,13 @@ class _ElectricitySettingsScreenState extends State<ElectricitySettingsScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
               children: [
-                Text('Household rate', style: theme.textTheme.headlineSmall),
+                Text(
+                  'Home energy profile',
+                  style: theme.textTheme.headlineSmall,
+                ),
                 const SizedBox(height: 8),
                 Text(
-                  'Add your ZIP code for a regional rate, or enter the rate from your bill. Your entered rate takes priority for cost estimates.',
+                  'Your ZIP code and bill rate apply to every device in this home. A bill rate takes priority over the regional rate.',
                   style: theme.textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 20),

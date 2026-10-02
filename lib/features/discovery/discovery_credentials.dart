@@ -119,6 +119,12 @@ class DiscoveryCredentials {
 
   Future<void> clearPostalCode() =>
       storage.delete('energylens.household.postal_code');
+
+  Future<bool> readZipPromptDismissed() async =>
+      await storage.read('energylens.household.zip_prompt_dismissed') == 'true';
+
+  Future<void> dismissZipPrompt() =>
+      storage.write('energylens.household.zip_prompt_dismissed', 'true');
 }
 
 abstract interface class SecureKeyValueStore {

@@ -17,6 +17,30 @@ flutter test
 flutter run
 ```
 
+## Cloud sign-in build configuration
+
+Release builds require these `--dart-define` values: `ENERGYLENS_OIDC_ISSUER`
+(HTTPS), `ENERGYLENS_OIDC_AUDIENCE`, `ENERGYLENS_OIDC_CLIENT_ID`,
+`ENERGYLENS_OIDC_REDIRECT_URL=io.energylens.app://login-callback`, and
+`ENERGYLENS_CLOUD_API_URL` (HTTPS origin). Register that callback with the OIDC
+provider's public mobile client. The app uses authorization code with PKCE and
+requests `offline_access`; it never embeds a client secret. A release build with
+missing or invalid settings stays at the configuration screen. Debug builds
+without settings can preview local hub features and display a `LOCAL PREVIEW`
+banner; that path is compiled out of release builds.
+
+After token exchange, the app requires a verified account from authenticated
+`GET /v1/me`, then loads owned cloud homes from `GET /v1/homes`. Users can
+select an existing home or create one with a name, ZIP/postal code, country,
+and IANA time zone. Creation uses `POST /v1/homes` with a UUID idempotency key;
+an unchanged retry after an uncertain response reuses the key. Cloud errors do
+not open local Home. The selected cloud home is labeled in Home, while local
+hub devices remain separate until claim and sync trust routes are verified.
+The cloud account and home routes must be live before a configured build can
+complete this entry flow. Cloud bearer tokens are stored
+separately from the existing local hub pairing credentials. Sign-out clears only
+cloud tokens; local hub TLS and pairing continue to use their existing trust path.
+
 ## iOS simulator pilot
 
 The self-contained `scripts/deploy-ios-simulator.sh` adapts the explicit-target

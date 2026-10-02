@@ -23,6 +23,7 @@ class _FakePairingTransport implements PairingTransport {
     String path,
     String method, {
     Map<String, dynamic>? body,
+    String? bearerToken,
   }) async {
     if (failPin) throw HandshakeException('Certificate pin mismatch');
     requests.add((method, path, body));

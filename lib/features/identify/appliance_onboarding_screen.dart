@@ -1,10 +1,16 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/cloud_api/cloud_api_client.dart';
+import '../../core/cloud_api/cloud_appliance.dart';
+import '../../core/cloud_api/cloud_catalog.dart';
+import '../../core/cloud_api/cloud_home.dart';
 import '../discovery/discovery_api.dart';
 import '../discovery/discovery_credentials.dart';
 import 'photo_capture_service.dart';
+import 'cloud_usage_questions_screen.dart';
 
 /// A photo suggestion is a prefill only. The user confirms the exact model.
 String? modelHintFromOcr(String? text) {
@@ -22,6 +28,52 @@ String? modelHintFromOcr(String? text) {
   return null;
 }
 
+/// Returns only a likely maker name; serials and the full OCR text stay local.
+String? manufacturerHintFromOcr(String? text) {
+  if (text == null) return null;
+  const known = <String, String>{
+    'LG': 'LG',
+    'SAMSUNG': 'Samsung',
+    'WHIRLPOOL': 'Whirlpool',
+    'BOSCH': 'Bosch',
+    'FRIGIDAIRE': 'Frigidaire',
+    'MAYTAG': 'Maytag',
+    'ELECTROLUX': 'Electrolux',
+    'GE': 'GE',
+    'HAIER': 'Haier',
+    'HISENSE': 'Hisense',
+    'PANASONIC': 'Panasonic',
+    'SONY': 'Sony',
+    'PHILIPS': 'Philips',
+    'MIDEA': 'Midea',
+  };
+  for (final rawLine in text.split(RegExp(r'[\r\n]+'))) {
+    final line = rawLine
+        .split(
+          RegExp(r'\b(?:SERIAL|S/N|SN|MODEL)\b\s*[:#]?', caseSensitive: false),
+        )
+        .first
+        .trim();
+    if (line.isEmpty) continue;
+    final labeled = RegExp(
+      r'^(?:MANUFACTURER|MFR\.?|BRAND|MAKE)\s*[:#-]?\s*([A-Za-z][A-Za-z .&-]{1,45})$',
+      caseSensitive: false,
+    ).firstMatch(line);
+    final candidate = (labeled?.group(1) ?? line).trim().toUpperCase();
+    for (final entry in known.entries) {
+      if (candidate == entry.key ||
+          candidate.startsWith('${entry.key} ') ||
+          candidate.startsWith('${entry.key} ELECTRONICS')) {
+        return entry.value;
+      }
+    }
+    if (labeled != null && !RegExp(r'\d').hasMatch(candidate)) {
+      return labeled.group(1)!.trim();
+    }
+  }
+  return null;
+}
+
 class ApplianceOnboardingScreen extends StatefulWidget {
   const ApplianceOnboardingScreen({
     required this.method,
@@ -30,6 +82,8 @@ class ApplianceOnboardingScreen extends StatefulWidget {
     this.api = const DiscoveryApi(),
     this.credentials = const DiscoveryCredentials(),
     this.capture = const PhotoCaptureService(),
+    this.cloudHome,
+    this.cloudApi,
   }) : assert(method == 'manual' || method == 'photo');
 
   final String method;
@@ -37,6 +91,8 @@ class ApplianceOnboardingScreen extends StatefulWidget {
   final DiscoveryApi api;
   final DiscoveryCredentials credentials;
   final PhotoCaptureService capture;
+  final CloudHome? cloudHome;
+  final CloudApiClient? cloudApi;
 
   @override
   State<ApplianceOnboardingScreen> createState() =>
@@ -53,15 +109,19 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   final _hours = TextEditingController();
   final _bulbs = TextEditingController();
   final _watts = TextEditingController();
-  final _rate = TextEditingController();
-  final _postal = TextEditingController(
-    text: const String.fromEnvironment('ENERGYLENS_POSTAL_CODE'),
-  );
   String _category = 'computer';
   String _loadKind = 'appliance';
+  String _fuel = 'electricity';
+  String _cloudSaveKey = newCloudIdempotencyKey();
   String? _ocrText;
+  String? _photoManufacturerHint;
   String? _upc;
   List<IdentificationCandidate> _photoCandidates = const [];
+  List<CloudCatalogProduct> _catalogResults = const [];
+  CloudCatalogProduct? _catalogDetail;
+  CloudCatalogProduct? _selectedCatalogProduct;
+  String? _catalogMessage;
+  bool _catalogBusy = false;
   bool _candidateLookupFailed = false;
   Uint8List? _photoBytes;
   bool _confirmedModel = false;
@@ -74,19 +134,38 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   final Map<int, EnergyEstimate> _estimates = {};
   final Map<int, String> _lookupStatuses = {};
 
+  bool get _cloudOnly =>
+      widget.plugId == null &&
+      widget.cloudHome != null &&
+      widget.cloudApi != null;
+
   @override
   void initState() {
     super.initState();
-    _restore();
+    for (final controller in [_name, _room]) {
+      controller.addListener(_cloudInputChanged);
+    }
+    for (final controller in [_manufacturer, _model]) {
+      controller.addListener(_cloudIdentityChanged);
+    }
+    if (!_cloudOnly) _restore();
+  }
+
+  void _cloudInputChanged() {
+    if (_cloudOnly) _cloudSaveKey = newCloudIdempotencyKey();
+  }
+
+  void _cloudIdentityChanged() {
+    if (!_cloudOnly) return;
+    _cloudInputChanged();
+    _selectedCatalogProduct = null;
+    _catalogDetail = null;
+    _catalogResults = const [];
+    _catalogMessage = null;
+    _confirmedModel = false;
   }
 
   Future<void> _restore() async {
-    try {
-      final postal = await widget.credentials.readPostalCode();
-      if (mounted && postal != null) _postal.text = postal;
-    } catch (_) {
-      // ZIP can be entered in the form when storage is unavailable.
-    }
     try {
       final (address, token) = await widget.credentials.read();
       if (!mounted) return;
@@ -115,9 +194,6 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
               _hub.text.trim(),
               _token.text.trim(),
               item.id,
-              postalCode: _postal.text.trim().isEmpty
-                  ? null
-                  : _postal.text.trim(),
             );
             if (mounted) {
               setState(() {
@@ -189,9 +265,112 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     }
   }
 
+  Future<void> _searchReviewedCatalog() async {
+    if (!_cloudOnly || _catalogBusy || _busy) return;
+    final brand = _manufacturer.text.trim();
+    final model = _model.text.trim();
+    final fuel = _fuel;
+    if (brand.isEmpty || model.length < 2) {
+      setState(
+        () => _catalogMessage =
+            'Enter a manufacturer and full model to check reviewed products.',
+      );
+      return;
+    }
+    setState(() {
+      _catalogBusy = true;
+      _catalogResults = const [];
+      _catalogDetail = null;
+      _selectedCatalogProduct = null;
+      _catalogMessage = null;
+    });
+    try {
+      final results = await widget.cloudApi!.searchCatalogModels(
+        brand: brand,
+        model: model,
+        fuel: fuel,
+        region: widget.cloudHome!.countryCode,
+      );
+      if (!mounted ||
+          _manufacturer.text.trim() != brand ||
+          _model.text.trim() != model ||
+          _fuel != fuel) {
+        return;
+      }
+      setState(() {
+        _catalogResults = results;
+        _catalogMessage = results.isEmpty
+            ? 'No reviewed product matches this full model and fuel. You can still save the confirmed label identity without a catalog link.'
+            : null;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _catalogMessage = 'Reviewed catalog unavailable. You can save a confirmed label identity without a catalog link.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _catalogBusy = false);
+    }
+  }
+
+  Future<void> _openCatalogProduct(CloudCatalogProduct result) async {
+    if (_catalogBusy || _busy) return;
+    setState(() {
+      _catalogBusy = true;
+      _catalogMessage = null;
+      _selectedCatalogProduct = null;
+      _confirmedModel = false;
+    });
+    try {
+      final detail = await widget.cloudApi!.catalogProduct(result.id);
+      if (!mounted) return;
+      if (detail.id != result.id ||
+          detail.brand.toLowerCase() !=
+              _manufacturer.text.trim().toLowerCase() ||
+          detail.fullModel.toLowerCase() != _model.text.trim().toLowerCase() ||
+          detail.fuel != _fuel ||
+          detail.region != null &&
+              detail.region!.toLowerCase() !=
+                  widget.cloudHome!.countryCode.toLowerCase()) {
+        setState(
+          () => _catalogMessage = 'Product details no longer match the entered model and fuel. Search again.',
+        );
+        return;
+      }
+      setState(() => _catalogDetail = detail);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _catalogMessage =
+              'Could not load reviewed product details. Try again.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _catalogBusy = false);
+    }
+  }
+
+  void _selectExactCatalog() {
+    final detail = _catalogDetail;
+    if (detail == null || !detail.isConfirmedExact) return;
+    setState(() {
+      // Cloud inventory checks canonical fields byte-for-byte at linkage.
+      _category = detail.category;
+      _manufacturer.text = detail.brand;
+      _model.text = detail.fullModel;
+      _selectedCatalogProduct = detail;
+      _confirmedModel = false;
+      _catalogMessage = 'Exact reviewed product selected. Confirm the full label model and fuel before saving.';
+    });
+  }
+
   String _modelCheckMessage(EnergyLookup lookup) {
     if (lookup.evidence case final source?) {
-      return '${source.sourceKind == 'oem_family' ? 'Family source' : 'Matched'} ${source.matchedBrand} ${source.matchedModel} · ${energySourceLabel(source)}';
+      final isFamilySource =
+          source.sourceKind == 'oem_family' ||
+          source.sourceKind == 'energuide_family';
+      return '${isFamilySource ? 'Family source' : 'Matched'} ${source.matchedBrand} ${source.matchedModel} · ${energySourceLabel(source)}';
     }
     return switch (lookup.status) {
       'missing_identity' => 'No manufacturer and model to check. You can save without a sourced estimate.',
@@ -200,10 +379,16 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       'ambiguous' || 'truncated' =>
         'Model match needs review. You can save without a sourced estimate.',
       'unsupported_category' => 'No energy model catalog for this category. You can save without a sourced estimate.',
-      'no_usable_energy' => 'A model record was found, but it has no usable energy figure. You can save without an estimate.',
-      _ =>
-        'No exact energy model found. You can save without a sourced estimate.',
+      'no_usable_energy' => 'A product record was found, but it has no usable energy rating. You can save without an estimate.',
+      _ => 'No energy rating was found in the catalog for this model. You can save without a sourced estimate.',
     };
+  }
+
+  Future<void> _searchWebForModel() async {
+    final query =
+        '${_category.replaceAll('_', ' ')} ${_manufacturer.text.trim()} ${_model.text.trim()}';
+    final uri = Uri.https('www.google.com', '/search', {'q': query});
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   Future<void> _deleteManualAppliance(SavedAppliance item) async {
@@ -276,20 +461,19 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       await widget.capture.discard(photo);
       if (!mounted) return;
       final hint = modelHintFromOcr(details[0]);
-      final ocr = details[0];
-      final boundedOcr = ocr?.substring(
-        0,
-        ocr.length > 1000 ? 1000 : ocr.length,
-      );
+      final manufacturerHint = manufacturerHintFromOcr(details[0]);
+      // The full label can include a serial number beside the model. Only
+      // send the locally extracted model hint for catalog suggestions.
+      final modelOnlyOcr = hint == null ? null : 'MODEL NO: $hint';
       List<IdentificationCandidate> candidates = const [];
       var lookupFailed = false;
-      if ((details[0]?.trim().isNotEmpty ?? false) || details[1] != null) {
+      if (modelOnlyOcr != null || details[1] != null) {
         try {
           candidates = await widget.api.identifyCandidates(
             _hub.text.trim(),
             _token.text.trim(),
             targetKind: widget.plugId == null ? 'appliance' : 'connected_load',
-            ocrText: boundedOcr,
+            ocrText: modelOnlyOcr,
             upc: details[1],
           );
         } catch (_) {
@@ -299,12 +483,14 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       if (!mounted) return;
       setState(() {
         _photoBytes = photo.bytes;
-        _ocrText = details[0];
+        _ocrText = details[0]?.trim().isNotEmpty == true ? (hint ?? '') : null;
+        _photoManufacturerHint = manufacturerHint;
         _upc = details[1];
         _photoCandidates = candidates;
         _candidateLookupFailed = lookupFailed;
         _confirmedModel = false;
         _model.text = hint ?? '';
+        if (manufacturerHint != null) _manufacturer.text = manufacturerHint;
       });
     } on CameraPermissionDeniedException {
       if (mounted) {
@@ -332,6 +518,10 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   }
 
   Future<void> _save() async {
+    if (_cloudOnly) {
+      await _saveCloud();
+      return;
+    }
     if (_busy) return;
     final hoursText = _hours.text.trim();
     final hours = hoursText.isEmpty ? null : double.tryParse(hoursText);
@@ -395,7 +585,10 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
         _checkedModelKey = null;
         _modelCheck = null;
       });
-      if (checkedLookup != null) {
+      if (checkedLookup != null ||
+          (widget.method == 'photo' &&
+              saved.manufacturer.trim().isNotEmpty &&
+              saved.model.trim().isNotEmpty)) {
         try {
           final lookup = await widget.api.lookupEnergy(
             _hub.text.trim(),
@@ -410,8 +603,6 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
               _hub.text.trim(),
               _token.text.trim(),
               saved.id,
-              rateUsdPerKwh: _enteredRate(),
-              postalCode: _enteredPostalCode(),
             );
             if (mounted) setState(() => _estimates[saved.id] = estimate);
           }
@@ -439,6 +630,9 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
           );
         }
       }
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop(saved);
+      }
     } catch (error) {
       if (mounted) {
         setState(
@@ -452,25 +646,80 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     }
   }
 
-  double? _enteredRate() {
-    final text = _rate.text.trim();
-    if (text.isEmpty) return null;
-    final value = double.tryParse(text);
-    if (value == null || !value.isFinite || value < 0 || value > 5) {
-      throw const FormatException(
-        'Enter an electricity rate between 0 and 5 dollars per kWh.',
+  Future<void> _saveCloud() async {
+    if (_busy) return;
+    final name = _name.text.trim();
+    final brand = _manufacturer.text.trim();
+    final model = _model.text.trim();
+    if (name.isEmpty ||
+        brand.isEmpty ||
+        model.isEmpty ||
+        !_confirmedModel ||
+        (widget.method == 'photo' && _photoBytes == null)) {
+      setState(
+        () => _error = 'Enter a name, manufacturer and full model, then confirm the label model and fuel.',
       );
+      return;
     }
-    return value;
-  }
-
-  String? _enteredPostalCode() {
-    final value = _postal.text.trim();
-    if (value.isEmpty) return null;
-    if (!RegExp(r'^\d{5}$').hasMatch(value)) {
-      throw const FormatException('Enter a five-digit US ZIP code.');
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final preferences = await widget.cloudApi!.accountPreferences();
+      if (!preferences.value.historyAccepted) {
+        if (mounted) {
+          setState(
+            () => _error = 'Accept the required history disclosure in Cloud settings before saving.',
+          );
+        }
+        return;
+      }
+      final saved = await widget.cloudApi!.createAppliance(
+        widget.cloudHome!.id,
+        CloudApplianceCreate(
+          name: name,
+          category: _category,
+          room: _room.text.trim().isEmpty ? null : _room.text.trim(),
+          brand: brand,
+          fullModel: model,
+          fuel: _fuel,
+          variant: _selectedCatalogProduct?.variant,
+          region: _selectedCatalogProduct?.region,
+          catalogProductId: _selectedCatalogProduct?.id,
+        ),
+        idempotencyKey: _cloudSaveKey,
+      );
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => CloudUsageQuestionsScreen(
+            home: widget.cloudHome!,
+            appliance: saved,
+            api: widget.cloudApi!,
+          ),
+        ),
+      );
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    } on CloudApiException catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = error.statusCode == 409
+              ? 'Cloud reported a conflict. Refresh your home inventory before trying again.'
+              : 'Could not confirm Cloud save (${error.code}). Refresh inventory before retrying unchanged details.',
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = 'Could not confirm Cloud save. Refresh inventory before retrying unchanged details.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
-    return value;
   }
 
   Future<void> _checkEnergy(
@@ -478,15 +727,6 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     bool fetchSource = true,
   }) async {
     if (_busy) return;
-    double? rate;
-    String? postal;
-    try {
-      rate = _enteredRate();
-      postal = _enteredPostalCode();
-    } on FormatException catch (error) {
-      setState(() => _error = error.message);
-      return;
-    }
     setState(() {
       _busy = true;
       _error = null;
@@ -505,15 +745,8 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
         _hub.text.trim(),
         _token.text.trim(),
         item.id,
-        rateUsdPerKwh: rate,
-        postalCode: postal,
       );
       if (mounted) setState(() => _estimates[item.id] = estimate);
-      if (postal != null) {
-        try {
-          await widget.credentials.savePostalCode(postal);
-        } catch (_) {}
-      }
     } catch (error) {
       if (mounted) {
         setState(
@@ -560,7 +793,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
               const SizedBox(height: 10),
               if (source.sourceKind != 'user_label')
                 Text(
-                  '${source.sourceKind == 'oem_family' ? 'Source covers' : 'Matched model'}: ${source.matchedBrand} ${source.matchedModel}',
+                  '${source.sourceKind == 'oem_family' || source.sourceKind == 'energuide_family' ? 'Source covers' : 'Matched model'}: ${source.matchedBrand} ${source.matchedModel}',
                 ),
               Text(
                 source.sourceKind == 'user_label'
@@ -600,8 +833,6 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       _hours,
       _bulbs,
       _watts,
-      _rate,
-      _postal,
     ]) {
       controller.dispose();
     }
@@ -627,15 +858,25 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
           padding: const EdgeInsets.all(20),
           children: [
             Text(
-              photo ? 'Photograph the model label' : 'Add an appliance by hand',
+              photo
+                  ? 'Find a model from its label'
+                  : 'Add an appliance by hand',
               style: theme.textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
             Text(
               photo
-                  ? 'Use a rating label or bulb package. Review the suggested model before saving.'
+                  ? 'Take a photo or choose the one you already took. EnergyLens reads the model on the phone and checks reviewed suggestions. Confirm the exact label model before saving.'
+                  : _cloudOnly
+                  ? 'Enter the full model from its label and confirm its fuel. This saves an inventory record to your cloud home; energy source matching comes later.'
                   : 'Enter the model from the appliance label or manual, then check it before saving. A model without a matching source can still be saved without an estimate.',
             ),
+            if (_cloudOnly) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Saving to ${widget.cloudHome!.name} in Cloud. This record is not linked to a local hub or meter.',
+              ),
+            ],
             if (widget.plugId != null) ...[
               const SizedBox(height: 8),
               const Text(
@@ -661,6 +902,8 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
               ),
               if (_photoBytes != null) ...[
                 const SizedBox(height: 12),
+                Text('Photo search result', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 6),
                 SizedBox(
                   height: 180,
                   child: Image.memory(
@@ -674,6 +917,10 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                       ? 'No label text found. Enter the model yourself.'
                       : 'Label text found. Check the suggested model below.',
                 ),
+                if (_photoManufacturerHint != null)
+                  Text(
+                    'Maker suggested from label: $_photoManufacturerHint · confirm before saving',
+                  ),
                 if (_upc != null)
                   Text('Barcode found: $_upc · Model still needs confirmation'),
                 if (_photoCandidates.isNotEmpty) ...[
@@ -725,35 +972,83 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             ),
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(
+              key: ValueKey('applianceCategory-$_category'),
               initialValue: _category,
               decoration: const InputDecoration(
                 labelText: 'Category',
                 border: OutlineInputBorder(),
               ),
-              items: const [
-                DropdownMenuItem(value: 'computer', child: Text('Computer')),
-                DropdownMenuItem(
+              items: [
+                const DropdownMenuItem(
+                  value: 'computer',
+                  child: Text('Computer'),
+                ),
+                const DropdownMenuItem(
                   value: 'lighting',
                   child: Text('Lamp or bulb'),
                 ),
-                DropdownMenuItem(
+                const DropdownMenuItem(
                   value: 'refrigerator',
                   child: Text('Refrigerator'),
                 ),
-                DropdownMenuItem(value: 'tv', child: Text('TV')),
                 DropdownMenuItem(
+                  value: _cloudOnly ? 'television' : 'tv',
+                  child: const Text('TV'),
+                ),
+                if (_cloudOnly) ...const [
+                  DropdownMenuItem(value: 'washer', child: Text('Washer')),
+                  DropdownMenuItem(value: 'dryer', child: Text('Dryer')),
+                  DropdownMenuItem(
+                    value: 'dishwasher',
+                    child: Text('Dishwasher'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'space_heater',
+                    child: Text('Space heater'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'air_conditioner',
+                    child: Text('Air conditioner'),
+                  ),
+                ],
+                const DropdownMenuItem(
                   value: 'other',
                   child: Text('Other appliance'),
                 ),
+                if (_cloudOnly &&
+                    !const {
+                      'computer',
+                      'lighting',
+                      'refrigerator',
+                      'tv',
+                      'television',
+                      'washer',
+                      'dryer',
+                      'dishwasher',
+                      'space_heater',
+                      'air_conditioner',
+                      'other',
+                    }.contains(_category))
+                  DropdownMenuItem(
+                    value: _category,
+                    child: Text('Reviewed: $_category'),
+                  ),
               ],
               onChanged: (value) => setState(() {
                 _category = value ?? _category;
                 _loadKind = _category == 'lighting'
                     ? 'replaceable_bulb'
                     : 'appliance';
+                if (_cloudOnly) {
+                  _confirmedModel = false;
+                  _cloudSaveKey = newCloudIdempotencyKey();
+                  _selectedCatalogProduct = null;
+                  _catalogDetail = null;
+                  _catalogResults = const [];
+                }
               }),
             ),
-            if (_category == 'lighting') ...[
+            if (_category == 'lighting' && !_cloudOnly) ...[
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 initialValue: _loadKind,
@@ -774,7 +1069,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                 onChanged: (value) =>
                     setState(() => _loadKind = value ?? _loadKind),
               ),
-              if (_loadKind == 'replaceable_bulb') ...[
+              if (_loadKind == 'replaceable_bulb' && !_cloudOnly) ...[
                 const SizedBox(height: 10),
                 TextField(
                   key: const Key('bulbCount'),
@@ -818,21 +1113,126 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
               controller: _model,
               onChanged: (_) => setState(() => _confirmedModel = false),
               decoration: InputDecoration(
-                labelText: _loadKind == 'replaceable_bulb'
+                labelText: _cloudOnly
+                    ? 'Full model'
+                    : _loadKind == 'replaceable_bulb'
                     ? 'Bulb model'
                     : 'Exact model',
                 border: const OutlineInputBorder(),
               ),
             ),
-            if (photo && _model.text.trim().isNotEmpty)
+            if ((photo || _cloudOnly) && _model.text.trim().isNotEmpty)
               CheckboxListTile(
                 value: _confirmedModel,
                 onChanged: (value) =>
                     setState(() => _confirmedModel = value ?? false),
-                title: const Text('I checked this model against the label'),
+                title: Text(
+                  _cloudOnly
+                      ? 'I checked this full model and fuel against the label'
+                      : 'I checked this model against the label',
+                ),
                 contentPadding: EdgeInsets.zero,
               ),
-            if (!photo) ...[
+            if (_cloudOnly) ...[
+              DropdownButtonFormField<String>(
+                key: const Key('cloudApplianceFuel'),
+                initialValue: _fuel,
+                decoration: const InputDecoration(
+                  labelText: 'Fuel or energy source',
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'electricity',
+                    child: Text('Electricity'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'natural_gas',
+                    child: Text('Natural gas'),
+                  ),
+                  DropdownMenuItem(value: 'propane', child: Text('Propane')),
+                  DropdownMenuItem(value: 'fuel_oil', child: Text('Fuel oil')),
+                ],
+                onChanged: (value) => setState(() {
+                  _fuel = value ?? _fuel;
+                  _confirmedModel = false;
+                  _cloudSaveKey = newCloudIdempotencyKey();
+                  _selectedCatalogProduct = null;
+                  _catalogDetail = null;
+                  _catalogResults = const [];
+                }),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                key: const Key('searchReviewedCatalog'),
+                onPressed: _catalogBusy || _busy
+                    ? null
+                    : _searchReviewedCatalog,
+                icon: const Icon(Icons.fact_check_outlined),
+                label: const Text('Check reviewed catalog'),
+              ),
+              if (_catalogBusy) const LinearProgressIndicator(),
+              if (_catalogMessage != null)
+                Text(_catalogMessage!, key: const Key('catalogMessage')),
+              for (final product in _catalogResults)
+                Card(
+                  child: ListTile(
+                    key: Key('catalogProduct-${product.id}'),
+                    title: Text('${product.brand} ${product.fullModel}'),
+                    subtitle: Text(
+                      product.isConfirmedExact
+                          ? 'Reviewed exact model · ${product.fuel}'
+                          : 'Documented family or unresolved model · ${product.fuel}',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _catalogBusy
+                        ? null
+                        : () => _openCatalogProduct(product),
+                  ),
+                ),
+              if (_catalogDetail case final detail?) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Reviewed product details',
+                  style: theme.textTheme.titleMedium,
+                ),
+                Text(
+                  '${detail.brand} ${detail.fullModel}${detail.variant == null ? '' : ' · ${detail.variant}'} · ${detail.fuel}${detail.region == null ? '' : ' · ${detail.region}'} · ${detail.category}',
+                ),
+                Text(
+                  detail.isConfirmedExact
+                      ? 'Exact reviewed identity. Select it only if the full label model and fuel agree.'
+                      : 'Documented family or unresolved identity. It cannot be linked as an exact product.',
+                ),
+                if (detail.facts.isEmpty)
+                  const Text(
+                    'No reviewed energy facts are attached to this product.',
+                  ),
+                for (final fact in detail.facts) ...[
+                  Text(
+                    '${fact.kind}: ${fact.value} ${fact.unit} · ${fact.sourceKind}',
+                  ),
+                  Text(
+                    'Test basis: ${fact.testBasis.isEmpty ? 'not stated' : fact.testBasis.entries.map((entry) => '${entry.key}: ${entry.value}').join(', ')}',
+                  ),
+                  Text('Reviewed ${fact.reviewedAt.toUtc().toIso8601String()}'),
+                  SelectableText(fact.sourceUrl),
+                ],
+                const Text(
+                  'A reviewed identity or fact does not establish this home’s actual energy use.',
+                ),
+                if (detail.isConfirmedExact)
+                  FilledButton(
+                    key: const Key('selectExactCatalogProduct'),
+                    onPressed: _catalogBusy ? null : _selectExactCatalog,
+                    child: const Text('Select exact reviewed product'),
+                  ),
+              ],
+              if (_selectedCatalogProduct != null)
+                Text(
+                  'Selected exact reviewed product: ${_selectedCatalogProduct!.brand} ${_selectedCatalogProduct!.fullModel}',
+                ),
+            ],
+            if (!photo && !_cloudOnly) ...[
               const SizedBox(height: 10),
               OutlinedButton.icon(
                 key: const Key('checkModelBeforeSave'),
@@ -841,50 +1241,67 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                 label: const Text('Check model'),
               ),
               if (_checkedModelKey == _modelKey && _modelCheck != null)
-                Text(
-                  _modelCheckMessage(_modelCheck!),
-                  key: const Key('modelCheckResult'),
-                  style: TextStyle(
-                    color: _modelCheck!.evidence == null
-                        ? theme.colorScheme.error
-                        : theme.colorScheme.primary,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _modelCheckMessage(_modelCheck!),
+                      key: const Key('modelCheckResult'),
+                      style: TextStyle(
+                        color: _modelCheck!.evidence == null
+                            ? theme.colorScheme.error
+                            : theme.colorScheme.primary,
+                      ),
+                    ),
+                    if (_modelCheck!.evidence == null &&
+                        _model.text.trim().isNotEmpty &&
+                        _modelCheck!.status != 'missing_identity' &&
+                        _modelCheck!.status != 'source_unavailable')
+                      TextButton.icon(
+                        key: const Key('searchWebForModel'),
+                        onPressed: _searchWebForModel,
+                        icon: const Icon(Icons.open_in_new),
+                        label: const Text('Search web'),
+                      ),
+                  ],
                 ),
             ],
-            const SizedBox(height: 10),
-            TextField(
-              key: const Key('applianceHours'),
-              controller: _hours,
-              decoration: const InputDecoration(
-                labelText: 'Hours used per week (optional)',
-                border: OutlineInputBorder(),
+            if (!_cloudOnly) ...[
+              const SizedBox(height: 10),
+              TextField(
+                key: const Key('applianceHours'),
+                controller: _hours,
+                decoration: const InputDecoration(
+                  labelText: 'Hours used per week (optional)',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
               ),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('hubAddress'),
+                controller: _hub,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  labelText: 'Hub address',
+                  hintText: 'https://192.168.68.136:18787#sha256=…',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              key: const Key('hubAddress'),
-              controller: _hub,
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                labelText: 'Hub address',
-                hintText: 'https://192.168.68.136:18787#sha256=…',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 10),
+              TextField(
+                key: const Key('hubToken'),
+                controller: _token,
+                onChanged: (_) => setState(() {}),
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Hub token',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              key: const Key('hubToken'),
-              controller: _token,
-              onChanged: (_) => setState(() {}),
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Hub token',
-                border: OutlineInputBorder(),
-              ),
-            ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 10),
               Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
@@ -895,113 +1312,93 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
               onPressed: _busy ? null : _save,
               child: Text(_busy ? 'Saving…' : 'Save device'),
             ),
-            const SizedBox(height: 24),
-            Text('Saved appliances', style: theme.textTheme.titleLarge),
-            if (_deleteError != null)
-              Text(
-                _deleteError!,
-                style: TextStyle(color: theme.colorScheme.error),
+            if (!_cloudOnly) ...[
+              const SizedBox(height: 24),
+              Text('Saved appliances', style: theme.textTheme.titleLarge),
+              if (_deleteError != null)
+                Text(
+                  _deleteError!,
+                  style: TextStyle(color: theme.colorScheme.error),
+                ),
+              TextButton(
+                onPressed: _refresh,
+                child: const Text('Refresh saved appliances'),
               ),
-            TextButton(
-              onPressed: _refresh,
-              child: const Text('Refresh saved appliances'),
-            ),
-            TextField(
-              key: const Key('postalCode'),
-              controller: _postal,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'ZIP code for regional electricity rate',
-                hintText: '78732',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              key: const Key('electricityRate'),
-              controller: _rate,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'Your electricity rate in USD/kWh (optional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const Text(
-              'ZIP uses a sourced state electricity average when the rate service is available. Your bill’s rate overrides that average. Without a rate, estimated kWh still appears.',
-            ),
-            if (_saved.isEmpty)
-              const Text('No appliances saved on this hub yet.'),
-            for (final item in _saved)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(item.name, style: theme.textTheme.titleMedium),
-                      Text(
-                        '${item.category} · ${item.onboardingMethod == 'photo' ? 'Added from photo' : 'Manually added'}',
-                      ),
-                      if (item.model.isNotEmpty)
-                        Text('${item.manufacturer} ${item.model}'.trim()),
-                      if (item.bulbCount != null)
+              if (_saved.isEmpty)
+                const Text('No appliances saved on this hub yet.'),
+              for (final item in _saved)
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(item.name, style: theme.textTheme.titleMedium),
                         Text(
-                          '${item.bulbCount} installed bulb(s)${item.combinedInputWatts == null ? '' : ' · ${item.combinedInputWatts} W combined'}',
+                          '${item.category} · ${item.onboardingMethod == 'photo' ? 'Added from photo' : 'Manually added'}',
                         ),
-                      const Text('No live readings'),
-                      const SizedBox(height: 8),
-                      if (_estimates[item.id]?.evidence case final source?) ...[
-                        Text(
-                          _estimates[item.id]!.estimatedCostUsd == null
-                              ? 'Estimated monthly energy: ${_estimates[item.id]!.estimatedKwh!.toStringAsFixed(1)} kWh'
-                              : '${source.sourceKind == 'energy_star_archive'
-                                    ? 'Historical test-profile cost'
-                                    : source.sourceKind == 'oem_family'
-                                    ? 'Manufacturer family test-profile cost'
-                                    : 'Estimated monthly cost'}: \$${_estimates[item.id]!.estimatedCostUsd!.toStringAsFixed(2)} · ${_estimates[item.id]!.estimatedKwh!.toStringAsFixed(1)} kWh',
-                          style: theme.textTheme.titleSmall,
-                        ),
-                        TextButton.icon(
-                          onPressed: () =>
-                              _showSource(source, _estimates[item.id]!),
-                          icon: Icon(
-                            source.sourceKind == 'energy_star'
-                                ? Icons.verified_outlined
-                                : Icons.info_outline,
+                        if (item.model.isNotEmpty)
+                          Text('${item.manufacturer} ${item.model}'.trim()),
+                        if (item.bulbCount != null)
+                          Text(
+                            '${item.bulbCount} installed bulb(s)${item.combinedInputWatts == null ? '' : ' · ${item.combinedInputWatts} W combined'}',
                           ),
-                          label: Text(energySourceLabel(source)),
-                        ),
-                        OutlinedButton(
-                          onPressed: _busy
-                              ? null
-                              : () => _checkEnergy(item, fetchSource: false),
-                          child: const Text('Update cost with my rate'),
-                        ),
-                      ] else
-                        Text(_estimateStatus(item.id)),
-                      if ((_lookupStatuses[item.id] ??
-                              _estimates[item.id]?.reason) !=
-                          'no_match')
-                        TextButton(
-                          onPressed: _busy ? null : () => _checkEnergy(item),
-                          child: const Text('Check energy data'),
-                        ),
-                      if (item.onboardingMethod == 'manual' &&
-                          widget.plugId == null)
-                        TextButton.icon(
-                          key: Key('delete-appliance-${item.id}'),
-                          onPressed: _busy
-                              ? null
-                              : () => _deleteManualAppliance(item),
-                          icon: const Icon(Icons.delete_outline),
-                          label: const Text('Delete device'),
-                        ),
-                    ],
+                        const Text('No live readings'),
+                        const SizedBox(height: 8),
+                        if (_estimates[item.id]?.evidence
+                            case final source?) ...[
+                          Text(
+                            _estimates[item.id]!.estimatedCostUsd == null
+                                ? 'Estimated monthly energy: ${_estimates[item.id]!.estimatedKwh!.toStringAsFixed(1)} kWh'
+                                : '${source.sourceKind == 'energy_star_archive'
+                                      ? 'Historical test-profile cost'
+                                      : source.sourceKind == 'oem_family'
+                                      ? 'Manufacturer family test-profile cost'
+                                      : source.sourceKind == 'energuide_family'
+                                      ? 'Historical EnerGuide family test-profile cost'
+                                      : 'Estimated monthly cost'}: \$${_estimates[item.id]!.estimatedCostUsd!.toStringAsFixed(2)} · ${_estimates[item.id]!.estimatedKwh!.toStringAsFixed(1)} kWh',
+                            style: theme.textTheme.titleSmall,
+                          ),
+                          TextButton.icon(
+                            onPressed: () =>
+                                _showSource(source, _estimates[item.id]!),
+                            icon: Icon(
+                              source.sourceKind == 'energy_star'
+                                  ? Icons.verified_outlined
+                                  : Icons.info_outline,
+                            ),
+                            label: Text(energySourceLabel(source)),
+                          ),
+                          OutlinedButton(
+                            onPressed: _busy
+                                ? null
+                                : () => _checkEnergy(item, fetchSource: false),
+                            child: const Text('Update cost with my rate'),
+                          ),
+                        ] else
+                          Text(_estimateStatus(item.id)),
+                        if ((_lookupStatuses[item.id] ??
+                                _estimates[item.id]?.reason) !=
+                            'no_match')
+                          TextButton(
+                            onPressed: _busy ? null : () => _checkEnergy(item),
+                            child: const Text('Check energy data'),
+                          ),
+                        if (item.onboardingMethod == 'manual' &&
+                            widget.plugId == null)
+                          TextButton.icon(
+                            key: Key('delete-appliance-${item.id}'),
+                            onPressed: _busy
+                                ? null
+                                : () => _deleteManualAppliance(item),
+                            icon: const Icon(Icons.delete_outline),
+                            label: const Text('Delete device'),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+            ],
           ],
         ),
       ),

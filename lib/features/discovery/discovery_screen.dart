@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../core/cloud_api/cloud_api_client.dart';
+import '../../core/cloud_api/cloud_home.dart';
+import '../../core/cloud_api/cloud_hub_claim_flow.dart';
+
 import 'discovery_api.dart';
 import 'plug_connection_status.dart';
 import 'discovery_credentials.dart';
@@ -14,11 +18,15 @@ class DiscoveryScreen extends StatefulWidget {
     this.api = const DiscoveryApi(),
     this.credentials = const DiscoveryCredentials(),
     this.autoScan = false,
+    this.cloudHome,
+    this.cloudApi,
   });
 
   final DiscoveryApi api;
   final DiscoveryCredentials credentials;
   final bool autoScan;
+  final CloudHome? cloudHome;
+  final CloudApiClient? cloudApi;
 
   @override
   State<DiscoveryScreen> createState() => _DiscoveryScreenState();
@@ -41,6 +49,58 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   bool _searched = false;
   final Set<String> _statusChecking = {};
   String? _error;
+  CloudHubClaimFlow? _claimFlow;
+  bool _claimBusy = false;
+  bool _claimedThisSession = false;
+  String? _claimMessage;
+
+  Future<void> _claimHub() async {
+    final home = widget.cloudHome;
+    final cloud = widget.cloudApi;
+    if (home == null || cloud == null || _claimBusy) return;
+    setState(() {
+      _claimBusy = true;
+      _claimMessage = null;
+    });
+    try {
+      final flow = _claimFlow ??= CloudHubClaimFlow(
+        cloud: cloud,
+        hub: widget.api,
+        credentials: widget.credentials,
+      );
+      final ownership = await flow.claim(home);
+      if (mounted) {
+        setState(() {
+          _claimedThisSession = true;
+          _claimMessage =
+              'Hub linked to ${home.name} (ownership epoch ${ownership.ownershipEpoch}). Local devices are not synced to Cloud yet.';
+        });
+      }
+    } on CloudApiException catch (error) {
+      if (mounted) {
+        setState(
+          () => _claimMessage = error.statusCode == 409
+              ? 'Cloud could not link this hub. It may already belong to a home. Check ownership before trying again.'
+              : _claimFlow?.hasPendingFinish == true
+              ? 'Cloud could not confirm the hub link (${error.code}). Retry to finish the same claim.'
+              : 'Cloud could not start the hub link (${error.code}). Try again.',
+        );
+      }
+    } on PairingException catch (error) {
+      if (mounted) setState(() => _claimMessage = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _claimMessage = _claimFlow?.hasPendingFinish == true
+              ? 'Could not confirm the hub link. Retry to finish the same claim.'
+              : 'Could not start the hub link. Try again.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _claimBusy = false);
+    }
+  }
+
   void _invalidateHubData() {
     if (_saved.isEmpty &&
         _estimates.isEmpty &&
@@ -598,6 +658,39 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   ),
                 ],
               ),
+            ],
+            if (widget.cloudHome != null &&
+                widget.cloudApi != null &&
+                _paired) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Cloud home: ${widget.cloudHome!.name}',
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Link this paired hub to the selected cloud home. The hub must be registered for cloud claims.',
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _claimBusy || _claimedThisSession ? null : _claimHub,
+                icon: const Icon(Icons.cloud_done_outlined),
+                label: Text(
+                  _claimBusy
+                      ? 'Linking hub…'
+                      : _claimedThisSession
+                      ? 'Hub linked to home'
+                      : 'Link paired hub to home',
+                ),
+              ),
+              if (_claimMessage != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    _claimMessage!,
+                    key: const Key('hubClaimMessage'),
+                  ),
+                ),
             ],
             if (!_hubConnected || _showConnectionSettings) ...[
               Text(

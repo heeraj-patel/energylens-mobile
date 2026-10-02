@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 class _ConnectedCredentials extends DiscoveryCredentials {
   String? postalCode = '78732';
+  bool zipPromptDismissed = false;
 
   @override
   Future<(String?, String?)> read() async =>
@@ -23,13 +24,26 @@ class _ConnectedCredentials extends DiscoveryCredentials {
   Future<void> clearPostalCode() async {
     postalCode = null;
   }
+
+  @override
+  Future<bool> readZipPromptDismissed() async => zipPromptDismissed;
+
+  @override
+  Future<void> dismissZipPrompt() async {
+    zipPromptDismissed = true;
+  }
 }
 
 class _ConnectedApi extends DiscoveryApi {
-  _ConnectedApi({this.sourceKind = 'user_label', this.withoutRate = false});
+  _ConnectedApi({
+    this.sourceKind = 'user_label',
+    this.withoutRate = false,
+    this.postalOnly = false,
+  });
 
   final String sourceKind;
   bool withoutRate;
+  final bool postalOnly;
   double hours = 21;
   int estimateCalls = 0;
 
@@ -38,7 +52,7 @@ class _ConnectedApi extends DiscoveryApi {
     String baseUrl,
     String token,
   ) async => ElectricitySettings(
-    postalCode: withoutRate ? null : '78732',
+    postalCode: withoutRate && !postalOnly ? null : '78732',
     rateUsdPerKwh: withoutRate ? null : 0.1588,
   );
 
@@ -157,7 +171,51 @@ class _OutageAfterFirstLoadApi extends _ConnectedApi {
   }
 }
 
+class _StandaloneCostApi extends _ConnectedApi {
+  @override
+  Future<List<SavedAppliance>> appliances(String baseUrl, String token) async =>
+      [
+        (await saved(baseUrl, token)).single.connectedAppliance!,
+        const SavedAppliance(
+          id: 2,
+          name: 'KitchenAid refrigerator',
+          room: 'Kitchen',
+          category: 'refrigerator',
+          manufacturer: 'KitchenAid',
+          model: 'KSSC48QTS00',
+          loadKind: 'appliance',
+          onboardingMethod: 'manual',
+        ),
+      ];
+
+  @override
+  Future<EnergyEstimate> estimate(
+    String baseUrl,
+    String token,
+    int applianceId, {
+    String? postalCode,
+    double? rateUsdPerKwh,
+  }) async {
+    if (applianceId == 1) {
+      return super.estimate(baseUrl, token, applianceId);
+    }
+    return const EnergyEstimate(
+      status: 'estimated',
+      estimatedKwh: 54.9,
+      estimatedCostUsd: 8.72,
+      rateUsdPerKwh: 0.1588,
+      rateSourceLabel: 'Texas average',
+    );
+  }
+}
+
 class _MeteredApi extends DiscoveryApi {
+  @override
+  Future<ElectricitySettings> electricitySettings(
+    String baseUrl,
+    String token,
+  ) async => const ElectricitySettings();
+
   @override
   Future<List<SavedPlug>> saved(String baseUrl, String token) async => const [
     SavedPlug(
@@ -605,6 +663,25 @@ class _ManualDevicesApi extends DiscoveryApi {
 }
 
 void main() {
+  testWidgets('photo search is reachable from the default Ask screen', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          api: _ManualDevicesApi(),
+          credentials: _ConnectedCredentials(),
+          initialTabIndex: 3,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('searchUsingPhoto')));
+    await tester.pumpAndSettle();
+    expect(find.text('Choose photo'), findsOneWidget);
+    expect(find.text('Take photo'), findsOneWidget);
+  });
+
   testWidgets('discovery preview starts in Ask & Add with home navigation', (
     tester,
   ) async {
@@ -683,7 +760,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('openElectricitySettings')));
     await tester.pumpAndSettle();
-    expect(find.text('Electricity settings'), findsOneWidget);
+    expect(find.text('Home profile'), findsOneWidget);
     expect(find.byKey(const Key('householdPostalCode')), findsOneWidget);
   });
 
@@ -703,17 +780,17 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final cta = find.byKey(const Key('setElectricityRateFromMeterPrompt'));
+    final cta = find.byKey(const Key('setHouseholdZip'));
     await tester.scrollUntilVisible(cta, 300);
-    expect(find.text('Enter ZIP code or bill rate'), findsOneWidget);
+    expect(find.text('Add your home ZIP code'), findsOneWidget);
     await tester.tap(cta);
     await tester.pumpAndSettle();
-    expect(find.text('Electricity settings'), findsOneWidget);
+    expect(find.text('Home profile'), findsOneWidget);
     expect(find.byKey(const Key('householdPostalCode')), findsOneWidget);
     expect(find.text('US ZIP code'), findsOneWidget);
   });
 
-  testWidgets('estimated appliance cost prompt opens electricity settings', (
+  testWidgets('one household ZIP prompt opens profile and clears after save', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(390, 844);
@@ -727,12 +804,16 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final cta = find.byKey(const Key('setElectricityRateFromEstimate-1'));
+    final cta = find.byKey(const Key('setHouseholdZip'));
     await tester.scrollUntilVisible(cta, 200);
-    expect(find.text('Add ZIP code or bill rate for cost'), findsOneWidget);
+    expect(find.text('Add your home ZIP code'), findsOneWidget);
+    expect(
+      find.byKey(const Key('setElectricityRateFromEstimate-1')),
+      findsNothing,
+    );
     await tester.tap(cta);
     await tester.pumpAndSettle();
-    expect(find.text('Electricity settings'), findsOneWidget);
+    expect(find.text('Home profile'), findsOneWidget);
     expect(find.byKey(const Key('householdPostalCode')), findsOneWidget);
     await tester.enterText(
       find.byKey(const Key('householdPostalCode')),
@@ -752,11 +833,51 @@ void main() {
     }
     expect(api.withoutRate, isFalse);
     expect(api.estimateCalls, greaterThan(1));
-    final refreshedCta = find.byKey(
-      const Key('setElectricityRateFromEstimate-1'),
-    );
+    final refreshedCta = find.byKey(const Key('setHouseholdZip'));
     expect(refreshedCta, findsNothing);
     expect(find.textContaining('Estimated on-time: \$'), findsOneWidget);
+  });
+
+  testWidgets(
+    'saved profile ZIP does not prompt even when cost is unavailable',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeScreen(
+            api: _ConnectedApi(withoutRate: true, postalOnly: true),
+            credentials: _ConnectedCredentials(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('setHouseholdZip')), findsNothing);
+      expect(
+        find.byKey(const Key('setElectricityRateFromEstimate-1')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('dismissed household ZIP prompt stays dismissed on reopen', (
+    tester,
+  ) async {
+    final credentials = _ConnectedCredentials();
+    final api = _ConnectedApi(withoutRate: true);
+    Widget home() => MaterialApp(
+      home: HomeScreen(api: api, credentials: credentials),
+    );
+    await tester.pumpWidget(home());
+    await tester.pumpAndSettle();
+    final dismiss = find.byKey(const Key('dismissHouseholdZip'));
+    await tester.scrollUntilVisible(dismiss, 200);
+    await tester.tap(dismiss);
+    await tester.pumpAndSettle();
+    expect(credentials.zipPromptDismissed, isTrue);
+    expect(find.byKey(const Key('setHouseholdZip')), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(home());
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('setHouseholdZip')), findsNothing);
   });
 
   testWidgets('cycles control saves and resets to initial value', (
@@ -932,7 +1053,7 @@ void main() {
     expect(find.text('Two-bulb Philips Hue White lamp'), findsNothing);
     expect(find.textContaining('No energy meter'), findsOneWidget);
     expect(find.text('ESTIMATED MONTHLY COST'), findsOneWidget);
-    expect(find.text('\$0.27 from 1 of 1 load'), findsOneWidget);
+    expect(find.text('\$0.27 from 1 of 1 device'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('plug-expand-ks19')));
     await tester.pumpAndSettle();
@@ -1002,6 +1123,10 @@ void main() {
     expect(api.hours, 42);
     expect(find.text('On time: 42 hours/week'), findsOneWidget);
     expect(find.text('Estimated total: \$0.58/month'), findsOneWidget);
+    await tester.ensureVisible(
+      find.byKey(const Key('reset-appliance-hours-1')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('reset-appliance-hours-1')));
     await tester.pumpAndSettle();
     expect(api.hours, 21);
@@ -1169,7 +1294,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Desk lamp'), 200);
+    await tester.scrollUntilVisible(find.text('Cost for Desk lamp'), 200);
     expect(find.text('Observed last 30 days: \$2.00'), findsOneWidget);
     expect(
       find.text('Meter readings · 67% of the last 30 days covered'),
@@ -1178,4 +1303,37 @@ void main() {
     expect(find.text('OBSERVED LAST 30 DAYS'), findsOneWidget);
     expect(find.text('ESTIMATED MONTHLY COST'), findsNothing);
   });
+
+  testWidgets(
+    'includes standalone appliances in the house cost without classifying waste',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeScreen(
+            api: _StandaloneCostApi(),
+            credentials: _ConnectedCredentials(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Cost for KitchenAid refrigerator'),
+        200,
+      );
+      expect(find.text('KitchenAid refrigerator'), findsOneWidget);
+      expect(find.text('Cost for KitchenAid refrigerator'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Tracked devices · 2 saved'),
+        200,
+      );
+      expect(find.text('\$8.99 from 2 of 2 devices'), findsOneWidget);
+      expect(find.text('Waste cost'), findsWidgets);
+      expect(find.text('Useful cost'), findsWidgets);
+      expect(find.text('Unclassified cost'), findsWidgets);
+    },
+  );
 }
