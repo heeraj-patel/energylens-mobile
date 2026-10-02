@@ -151,6 +151,13 @@ void main() {
             200,
           );
         }
+        if (request.url.path.endsWith('/programs')) {
+          expect(request.url.queryParameters['appliance_id'], appliance);
+          return http.Response(
+            '{"programs":[],"as_of":"2026-10-01T00:00:00Z","reason":"location_required"}',
+            200,
+          );
+        }
         final intent = request.url.pathSegments.last;
         expect(request.url.path, '/v1/homes/${home.id}/faq/answers/$intent');
         if (intent == 'device_operating_cost') {
@@ -181,6 +188,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(faqInsufficientAnswer), findsOneWidget);
     }
+    expect(find.byKey(const Key('faqOpenPrograms')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('faqOpenPrograms')));
+    await tester.tap(find.byKey(const Key('faqOpenPrograms')));
+    await tester.pumpAndSettle();
+    expect(find.text('Reviewed programs'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('programAppliance')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Washer').last);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('A home location is needed'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('faqIntent-device_operating_cost')));
     await tester.pumpAndSettle();
     expect(
