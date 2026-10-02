@@ -224,7 +224,9 @@ class RetakeCapture extends PhotoCaptureService {
   Future<String?> extractTextHint(String path) async =>
       path.endsWith('label-1.jpg')
       ? 'Manufacturer: LG\nMODEL NO: ABC1234'
-      : 'MODEL NO: DEF5678';
+      : path.endsWith('label-2.jpg')
+      ? 'MODEL NO: DEF5678'
+      : 'LG Electronics Inc.\n120V 60Hz\nService center\nWater supply\nMODEL NO: DEF5678';
 
   @override
   Future<String?> detectUpc(String path) async => null;
@@ -285,6 +287,36 @@ void main() {
     expect(
       manufacturerHintFromOcr(
         'LG\nSafety instructions\nService center\nMODEL NO: WM3070HWA',
+      ),
+      isNull,
+    );
+    expect(
+      manufacturerHintFromOcr(
+        'LG Electronics Inc.\n120V 60Hz\nService center\nWater supply\nRegulatory notice\nMODEL NO: WM3070HWA\nSERIAL: PRIVATE8249',
+      ),
+      'LG',
+    );
+    expect(
+      manufacturerHintFromOcr(
+        'Manufacturer: LG\n120V 60Hz\nService center\nWater supply\nMODEL NO: WM3070HWA',
+      ),
+      'LG',
+    );
+    expect(
+      manufacturerHintFromOcr(
+        'LG Electronics Inc.\n120V 60Hz\nSamsung Electronics Inc.\nWater supply\nMODEL NO: WM3070HWA',
+      ),
+      isNull,
+    );
+    expect(
+      manufacturerHintFromOcr(
+        'Samsung\nMODEL NO: WM3070HWA\nService center\nLG Electronics Inc.',
+      ),
+      isNull,
+    );
+    expect(
+      manufacturerHintFromOcr(
+        'SERIAL: LG Electronics Inc.\n120V 60Hz\nService center\nWater supply\nMODEL NO: WM3070HWA',
       ),
       isNull,
     );
@@ -658,6 +690,10 @@ void main() {
     await tester.tap(find.text('Take photo'));
     await tester.pumpAndSettle();
     expect(maker.text, 'Bosch');
+    expect(
+      find.textContaining('Maker suggested from label: LG'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('source label follows the actual EPA or OEM evidence', (

@@ -934,7 +934,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.cycles, 4.5);
   });
-  testWidgets('deletes a manual device from Ask & Add after confirmation', (
+  testWidgets('lists and deletes manual and photo devices in Ask & Add', (
     tester,
   ) async {
     final api = _ManualDevicesApi();
@@ -953,7 +953,12 @@ void main() {
       200,
     );
     expect(find.text('Desk fan'), findsOneWidget);
-    expect(find.byKey(const Key('ask-delete-appliance-8')), findsNothing);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('ask-delete-appliance-8')),
+      200,
+    );
+    expect(find.text('Photo lamp'), findsOneWidget);
+    expect(find.byKey(const Key('ask-delete-appliance-8')), findsOneWidget);
     await tester.tap(find.byKey(const Key('ask-delete-appliance-7')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Cancel'));
@@ -965,6 +970,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.devices.map((device) => device.name), ['Photo lamp']);
     expect(find.byKey(const Key('ask-delete-appliance-7')), findsNothing);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('ask-delete-appliance-8')),
+      200,
+    );
+    await tester.tap(find.byKey(const Key('ask-delete-appliance-8')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(api.devices, isEmpty);
   });
 
   testWidgets('shows the disconnected state without invented readings', (

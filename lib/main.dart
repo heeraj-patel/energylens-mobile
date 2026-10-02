@@ -2600,7 +2600,7 @@ class _AskAndAdd extends StatefulWidget {
 
 class _AskAndAddState extends State<_AskAndAdd> {
   late _AskMode mode;
-  List<SavedAppliance> _manualDevices = const [];
+  List<SavedAppliance> _savedHubDevices = const [];
   List<CloudAppliance> _cloudDevices = const [];
   String? _cloudInventoryError;
   bool _cloudInventoryLoading = false;
@@ -2618,7 +2618,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
       ),
     );
     if (!mounted) return;
-    _loadManualDevices();
+    _loadHubDevices();
     _loadCloudDevices();
     widget.onDevicesChanged();
   }
@@ -2627,7 +2627,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
   void initState() {
     super.initState();
     mode = widget.startInConnectAppliance ? _AskMode.connect : _AskMode.ask;
-    if (mode == _AskMode.connect) unawaited(_loadManualDevices());
+    if (mode == _AskMode.connect) unawaited(_loadHubDevices());
     if (widget.cloudHome != null && widget.cloudApi != null) {
       unawaited(_loadCloudDevices());
     }
@@ -2664,15 +2664,19 @@ class _AskAndAddState extends State<_AskAndAdd> {
     }
   }
 
-  Future<void> _loadManualDevices() async {
+  Future<void> _loadHubDevices() async {
     try {
       final (address, token) = await widget.credentials.read();
       if (address == null || token == null) return;
       final devices = await widget.api.appliances(address, token);
       if (mounted) {
         setState(
-          () => _manualDevices = devices
-              .where((device) => device.onboardingMethod == 'manual')
+          () => _savedHubDevices = devices
+              .where(
+                (device) =>
+                    device.onboardingMethod == 'manual' ||
+                    device.onboardingMethod == 'photo',
+              )
               .toList(),
         );
       }
@@ -2685,7 +2689,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
     }
   }
 
-  Future<void> _deleteManualDevice(SavedAppliance device) async {
+  Future<void> _deleteHubDevice(SavedAppliance device) async {
     if (_deletingId != null) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -2719,12 +2723,12 @@ class _AskAndAddState extends State<_AskAndAdd> {
       await widget.api.deleteManualAppliance(address, token, device.id);
       if (!mounted) return;
       setState(
-        () => _manualDevices = _manualDevices
+        () => _savedHubDevices = _savedHubDevices
             .where((item) => item.id != device.id)
             .toList(),
       );
       widget.onDevicesChanged();
-      await _loadManualDevices();
+      await _loadHubDevices();
     } catch (error) {
       if (mounted) {
         setState(
@@ -2760,7 +2764,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
         selected: {mode},
         onSelectionChanged: (selection) {
           setState(() => mode = selection.first);
-          if (mode == _AskMode.connect) _loadManualDevices();
+          if (mode == _AskMode.connect) _loadHubDevices();
         },
       ),
       const SizedBox(height: 20),
@@ -2885,7 +2889,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
               ),
             );
             if (!mounted) return;
-            _loadManualDevices();
+            _loadHubDevices();
             widget.onDevicesChanged();
           },
           icon: const Icon(Icons.radar),
@@ -2904,7 +2908,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
               ),
             );
             if (!mounted) return;
-            _loadManualDevices();
+            _loadHubDevices();
             _loadCloudDevices();
             widget.onDevicesChanged();
           },
@@ -2917,7 +2921,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
           icon: const Icon(Icons.photo_camera_outlined),
           label: const Text('Identify from a photo'),
         ),
-        if (_manualDevices.isNotEmpty || _deleteError != null) ...[
+        if (_savedHubDevices.isNotEmpty || _deleteError != null) ...[
           const SizedBox(height: 18),
           Text(
             'Devices saved on this hub',
@@ -2928,7 +2932,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
               _deleteError!,
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
-          for (final device in _manualDevices)
+          for (final device in _savedHubDevices)
             Card(
               child: ListTile(
                 title: Text(device.name),
@@ -2941,7 +2945,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
                   key: Key('ask-delete-appliance-${device.id}'),
                   tooltip: 'Delete ${device.name}',
                   onPressed: _deletingId == null
-                      ? () => _deleteManualDevice(device)
+                      ? () => _deleteHubDevice(device)
                       : null,
                   icon: const Icon(Icons.delete_outline),
                 ),

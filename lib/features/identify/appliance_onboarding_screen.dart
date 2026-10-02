@@ -56,10 +56,11 @@ String? manufacturerHintFromOcr(String? text) {
     'PHILIPS': 'Philips',
     'MIDEA': 'Midea',
   };
-  final suggestions = <String>{};
+  final nearbySuggestions = <String>{};
+  final explicitKnownMakers = <String>{};
   final first = modelLine - 2 < 0 ? 0 : modelLine - 2;
   final last = modelLine + 2 >= lines.length ? lines.length - 1 : modelLine + 2;
-  for (var index = first; index <= last; index++) {
+  for (var index = 0; index < lines.length; index++) {
     final rawLine = lines[index];
     final line = rawLine
         .split(
@@ -74,22 +75,47 @@ String? manufacturerHintFromOcr(String? text) {
     ).firstMatch(line);
     final candidate = (labeled?.group(1) ?? line).trim().toUpperCase();
     String? suggestion;
+    var explicitKnownMaker = false;
     for (final entry in known.entries) {
       if (candidate == entry.key ||
           candidate == '${entry.key} ELECTRONICS' ||
           candidate.startsWith('${entry.key} ELECTRONICS ')) {
         suggestion = entry.value;
+        // A maker printed as a company name or in a maker field is useful
+        // even when OCR puts several unrelated lines between it and MODEL.
+        explicitKnownMaker =
+            labeled != null ||
+            candidate == '${entry.key} ELECTRONICS' ||
+            candidate.startsWith('${entry.key} ELECTRONICS ');
         break;
       }
     }
-    if (suggestion == null &&
+    if (index >= first &&
+        index <= last &&
+        suggestion == null &&
         labeled != null &&
         !RegExp(r'\d').hasMatch(candidate)) {
       suggestion = labeled.group(1)!.trim();
     }
-    if (suggestion != null) suggestions.add(suggestion);
+    if (explicitKnownMaker && suggestion != null) {
+      explicitKnownMakers.add(suggestion);
+    }
+    if (index >= first && index <= last && suggestion != null) {
+      nearbySuggestions.add(suggestion);
+    }
   }
-  return suggestions.length == 1 ? suggestions.single : null;
+  if (nearbySuggestions.length > 1 || explicitKnownMakers.length > 1) {
+    return null;
+  }
+  if (nearbySuggestions.isNotEmpty) {
+    final nearby = nearbySuggestions.single;
+    if (explicitKnownMakers.isNotEmpty &&
+        explicitKnownMakers.single != nearby) {
+      return null;
+    }
+    return nearby;
+  }
+  return explicitKnownMakers.length == 1 ? explicitKnownMakers.single : null;
 }
 
 class ApplianceOnboardingScreen extends StatefulWidget {
