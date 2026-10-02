@@ -560,6 +560,10 @@ class CloudApiClient {
         'Cloud question belongs to another appliance',
       );
     }
+    if (questions.map((question) => question.id).toSet().length !=
+        questions.length) {
+      throw const FormatException('Duplicate cloud questions');
+    }
     return questions;
   }
 
@@ -614,6 +618,23 @@ class CloudApiClient {
     if (body['answers'] is! List ||
         (body['answers'] as List).length != answers.length) {
       throw const FormatException('Invalid cloud answer response');
+    }
+    final returnedRows = (body['answers'] as List)
+        .map((row) => row as Map<String, dynamic>)
+        .toList();
+    final returned = returnedRows.map(CloudSavedAnswer.fromJson).toList();
+    for (var index = 0; index < answers.length; index++) {
+      final expected = answers[index];
+      final actual = returned[index];
+      if (returnedRows[index]['home_id'] != homeId ||
+          actual.questionId != expected.question.id ||
+          actual.questionVersion != expected.question.version ||
+          actual.applianceId != expected.question.applianceId ||
+          actual.identityRevision != expected.question.identityRevision ||
+          actual.status != (expected.value == null ? 'unknown' : 'confirmed') ||
+          actual.value != expected.value) {
+        throw const FormatException('Cloud answer acknowledgement changed');
+      }
     }
   }
 

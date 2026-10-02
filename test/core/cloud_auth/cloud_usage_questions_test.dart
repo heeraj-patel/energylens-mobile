@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_question.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:energylens_mobile/features/identify/cloud_usage_questions_screen.dart';
 import 'package:flutter/material.dart';
@@ -66,7 +67,121 @@ CloudApiClient _api(MockClient client) => CloudApiClient(
   client: client,
 );
 
+http.Response _acknowledge(http.Request request) => http.Response(
+  jsonEncode({
+    'answers': [
+      for (final answer in jsonDecode(request.body)['answers'] as List)
+        {...answer as Map<String, dynamic>, 'home_id': home.id},
+    ],
+  }),
+  201,
+);
+
 void main() {
+  test('rejects duplicate prompts for one appliance', () async {
+    final api = _api(
+      MockClient(
+        (request) async => http.Response(
+          jsonEncode({
+            'questions': [
+              for (var i = 0; i < 2; i++)
+                {
+                  'id': 'washer.cycles_per_week',
+                  'version': 1,
+                  'purpose': 'onboarding',
+                  'appliance_id': appliance.id,
+                  'identity_revision': 3,
+                  'prompt': 'How many cycles?',
+                  'answer_kind': 'cycles_per_week',
+                  'unit': 'cycles/week',
+                  'optional': true,
+                },
+            ],
+          }),
+          200,
+        ),
+      ),
+    );
+    await expectLater(
+      api.questions(home.id, appliance.id, purpose: 'onboarding'),
+      throwsFormatException,
+    );
+    api.close();
+  });
+
+  test('rejects an acknowledgement for another question', () async {
+    final api = _api(
+      MockClient((request) async {
+        final rows = jsonDecode(request.body)['answers'] as List;
+        final changed = Map<String, dynamic>.from(rows.single as Map);
+        changed['question_id'] = 'faq.other_question';
+        changed['home_id'] = home.id;
+        return http.Response(
+          jsonEncode({
+            'answers': [changed],
+          }),
+          201,
+        );
+      }),
+    );
+    final question = CloudQuestion(
+      id: 'faq-contributors/v1.washer.recent_cycles',
+      purpose: 'faq',
+      version: 1,
+      applianceId: appliance.id,
+      identityRevision: 3,
+      prompt: 'Recent cycles?',
+      answerKind: 'cycles_per_week',
+      unit: 'cycles/week',
+      optional: true,
+    );
+    await expectLater(
+      api.submitQuestionAnswers(home.id, [
+        CloudAnswerCreate(
+          question: question,
+          value: 0,
+          confirmedAt: DateTime.utc(2026, 10, 2),
+        ),
+      ], idempotencyKey: newCloudIdempotencyKey()),
+      throwsFormatException,
+    );
+    api.close();
+  });
+
+  test('rejects an acknowledgement for another home', () async {
+    final api = _api(
+      MockClient((request) async {
+        final rows = jsonDecode(request.body)['answers'] as List;
+        return http.Response(
+          jsonEncode({
+            'answers': [
+              {...rows.single as Map<String, dynamic>, 'home_id': appliance.id},
+            ],
+          }),
+          201,
+        );
+      }),
+    );
+    final question = CloudQuestion(
+      id: 'washer.cycles_per_week',
+      purpose: 'onboarding',
+      version: 1,
+      applianceId: appliance.id,
+      identityRevision: 3,
+      prompt: 'How many cycles?',
+      answerKind: 'cycles_per_week',
+      unit: 'cycles/week',
+      optional: true,
+    );
+    await expectLater(
+      api.submitQuestionAnswers(home.id, [
+        CloudAnswerCreate(question: question, value: null, confirmedAt: null),
+      ], idempotencyKey: newCloudIdempotencyKey()),
+      throwsFormatException,
+    );
+    api.close();
+  });
+
   testWidgets('reads current answers and ignores stale question versions', (
     tester,
   ) async {
@@ -132,7 +247,7 @@ void main() {
           );
         }
         posts.add(request);
-        return http.Response('{"answers":[{}]}', 201);
+        return _acknowledge(request);
       }),
     );
     await tester.pumpWidget(
@@ -203,12 +318,7 @@ void main() {
         }
         posts.add(request);
         if (posts.length == 1) throw const SocketException('uncertain');
-        return http.Response(
-          jsonEncode({
-            'answers': [{}],
-          }),
-          201,
-        );
+        return _acknowledge(request);
       }),
     );
     await tester.pumpWidget(
@@ -283,7 +393,7 @@ void main() {
           );
         }
         post = request;
-        return http.Response('{"answers":[{}]}', 201);
+        return _acknowledge(request);
       }),
     );
     await tester.pumpWidget(
@@ -323,7 +433,7 @@ void main() {
         if (request.method == 'POST') {
           post = request;
           answered = true;
-          return http.Response('{"answers":[{}]}', 201);
+          return _acknowledge(request);
         }
         if (request.url.path.endsWith('/questions/answers')) {
           return http.Response('{"answers":[]}', 200);
