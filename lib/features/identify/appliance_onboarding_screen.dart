@@ -491,6 +491,9 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       }
       if (!mounted) return;
       setState(() {
+        final replaceSuggestedMaker =
+            _manufacturer.text.trim().isEmpty ||
+            _manufacturer.text.trim() == _photoManufacturerHint;
         _photoBytes = photo.bytes;
         _ocrText = details[0]?.trim().isNotEmpty == true ? (hint ?? '') : null;
         _photoManufacturerHint = manufacturerHint;
@@ -499,7 +502,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
         _candidateLookupFailed = lookupFailed;
         _confirmedModel = false;
         _model.text = hint ?? '';
-        if (manufacturerHint != null) _manufacturer.text = manufacturerHint;
+        if (replaceSuggestedMaker) _manufacturer.text = manufacturerHint ?? '';
       });
     } on CameraPermissionDeniedException {
       if (mounted) {

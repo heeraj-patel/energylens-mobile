@@ -208,6 +208,42 @@ class FakeCapture extends PhotoCaptureService {
   }
 }
 
+class RetakeCapture extends PhotoCaptureService {
+  int captures = 0;
+
+  @override
+  Future<CapturedPhoto?> capturePhoto() async {
+    captures++;
+    return CapturedPhoto(
+      path: '/tmp/label-$captures.jpg',
+      bytes: Uint8List.fromList([1, 2, 3]),
+    );
+  }
+
+  @override
+  Future<String?> extractTextHint(String path) async =>
+      path.endsWith('label-1.jpg')
+      ? 'Manufacturer: LG\nMODEL NO: ABC1234'
+      : 'MODEL NO: DEF5678';
+
+  @override
+  Future<String?> detectUpc(String path) async => null;
+
+  @override
+  Future<void> discard(CapturedPhoto photo) async {}
+}
+
+class NoCandidatesApi extends FakeApi {
+  @override
+  Future<List<IdentificationCandidate>> identifyCandidates(
+    String baseUrl,
+    String token, {
+    required String targetKind,
+    String? ocrText,
+    String? upc,
+  }) async => const [];
+}
+
 Future<void> scrollTo(
   WidgetTester tester,
   Finder finder, {
@@ -571,6 +607,45 @@ void main() {
     expect(api.rows.first.model, 'ABC1234');
     expect(api.lookupStatuses[api.rows.first.id], 'no_match');
     expect(find.byKey(const Key('delete-appliance-1')), findsNothing);
+  });
+
+  testWidgets('retaking a photo clears only the prior maker suggestion', (
+    tester,
+  ) async {
+    final capture = RetakeCapture();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ApplianceOnboardingScreen(
+          method: 'photo',
+          api: NoCandidatesApi(),
+          credentials: FakeCredentials(),
+          capture: capture,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Take photo'));
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('applianceManufacturer')));
+    final maker = tester
+        .widget<TextField>(find.byKey(const Key('applianceManufacturer')))
+        .controller!;
+    expect(maker.text, 'LG');
+    await scrollTo(tester, find.text('Take photo'), delta: -300);
+    await tester.tap(find.text('Take photo'));
+    await tester.pumpAndSettle();
+    expect(maker.text, isEmpty);
+    expect(find.textContaining('Maker suggested from label:'), findsNothing);
+
+    await scrollTo(tester, find.byKey(const Key('applianceManufacturer')));
+    await tester.enterText(
+      find.byKey(const Key('applianceManufacturer')),
+      'Bosch',
+    );
+    await scrollTo(tester, find.text('Take photo'), delta: -300);
+    await tester.tap(find.text('Take photo'));
+    await tester.pumpAndSettle();
+    expect(maker.text, 'Bosch');
   });
 
   testWidgets('source label follows the actual EPA or OEM evidence', (
