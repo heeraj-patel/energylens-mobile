@@ -4,6 +4,7 @@ import '../../core/cloud_api/cloud_api_client.dart';
 import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_api/cloud_estimate.dart';
 import '../../core/cloud_api/cloud_home.dart';
+import 'cloud_electricity_rate_screen.dart';
 
 String cloudEstimateUnavailableReason(
   String? reason, {
@@ -125,6 +126,17 @@ class _CloudEstimatesSectionState extends State<CloudEstimatesSection> {
     }
   }
 
+  Future<void> _openMissingRate(CloudAppliance appliance) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => appliance.fuel == 'natural_gas'
+            ? CloudGasRateScreen(api: widget.api, home: widget.home)
+            : CloudElectricityRateScreen(api: widget.api, home: widget.home),
+      ),
+    );
+    if (mounted) _refresh();
+  }
+
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
@@ -172,6 +184,18 @@ class _CloudEstimatesSectionState extends State<CloudEstimatesSection> {
                   fuel: appliance.fuel,
                 ),
               ),
+              if (estimate.unavailableReason == 'rate_unavailable' &&
+                  const {'electricity', 'natural_gas'}.contains(appliance.fuel))
+                TextButton.icon(
+                  key: Key('estimateAddRate-${appliance.id}'),
+                  onPressed: () => _openMissingRate(appliance),
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  label: Text(
+                    appliance.fuel == 'natural_gas'
+                        ? 'Add Cloud gas rate'
+                        : 'Add Cloud electricity rate',
+                  ),
+                ),
             ] else ...[
               Text(
                 estimate.kind == 'estimated_useful_cost'

@@ -400,4 +400,119 @@ void main() {
     expect(find.text('Estimated useful gas cost'), findsNothing);
     api.close();
   });
+
+  testWidgets('missing gas rate opens this home’s bill form and refreshes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const dryerId = '66666666-6666-4666-8666-666666666666';
+    var saved = false;
+    var estimateReads = 0;
+    final paths = <String>[];
+    final api = CloudApiClient(
+      session: CloudSession(
+        config: _config,
+        store: _Store(),
+        authenticator: _Auth(),
+      ),
+      client: MockClient((request) async {
+        paths.add(request.url.path);
+        expect(request.url.path, startsWith('/v1/homes/${_home.id}/'));
+        if (request.url.path.endsWith('/appliances')) {
+          return http.Response(
+            jsonEncode({
+              'appliances': [
+                _appliance(dryerId, 'Gas Dryer', fuel: 'natural_gas'),
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path.endsWith('/estimates')) {
+          estimateReads++;
+          final result = _run(
+            'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            dryerId,
+            saved ? 'estimated_useful_cost' : 'unavailable',
+            reason: saved ? null : 'rate_unavailable',
+          );
+          if (saved) {
+            result['energy'] = {
+              'value': '7.750000',
+              'unit': 'therm',
+              'fuel': 'natural_gas',
+            };
+            result['cost'] = {
+              'value': '9.300000',
+              'currency': 'USD',
+              'rate_kind': 'user_tariff',
+            };
+          }
+          return http.Response(
+            jsonEncode({
+              'as_of': '2026-10-01T12:01:00Z',
+              'estimates': [result],
+            }),
+            200,
+          );
+        }
+        if (request.url.path.endsWith('/tariffs') && request.method == 'GET') {
+          return http.Response('{"tariffs":[]}', 200);
+        }
+        if (request.url.path.endsWith('/tariffs') && request.method == 'POST') {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          expect(body['fuel'], 'natural_gas');
+          expect(body['rate_unit'], 'therm');
+          expect(request.headers['idempotency-key'], isNotEmpty);
+          saved = true;
+          return http.Response(
+            jsonEncode({
+              'id': '88888888-8888-4888-8888-888888888888',
+              'home_id': _home.id,
+              'revision': 1,
+              ...body,
+            }),
+            201,
+          );
+        }
+        return http.Response('', 404);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: CloudEstimatesSection(api: api, home: _home),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('USD/therm'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('estimateAddRate-$dryerId')));
+    await tester.pumpAndSettle();
+    expect(find.text('Cloud gas rate'), findsOneWidget);
+    final today = DateTime.now().toUtc().toIso8601String().substring(0, 10);
+    await tester.enterText(find.byKey(const Key('cloudRate')), '1.20');
+    await tester.enterText(find.byKey(const Key('cloudRateSourceDate')), today);
+    await tester.enterText(
+      find.byKey(const Key('cloudRateEffectiveDate')),
+      today,
+    );
+    await tester.ensureVisible(find.text('Save Cloud gas rate'));
+    await tester.tap(find.text('Save Cloud gas rate'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Cloud gas rate saved'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(estimateReads, 2);
+    expect(find.text('Estimated useful gas cost'), findsOneWidget);
+    expect(find.text('9.300000 USD · 7.750000 therm'), findsOneWidget);
+    expect(find.text('Waste: not yet assessed'), findsOneWidget);
+    expect(paths, contains('/v1/homes/${_home.id}/tariffs'));
+    api.close();
+  });
 }
