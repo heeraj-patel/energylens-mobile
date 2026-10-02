@@ -6,6 +6,7 @@ import '../cloud_api/cloud_home.dart';
 import 'cloud_home_entry.dart';
 import 'cloud_auth.dart';
 import 'cloud_preferences_screen.dart';
+import 'cloud_registration_screen.dart';
 
 class CloudEntryGate extends StatefulWidget {
   const CloudEntryGate({
@@ -13,6 +14,7 @@ class CloudEntryGate extends StatefulWidget {
     required this.homeBuilder,
     this.session,
     this.api,
+    this.registrationService,
   });
   final Widget Function(
     CloudHome? selectedHome,
@@ -23,6 +25,7 @@ class CloudEntryGate extends StatefulWidget {
   homeBuilder;
   final CloudSession? session;
   final CloudApiClient? api;
+  final CloudRegistrationService? registrationService;
 
   @override
   State<CloudEntryGate> createState() => _CloudEntryGateState();
@@ -293,6 +296,19 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                       onPressed: _signIn,
                       child: const Text('Sign in'),
                     ),
+                  if (!_busy && widget.registrationService != null) ...[
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => CloudRegistrationScreen(
+                            service: widget.registrationService!,
+                          ),
+                        ),
+                      ),
+                      child: const Text('Create account'),
+                    ),
+                  ],
                 ],
               ),
             ),
