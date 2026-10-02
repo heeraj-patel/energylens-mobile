@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../cloud_api/cloud_api_client.dart';
 import '../cloud_api/cloud_home.dart';
 import '../cloud_api/cloud_preferences.dart';
+import '../../features/energy/cloud_electricity_rate_screen.dart';
 
 class CloudPreferencesScreen extends StatefulWidget {
   const CloudPreferencesScreen({
@@ -331,6 +332,20 @@ class _CloudPreferencesScreenState extends State<CloudPreferencesScreen> {
                   ),
                   if (widget.home != null && account.value.historyAccepted) ...[
                     const SizedBox(height: 28),
+                    TextButton.icon(
+                      key: const Key('openCloudElectricityRate'),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => CloudElectricityRateScreen(
+                            api: widget.api,
+                            home: widget.home!,
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.bolt_outlined),
+                      label: const Text('Cloud electricity rate'),
+                    ),
+                    const SizedBox(height: 12),
                     Text(
                       'Preferences for ${widget.home!.name}',
                       style: Theme.of(context).textTheme.titleLarge,

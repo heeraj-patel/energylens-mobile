@@ -6,6 +6,7 @@ import '../../core/cloud_api/cloud_home.dart';
 import '../../core/cloud_api/cloud_recommendations.dart';
 import '../identify/cloud_usage_questions_screen.dart';
 import 'cloud_intervention_screen.dart';
+import 'cloud_electricity_rate_screen.dart';
 
 class CloudRecommendationsScreen extends StatefulWidget {
   const CloudRecommendationsScreen({
@@ -180,14 +181,36 @@ class _CloudRecommendationsScreenState
                                   ),
                                 )
                               else
-                                Text(
-                                  next == 'add_electricity_rate'
-                                      ? 'Review this appliance’s estimate and electricity rate.'
-                                      : next == 'confirm_model'
-                                      ? 'Review this appliance’s model.'
-                                      : 'A reviewed energy source is needed.',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
+                                next == 'add_electricity_rate'
+                                    ? TextButton.icon(
+                                        key: Key(
+                                          'recommendationRate-${action.applianceId}',
+                                        ),
+                                        onPressed: () async {
+                                          await Navigator.of(context).push(
+                                            MaterialPageRoute<void>(
+                                              builder: (_) =>
+                                                  CloudElectricityRateScreen(
+                                                    api: widget.api,
+                                                    home: widget.home,
+                                                  ),
+                                            ),
+                                          );
+                                          if (mounted) _load();
+                                        },
+                                        icon: const Icon(Icons.bolt_outlined),
+                                        label: const Text(
+                                          'Review Cloud electricity rate',
+                                        ),
+                                      )
+                                    : Text(
+                                        next == 'confirm_model'
+                                            ? 'Review this appliance’s model.'
+                                            : 'A reviewed energy source is needed.',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall,
+                                      ),
                             ],
                             if (action.state == 'active') ...[
                               const SizedBox(height: 8),

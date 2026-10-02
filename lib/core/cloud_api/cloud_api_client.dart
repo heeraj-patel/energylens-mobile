@@ -19,6 +19,7 @@ import 'cloud_interventions.dart';
 import 'cloud_programs.dart';
 import 'cloud_report_preview.dart';
 import 'cloud_report_delivery.dart';
+import 'cloud_tariff.dart';
 
 class CloudApiException implements Exception {
   const CloudApiException(this.statusCode, this.code);
@@ -185,6 +186,41 @@ class CloudApiClient {
       throw const FormatException('Cloud appliance belongs to another home');
     }
     return appliances;
+  }
+
+  Future<List<CloudTariff>> electricityTariffs(String homeId) async {
+    final response = await get(
+      '/v1/homes/${Uri.encodeComponent(homeId)}/tariffs',
+    );
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final rows = body['tariffs'];
+    if (rows is! List) throw const FormatException('Invalid tariff list');
+    if (rows.any((row) => row is! Map<String, dynamic>)) {
+      throw const FormatException('Invalid tariff list');
+    }
+    return rows
+        .where(
+          (row) => row is Map<String, dynamic> && row['fuel'] == 'electricity',
+        )
+        .map((row) => CloudTariff.fromJson(row as Map<String, dynamic>, homeId))
+        .toList();
+  }
+
+  Future<CloudTariff> createElectricityTariff(
+    String homeId,
+    Map<String, dynamic> body, {
+    required String idempotencyKey,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/tariffs',
+      jsonBody: jsonEncode(body),
+      idempotencyKey: idempotencyKey,
+    );
+    return CloudTariff.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+      homeId,
+    );
   }
 
   Future<CloudAppliance> createAppliance(
