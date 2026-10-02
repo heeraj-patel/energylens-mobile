@@ -31,6 +31,8 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+/ios/build/
+**/xcshareddata/swiftpm/
 /coverage/
 
 # Symbolication related
