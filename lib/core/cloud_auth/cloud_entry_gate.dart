@@ -7,6 +7,7 @@ import 'cloud_home_entry.dart';
 import 'cloud_auth.dart';
 import 'cloud_preferences_screen.dart';
 import 'cloud_registration_screen.dart';
+import 'cloud_local_auth.dart';
 
 class CloudEntryGate extends StatefulWidget {
   const CloudEntryGate({
@@ -34,6 +35,9 @@ class CloudEntryGate extends StatefulWidget {
 class _CloudEntryGateState extends State<CloudEntryGate> {
   late final CloudSession _session;
   late final CloudApiClient _api;
+  CloudLocalAuthClient? _ownedLocalAuth;
+  final _localEmail = TextEditingController();
+  final _localPassword = TextEditingController();
   bool _busy = true;
   bool _authenticated = false;
   bool _historyAccepted = false;
@@ -46,12 +50,17 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   @override
   void initState() {
     super.initState();
+    final config = CloudAuthConfig.fromEnvironment();
+    if (widget.session == null && config.isLocalAuthConfigured) {
+      _ownedLocalAuth = CloudLocalAuthClient(baseUrl: config.apiUrl);
+    }
     _session =
         widget.session ??
         CloudSession(
-          config: CloudAuthConfig.fromEnvironment(),
+          config: config,
           store: const SecureCloudTokenStore(),
           authenticator: const AppAuthCloudAuthenticator(),
+          localAuth: _ownedLocalAuth,
         );
     _api = widget.api ?? CloudApiClient(session: _session);
     _restore();
@@ -60,11 +69,14 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   @override
   void dispose() {
     if (widget.api == null) _api.close();
+    _ownedLocalAuth?.close();
+    _localEmail.dispose();
+    _localPassword.dispose();
     super.dispose();
   }
 
   Future<void> _restore() async {
-    if (!_session.config.isConfigured) {
+    if (!_session.config.hasCloudSignIn) {
       if (mounted) setState(() => _busy = false);
       return;
     }
@@ -198,6 +210,43 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     }
   }
 
+  Future<void> _signInLocal() async {
+    final email = _localEmail.text.trim();
+    final password = _localPassword.text;
+    if (email.isEmpty || password.isEmpty) {
+      setState(() => _message = 'Enter your email and password.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      await _session.signInLocal(email, password);
+      await _validate();
+    } on CloudLocalAuthException catch (error) {
+      if (mounted) {
+        setState(
+          () => _message = switch (error.statusCode) {
+            404 => 'Email sign-in is not available on this Cloud server.',
+            401 => 'Could not sign in. Check your details and try again.',
+            _ => 'Email sign-in is temporarily unavailable. Try again later.',
+          },
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () =>
+              _message = 'Could not sign in. Check your details and try again.',
+        );
+      }
+    } finally {
+      _localPassword.clear();
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _signOut() async {
     await _session.signOut();
     if (mounted) {
@@ -277,7 +326,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    _session.config.isConfigured
+                    _session.config.hasCloudSignIn
                         ? 'Sign in to your account to continue.'
                         : _session.config.hasPlaceholderEndpoint
                         ? 'This build uses placeholder Cloud settings. Install a Release build configured with a real OIDC issuer, public client ID, and Cloud API URL.'
@@ -296,13 +345,42 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                       onPressed: _signIn,
                       child: const Text('Sign in'),
                     ),
-                  if (!_busy && widget.registrationService != null) ...[
+                  if (!_busy &&
+                      _session.config.isLocalAuthConfigured &&
+                      _session.localAuth != null) ...[
+                    const SizedBox(height: 8),
+                    TextField(
+                      key: const Key('localSignInEmail'),
+                      controller: _localEmail,
+                      keyboardType: TextInputType.emailAddress,
+                      autofillHints: const [AutofillHints.email],
+                      decoration: const InputDecoration(labelText: 'Email'),
+                    ),
+                    TextField(
+                      key: const Key('localSignInPassword'),
+                      controller: _localPassword,
+                      obscureText: true,
+                      autofillHints: const [AutofillHints.password],
+                      decoration: const InputDecoration(labelText: 'Password'),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton(
+                      onPressed: _signInLocal,
+                      child: const Text('Sign in with email'),
+                    ),
+                  ],
+                  if (!_busy &&
+                      (widget.registrationService != null ||
+                          (_session.config.isLocalAuthConfigured &&
+                              _session.localAuth != null))) ...[
                     const SizedBox(height: 8),
                     TextButton(
                       onPressed: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (_) => CloudRegistrationScreen(
-                            service: widget.registrationService!,
+                            service:
+                                widget.registrationService ??
+                                _session.localAuth!,
                           ),
                         ),
                       ),

@@ -2,14 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
-/// A future owner-auth adapter supplies this capability only after its public
-/// registration and verification contracts are active. The production app does
-/// not supply one yet.
-abstract interface class CloudRegistrationService {
-  Future<void> requestRegistration(String email, String password);
-  Future<void> verifyEmail(String token);
-}
+import 'cloud_local_auth.dart';
+import 'cloud_auth.dart';
 
+/// The first-party Cloud adapter supplies this only when local auth is enabled.
 class CloudRegistrationScreen extends StatefulWidget {
   const CloudRegistrationScreen({super.key, required this.service});
 
@@ -64,6 +60,14 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
       _password.clear();
       _confirm.clear();
       if (mounted) setState(() => _accepted = true);
+    } on CloudLocalAuthException catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = error.statusCode == 404
+              ? 'Account creation is not available on this Cloud server.'
+              : 'Could not submit the request. Try again.',
+        );
+      }
     } catch (_) {
       if (mounted) {
         setState(() => _error = 'Could not submit the request. Try again.');
@@ -88,6 +92,14 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
       await widget.service.verifyEmail(token);
       _token.clear();
       if (mounted) setState(() => _verificationSubmitted = true);
+    } on CloudLocalAuthException catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = error.statusCode == 404
+              ? 'Email verification is not available on this Cloud server.'
+              : 'Could not verify this token. Check the email and try again.',
+        );
+      }
     } catch (_) {
       if (mounted) {
         setState(

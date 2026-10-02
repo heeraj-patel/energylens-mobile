@@ -41,6 +41,18 @@ complete this entry flow. Cloud bearer tokens are stored
 separately from the existing local hub pairing credentials. Sign-out clears only
 cloud tokens; local hub TLS and pairing continue to use their existing trust path.
 
+## First-party email authentication (default off)
+
+Build with `ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED=true` and a real HTTPS
+`ENERGYLENS_CLOUD_API_URL` to display email registration and sign-in. This is
+independent of OIDC build settings; when both are configured, OIDC sign-in
+remains available. The Cloud server must separately enable and configure its
+guarded local-auth routes and verification mail. A server with the gate off
+returns 404 and the app shows that email authentication is unavailable. A
+registration request never signs the user in; verification and a separate
+login are required. Local access and refresh tokens use secure storage and
+the Cloud API bearer path. The local photo pilot remains a separate build mode.
+
 ## iOS simulator pilot
 
 The self-contained `scripts/deploy-ios-simulator.sh` adapts the explicit-target

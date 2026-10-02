@@ -11,6 +11,7 @@ class CloudAuthConfig {
     required this.clientId,
     required this.redirectUrl,
     required this.apiUrl,
+    this.localAuthEnabled = false,
   });
 
   factory CloudAuthConfig.fromEnvironment() => const CloudAuthConfig(
@@ -19,6 +20,9 @@ class CloudAuthConfig {
     clientId: String.fromEnvironment('ENERGYLENS_OIDC_CLIENT_ID'),
     redirectUrl: String.fromEnvironment('ENERGYLENS_OIDC_REDIRECT_URL'),
     apiUrl: String.fromEnvironment('ENERGYLENS_CLOUD_API_URL'),
+    localAuthEnabled: bool.fromEnvironment(
+      'ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED',
+    ),
   );
 
   final String issuer;
@@ -26,6 +30,22 @@ class CloudAuthConfig {
   final String clientId;
   final String redirectUrl;
   final String apiUrl;
+  final bool localAuthEnabled;
+
+  bool get hasValidApiUrl {
+    final uri = Uri.tryParse(apiUrl);
+    return uri?.scheme == 'https' &&
+        uri!.host.isNotEmpty &&
+        uri.host != 'invalid' &&
+        !uri.host.endsWith('.invalid') &&
+        (uri.path.isEmpty || uri.path == '/') &&
+        uri.userInfo.isEmpty &&
+        !uri.hasQuery &&
+        !uri.hasFragment;
+  }
+
+  bool get isLocalAuthConfigured => localAuthEnabled && hasValidApiUrl;
+  bool get hasCloudSignIn => isConfigured || isLocalAuthConfigured;
 
   bool get hasPlaceholderEndpoint {
     bool isPlaceholder(String value) {
@@ -57,7 +77,7 @@ class CloudAuthConfig {
         redirectUri?.fragment.isEmpty == true;
   }
 
-  bool get allowLocalPreview => kDebugMode && !isConfigured;
+  bool get allowLocalPreview => kDebugMode && !hasCloudSignIn;
 }
 
 class CloudTokens {
@@ -65,10 +85,14 @@ class CloudTokens {
     required this.accessToken,
     this.refreshToken,
     this.expiresAt,
+    this.refreshExpiresAt,
+    this.provider = 'oidc',
   });
   final String accessToken;
   final String? refreshToken;
   final DateTime? expiresAt;
+  final DateTime? refreshExpiresAt;
+  final String provider;
 
   bool needsRefresh(DateTime now) =>
       expiresAt != null &&
@@ -88,22 +112,33 @@ class SecureCloudTokenStore implements CloudTokenStore {
   static const _access = 'energylens.cloud.access_token';
   static const _refresh = 'energylens.cloud.refresh_token';
   static const _expiry = 'energylens.cloud.access_expiry';
+  static const _provider = 'energylens.cloud.auth_provider';
+  static const _refreshExpiry = 'energylens.cloud.refresh_expiry';
 
   @override
   Future<CloudTokens?> read() async {
     final access = await _storage.read(key: _access);
     if (access == null || access.isEmpty) return null;
     final expiry = await _storage.read(key: _expiry);
+    final refreshExpiry = await _storage.read(key: _refreshExpiry);
     return CloudTokens(
       accessToken: access,
       refreshToken: await _storage.read(key: _refresh),
       expiresAt: expiry == null ? null : DateTime.tryParse(expiry),
+      refreshExpiresAt: refreshExpiry == null
+          ? null
+          : DateTime.tryParse(refreshExpiry),
+      provider: (await _storage.read(key: _provider)) == 'local'
+          ? 'local'
+          : 'oidc',
     );
   }
 
   @override
   Future<void> save(CloudTokens tokens) async {
-    await _storage.write(key: _access, value: tokens.accessToken);
+    // An interrupted provider switch must not expose the previous bearer.
+    await _storage.delete(key: _access);
+    await _storage.write(key: _provider, value: tokens.provider);
     if (tokens.refreshToken == null) {
       await _storage.delete(key: _refresh);
     } else {
@@ -117,6 +152,15 @@ class SecureCloudTokenStore implements CloudTokenStore {
         value: tokens.expiresAt!.toUtc().toIso8601String(),
       );
     }
+    if (tokens.refreshExpiresAt == null) {
+      await _storage.delete(key: _refreshExpiry);
+    } else {
+      await _storage.write(
+        key: _refreshExpiry,
+        value: tokens.refreshExpiresAt!.toUtc().toIso8601String(),
+      );
+    }
+    await _storage.write(key: _access, value: tokens.accessToken);
   }
 
   @override
@@ -124,12 +168,26 @@ class SecureCloudTokenStore implements CloudTokenStore {
     await _storage.delete(key: _access);
     await _storage.delete(key: _refresh);
     await _storage.delete(key: _expiry);
+    await _storage.delete(key: _provider);
+    await _storage.delete(key: _refreshExpiry);
   }
 }
 
 abstract interface class CloudAuthenticator {
   Future<CloudTokens> signIn(CloudAuthConfig config);
   Future<CloudTokens> refresh(CloudAuthConfig config, String refreshToken);
+}
+
+abstract interface class CloudRegistrationService {
+  Future<void> requestRegistration(String email, String password);
+  Future<void> verifyEmail(String token);
+}
+
+abstract interface class LocalCloudAuthService
+    implements CloudRegistrationService {
+  Future<CloudTokens> login(String email, String password);
+  Future<CloudTokens> refresh(String refreshToken);
+  Future<void> logout(String refreshToken);
 }
 
 class AppAuthCloudAuthenticator implements CloudAuthenticator {
@@ -192,22 +250,33 @@ class CloudSession {
     required this.config,
     required this.store,
     required this.authenticator,
+    this.localAuth,
   });
   final CloudAuthConfig config;
   final CloudTokenStore store;
   final CloudAuthenticator authenticator;
+  final LocalCloudAuthService? localAuth;
   Future<CloudTokens?>? _refreshInFlight;
 
   Future<String?> accessToken() async {
-    if (!config.isConfigured) return null;
+    if (!config.hasCloudSignIn) return null;
     final tokens = await store.read();
     if (tokens == null) return null;
+    if ((tokens.provider == 'local' &&
+            (!config.isLocalAuthConfigured ||
+                localAuth == null ||
+                tokens.expiresAt == null ||
+                tokens.refreshExpiresAt == null)) ||
+        (tokens.provider != 'local' && !config.isConfigured)) {
+      await store.clear();
+      return null;
+    }
     if (!tokens.needsRefresh(DateTime.now())) return tokens.accessToken;
     return refreshAccessToken();
   }
 
   Future<String?> refreshAccessToken() async {
-    if (!config.isConfigured) return null;
+    if (!config.hasCloudSignIn) return null;
     final inFlight = _refreshInFlight;
     if (inFlight != null) return (await inFlight)?.accessToken;
     final refresh = _refreshTokens();
@@ -222,12 +291,21 @@ class CloudSession {
   Future<CloudTokens?> _refreshTokens() async {
     final current = await store.read();
     final refreshToken = current?.refreshToken;
-    if (refreshToken == null || refreshToken.isEmpty) {
+    if (refreshToken == null ||
+        refreshToken.isEmpty ||
+        (current?.provider == 'local' &&
+            (current!.refreshExpiresAt == null ||
+                !DateTime.now().isBefore(current.refreshExpiresAt!)))) {
       await store.clear();
       return null;
     }
     try {
-      final tokens = await authenticator.refresh(config, refreshToken);
+      final tokens = current!.provider == 'local'
+          ? await localAuth!.refresh(refreshToken)
+          : await authenticator.refresh(config, refreshToken);
+      if (tokens.provider != current.provider) {
+        throw const FormatException('Auth provider changed during refresh');
+      }
       await store.save(tokens);
       return tokens;
     } catch (_) {
@@ -243,5 +321,29 @@ class CloudSession {
     await store.save(await authenticator.signIn(config));
   }
 
-  Future<void> signOut() => store.clear();
+  Future<void> signInLocal(String email, String password) async {
+    if (!config.isLocalAuthConfigured || localAuth == null) {
+      throw StateError('Local Cloud sign-in is not configured');
+    }
+    final tokens = await localAuth!.login(email, password);
+    if (tokens.provider != 'local') {
+      throw const FormatException('Invalid local session');
+    }
+    await store.save(tokens);
+  }
+
+  Future<void> signOut() async {
+    final tokens = await store.read();
+    try {
+      if (tokens?.provider == 'local' && tokens?.refreshToken != null) {
+        try {
+          await localAuth?.logout(tokens!.refreshToken!);
+        } catch (_) {
+          // Clear the device session even if remote logout is unreachable.
+        }
+      }
+    } finally {
+      await store.clear();
+    }
+  }
 }

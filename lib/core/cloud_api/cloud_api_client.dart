@@ -765,7 +765,7 @@ class CloudApiClient {
     String? idempotencyKey,
     String? ifMatch,
   }) async {
-    if (!session.config.isConfigured) {
+    if (!session.config.hasCloudSignIn) {
       throw StateError('Cloud API is not configured');
     }
     if (!path.startsWith('/') || path.startsWith('//')) {
