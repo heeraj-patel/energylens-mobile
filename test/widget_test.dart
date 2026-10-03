@@ -682,6 +682,39 @@ void main() {
     expect(find.text('Take photo'), findsOneWidget);
   });
 
+  testWidgets('saved photo returns to the visible hub device list', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          api: _ManualDevicesApi(),
+          credentials: _ConnectedCredentials(),
+          initialTabIndex: 3,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Photo lamp'), findsNothing);
+    await tester.tap(find.byKey(const Key('searchUsingPhoto')));
+    await tester.pumpAndSettle();
+    Navigator.of(tester.element(find.text('Choose photo'))).pop(
+      const SavedAppliance(
+        id: 8,
+        name: 'Photo lamp',
+        room: 'Living Room',
+        category: 'lighting',
+        manufacturer: 'LG',
+        model: 'WM3070HWA',
+        loadKind: 'appliance',
+        onboardingMethod: 'photo',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Photo lamp'), findsOneWidget);
+    expect(find.textContaining('Added from photo'), findsOneWidget);
+  });
+
   testWidgets('Release local pilot reaches phone-only photo entry', (
     tester,
   ) async {

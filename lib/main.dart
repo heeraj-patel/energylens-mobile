@@ -2608,7 +2608,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
   int? _deletingId;
 
   Future<void> _openPhotoOnboarding() async {
-    await Navigator.of(context).push<SavedAppliance>(
+    final saved = await Navigator.of(context).push<SavedAppliance>(
       MaterialPageRoute<SavedAppliance>(
         builder: (_) => ApplianceOnboardingScreen(
           method: 'photo',
@@ -2618,6 +2618,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
       ),
     );
     if (!mounted) return;
+    if (saved != null) setState(() => mode = _AskMode.connect);
     _loadHubDevices();
     _loadCloudDevices();
     widget.onDevicesChanged();
@@ -2937,9 +2938,8 @@ class _AskAndAddState extends State<_AskAndAdd> {
               child: ListTile(
                 title: Text(device.name),
                 subtitle: Text(
-                  device.room.isEmpty
-                      ? device.category
-                      : '${device.room} · ${device.category}',
+                  '${device.onboardingMethod == 'photo' ? 'Added from photo' : 'Manually added'} · '
+                  '${device.room.isEmpty ? device.category : '${device.room} · ${device.category}'}',
                 ),
                 trailing: IconButton(
                   key: Key('ask-delete-appliance-${device.id}'),
