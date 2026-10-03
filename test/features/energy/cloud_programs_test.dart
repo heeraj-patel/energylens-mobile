@@ -1,8 +1,12 @@
 import 'dart:convert';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_programs.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
+import 'package:energylens_mobile/features/energy/cloud_programs_screen.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -49,7 +53,76 @@ class _Auth implements CloudAuthenticator {
   ) async => const CloudTokens(accessToken: 'owner-token');
 }
 
+class _ProgramsScreenApi extends CloudApiClient {
+  _ProgramsScreenApi()
+    : super(
+        session: CloudSession(
+          config: const CloudAuthConfig(
+            issuer: 'https://issuer.example',
+            audience: 'energylens-cloud',
+            clientId: 'client',
+            redirectUrl: 'io.energylens.app://login-callback',
+            apiUrl: 'https://api.example',
+          ),
+          store: _Store(),
+          authenticator: _Auth(),
+        ),
+      );
+
+  @override
+  Future<List<CloudAppliance>> appliances(String homeId) async => [
+    CloudAppliance(
+      id: appliance,
+      homeId: homeId,
+      name: 'Washer',
+      category: 'washer',
+      room: null,
+      brand: 'LG',
+      fullModel: 'WM3070HWA',
+      fuel: 'electricity',
+      matchQuality: 'confirmed_exact',
+    ),
+  ];
+
+  @override
+  Future<CloudProgramPage> programs(
+    String homeId,
+    String applianceId,
+    Set<String> ownedApplianceIds,
+  ) async => CloudProgramPage.fromJson(page([]));
+}
+
 void main() {
+  testWidgets('empty program results disclose missing source coverage', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudProgramsScreen(
+          api: _ProgramsScreenApi(),
+          home: const CloudHome(
+            id: home,
+            name: 'Home',
+            timezone: 'America/Chicago',
+            countryCode: 'US',
+            postalCode: '78732',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('programAppliance')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Washer').last);
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('Other sources may not have been checked'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Catalog results loaded'), findsOneWidget);
+    expect(find.textContaining('Programs checked'), findsNothing);
+  });
+
   test('accepts unknown source-cited results and location required', () {
     expect(
       CloudProgramPage.fromJson(page()).programs.single.title,

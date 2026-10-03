@@ -127,7 +127,7 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Explore source-cited program candidates for a saved appliance. A location or device match does not confirm eligibility, available benefits, or savings.',
+                  'Explore source-cited program candidates for a saved appliance. Source coverage is not reported here; utility, local, county, state, federal, Tribal and manufacturer programs may be missing. A location or device match does not confirm eligibility, available benefits, or savings.',
                 ),
                 const SizedBox(height: 20),
                 if (appliances != null && appliances.isNotEmpty)
@@ -184,7 +184,7 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
                     ),
                   if (!page.locationRequired && page.programs.isEmpty)
                     const Text(
-                      'No current reviewed program candidates were found for this appliance. This does not determine eligibility.',
+                      'No matching programs found in the reviewed sources available here. Other sources may not have been checked; eligibility remains unknown.',
                     ),
                   for (final program in page.programs)
                     Card(
@@ -229,7 +229,7 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
                     ),
                   const SizedBox(height: 12),
                   Text(
-                    'Programs checked ${page.asOf.toUtc().toIso8601String()}',
+                    'Catalog results loaded ${page.asOf.toUtc().toIso8601String()}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
