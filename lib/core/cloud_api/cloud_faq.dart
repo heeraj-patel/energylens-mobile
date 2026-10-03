@@ -149,7 +149,7 @@ class CloudFaqAnswer {
         (status == 'supported') != (intent == 'device_operating_cost') ||
         (intent == 'high_bill_possible_contributors' &&
             text !=
-                'These observed patterns may contribute to energy use. More context is needed to assess their effect on a bill.') ||
+                'These observations give context for possible energy demand. They do not establish a change in home energy use or a bill cause.') ||
         (intent != 'high_bill_possible_contributors' &&
             intent != 'device_operating_cost' &&
             text !=

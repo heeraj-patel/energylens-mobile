@@ -90,6 +90,44 @@ Map<String, Object?> _cost() {
 }
 
 void main() {
+  test(
+    'accepts current cautious high-use observation and rejects bill cause',
+    () {
+      final refs = [
+        {'id': catalog, 'kind': 'weather_window', 'revision': 1},
+      ];
+      final supported = {
+        'question_id': 'high_bill_possible_contributors',
+        'status': 'partial',
+        'answer': 'These observations give context for possible energy demand. They do not establish a change in home energy use or a bill cause.',
+        'findings': [
+          {
+            'label': 'observation',
+            'text': 'Warm weather was observed during this period.',
+            'evidence_refs': refs,
+          },
+        ],
+        'evidence_refs': refs,
+        'as_of': '2026-10-01T00:00:00Z',
+      };
+      expect(
+        CloudFaqAnswer.fromJson(
+          supported,
+          'high_bill_possible_contributors',
+        ).findings.single.label,
+        'observation',
+      );
+      supported['answer'] = 'Warm weather caused your bill to rise.';
+      expect(
+        () => CloudFaqAnswer.fromJson(
+          supported,
+          'high_bill_possible_contributors',
+        ),
+        throwsFormatException,
+      );
+    },
+  );
+
   test('rejects unsourced or fabricated device cost', () {
     expect(
       CloudFaqAnswer.fromJson(
@@ -158,6 +196,33 @@ void main() {
             200,
           );
         }
+        if (request.url.path.endsWith('/questions')) {
+          expect(request.url.queryParameters['purpose'], 'faq');
+          expect(request.url.queryParameters['appliance_id'], appliance);
+          return http.Response(
+            jsonEncode({
+              'questions': [
+                {
+                  'id': 'faq-contributors/v1.washer.recent_cycles',
+                  'version': 1,
+                  'purpose': 'faq',
+                  'appliance_id': appliance,
+                  'identity_revision': 1,
+                  'prompt':
+                      'In the past 7 days, how many wash cycles did you run?',
+                  'answer_kind': 'cycles_per_week',
+                  'unit': 'cycles/week',
+                  'optional': true,
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path.endsWith('/questions/answers')) {
+          expect(request.url.queryParameters['appliance_id'], appliance);
+          return http.Response('{"answers":[]}', 200);
+        }
         final intent = request.url.pathSegments.last;
         expect(request.url.path, '/v1/homes/${home.id}/faq/answers/$intent');
         if (intent == 'device_operating_cost') {
@@ -181,6 +246,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(faqInsufficientAnswer), findsOneWidget);
     expect(find.byKey(const Key('faqQuestions-$appliance')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('faqQuestions-$appliance')));
+    await tester.pumpAndSettle();
+    expect(find.text('Recent-use questions'), findsOneWidget);
+    expect(
+      find.text('In the past 7 days, how many wash cycles did you run?'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('does not establish waste or explain a bill'),
+      findsOneWidget,
+    );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
     for (final intent in faqIntents.keys.where(
       (i) => i != 'device_operating_cost',
     )) {
@@ -218,7 +296,7 @@ void main() {
     );
     expect(
       requests.where((r) => r.url.path.contains('/faq/answers/')).length,
-      5,
+      6,
     );
     api.close();
   });
