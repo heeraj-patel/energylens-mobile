@@ -1,15 +1,22 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'cloud_local_auth.dart';
 import 'cloud_auth.dart';
+import 'cloud_auth_link.dart';
 
 /// The first-party Cloud adapter supplies this only when local auth is enabled.
 class CloudRegistrationScreen extends StatefulWidget {
-  const CloudRegistrationScreen({super.key, required this.service});
+  const CloudRegistrationScreen({
+    super.key,
+    required this.service,
+    this.linkOrigin = '',
+  });
 
   final CloudRegistrationService service;
+  final String linkOrigin;
 
   @override
   State<CloudRegistrationScreen> createState() =>
@@ -20,7 +27,7 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
-  final _token = TextEditingController();
+  String? _capturedToken;
   bool _busy = false;
   bool _accepted = false;
   bool _verificationSubmitted = false;
@@ -31,7 +38,7 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
     _email.dispose();
     _password.dispose();
     _confirm.dispose();
-    _token.dispose();
+    _capturedToken = null;
     super.dispose();
   }
 
@@ -44,7 +51,7 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
         !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email) ||
         password.runes.length < 12 ||
         passwordBytes.length > 1024 ||
-        password.contains('\u0000') ||
+        password.codeUnits.contains(0) ||
         password != _confirm.text) {
       setState(
         () => _error = 'Enter a valid email and matching password of at least 12 characters.',
@@ -79,9 +86,10 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
 
   Future<void> _verify() async {
     if (_busy) return;
-    final token = _token.text.trim();
-    if (token.isEmpty || token.length > 4096) {
-      setState(() => _error = 'Enter the verification token from your email.');
+    final token = _capturedToken;
+    _capturedToken = null;
+    if (token == null) {
+      setState(() => _error = 'Paste the verification link from your email.');
       return;
     }
     setState(() {
@@ -90,7 +98,6 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
     });
     try {
       await widget.service.verifyEmail(token);
-      _token.clear();
       if (mounted) setState(() => _verificationSubmitted = true);
     } on CloudLocalAuthException catch (error) {
       if (mounted) {
@@ -109,6 +116,33 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
       }
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _captureToken() async {
+    try {
+      final copied = (await Clipboard.getData('text/plain'))?.text;
+      final token = CloudAuthLink.capture(
+        copied ?? '',
+        path: '/verify-email',
+        trustedOrigin: widget.linkOrigin,
+      );
+      if (copied != null) {
+        await Clipboard.setData(const ClipboardData(text: ''));
+      }
+      if (!mounted) return;
+      setState(() {
+        _capturedToken = token;
+        _error = token == null
+            ? 'Copy the verification link or token from your email and try again.'
+            : null;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = 'Could not paste the link. Copy it and try again.',
+        );
+      }
     }
   }
 
@@ -174,14 +208,15 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
                 ),
                 const SizedBox(height: 16),
                 if (!_verificationSubmitted) ...[
-                  TextField(
-                    key: const Key('registrationToken'),
-                    controller: _token,
-                    enabled: !_busy,
-                    decoration: const InputDecoration(
-                      labelText: 'Verification token from email',
-                    ),
+                  OutlinedButton(
+                    key: const Key('pasteVerificationLink'),
+                    onPressed: _busy ? null : _captureToken,
+                    child: const Text('Paste verification link or token'),
                   ),
+                  if (_capturedToken != null)
+                    const Text(
+                      'Verification link ready. Links expire after one hour.',
+                    ),
                   const SizedBox(height: 12),
                   FilledButton(
                     onPressed: _busy ? null : _verify,

@@ -80,6 +80,16 @@ class CloudLocalAuthClient implements LocalCloudAuthService {
     await _post('logout', {'refresh_token': refreshToken}, 204);
   }
 
+  @override
+  Future<void> requestRecovery(String email) async {
+    await _post('recovery', {'email': email}, 202);
+  }
+
+  @override
+  Future<void> resetPassword(String token, String password) async {
+    await _post('reset-password', {'token': token, 'password': password}, 204);
+  }
+
   CloudTokens _tokens(http.Response response) {
     final body = jsonDecode(response.body);
     if (body is! Map<String, dynamic> ||

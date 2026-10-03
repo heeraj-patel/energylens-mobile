@@ -8,6 +8,7 @@ import 'cloud_auth.dart';
 import 'cloud_preferences_screen.dart';
 import 'cloud_registration_screen.dart';
 import 'cloud_local_auth.dart';
+import 'cloud_recovery_screen.dart';
 
 class CloudEntryGate extends StatefulWidget {
   const CloudEntryGate({
@@ -368,6 +369,17 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                       onPressed: _signInLocal,
                       child: const Text('Sign in with email'),
                     ),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => CloudRecoveryScreen(
+                            service: _session.localAuth!,
+                            linkOrigin: _session.config.localAuthLinkOrigin,
+                          ),
+                        ),
+                      ),
+                      child: const Text('Forgot password?'),
+                    ),
                   ],
                   if (!_busy &&
                       (widget.registrationService != null ||
@@ -381,6 +393,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                             service:
                                 widget.registrationService ??
                                 _session.localAuth!,
+                            linkOrigin: _session.config.localAuthLinkOrigin,
                           ),
                         ),
                       ),

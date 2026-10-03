@@ -12,6 +12,7 @@ class CloudAuthConfig {
     required this.redirectUrl,
     required this.apiUrl,
     this.localAuthEnabled = false,
+    this.localAuthLinkOrigin = '',
   });
 
   factory CloudAuthConfig.fromEnvironment() => const CloudAuthConfig(
@@ -23,6 +24,9 @@ class CloudAuthConfig {
     localAuthEnabled: bool.fromEnvironment(
       'ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED',
     ),
+    localAuthLinkOrigin: String.fromEnvironment(
+      'ENERGYLENS_CLOUD_LOCAL_AUTH_LINK_ORIGIN',
+    ),
   );
 
   final String issuer;
@@ -31,6 +35,7 @@ class CloudAuthConfig {
   final String redirectUrl;
   final String apiUrl;
   final bool localAuthEnabled;
+  final String localAuthLinkOrigin;
 
   bool get hasValidApiUrl {
     final uri = Uri.tryParse(apiUrl);
@@ -188,6 +193,8 @@ abstract interface class LocalCloudAuthService
   Future<CloudTokens> login(String email, String password);
   Future<CloudTokens> refresh(String refreshToken);
   Future<void> logout(String refreshToken);
+  Future<void> requestRecovery(String email);
+  Future<void> resetPassword(String token, String password);
 }
 
 class AppAuthCloudAuthenticator implements CloudAuthenticator {

@@ -52,6 +52,13 @@ returns 404 and the app shows that email authentication is unavailable. A
 registration request never signs the user in; verification and a separate
 login are required. Local access and refresh tokens use secure storage and
 the Cloud API bearer path. The local photo pilot remains a separate build mode.
+Set `ENERGYLENS_CLOUD_LOCAL_AUTH_LINK_ORIGIN` to the exact HTTPS origin used by
+the Cloud verification and reset emails to allow pasting their links. The app
+accepts only the expected verification or reset path at that origin, extracts
+the one-use token from the URL fragment, and clears the copied link from the
+clipboard. A bare 43-character token can also be pasted. Password recovery
+requests have generic acceptance and require a separate one-use reset link;
+they do not sign the user in.
 
 ## iOS simulator pilot
 

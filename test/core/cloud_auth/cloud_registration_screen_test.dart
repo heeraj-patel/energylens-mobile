@@ -4,6 +4,7 @@ import 'package:energylens_mobile/core/cloud_auth/cloud_entry_gate.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_registration_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -31,7 +32,7 @@ class _Registration implements CloudRegistrationService {
   @override
   Future<void> verifyEmail(String token) async {
     verifications++;
-    expect(token, 'opaque-token');
+    expect(token, 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
   }
 }
 
@@ -55,6 +56,24 @@ class _Auth implements CloudAuthenticator {
 }
 
 void main() {
+  var clipboard = '';
+  setUp(() {
+    clipboard = '';
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            clipboard = (call.arguments as Map)['text'] as String;
+            return null;
+          }
+          if (call.method == 'Clipboard.getData') return {'text': clipboard};
+          return null;
+        });
+  });
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null);
+  });
+
   testWidgets('registration is hidden without an injected capability', (
     tester,
   ) async {
@@ -162,10 +181,12 @@ void main() {
     await tester.tap(find.text('Verify email'));
     await tester.pumpAndSettle();
     expect(registration.verifications, 0);
-    await tester.enterText(
-      find.byKey(const Key('registrationToken')),
-      'opaque-token',
+    await Clipboard.setData(
+      const ClipboardData(text: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
     );
+    await tester.tap(find.byKey(const Key('pasteVerificationLink')));
+    await tester.pumpAndSettle();
+    expect((await Clipboard.getData('text/plain'))?.text, isEmpty);
     await tester.tap(find.text('Verify email'));
     await tester.pumpAndSettle();
     expect(registration.verifications, 1);
