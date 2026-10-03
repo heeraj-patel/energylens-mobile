@@ -4,6 +4,9 @@ final _uuid = RegExp(
   r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89ab][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
 );
 final _sha256 = RegExp(r'^[0-9a-f]{64}$');
+final _rfc3339 = RegExp(
+  r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$',
+);
 
 bool _text(dynamic value, int max) =>
     value is String &&
@@ -277,6 +280,76 @@ class CloudProgramPage {
       programs: programs,
       asOf: asOf,
       locationRequired: reason == 'location_required',
+      coverage: json['coverage'] == null
+          ? null
+          : CloudProgramCoverage.fromJson(
+              json['coverage'] as Map<String, dynamic>,
+            ),
+    );
+  }
+}
+
+class CloudProgramRefresh {
+  const CloudProgramRefresh({
+    required this.requestId,
+    required this.state,
+    required this.createdAt,
+    required this.finishedAt,
+    required this.coverage,
+  });
+
+  final String requestId;
+  final String state;
+  final DateTime createdAt;
+  final DateTime? finishedAt;
+  final CloudProgramCoverage? coverage;
+
+  bool get isFinished =>
+      state == 'complete' || state == 'partial' || state == 'failed';
+
+  factory CloudProgramRefresh.fromJson(Map<String, dynamic> json) {
+    DateTime? timestamp(dynamic value) =>
+        _text(value, 64) && _rfc3339.hasMatch(value as String)
+        ? DateTime.tryParse(value)
+        : null;
+    final created = timestamp(json['created_at']);
+    final finished = json['finished_at'] == null
+        ? null
+        : timestamp(json['finished_at']);
+    final state = json['state'];
+    final active = state == 'pending' || state == 'running';
+    if (json.keys.toSet().difference({
+          'request_id',
+          'state',
+          'created_at',
+          'finished_at',
+          'coverage',
+        }).isNotEmpty ||
+        json.length != 5 ||
+        json['request_id'] is! String ||
+        !_uuid.hasMatch(json['request_id'] as String) ||
+        !{
+          'pending',
+          'running',
+          'complete',
+          'partial',
+          'failed',
+        }.contains(state) ||
+        created == null ||
+        (active && (finished != null || json['coverage'] != null)) ||
+        (!active && finished == null) ||
+        ((state == 'complete' || state == 'partial') &&
+            json['coverage'] == null) ||
+        (finished != null && finished.isBefore(created)) ||
+        (json['coverage'] != null &&
+            json['coverage'] is! Map<String, dynamic>)) {
+      throw const FormatException('Invalid program refresh status');
+    }
+    return CloudProgramRefresh(
+      requestId: json['request_id'] as String,
+      state: state as String,
+      createdAt: created,
+      finishedAt: finished,
       coverage: json['coverage'] == null
           ? null
           : CloudProgramCoverage.fromJson(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -22,11 +24,136 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
   String? _error;
   bool _loading = true;
   int _generation = 0;
+  int _refreshGeneration = 0;
+  Timer? _refreshTimer;
+  CloudProgramRefresh? _refresh;
+  String? _refreshError;
+  String? _pendingRefreshKey;
+  bool _refreshBusy = false;
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _clearRefresh() {
+    _refreshGeneration++;
+    _refreshTimer?.cancel();
+    _refresh = null;
+    _refreshError = null;
+    _pendingRefreshKey = null;
+    _refreshBusy = false;
+  }
+
+  Future<void> _startRefresh() async {
+    final applianceId = _selectedId;
+    final appliances = _appliances;
+    if (applianceId == null || appliances == null || _refreshBusy) return;
+    final generation = _refreshGeneration;
+    final key = _pendingRefreshKey ??= newCloudIdempotencyKey();
+    setState(() {
+      _refreshBusy = true;
+      _refreshError = null;
+    });
+    try {
+      final refresh = await widget.api.requestProgramRefresh(
+        widget.home.id,
+        applianceId,
+        appliances.map((item) => item.id).toSet(),
+        idempotencyKey: key,
+      );
+      if (!mounted || generation != _refreshGeneration) return;
+      setState(() {
+        _refresh = refresh;
+        _pendingRefreshKey = null;
+      });
+      if (refresh.isFinished) {
+        await _loadPrograms(retainExistingPage: true);
+      } else {
+        _scheduleRefreshCheck();
+      }
+    } catch (_) {
+      if (mounted && generation == _refreshGeneration) {
+        setState(() {
+          _refreshError = 'Could not confirm this refresh request. Retry sends the same request safely.';
+        });
+      }
+    } finally {
+      if (mounted && generation == _refreshGeneration) {
+        setState(() => _refreshBusy = false);
+      }
+    }
+  }
+
+  void _scheduleRefreshCheck() {
+    _refreshTimer?.cancel();
+    if (_refresh?.isFinished != false) return;
+    _refreshTimer = Timer(const Duration(seconds: 5), _checkRefresh);
+  }
+
+  Future<void> _checkRefresh() async {
+    final request = _refresh;
+    if (request == null || request.isFinished || _refreshBusy) return;
+    _refreshTimer?.cancel();
+    final generation = _refreshGeneration;
+    setState(() {
+      _refreshBusy = true;
+      _refreshError = null;
+    });
+    try {
+      final refresh = await widget.api.programRefresh(
+        widget.home.id,
+        request.requestId,
+      );
+      if (!mounted || generation != _refreshGeneration) return;
+      setState(() => _refresh = refresh);
+      if (refresh.isFinished) {
+        await _loadPrograms(retainExistingPage: true);
+      } else {
+        _scheduleRefreshCheck();
+      }
+    } on CloudApiException catch (error) {
+      if (mounted && generation == _refreshGeneration) {
+        if (error.statusCode == 404) {
+          setState(() {
+            _refresh = null;
+            _refreshError = 'This refresh is no longer available for this home and appliance. Request a new refresh if needed.';
+          });
+        } else {
+          setState(() {
+            _refreshError = 'Could not check the refresh status. Check again to see whether it finished.';
+          });
+        }
+      }
+    } catch (_) {
+      if (mounted && generation == _refreshGeneration) {
+        setState(() {
+          _refreshError = 'Could not check the refresh status. Check again to see whether it finished.';
+        });
+      }
+    } finally {
+      if (mounted && generation == _refreshGeneration) {
+        setState(() => _refreshBusy = false);
+      }
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _loadInventory();
+  }
+
+  @override
+  void didUpdateWidget(covariant CloudProgramsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.home.id != widget.home.id || oldWidget.api != widget.api) {
+      _clearRefresh();
+      _selectedId = null;
+      _appliances = null;
+      _loadInventory();
+    }
   }
 
   Future<void> _loadInventory() async {
@@ -43,6 +170,7 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
           _appliances = appliances;
           if (!appliances.any((item) => item.id == _selectedId)) {
             _selectedId = null;
+            _clearRefresh();
           }
         });
         if (_selectedId != null) {
@@ -70,7 +198,7 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
     }
   }
 
-  Future<void> _loadPrograms() async {
+  Future<void> _loadPrograms({bool retainExistingPage = false}) async {
     final selectedId = _selectedId;
     final appliances = _appliances;
     if (selectedId == null || appliances == null) return;
@@ -78,7 +206,7 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
     setState(() {
       _loading = true;
       _error = null;
-      _page = null;
+      if (!retainExistingPage) _page = null;
     });
     try {
       final page = await widget.api.programs(
@@ -146,10 +274,50 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
                         )
                         .toList(),
                     onChanged: (value) {
-                      setState(() => _selectedId = value);
+                      setState(() {
+                        _selectedId = value;
+                        _clearRefresh();
+                      });
                       _loadPrograms();
                     },
                   ),
+                if (appliances != null && _selectedId != null) ...[
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    key: const Key('requestProgramRefresh'),
+                    onPressed:
+                        _refreshBusy ||
+                            (_refresh != null && !_refresh!.isFinished)
+                        ? null
+                        : _startRefresh,
+                    icon: const Icon(Icons.refresh),
+                    label: Text(
+                      _pendingRefreshKey == null
+                          ? 'Refresh source discovery'
+                          : 'Retry refresh request',
+                    ),
+                  ),
+                  if (_refreshBusy) const LinearProgressIndicator(),
+                  if (_refreshError != null) ...[
+                    const SizedBox(height: 8),
+                    Text(_refreshError!, key: const Key('programRefreshError')),
+                    if (_refresh != null && !_refresh!.isFinished)
+                      TextButton(
+                        onPressed: _refreshBusy ? null : _checkRefresh,
+                        child: const Text('Check refresh status'),
+                      ),
+                  ],
+                  if (_refresh case final refresh?) ...[
+                    const SizedBox(height: 8),
+                    Text(switch (refresh.state) {
+                      'pending' => 'Source discovery is queued. Reviewed results below may be from an earlier run.',
+                      'running' => 'Source discovery is running. Reviewed results below may be from an earlier run.',
+                      'complete' => 'Source discovery finished. Coverage is limited to the sources checked.',
+                      'partial' => 'Source discovery finished with gaps. Some sources could not be checked.',
+                      _ => 'Source discovery failed. Reviewed results below may be from an earlier run.',
+                    }, key: const Key('programRefreshStatus')),
+                  ],
+                ],
                 if (appliances != null && appliances.isEmpty)
                   const Padding(
                     padding: EdgeInsets.only(top: 16),

@@ -483,17 +483,7 @@ class CloudApiClient {
     String applianceId,
     Set<String> ownedApplianceIds,
   ) async {
-    if (!RegExp(
-          r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89ab][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
-        ).hasMatch(homeId) ||
-        !RegExp(
-          r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89ab][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
-        ).hasMatch(applianceId) ||
-        !ownedApplianceIds.any(
-          (id) => id.toLowerCase() == applianceId.toLowerCase(),
-        )) {
-      throw ArgumentError('Invalid home or appliance selection');
-    }
+    _validateProgramSelection(homeId, applianceId, ownedApplianceIds);
     final query = Uri(queryParameters: {'appliance_id': applianceId}).query;
     final response = await get(
       '/v1/homes/${Uri.encodeComponent(homeId)}/programs?$query',
@@ -501,6 +491,69 @@ class CloudApiClient {
     return CloudProgramPage.fromJson(
       jsonDecode(response.body) as Map<String, dynamic>,
     );
+  }
+
+  Future<CloudProgramRefresh> requestProgramRefresh(
+    String homeId,
+    String applianceId,
+    Set<String> ownedApplianceIds, {
+    required String idempotencyKey,
+  }) async {
+    _validateProgramSelection(homeId, applianceId, ownedApplianceIds);
+    if (!RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89ab][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+    ).hasMatch(idempotencyKey)) {
+      throw ArgumentError.value(idempotencyKey, 'idempotencyKey');
+    }
+    final response = await _request(
+      'POST',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/programs/discovery-refresh',
+      jsonBody: jsonEncode({'appliance_id': applianceId}),
+      idempotencyKey: idempotencyKey,
+    );
+    if (response.statusCode != 202) {
+      throw const FormatException('Unexpected program refresh response');
+    }
+    return CloudProgramRefresh.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<CloudProgramRefresh> programRefresh(
+    String homeId,
+    String requestId,
+  ) async {
+    if (!_programUuid.hasMatch(homeId) || !_programUuid.hasMatch(requestId)) {
+      throw ArgumentError('Invalid home or refresh request');
+    }
+    final response = await get(
+      '/v1/homes/${Uri.encodeComponent(homeId)}/programs/discovery-refresh/${Uri.encodeComponent(requestId)}',
+    );
+    final refresh = CloudProgramRefresh.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+    if (refresh.requestId.toLowerCase() != requestId.toLowerCase()) {
+      throw const FormatException('Program refresh request ID changed');
+    }
+    return refresh;
+  }
+
+  static final _programUuid = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89ab][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+  );
+
+  void _validateProgramSelection(
+    String homeId,
+    String applianceId,
+    Set<String> ownedApplianceIds,
+  ) {
+    if (!_programUuid.hasMatch(homeId) ||
+        !_programUuid.hasMatch(applianceId) ||
+        !ownedApplianceIds.any(
+          (id) => id.toLowerCase() == applianceId.toLowerCase(),
+        )) {
+      throw ArgumentError('Invalid home or appliance selection');
+    }
   }
 
   Future<CloudMeteredSummaryPage> meteredSummaries(

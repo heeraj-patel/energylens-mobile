@@ -14,6 +14,19 @@ import 'package:http/testing.dart';
 const home = '11111111-1111-4111-8111-111111111111';
 const appliance = '22222222-2222-4222-8222-222222222222';
 const foreign = '33333333-3333-4333-8333-333333333333';
+const refreshId = '77777777-7777-4777-8777-777777777777';
+const requestKey = '88888888-8888-4888-8888-888888888888';
+
+Map<String, dynamic> refreshStatus(String state, {bool withCoverage = false}) =>
+    {
+      'request_id': refreshId,
+      'state': state,
+      'created_at': '2026-10-01T11:00:00Z',
+      'finished_at': state == 'pending' || state == 'running'
+          ? null
+          : '2026-10-01T11:01:00Z',
+      'coverage': withCoverage ? coverage() : null,
+    };
 
 Map<String, dynamic> program() => {
   'program_id': '44444444-4444-4444-8444-444444444444',
@@ -125,7 +138,100 @@ class _ProgramsScreenApi extends CloudApiClient {
   ) async => CloudProgramPage.fromJson({...page([]), 'coverage': coverage()});
 }
 
+class _RefreshScreenApi extends _ProgramsScreenApi {
+  final requests = <String>[];
+
+  @override
+  Future<CloudProgramRefresh> requestProgramRefresh(
+    String homeId,
+    String applianceId,
+    Set<String> ownedApplianceIds, {
+    required String idempotencyKey,
+  }) async {
+    requests.add(idempotencyKey);
+    if (requests.length == 1) throw Exception('uncertain response');
+    return CloudProgramRefresh.fromJson(refreshStatus('pending'));
+  }
+
+  @override
+  Future<CloudProgramRefresh> programRefresh(
+    String homeId,
+    String requestId,
+  ) async => CloudProgramRefresh.fromJson(refreshStatus('failed'));
+}
+
 void main() {
+  test('refresh DTO enforces state and coverage shape', () {
+    expect(
+      CloudProgramRefresh.fromJson(refreshStatus('pending')).isFinished,
+      false,
+    );
+    expect(
+      CloudProgramRefresh.fromJson(refreshStatus('failed')).isFinished,
+      true,
+    );
+    expect(
+      CloudProgramRefresh.fromJson(refreshStatus('partial', withCoverage: true))
+          .coverage
+          ?.state,
+      'partial',
+    );
+    for (final bad in [
+      {...refreshStatus('pending'), 'finished_at': '2026-10-01T11:01:00Z'},
+      {...refreshStatus('complete'), 'coverage': null},
+      {...refreshStatus('failed'), 'unknown': true},
+      {...refreshStatus('pending'), 'request_id': 'bad'},
+      {...refreshStatus('pending'), 'state': 'all_checked'},
+      {...refreshStatus('pending'), 'created_at': '2026-10-01'},
+    ]) {
+      expect(() => CloudProgramRefresh.fromJson(bad), throwsFormatException);
+    }
+  });
+
+  testWidgets(
+    'uncertain refresh retries same key and failed status keeps caveat',
+    (tester) async {
+      final api = _RefreshScreenApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CloudProgramsScreen(
+            api: api,
+            home: const CloudHome(
+              id: home,
+              name: 'Home',
+              timezone: 'America/Chicago',
+              countryCode: 'US',
+              postalCode: '78732',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('programAppliance')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Washer').last);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('requestProgramRefresh')),
+      );
+      await tester.tap(find.byKey(const Key('requestProgramRefresh')));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Retry sends the same request'),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('requestProgramRefresh')));
+      await tester.pump();
+      expect(api.requests, hasLength(2));
+      expect(api.requests[0], api.requests[1]);
+      expect(find.textContaining('queued'), findsOneWidget);
+      // A failed check is still shown as limited discovery, not full coverage.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pump();
+      expect(find.textContaining('Source discovery failed'), findsOneWidget);
+    },
+  );
+
   test('parses offline resolver evidence and neutral role', () {
     final parsed = CloudProgramPage.fromJson({
       ...page([]),
@@ -283,5 +389,48 @@ void main() {
       throwsArgumentError,
     );
     expect(seen.length, 1);
+  });
+
+  test('refresh POST and GET use owner-scoped paths and header key', () async {
+    final seen = <http.Request>[];
+    final api = CloudApiClient(
+      session: CloudSession(
+        config: const CloudAuthConfig(
+          issuer: 'https://issuer.example',
+          audience: 'energylens-cloud',
+          clientId: 'client',
+          redirectUrl: 'io.energylens.app://login-callback',
+          apiUrl: 'https://api.example',
+        ),
+        store: _Store(),
+        authenticator: _Auth(),
+      ),
+      client: MockClient((request) async {
+        seen.add(request);
+        return http.Response(
+          jsonEncode(refreshStatus('pending')),
+          request.method == 'POST' ? 202 : 200,
+        );
+      }),
+    );
+    await api.requestProgramRefresh(home, appliance, {
+      appliance,
+    }, idempotencyKey: requestKey);
+    expect(seen.single.url.path, '/v1/homes/$home/programs/discovery-refresh');
+    expect(jsonDecode(seen.single.body), {'appliance_id': appliance});
+    expect(seen.single.headers['idempotency-key'], requestKey);
+    expect(seen.single.headers['authorization'], 'Bearer owner-token');
+    await api.programRefresh(home, refreshId);
+    expect(
+      seen.last.url.path,
+      '/v1/homes/$home/programs/discovery-refresh/$refreshId',
+    );
+    await expectLater(
+      api.requestProgramRefresh(home, foreign, {
+        appliance,
+      }, idempotencyKey: requestKey),
+      throwsArgumentError,
+    );
+    expect(seen, hasLength(2));
   });
 }
