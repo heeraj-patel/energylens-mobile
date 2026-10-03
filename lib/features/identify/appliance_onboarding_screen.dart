@@ -128,6 +128,7 @@ class ApplianceOnboardingScreen extends StatefulWidget {
     this.capture = const PhotoCaptureService(),
     this.cloudHome,
     this.cloudApi,
+    this.webSearchLauncher,
   }) : assert(method == 'manual' || method == 'photo');
 
   final String method;
@@ -137,6 +138,7 @@ class ApplianceOnboardingScreen extends StatefulWidget {
   final PhotoCaptureService capture;
   final CloudHome? cloudHome;
   final CloudApiClient? cloudApi;
+  final Future<bool> Function(Uri uri)? webSearchLauncher;
 
   @override
   State<ApplianceOnboardingScreen> createState() =>
@@ -166,6 +168,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   CloudCatalogProduct? _selectedCatalogProduct;
   String? _catalogMessage;
   bool _catalogBusy = false;
+  bool _catalogFallbackAvailable = false;
   bool _candidateLookupFailed = false;
   Uint8List? _photoBytes;
   bool _confirmedModel = false;
@@ -206,6 +209,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     _catalogDetail = null;
     _catalogResults = const [];
     _catalogMessage = null;
+    _catalogFallbackAvailable = false;
     _confirmedModel = false;
   }
 
@@ -327,6 +331,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       _catalogDetail = null;
       _selectedCatalogProduct = null;
       _catalogMessage = null;
+      _catalogFallbackAvailable = false;
     });
     try {
       final results = await widget.cloudApi!.searchCatalogModels(
@@ -343,15 +348,17 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       }
       setState(() {
         _catalogResults = results;
+        _catalogFallbackAvailable = results.isEmpty;
         _catalogMessage = results.isEmpty
             ? 'No reviewed product matches this full model and fuel. You can still save the confirmed label identity without a catalog link.'
             : null;
       });
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _catalogMessage = 'Reviewed catalog unavailable. You can save a confirmed label identity without a catalog link.',
-        );
+        setState(() {
+          _catalogFallbackAvailable = true;
+          _catalogMessage = 'Reviewed catalog unavailable. You can save a confirmed label identity without a catalog link.';
+        });
       }
     } finally {
       if (mounted) setState(() => _catalogBusy = false);
@@ -366,12 +373,14 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
         _selectedCatalogProduct = null;
         _confirmedModel = false;
         _catalogMessage = null;
+        _catalogFallbackAvailable = false;
       });
       return;
     }
     setState(() {
       _catalogBusy = true;
       _catalogMessage = null;
+      _catalogFallbackAvailable = false;
       _selectedCatalogProduct = null;
       _confirmedModel = false;
     });
@@ -438,10 +447,15 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   }
 
   Future<void> _searchWebForModel() async {
-    final query =
-        '${_category.replaceAll('_', ' ')} ${_manufacturer.text.trim()} ${_model.text.trim()}';
+    final manufacturer = _manufacturer.text.trim();
+    final model = _model.text.trim();
+    if (manufacturer.isEmpty || model.isEmpty) return;
+    final query = '${_category.replaceAll('_', ' ')} $manufacturer $model';
     final uri = Uri.https('www.google.com', '/search', {'q': query});
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final launcher =
+        widget.webSearchLauncher ??
+        (uri) => launchUrl(uri, mode: LaunchMode.externalApplication);
+    await launcher(uri);
   }
 
   Future<void> _deleteManualAppliance(SavedAppliance item) async {
@@ -1231,6 +1245,18 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
               if (_catalogBusy) const LinearProgressIndicator(),
               if (_catalogMessage != null)
                 Text(_catalogMessage!, key: const Key('catalogMessage')),
+              if (_catalogFallbackAvailable) ...[
+                TextButton.icon(
+                  key: const Key('searchWebForModel'),
+                  onPressed: _catalogBusy || _busy ? null : _searchWebForModel,
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('Search web'),
+                ),
+                const Text(
+                  'External search results are unreviewed. They are not linked to this device or used for energy facts or estimates.',
+                  key: Key('unreviewedWebSearchNotice'),
+                ),
+              ],
               for (final product in _catalogResults)
                 Card(
                   child: ListTile(
@@ -1327,15 +1353,20 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                       ),
                     ),
                     if (_modelCheck!.evidence == null &&
+                        _manufacturer.text.trim().isNotEmpty &&
                         _model.text.trim().isNotEmpty &&
-                        _modelCheck!.status != 'missing_identity' &&
-                        _modelCheck!.status != 'source_unavailable')
+                        _modelCheck!.status != 'missing_identity') ...[
                       TextButton.icon(
                         key: const Key('searchWebForModel'),
                         onPressed: _searchWebForModel,
                         icon: const Icon(Icons.open_in_new),
                         label: const Text('Search web'),
                       ),
+                      const Text(
+                        'External search results are unreviewed. They are not linked to this device or used for energy facts or estimates.',
+                        key: Key('unreviewedWebSearchNotice'),
+                      ),
+                    ],
                   ],
                 ),
             ],

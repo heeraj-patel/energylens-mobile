@@ -4,6 +4,10 @@ import 'package:energylens_mobile/features/discovery/discovery_api.dart';
 import 'package:energylens_mobile/features/discovery/discovery_credentials.dart';
 import 'package:energylens_mobile/features/identify/appliance_onboarding_screen.dart';
 import 'package:energylens_mobile/features/identify/photo_capture_service.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_catalog.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
+import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -21,9 +25,73 @@ class FakeCredentials extends DiscoveryCredentials {
   Future<void> savePostalCode(String postalCode) async {}
 }
 
+const _cloudHome = CloudHome(
+  id: '11111111-1111-4111-8111-111111111111',
+  name: 'Home',
+  timezone: 'America/Chicago',
+  countryCode: 'US',
+  postalCode: '60601',
+);
+
+const _cloudConfig = CloudAuthConfig(
+  issuer: 'https://issuer.example',
+  audience: 'energylens-cloud',
+  clientId: 'client',
+  redirectUrl: 'io.energylens.app://login-callback',
+  apiUrl: 'https://api.example',
+);
+
+class _CloudStore implements CloudTokenStore {
+  @override
+  Future<void> clear() async {}
+
+  @override
+  Future<CloudTokens?> read() async => const CloudTokens(accessToken: 'owner');
+
+  @override
+  Future<void> save(CloudTokens value) async {}
+}
+
+class _CloudAuthenticator implements CloudAuthenticator {
+  @override
+  Future<CloudTokens> signIn(CloudAuthConfig config) async =>
+      const CloudTokens(accessToken: 'owner');
+
+  @override
+  Future<CloudTokens> refresh(
+    CloudAuthConfig config,
+    String refreshToken,
+  ) async => const CloudTokens(accessToken: 'owner');
+}
+
+class _CatalogApi extends CloudApiClient {
+  _CatalogApi({required this.fail})
+    : super(
+        session: CloudSession(
+          config: _cloudConfig,
+          store: _CloudStore(),
+          authenticator: _CloudAuthenticator(),
+        ),
+      );
+
+  final bool fail;
+
+  @override
+  Future<List<CloudCatalogProduct>> searchCatalogModels({
+    required String brand,
+    required String model,
+    required String fuel,
+    String? region,
+  }) async {
+    if (fail) throw const CloudApiException(503, 'unavailable');
+    return const [];
+  }
+}
+
 class FakeApi extends DiscoveryApi {
   final rows = <SavedAppliance>[];
   final lookupStatuses = <int, String>{};
+  String modelCheckStatus = 'no_match';
 
   @override
   Future<EnergyLookup> checkModel(
@@ -32,7 +100,7 @@ class FakeApi extends DiscoveryApi {
     required String category,
     required String manufacturer,
     required String model,
-  }) async => const EnergyLookup(status: 'no_match', evidence: null);
+  }) async => EnergyLookup(status: modelCheckStatus, evidence: null);
 
   @override
   Future<EnergyLookup> lookupEnergy(
@@ -558,16 +626,21 @@ void main() {
     );
   });
 
-  testWidgets('manual model miss offers a web search with clear rating copy', (
+  testWidgets('manual model miss offers an explicit unreviewed web search', (
     tester,
   ) async {
     final api = FakeApi();
+    Uri? launchedUri;
     await tester.pumpWidget(
       MaterialApp(
         home: ApplianceOnboardingScreen(
           method: 'manual',
           api: api,
           credentials: FakeCredentials(),
+          webSearchLauncher: (uri) async {
+            launchedUri = uri;
+            return true;
+          },
         ),
       ),
     );
@@ -586,7 +659,99 @@ void main() {
 
     expect(find.textContaining('No energy rating was found'), findsOneWidget);
     expect(find.text('Search web'), findsOneWidget);
+    expect(
+      find.textContaining('External search results are unreviewed'),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('searchWebForModel')));
+    await tester.pumpAndSettle();
+    expect(launchedUri, isNotNull);
+    expect(launchedUri!.host, 'www.google.com');
+    expect(launchedUri!.queryParameters.keys, {'q'});
+    expect(launchedUri!.queryParameters['q'], 'computer LG DLGX5171');
   });
+
+  testWidgets('source unavailable still offers a manual web search', (
+    tester,
+  ) async {
+    final api = FakeApi()..modelCheckStatus = 'source_unavailable';
+    Uri? launchedUri;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ApplianceOnboardingScreen(
+          method: 'manual',
+          api: api,
+          credentials: FakeCredentials(),
+          webSearchLauncher: (uri) async {
+            launchedUri = uri;
+            return true;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('applianceName')));
+    await tester.enterText(find.byKey(const Key('applianceName')), 'Dryer');
+    await scrollTo(tester, find.byKey(const Key('applianceManufacturer')));
+    await tester.enterText(
+      find.byKey(const Key('applianceManufacturer')),
+      'LG',
+    );
+    await tester.enterText(find.byKey(const Key('applianceModel')), 'DLGX5171');
+    await scrollTo(tester, find.byKey(const Key('checkModelBeforeSave')));
+    await tester.tap(find.byKey(const Key('checkModelBeforeSave')));
+    await tester.pumpAndSettle();
+    expect(find.text('Search web'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('searchWebForModel')));
+    await tester.pumpAndSettle();
+    expect(launchedUri?.queryParameters['q'], 'computer LG DLGX5171');
+  });
+
+  for (final fails in [false, true]) {
+    testWidgets(
+      'empty or unavailable reviewed catalog offers unreviewed web search (fails: $fails)',
+      (tester) async {
+        Uri? launchedUri;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ApplianceOnboardingScreen(
+              method: 'manual',
+              cloudHome: _cloudHome,
+              cloudApi: _CatalogApi(fail: fails),
+              webSearchLauncher: (uri) async {
+                launchedUri = uri;
+                return true;
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await scrollTo(tester, find.byKey(const Key('applianceManufacturer')));
+        await tester.enterText(
+          find.byKey(const Key('applianceManufacturer')),
+          'LG',
+        );
+        await tester.enterText(
+          find.byKey(const Key('applianceModel')),
+          'DLGX5171',
+        );
+        await scrollTo(tester, find.byKey(const Key('searchReviewedCatalog')));
+        await tester.tap(find.byKey(const Key('searchReviewedCatalog')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('catalogMessage')), findsOneWidget);
+        await scrollTo(tester, find.byKey(const Key('searchWebForModel')));
+        expect(find.byKey(const Key('searchWebForModel')), findsOneWidget);
+        expect(
+          find.textContaining('External search results are unreviewed'),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(const Key('searchWebForModel')));
+        await tester.pumpAndSettle();
+        expect(launchedUri?.queryParameters.keys, {'q'});
+        expect(launchedUri?.queryParameters['q'], 'computer LG DLGX5171');
+      },
+    );
+  }
 
   testWidgets('photo model needs user confirmation before saving', (
     tester,
