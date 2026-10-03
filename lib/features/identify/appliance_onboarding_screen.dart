@@ -1240,7 +1240,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                       product.isConfirmedExact
                           ? 'Reviewed exact model · ${product.fuel}'
                           : product.isDocumentedFamilyCandidate
-                          ? 'Documented family candidate for ${product.matchedModel} · representative SKU ${product.fullModel} · ${product.fuel}'
+                          ? 'Unconfirmed family candidate for ${product.matchedModel} · representative SKU ${product.fullModel} · ${product.fuel} · cannot link as exact'
                           : 'Documented family or unresolved model · ${product.fuel}',
                     ),
                     trailing: const Icon(Icons.chevron_right),
@@ -1252,7 +1252,9 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
               if (_catalogDetail case final detail?) ...[
                 const SizedBox(height: 8),
                 Text(
-                  'Reviewed product details',
+                  detail.isDocumentedFamilyCandidate
+                      ? 'Unconfirmed family candidate'
+                      : 'Reviewed product details',
                   style: theme.textTheme.titleMedium,
                 ),
                 Text(
@@ -1260,27 +1262,34 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                 ),
                 if (detail.isDocumentedFamilyCandidate)
                   Text(
-                    'Entered model: ${detail.matchedModel}. Representative catalog SKU: ${detail.fullModel}. ${detail.variantMatch == 'confirmed' ? 'Variant matched to the documented family.' : 'Variant remains unresolved.'} Confirm the model and fuel from the appliance label before saving. This family candidate will not be linked or used for an energy cost estimate.',
+                    'Entered model: ${detail.matchedModel}. Representative catalog SKU: ${detail.fullModel}. ${detail.variantMatch == 'confirmed' ? 'Variant matched to the documented family.' : 'Variant remains unresolved.'} This candidate is not verified for the entered full model. Confirm the model and fuel from the appliance label before saving. It cannot be linked as an exact product or used for an energy cost estimate.',
                   ),
                 Text(
                   detail.isConfirmedExact
                       ? 'Exact reviewed identity. Select it only if the full label model and fuel agree.'
                       : 'Documented family or unresolved identity. It cannot be linked as an exact product.',
                 ),
-                if (detail.facts.isEmpty)
+                if (detail.isDocumentedFamilyCandidate)
+                  const Text(
+                    'Representative family energy facts are withheld for this candidate.',
+                  )
+                else if (detail.facts.isEmpty)
                   const Text(
                     'No reviewed energy facts are attached to this product.',
                   ),
-                for (final fact in detail.facts) ...[
-                  Text(
-                    '${fact.kind}: ${fact.value} ${fact.unit} · ${fact.sourceKind}',
-                  ),
-                  Text(
-                    'Test basis: ${fact.testBasis.isEmpty ? 'not stated' : fact.testBasis.entries.map((entry) => '${entry.key}: ${entry.value}').join(', ')}',
-                  ),
-                  Text('Reviewed ${fact.reviewedAt.toUtc().toIso8601String()}'),
-                  SelectableText(fact.sourceUrl),
-                ],
+                if (!detail.isDocumentedFamilyCandidate)
+                  for (final fact in detail.facts) ...[
+                    Text(
+                      '${fact.kind}: ${fact.value} ${fact.unit} · ${fact.sourceKind}',
+                    ),
+                    Text(
+                      'Test basis: ${fact.testBasis.isEmpty ? 'not stated' : fact.testBasis.entries.map((entry) => '${entry.key}: ${entry.value}').join(', ')}',
+                    ),
+                    Text(
+                      'Reviewed ${fact.reviewedAt.toUtc().toIso8601String()}',
+                    ),
+                    SelectableText(fact.sourceUrl),
+                  ],
                 const Text(
                   'A reviewed identity or fact does not establish this home’s actual energy use.',
                 ),

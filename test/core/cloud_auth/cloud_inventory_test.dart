@@ -548,6 +548,7 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.textContaining('candidate for WM3070HXA'), findsOneWidget);
+    expect(find.textContaining('cannot link as exact'), findsOneWidget);
     await tester.tap(find.byKey(const Key('catalogProduct-$productId')));
     await tester.pumpAndSettle();
     expect(detailGets, 0);
@@ -555,6 +556,12 @@ void main() {
       find.textContaining('Representative catalog SKU: WM3070HWA'),
       findsOneWidget,
     );
+    expect(
+      find.textContaining('not verified for the entered full model'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('energy facts are withheld'), findsOneWidget);
+    expect(find.textContaining('No reviewed energy facts'), findsNothing);
     expect(find.byKey(const Key('selectExactCatalogProduct')), findsNothing);
     await tester.scrollUntilVisible(
       find.text('I checked this full model and fuel against the label'),
