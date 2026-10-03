@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 final _uuid = RegExp(
   r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89ab][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
 );
@@ -114,6 +116,7 @@ class CloudProgramCoverageScope {
       'manufacturer',
     };
     const roles = {
+      'electric_service_candidate',
       'electric_distributor',
       'electric_retailer',
       'gas_distributor',
@@ -168,18 +171,21 @@ class CloudProgramCoverage {
     required this.startedAt,
     required this.finishedAt,
     required this.limitations,
+    required this.resolutionProvenance,
     required this.scopes,
   });
   final String state;
   final DateTime startedAt;
   final DateTime? finishedAt;
   final List<String> limitations;
+  final Map<String, dynamic> resolutionProvenance;
   final List<CloudProgramCoverageScope> scopes;
 
   factory CloudProgramCoverage.fromJson(Map<String, dynamic> json) {
     final started = _instant(json['started_at']);
     final finished = json['finished_at'];
     final limitations = json['limitations'];
+    final provenance = json['resolution_provenance'];
     final scopes = json['scopes'];
     if (json.keys.toSet().difference({
           'run_id',
@@ -188,9 +194,10 @@ class CloudProgramCoverage {
           'started_at',
           'finished_at',
           'limitations',
+          'resolution_provenance',
           'scopes',
         }).isNotEmpty ||
-        json.length != 7 ||
+        json.length != 8 ||
         !_uuid.hasMatch(
           json['run_id'] is String ? json['run_id'] as String : '',
         ) ||
@@ -202,6 +209,10 @@ class CloudProgramCoverage {
         limitations.length > 32 ||
         limitations.any((item) => !_text(item, 120)) ||
         limitations.toSet().length != limitations.length ||
+        provenance is! Map ||
+        provenance.keys.any((key) => key is! String) ||
+        provenance.length > 10 ||
+        jsonEncode(provenance).length > 4096 ||
         scopes is! List ||
         scopes.length > 128) {
       throw const FormatException('Invalid program discovery coverage');
@@ -211,6 +222,7 @@ class CloudProgramCoverage {
       startedAt: started,
       finishedAt: finished == null ? null : _instant(finished),
       limitations: List<String>.from(limitations),
+      resolutionProvenance: Map<String, dynamic>.from(provenance),
       scopes: scopes.map((row) {
         if (row is! Map<String, dynamic>) {
           throw const FormatException('Invalid program discovery scope');

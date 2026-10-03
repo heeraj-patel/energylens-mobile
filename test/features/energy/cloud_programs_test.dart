@@ -40,6 +40,7 @@ Map<String, dynamic> coverage() => {
   'started_at': '2026-10-01T11:00:00Z',
   'finished_at': '2026-10-01T11:01:00Z',
   'limitations': ['zip_provider_discovery_incomplete'],
+  'resolution_provenance': {},
   'scopes': [
     {
       'kind': 'utility',
@@ -125,6 +126,24 @@ class _ProgramsScreenApi extends CloudApiClient {
 }
 
 void main() {
+  test('parses offline resolver evidence and neutral role', () {
+    final parsed = CloudProgramPage.fromJson({
+      ...page([]),
+      'coverage': coverage(),
+    });
+    expect(parsed.coverage?.scopes.length, 2);
+    final candidate = coverage();
+    (candidate['scopes'] as List).first['provider_role'] =
+        'electric_service_candidate';
+    expect(
+      CloudProgramPage.fromJson({...page([]), 'coverage': candidate})
+          .coverage
+          ?.scopes
+          .first
+          .providerRole,
+      'electric_service_candidate',
+    );
+  });
   testWidgets('empty program results disclose missing source coverage', (
     tester,
   ) async {
@@ -147,6 +166,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Washer').last);
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.textContaining('Other sources may not have been checked'),
+      120,
+    );
     expect(
       find.textContaining('Other sources may not have been checked'),
       findsOneWidget,
