@@ -127,7 +127,7 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Explore source-cited program candidates for a saved appliance. Source coverage is not reported here; utility, local, county, state, federal, Tribal and manufacturer programs may be missing. A location or device match does not confirm eligibility, available benefits, or savings.',
+                  'Explore source-cited program candidates for a saved appliance. Discovery covers only the sources identified for this ZIP; utility, local, county, state, federal, Tribal and manufacturer programs may be missing. A location or device match does not confirm eligibility, available benefits, or savings.',
                 ),
                 const SizedBox(height: 20),
                 if (appliances != null && appliances.isNotEmpty)
@@ -186,6 +186,42 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
                     const Text(
                       'No matching programs found in the reviewed sources available here. Other sources may not have been checked; eligibility remains unknown.',
                     ),
+                  if (!page.locationRequired) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      'Source discovery for this ZIP',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 6),
+                    if (page.coverage case final coverage?) ...[
+                      Text(
+                        'Latest matching run: ${coverage.state} · started ${coverage.startedAt.toUtc().toIso8601String()}',
+                      ),
+                      if (coverage.limitations.isNotEmpty)
+                        const Text(
+                          'This run has limitations. Some sources could not be identified or checked.',
+                        ),
+                      if (coverage.scopes.isEmpty)
+                        const Text(
+                          'No source scopes were identified in this run.',
+                        ),
+                      for (final scope in coverage.scopes)
+                        Text(
+                          '${scope.name} (${scope.kind.replaceAll('_', ' ')}) · ${scope.status == 'checked'
+                              ? 'source checked'
+                              : scope.status == 'failed'
+                              ? 'check failed'
+                              : 'not checked'}',
+                        ),
+                    ] else
+                      const Text(
+                        'No source discovery run is available for this ZIP and appliance category.',
+                      ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'A checked source means only that a source check ran. ZIP candidates do not confirm your utility provider or service at your address; other sources may be missing.',
+                    ),
+                  ],
                   for (final program in page.programs)
                     Card(
                       key: Key('program-${program.id}'),

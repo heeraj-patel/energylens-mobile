@@ -30,6 +30,38 @@ Map<String, dynamic> program() => {
 Map<String, dynamic> page([List<Map<String, dynamic>>? rows]) => {
   'programs': rows ?? [program()],
   'as_of': '2026-10-01T12:00:00Z',
+  'coverage': null,
+};
+
+Map<String, dynamic> coverage() => {
+  'run_id': '66666666-6666-4666-8666-666666666666',
+  'category': 'washer',
+  'state': 'partial',
+  'started_at': '2026-10-01T11:00:00Z',
+  'finished_at': '2026-10-01T11:01:00Z',
+  'limitations': ['zip_provider_discovery_incomplete'],
+  'scopes': [
+    {
+      'kind': 'utility',
+      'key': 'utility-a',
+      'name': 'Utility A',
+      'provider_role': 'electric_distributor',
+      'status': 'checked',
+      'checked_at': '2026-10-01T11:00:30Z',
+      'retry_after': null,
+      'failure_code': null,
+    },
+    {
+      'kind': 'county',
+      'key': 'travis',
+      'name': 'Travis County',
+      'provider_role': null,
+      'status': 'pending',
+      'checked_at': null,
+      'retry_after': null,
+      'failure_code': 'probe_unconfigured',
+    },
+  ],
 };
 
 class _Store implements CloudTokenStore {
@@ -89,7 +121,7 @@ class _ProgramsScreenApi extends CloudApiClient {
     String homeId,
     String applianceId,
     Set<String> ownedApplianceIds,
-  ) async => CloudProgramPage.fromJson(page([]));
+  ) async => CloudProgramPage.fromJson({...page([]), 'coverage': coverage()});
 }
 
 void main() {
@@ -119,8 +151,23 @@ void main() {
       find.textContaining('Other sources may not have been checked'),
       findsOneWidget,
     );
+    await tester.scrollUntilVisible(
+      find.textContaining('Catalog results loaded'),
+      120,
+    );
     expect(find.textContaining('Catalog results loaded'), findsOneWidget);
-    expect(find.textContaining('Programs checked'), findsNothing);
+    expect(
+      find.textContaining('Utility A (utility) · source checked'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Travis County (county) · not checked'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('ZIP candidates do not confirm'),
+      findsOneWidget,
+    );
   });
 
   test('accepts unknown source-cited results and location required', () {
@@ -129,8 +176,10 @@ void main() {
       'Appliance program',
     );
     expect(
-      CloudProgramPage.fromJson({...page([]), 'reason': 'location_required'})
-          .locationRequired,
+      CloudProgramPage.fromJson({
+        ...page([])..remove('coverage'),
+        'reason': 'location_required',
+      }).locationRequired,
       isTrue,
     );
   });
@@ -154,6 +203,28 @@ void main() {
     );
     expect(
       () => CloudProgramPage.fromJson(page([program(), program()])),
+      throwsFormatException,
+    );
+    expect(
+      () => CloudProgramPage.fromJson({
+        ...page(),
+        'coverage': {...coverage(), 'state': 'all_checked'},
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => CloudProgramPage.fromJson({
+        ...page(),
+        'coverage': {
+          ...coverage(),
+          'scopes': [
+            {
+              ...((coverage()['scopes'] as List).first as Map<String, dynamic>),
+              'checked_at': null,
+            },
+          ],
+        },
+      }),
       throwsFormatException,
     );
   });

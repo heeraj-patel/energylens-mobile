@@ -85,28 +85,170 @@ class CloudProgram {
   }
 }
 
+class CloudProgramCoverageScope {
+  const CloudProgramCoverageScope({
+    required this.kind,
+    required this.name,
+    required this.providerRole,
+    required this.status,
+    required this.checkedAt,
+    required this.retryAfter,
+    required this.failureCode,
+  });
+  final String kind;
+  final String name;
+  final String? providerRole;
+  final String status;
+  final DateTime? checkedAt;
+  final DateTime? retryAfter;
+  final String? failureCode;
+
+  factory CloudProgramCoverageScope.fromJson(Map<String, dynamic> json) {
+    const kinds = {
+      'utility',
+      'city',
+      'county',
+      'state',
+      'federal',
+      'tribal',
+      'manufacturer',
+    };
+    const roles = {
+      'electric_distributor',
+      'electric_retailer',
+      'gas_distributor',
+      'gas_retailer',
+      'other_fuel',
+    };
+    const statuses = {'identified', 'checked', 'failed', 'pending'};
+    final kind = json['kind'];
+    final role = json['provider_role'];
+    final status = json['status'];
+    final checked = json['checked_at'];
+    final retry = json['retry_after'];
+    final failure = json['failure_code'];
+    if (json.keys.toSet().difference({
+          'kind',
+          'key',
+          'name',
+          'provider_role',
+          'status',
+          'checked_at',
+          'retry_after',
+          'failure_code',
+        }).isNotEmpty ||
+        json.length != 8 ||
+        !kinds.contains(kind) ||
+        !_text(json['key'], 200) ||
+        !_text(json['name'], 200) ||
+        (kind == 'utility' ? !roles.contains(role) : role != null) ||
+        !statuses.contains(status) ||
+        (checked != null && _instant(checked) == null) ||
+        (status == 'checked' && checked == null) ||
+        (retry != null && _instant(retry) == null) ||
+        (failure != null && !_text(failure, 64)) ||
+        (status == 'failed' && failure == null)) {
+      throw const FormatException('Invalid program discovery scope');
+    }
+    return CloudProgramCoverageScope(
+      kind: kind as String,
+      name: json['name'] as String,
+      providerRole: role as String?,
+      status: status as String,
+      checkedAt: checked == null ? null : _instant(checked),
+      retryAfter: retry == null ? null : _instant(retry),
+      failureCode: failure as String?,
+    );
+  }
+}
+
+class CloudProgramCoverage {
+  const CloudProgramCoverage({
+    required this.state,
+    required this.startedAt,
+    required this.finishedAt,
+    required this.limitations,
+    required this.scopes,
+  });
+  final String state;
+  final DateTime startedAt;
+  final DateTime? finishedAt;
+  final List<String> limitations;
+  final List<CloudProgramCoverageScope> scopes;
+
+  factory CloudProgramCoverage.fromJson(Map<String, dynamic> json) {
+    final started = _instant(json['started_at']);
+    final finished = json['finished_at'];
+    final limitations = json['limitations'];
+    final scopes = json['scopes'];
+    if (json.keys.toSet().difference({
+          'run_id',
+          'category',
+          'state',
+          'started_at',
+          'finished_at',
+          'limitations',
+          'scopes',
+        }).isNotEmpty ||
+        json.length != 7 ||
+        !_uuid.hasMatch(
+          json['run_id'] is String ? json['run_id'] as String : '',
+        ) ||
+        (json['category'] != null && !_text(json['category'], 100)) ||
+        !{'running', 'complete', 'partial', 'failed'}.contains(json['state']) ||
+        started == null ||
+        (finished != null && _instant(finished) == null) ||
+        limitations is! List ||
+        limitations.length > 32 ||
+        limitations.any((item) => !_text(item, 120)) ||
+        limitations.toSet().length != limitations.length ||
+        scopes is! List ||
+        scopes.length > 128) {
+      throw const FormatException('Invalid program discovery coverage');
+    }
+    return CloudProgramCoverage(
+      state: json['state'] as String,
+      startedAt: started,
+      finishedAt: finished == null ? null : _instant(finished),
+      limitations: List<String>.from(limitations),
+      scopes: scopes.map((row) {
+        if (row is! Map<String, dynamic>) {
+          throw const FormatException('Invalid program discovery scope');
+        }
+        return CloudProgramCoverageScope.fromJson(row);
+      }).toList(),
+    );
+  }
+}
+
 class CloudProgramPage {
   const CloudProgramPage({
     required this.programs,
     required this.asOf,
     required this.locationRequired,
+    required this.coverage,
   });
   final List<CloudProgram> programs;
   final DateTime asOf;
   final bool locationRequired;
+  final CloudProgramCoverage? coverage;
 
   factory CloudProgramPage.fromJson(Map<String, dynamic> json) {
     final rows = json['programs'];
     final asOf = _instant(json['as_of']);
     final reason = json['reason'];
     if (json.keys.any(
-          (key) => !{'programs', 'as_of', 'reason'}.contains(key),
+          (key) => !{'programs', 'as_of', 'reason', 'coverage'}.contains(key),
         ) ||
         rows is! List ||
         rows.length > 100 ||
         asOf == null ||
         (reason != null && reason != 'location_required') ||
-        (reason == 'location_required' && rows.isNotEmpty)) {
+        (reason == 'location_required' &&
+            (rows.isNotEmpty || json.containsKey('coverage'))) ||
+        (reason == null && !json.containsKey('coverage')) ||
+        (json['coverage'] != null &&
+            json['coverage'] is! Map<String, dynamic>)) {
       throw const FormatException('Invalid reviewed program page');
     }
     final programs = rows.map((row) {
@@ -123,6 +265,11 @@ class CloudProgramPage {
       programs: programs,
       asOf: asOf,
       locationRequired: reason == 'location_required',
+      coverage: json['coverage'] == null
+          ? null
+          : CloudProgramCoverage.fromJson(
+              json['coverage'] as Map<String, dynamic>,
+            ),
     );
   }
 }
