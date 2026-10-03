@@ -145,6 +145,18 @@ class ApplianceOnboardingScreen extends StatefulWidget {
       _ApplianceOnboardingScreenState();
 }
 
+class _PendingAttachment {
+  const _PendingAttachment({
+    required this.applianceId,
+    required this.hubAddress,
+    required this.plugId,
+  });
+
+  final int applianceId;
+  final String hubAddress;
+  final String plugId;
+}
+
 class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   final _hub = TextEditingController();
   final _token = TextEditingController();
@@ -177,6 +189,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   EnergyLookup? _modelCheck;
   String? _error;
   String? _deleteError;
+  _PendingAttachment? _pendingAttachment;
   List<SavedAppliance> _saved = const [];
   final Map<int, EnergyEstimate> _estimates = {};
   final Map<int, String> _lookupStatuses = {};
@@ -593,6 +606,13 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       return;
     }
     if (_busy) return;
+    if (_pendingAttachment != null) {
+      await _attachSavedAppliance();
+      return;
+    }
+    final hubAddress = _hub.text.trim();
+    final hubToken = _token.text.trim();
+    final plugId = widget.plugId;
     final hoursText = _hours.text.trim();
     final hours = hoursText.isEmpty ? null : double.tryParse(hoursText);
     final lighting = _category == 'lighting' && _loadKind == 'replaceable_bulb';
@@ -601,8 +621,8 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     final bulbs = bulbsText.isEmpty ? null : int.tryParse(bulbsText);
     final watts = wattsText.isEmpty ? null : double.tryParse(wattsText);
     if (_name.text.trim().isEmpty ||
-        _hub.text.trim().isEmpty ||
-        _token.text.trim().isEmpty ||
+        hubAddress.isEmpty ||
+        hubToken.isEmpty ||
         (hoursText.isNotEmpty && (hours == null || hours < 0 || hours > 168)) ||
         (lighting &&
             bulbsText.isNotEmpty &&
@@ -631,8 +651,8 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     });
     try {
       final saved = await widget.api.addAppliance(
-        _hub.text.trim(),
-        _token.text.trim(),
+        hubAddress,
+        hubToken,
         ApplianceInput(
           name: _name.text.trim(),
           room: _room.text.trim(),
@@ -649,6 +669,13 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       if (!mounted) return;
       setState(() {
         _saved = [..._saved.where((item) => item.id != saved.id), saved];
+        if (plugId != null) {
+          _pendingAttachment = _PendingAttachment(
+            applianceId: saved.id,
+            hubAddress: hubAddress,
+            plugId: plugId,
+          );
+        }
         if (checkedLookup != null) {
           _lookupStatuses[saved.id] = checkedLookup.status;
         }
@@ -680,14 +707,8 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
           // The saved record stays visible with its pre-save source result.
         }
       }
-      if (widget.plugId != null) {
-        final attached = await widget.api.attachAppliance(
-          _hub.text.trim(),
-          _token.text.trim(),
-          widget.plugId!,
-          saved.id,
-        );
-        if (mounted) Navigator.pop(context, attached);
+      if (plugId != null) {
+        await _attachSavedAppliance();
         return;
       }
       try {
@@ -709,6 +730,49 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
           () => _error = error is StateError
               ? error.message
               : 'Could not save the device. Check the hub connection.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _attachSavedAppliance() async {
+    final pending = _pendingAttachment;
+    if (pending == null) return;
+    if (widget.plugId != pending.plugId ||
+        _hub.text.trim() != pending.hubAddress) {
+      setState(
+        () => _error = 'Device saved, attachment pending. Return to the original plug and hub address to retry.',
+      );
+      return;
+    }
+    final token = _token.text.trim();
+    if (token.isEmpty) {
+      setState(
+        () => _error =
+            'Device saved, attachment pending. Enter the hub token to retry.',
+      );
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final attached = await widget.api.attachAppliance(
+        pending.hubAddress,
+        token,
+        pending.plugId,
+        pending.applianceId,
+      );
+      if (!mounted) return;
+      _pendingAttachment = null;
+      Navigator.of(context).pop(attached);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = 'Device saved, attachment pending. Check the hub connection and retry attachment.',
         );
       }
     } finally {
@@ -1410,11 +1474,24 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
               const SizedBox(height: 10),
               Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
             ],
+            if (_pendingAttachment != null) ...[
+              const SizedBox(height: 10),
+              const Text(
+                'Device saved, attachment pending. Retry connects the saved device; edits to its details will not be saved.',
+                key: Key('attachmentPendingNotice'),
+              ),
+            ],
             const SizedBox(height: 16),
             FilledButton(
               key: const Key('saveAppliance'),
               onPressed: _busy ? null : _save,
-              child: Text(_busy ? 'Saving…' : 'Save device'),
+              child: Text(
+                _busy
+                    ? 'Saving…'
+                    : _pendingAttachment != null
+                    ? 'Retry attachment'
+                    : 'Save device',
+              ),
             ),
             if (!_cloudOnly) ...[
               const SizedBox(height: 24),

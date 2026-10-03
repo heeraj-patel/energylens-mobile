@@ -187,6 +187,49 @@ class FakeApi extends DiscoveryApi {
   }
 }
 
+class AttachmentRetryApi extends FakeApi {
+  int createCalls = 0;
+  final attachedIds = <int>[];
+  final attachmentAddresses = <String>[];
+  final attachmentTokens = <String>[];
+
+  @override
+  Future<SavedAppliance> addAppliance(
+    String baseUrl,
+    String token,
+    ApplianceInput input,
+  ) async {
+    createCalls++;
+    return super.addAppliance(baseUrl, token, input);
+  }
+
+  @override
+  Future<SavedPlug> attachAppliance(
+    String baseUrl,
+    String token,
+    String plugId,
+    int applianceId,
+  ) async {
+    attachmentAddresses.add(baseUrl);
+    attachmentTokens.add(token);
+    attachedIds.add(applianceId);
+    expect(plugId, 'plug-1');
+    if (attachedIds.length == 1) {
+      throw StateError('Hub temporarily unavailable');
+    }
+    return SavedPlug(
+      id: plugId,
+      ip: '192.168.1.30',
+      model: 'Kasa',
+      name: 'Desk plug',
+      room: 'Office',
+      meterStatus: 'verified',
+      lastVerifiedAt: 1,
+      connectedAppliance: rows.singleWhere((row) => row.id == applianceId),
+    );
+  }
+}
+
 class SourceApi extends FakeApi {
   SourceApi(this.kind, {bool seedSaved = true}) {
     if (seedSaved) {
@@ -527,6 +570,106 @@ void main() {
     expect(returned, isNotNull);
     expect(returned!.name, 'Desk lamp');
     expect(returned!.id, 1);
+  });
+
+  testWidgets('failed plug attachment retries the saved appliance once', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = AttachmentRetryApi();
+    SavedPlug? returned;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: FilledButton(
+              onPressed: () async {
+                returned = await Navigator.of(context).push<SavedPlug>(
+                  MaterialPageRoute(
+                    builder: (_) => ApplianceOnboardingScreen(
+                      method: 'manual',
+                      plugId: 'plug-1',
+                      api: api,
+                      credentials: FakeCredentials(),
+                    ),
+                  ),
+                );
+              },
+              child: const Text('Identify plug'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Identify plug'));
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('applianceName')));
+    await tester.enterText(find.byKey(const Key('applianceName')), 'Desk lamp');
+    await scrollTo(tester, find.byKey(const Key('checkModelBeforeSave')));
+    await tester.tap(find.byKey(const Key('checkModelBeforeSave')));
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('saveAppliance')));
+    await tester.tap(find.byKey(const Key('saveAppliance')));
+    await tester.pumpAndSettle();
+
+    expect(api.createCalls, 1);
+    expect(api.rows, hasLength(1));
+    expect(api.lookupStatuses[1], 'no_match');
+    expect(api.attachedIds, [1]);
+    expect(returned, isNull);
+    expect(find.byKey(const Key('attachmentPendingNotice')), findsOneWidget);
+    expect(
+      find.textContaining('Device saved, attachment pending'),
+      findsWidgets,
+    );
+    expect(find.text('Retry attachment'), findsOneWidget);
+
+    // Changed details cannot turn an attachment retry into another create.
+    await scrollTo(tester, find.byKey(const Key('applianceName')), delta: -300);
+    await tester.enterText(
+      find.byKey(const Key('applianceName')),
+      'Edited lamp',
+    );
+    await scrollTo(tester, find.byKey(const Key('hubAddress')));
+    await tester.enterText(
+      find.byKey(const Key('hubAddress')),
+      'https://other-hub',
+    );
+    await scrollTo(tester, find.byKey(const Key('saveAppliance')));
+    await tester.tap(find.byKey(const Key('saveAppliance')));
+    await tester.pumpAndSettle();
+    expect(api.createCalls, 1);
+    expect(api.attachedIds, [1]);
+    expect(
+      find.textContaining('original plug and hub address'),
+      findsOneWidget,
+    );
+
+    await scrollTo(tester, find.byKey(const Key('hubAddress')), delta: -300);
+    await tester.enterText(
+      find.byKey(const Key('hubAddress')),
+      'https://192.168.1.20:8787',
+    );
+    await scrollTo(tester, find.byKey(const Key('hubToken')));
+    await tester.enterText(
+      find.byKey(const Key('hubToken')),
+      'replacement-token',
+    );
+    await scrollTo(tester, find.byKey(const Key('saveAppliance')));
+    await tester.tap(find.byKey(const Key('saveAppliance')));
+    await tester.pumpAndSettle();
+
+    expect(api.createCalls, 1);
+    expect(api.rows, hasLength(1));
+    expect(api.rows.single.name, 'Desk lamp');
+    expect(api.attachedIds, [1, 1]);
+    expect(api.attachmentAddresses, everyElement('https://192.168.1.20:8787'));
+    expect(api.attachmentTokens.last, 'replacement-token');
+    expect(returned?.connectedAppliance?.id, 1);
+    expect(find.text('Identify plug'), findsOneWidget);
   });
 
   testWidgets('no-match energy check hides the link after reload', (
