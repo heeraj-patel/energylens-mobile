@@ -181,7 +181,8 @@ class _CloudRecommendationsScreenState
                                   ),
                                 )
                               else
-                                next == 'add_electricity_rate'
+                                next == 'add_electricity_rate' ||
+                                        next == 'add_gas_rate'
                                     ? TextButton.icon(
                                         key: Key(
                                           'recommendationRate-${action.applianceId}',
@@ -193,14 +194,17 @@ class _CloudRecommendationsScreenState
                                                   CloudElectricityRateScreen(
                                                     api: widget.api,
                                                     home: widget.home,
+                                                    gas: next == 'add_gas_rate',
                                                   ),
                                             ),
                                           );
                                           if (mounted) _load();
                                         },
                                         icon: const Icon(Icons.bolt_outlined),
-                                        label: const Text(
-                                          'Review Cloud electricity rate',
+                                        label: Text(
+                                          next == 'add_gas_rate'
+                                              ? 'Review Cloud natural gas rate'
+                                              : 'Review Cloud electricity rate',
                                         ),
                                       )
                                     : Text(
@@ -212,7 +216,8 @@ class _CloudRecommendationsScreenState
                                             .bodySmall,
                                       ),
                             ],
-                            if (action.state == 'active') ...[
+                            if (action.state == 'active' &&
+                                action.ruleId != 'dryer.gas_cycle_options') ...[
                               const SizedBox(height: 8),
                               TextButton.icon(
                                 key: Key(

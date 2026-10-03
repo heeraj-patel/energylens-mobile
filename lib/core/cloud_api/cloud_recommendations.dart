@@ -3,6 +3,7 @@ const _ruleIds = {
   'television.quick_start',
   'washer.cycle_options',
   'dryer.cycle_options',
+  'dryer.gas_cycle_options',
   'refrigerator.maintenance',
   'air_conditioner.schedule',
   'space_heater.schedule',
@@ -14,6 +15,7 @@ const _nextQuestions = {
   'hours_per_week',
   'cycles_per_week',
   'add_electricity_rate',
+  'add_gas_rate',
 };
 final _uuid = RegExp(
   r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',

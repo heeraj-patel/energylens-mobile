@@ -125,6 +125,94 @@ void main() {
     api.close();
   });
 
+  testWidgets(
+    'capable gas dryer action opens therm rate without electric outcome',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1500);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      const appliance = '22222222-2222-4222-8222-222222222222';
+      final api = _api(
+        MockClient((request) async {
+          if (request.url.path.endsWith('/appliances')) {
+            return http.Response(
+              jsonEncode({
+                'appliances': [
+                  {
+                    'id': appliance,
+                    'home_id': home.id,
+                    'name': 'Gas dryer',
+                    'category': 'dryer',
+                    'identity': {
+                      'brand': 'Acme',
+                      'full_model': 'G123',
+                      'variant': 'US-GAS',
+                      'fuel': 'natural_gas',
+                      'match_quality': 'confirmed_exact',
+                    },
+                  },
+                ],
+              }),
+              200,
+            );
+          }
+          if (request.url.path.endsWith('/recommendations')) {
+            expect(
+              request.url.queryParameters['capability'],
+              'gas_dryer_recommendations_v1',
+            );
+            return http.Response(
+              jsonEncode({
+                'actions': [
+                  {
+                    'rule_id': 'dryer.gas_cycle_options',
+                    'rule_version': 1,
+                    'appliance_id': appliance,
+                    'state': 'candidate',
+                    'title': 'Review gas dryer cycle options',
+                    'explanation': 'No numeric savings or waste claim.',
+                    'next_question': 'add_gas_rate',
+                    'benefit_group': 'laundry_cycle',
+                    'evidence_refs': [
+                      {
+                        'id': '33333333-3333-4333-8333-333333333333',
+                        'kind': 'gas_cycle_energy',
+                        'revision': 1,
+                      },
+                      {
+                        'id': '44444444-4444-4444-8444-444444444444',
+                        'kind': 'confirmed_answer',
+                        'revision': 1,
+                      },
+                    ],
+                    'savings_amount': null,
+                  },
+                ],
+                'as_of': '2026-10-01T00:00:00Z',
+              }),
+              200,
+            );
+          }
+          expect(request.url.path, '/v1/homes/${home.id}/tariffs');
+          return http.Response('{"tariffs":[]}', 200);
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CloudRecommendationsScreen(api: api, home: home),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Review Cloud natural gas rate'), findsOneWidget);
+      expect(find.text('Record a manual change'), findsNothing);
+      await tester.tap(find.text('Review Cloud natural gas rate'));
+      await tester.pumpAndSettle();
+      expect(find.text('Cloud gas rate'), findsOneWidget);
+      api.close();
+    },
+  );
+
   test('rejects another home’s electricity tariff', () async {
     final api = _api(
       MockClient(

@@ -393,7 +393,7 @@ class CloudApiClient {
     Set<String> applianceIds,
   ) async {
     final response = await get(
-      '/v1/homes/${Uri.encodeComponent(homeId)}/recommendations',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/recommendations?capability=gas_dryer_recommendations_v1',
     );
     return CloudRecommendationBatch.fromJson(
       jsonDecode(response.body) as Map<String, dynamic>,
