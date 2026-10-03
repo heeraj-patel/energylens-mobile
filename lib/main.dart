@@ -16,6 +16,7 @@ import 'features/discovery/electricity_settings_screen.dart';
 import 'features/energy/useful_waste_cost_card.dart';
 import 'features/energy/cloud_estimates_section.dart';
 import 'features/energy/cloud_metered_history_screen.dart';
+import 'features/energy/cloud_cycle_comparison_screen.dart';
 import 'features/energy/cloud_kasa_runtime_screen.dart';
 import 'features/energy/cloud_metered_summary_screen.dart';
 import 'features/energy/cloud_faq_screen.dart';
@@ -804,6 +805,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                             icon: const Icon(Icons.bar_chart),
                             label: const Text('View Cloud meter summaries'),
+                          ),
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            key: const Key('openCloudCycleComparison'),
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => CloudCycleComparisonScreen(
+                                  api: widget.cloudApi!,
+                                  home: widget.cloudHome!,
+                                ),
+                              ),
+                            ),
+                            icon: const Icon(Icons.compare_arrows_outlined),
+                            label: const Text('Compare a dishwasher cycle'),
                           ),
                           const SizedBox(height: 12),
                           OutlinedButton.icon(

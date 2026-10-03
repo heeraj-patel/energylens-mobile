@@ -20,6 +20,7 @@ import 'cloud_programs.dart';
 import 'cloud_report_preview.dart';
 import 'cloud_report_delivery.dart';
 import 'cloud_tariff.dart';
+import 'cloud_cycle_comparison.dart';
 
 class CloudApiException implements Exception {
   const CloudApiException(this.statusCode, this.code);
@@ -398,6 +399,50 @@ class CloudApiClient {
     return CloudRecommendationBatch.fromJson(
       jsonDecode(response.body) as Map<String, dynamic>,
       applianceIds.map((id) => id.toLowerCase()).toSet(),
+    );
+  }
+
+  Future<CloudCycleReferenceOption> dishwasherCycleReference(
+    String homeId,
+    String applianceId,
+    Set<String> ownedApplianceIds,
+  ) async {
+    if (!_programUuid.hasMatch(homeId) ||
+        !_programUuid.hasMatch(applianceId) ||
+        !ownedApplianceIds.any(
+          (id) => id.toLowerCase() == applianceId.toLowerCase(),
+        )) {
+      throw ArgumentError('Invalid dishwasher selection');
+    }
+    final response = await get(
+      '/v1/homes/${Uri.encodeComponent(homeId)}/appliances/${Uri.encodeComponent(applianceId)}/cycle-comparison/reference',
+    );
+    return CloudCycleReferenceOption.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<CloudCycleComparisonResult> compareDishwasherCycle(
+    String homeId,
+    String applianceId,
+    Set<String> ownedApplianceIds,
+    CloudCycleComparisonRequest input,
+  ) async {
+    if (!_programUuid.hasMatch(homeId) ||
+        !_programUuid.hasMatch(applianceId) ||
+        !ownedApplianceIds.any(
+          (id) => id.toLowerCase() == applianceId.toLowerCase(),
+        )) {
+      throw ArgumentError('Invalid dishwasher selection');
+    }
+    final response = await _request(
+      'POST',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/appliances/${Uri.encodeComponent(applianceId)}/cycle-comparison',
+      jsonBody: jsonEncode(input.toJson()),
+    );
+    return CloudCycleComparisonResult.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+      input,
     );
   }
 
