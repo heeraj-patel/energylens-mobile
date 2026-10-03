@@ -253,3 +253,141 @@ class CloudCycleComparisonResult {
     throw const FormatException('Invalid cycle comparison');
   }
 }
+
+class CloudSavedCycleEvidence {
+  const CloudSavedCycleEvidence({
+    required this.id,
+    required this.status,
+    required this.start,
+    required this.end,
+    required this.createdAt,
+    this.reason,
+    this.measuredKWh,
+    this.labReferenceKWhPerCycle,
+    this.differenceKWh,
+  });
+
+  final String id;
+  final String status;
+  final String? reason;
+  final DateTime start;
+  final DateTime end;
+  final DateTime createdAt;
+  final double? measuredKWh;
+  final double? labReferenceKWhPerCycle;
+  final double? differenceKWh;
+
+  factory CloudSavedCycleEvidence.fromJson(
+    Map<String, dynamic> json, {
+    required String homeId,
+    required String applianceId,
+    required CloudCycleComparisonRequest request,
+    String? evidenceId,
+  }) {
+    const allowed = {
+      'id',
+      'status',
+      'reason',
+      'home_id',
+      'appliance_id',
+      'appliance_version',
+      'attachment_id',
+      'start',
+      'end',
+      'fact_id',
+      'confirmed_test_basis',
+      'confirmed_cycle_definition',
+      'dedicated_no_other_loads',
+      'measured_kwh',
+      'lab_reference_kwh_per_cycle',
+      'difference_kwh',
+      'created_at',
+      'interpretation',
+    };
+    if (json.keys.any((key) => !allowed.contains(key))) {
+      throw const FormatException('Unexpected saved cycle evidence claim');
+    }
+    final id = json['id'];
+    final start = json['start'] is String
+        ? DateTime.tryParse(json['start'] as String)
+        : null;
+    final end = json['end'] is String
+        ? DateTime.tryParse(json['end'] as String)
+        : null;
+    final created = json['created_at'] is String
+        ? DateTime.tryParse(json['created_at'] as String)
+        : null;
+    if (id is! String ||
+        !_uuid.hasMatch(id) ||
+        (evidenceId != null && id.toLowerCase() != evidenceId.toLowerCase()) ||
+        json['home_id'] != homeId ||
+        json['appliance_id'] != applianceId ||
+        json['appliance_version'] is! int ||
+        (json['appliance_version'] as int) < 1 ||
+        json['attachment_id'] != request.attachmentId ||
+        json['fact_id'] != request.reference.id ||
+        json['confirmed_test_basis'] != request.reference.testBasis ||
+        json['confirmed_cycle_definition'] !=
+            request.reference.cycleDefinition ||
+        json['dedicated_no_other_loads'] != true ||
+        start == null ||
+        !start.isUtc ||
+        start != request.start ||
+        end == null ||
+        !end.isUtc ||
+        end != request.end ||
+        created == null ||
+        !created.isUtc ||
+        json['interpretation'] != cycleComparisonInterpretation) {
+      throw const FormatException('Saved cycle evidence changed context');
+    }
+    final status = json['status'];
+    final reason = json['reason'];
+    final measured = json['measured_kwh'];
+    final lab = json['lab_reference_kwh_per_cycle'];
+    final difference = json['difference_kwh'];
+    if (status == 'invalidated' &&
+        const {
+          'meter_evidence_changed',
+          'coverage_changed',
+          'attachment_changed',
+          'appliance_changed',
+        }.contains(reason) &&
+        measured == null &&
+        lab == null &&
+        difference == null) {
+      return CloudSavedCycleEvidence(
+        id: id,
+        status: status as String,
+        reason: reason as String,
+        start: start,
+        end: end,
+        createdAt: created,
+      );
+    }
+    if (status == 'available' &&
+        reason == null &&
+        measured is num &&
+        lab is num &&
+        difference is num &&
+        measured.toDouble().isFinite &&
+        lab.toDouble().isFinite &&
+        difference.toDouble().isFinite &&
+        measured >= 0 &&
+        lab > 0 &&
+        (lab - request.reference.valueKWhPerCycle).abs() < 0.000001 &&
+        (difference - (measured - lab)).abs() < 0.000001) {
+      return CloudSavedCycleEvidence(
+        id: id,
+        status: status as String,
+        start: start,
+        end: end,
+        createdAt: created,
+        measuredKWh: measured.toDouble(),
+        labReferenceKWhPerCycle: lab.toDouble(),
+        differenceKWh: difference.toDouble(),
+      );
+    }
+    throw const FormatException('Invalid saved cycle evidence');
+  }
+}

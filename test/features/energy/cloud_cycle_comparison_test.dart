@@ -14,6 +14,7 @@ const homeId = '11111111-1111-4111-8111-111111111111';
 const applianceId = '22222222-2222-4222-8222-222222222222';
 const attachmentId = '33333333-3333-4333-8333-333333333333';
 const factId = '44444444-4444-4444-8444-444444444444';
+const evidenceId = '55555555-5555-4555-8555-555555555555';
 const home = CloudHome(
   id: homeId,
   name: 'Home',
@@ -106,10 +107,72 @@ void main() {
     },
   );
 
+  test(
+    'saved evidence rejects changed owner scope and invalidated numbers',
+    () {
+      final option = CloudCycleReferenceOption.fromJson(reference());
+      final now = DateTime.now().toUtc();
+      final request = CloudCycleComparisonRequest(
+        start: now.subtract(const Duration(hours: 2)),
+        end: now.subtract(const Duration(hours: 1)),
+        attachmentId: attachmentId,
+        reference: option.fact!,
+        dedicatedNoOtherLoads: true,
+      );
+      final saved = <String, dynamic>{
+        'id': evidenceId,
+        'status': 'invalidated',
+        'reason': 'meter_evidence_changed',
+        'home_id': homeId,
+        'appliance_id': applianceId,
+        'appliance_version': 1,
+        'attachment_id': attachmentId,
+        'start': request.start.toIso8601String(),
+        'end': request.end.toIso8601String(),
+        'fact_id': factId,
+        'confirmed_test_basis': 'DOE Normal',
+        'confirmed_cycle_definition': 'Normal with heated dry',
+        'dedicated_no_other_loads': true,
+        'created_at': now.toIso8601String(),
+        'interpretation': cycleComparisonInterpretation,
+      };
+      expect(
+        CloudSavedCycleEvidence.fromJson(
+          saved,
+          homeId: homeId,
+          applianceId: applianceId,
+          request: request,
+        ).measuredKWh,
+        isNull,
+      );
+      expect(
+        () => CloudSavedCycleEvidence.fromJson(
+          {...saved, 'measured_kwh': 0.8},
+          homeId: homeId,
+          applianceId: applianceId,
+          request: request,
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => CloudSavedCycleEvidence.fromJson(
+          {...saved, 'home_id': attachmentId},
+          homeId: homeId,
+          applianceId: applianceId,
+          request: request,
+        ),
+        throwsFormatException,
+      );
+    },
+  );
+
   testWidgets(
     'tagged cycle shows only a neutral measured/reference comparison',
     (tester) async {
       Map<String, dynamic>? submitted;
+      var savedFetches = 0;
+      var saveAttempts = 0;
+      String? saveKey;
       final api = _api(
         MockClient((request) async {
           expect(request.headers['authorization'], 'Bearer owner-token');
@@ -164,6 +227,64 @@ void main() {
           }
           if (request.url.path.endsWith('/cycle-comparison/reference')) {
             return http.Response(jsonEncode(reference()), 200);
+          }
+          if (request.url.path.endsWith('/cycle-comparison/evidence')) {
+            expect(request.method, 'POST');
+            saveAttempts++;
+            saveKey ??= request.headers['idempotency-key'];
+            expect(request.headers['idempotency-key'], saveKey);
+            expect(jsonDecode(request.body), submitted);
+            if (saveAttempts == 1) {
+              return http.Response('{"code":"internal_error"}', 500);
+            }
+            return http.Response(
+              jsonEncode({
+                'id': evidenceId,
+                'status': 'available',
+                'home_id': homeId,
+                'appliance_id': applianceId,
+                'appliance_version': 2,
+                'attachment_id': attachmentId,
+                'start': submitted!['start'],
+                'end': submitted!['end'],
+                'fact_id': factId,
+                'confirmed_test_basis': 'DOE Normal',
+                'confirmed_cycle_definition': 'Normal with heated dry',
+                'dedicated_no_other_loads': true,
+                'measured_kwh': 0.8,
+                'lab_reference_kwh_per_cycle': 0.7,
+                'difference_kwh': 0.1,
+                'created_at': DateTime.now().toUtc().toIso8601String(),
+                'interpretation': cycleComparisonInterpretation,
+              }),
+              201,
+            );
+          }
+          if (request.url.path.endsWith(
+            '/cycle-comparison/evidence/$evidenceId',
+          )) {
+            expect(request.method, 'GET');
+            savedFetches++;
+            return http.Response(
+              jsonEncode({
+                'id': evidenceId,
+                'status': 'invalidated',
+                'reason': 'coverage_changed',
+                'home_id': homeId,
+                'appliance_id': applianceId,
+                'appliance_version': 2,
+                'attachment_id': attachmentId,
+                'start': submitted!['start'],
+                'end': submitted!['end'],
+                'fact_id': factId,
+                'confirmed_test_basis': 'DOE Normal',
+                'confirmed_cycle_definition': 'Normal with heated dry',
+                'dedicated_no_other_loads': true,
+                'created_at': DateTime.now().toUtc().toIso8601String(),
+                'interpretation': cycleComparisonInterpretation,
+              }),
+              200,
+            );
           }
           expect(
             request.url.path,
@@ -228,6 +349,34 @@ void main() {
       );
       expect(find.byKey(const Key('cycleMeasuredValue')), findsOneWidget);
       expect(find.textContaining('No Waste or savings amount'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('saveCycleEvidence')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('saveCycleEvidence')));
+      await tester.pumpAndSettle();
+      expect(saveAttempts, 1);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('saveCycleEvidence')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('saveCycleEvidence')));
+      await tester.pumpAndSettle();
+      expect(saveAttempts, 2);
+      expect(find.byKey(const Key('savedCycleEvidenceStatus')), findsOneWidget);
+      expect(saveKey, matches(RegExp(r'^[0-9a-f-]{36}$')));
+      await tester.ensureVisible(
+        find.byKey(const Key('refreshSavedCycleEvidence')),
+      );
+      await tester.tap(find.byKey(const Key('refreshSavedCycleEvidence')));
+      await tester.pumpAndSettle();
+      expect(savedFetches, 1);
+      expect(find.byKey(const Key('cycleMeasuredValue')), findsNothing);
+      expect(find.textContaining('no longer available'), findsOneWidget);
       api.close();
     },
   );

@@ -7,7 +7,6 @@ import '../../core/cloud_api/cloud_home.dart';
 import '../../core/cloud_api/cloud_interventions.dart';
 
 /// A laboratory-reference comparison for one explicitly tagged meter interval.
-/// Neither the tag nor the result is saved by the current Cloud API.
 class CloudCycleComparisonScreen extends StatefulWidget {
   const CloudCycleComparisonScreen({
     super.key,
@@ -37,6 +36,10 @@ class _CloudCycleComparisonScreenState
   bool _busy = false;
   String? _error;
   CloudCycleComparisonResult? _result;
+  CloudCycleComparisonRequest? _comparedRequest;
+  String? _comparedApplianceId;
+  CloudSavedCycleEvidence? _saved;
+  String? _saveKey;
   int _generation = 0;
 
   @override
@@ -54,6 +57,9 @@ class _CloudCycleComparisonScreenState
       _busy = true;
       _error = null;
       _result = null;
+      _comparedRequest = null;
+      _saved = null;
+      _saveKey = null;
     });
     try {
       final preferences = await widget.api.accountPreferences();
@@ -132,6 +138,9 @@ class _CloudCycleComparisonScreenState
       _basisConfirmed = false;
       _dedicated = false;
       _result = null;
+      _comparedRequest = null;
+      _saved = null;
+      _saveKey = null;
       _error = null;
     });
     if (appliance != null) _loadReference(appliance, generation);
@@ -166,6 +175,9 @@ class _CloudCycleComparisonScreenState
         _end = picked;
       }
       _result = null;
+      _comparedRequest = null;
+      _saved = null;
+      _saveKey = null;
       _attachment = null;
       _error = null;
     });
@@ -223,6 +235,9 @@ class _CloudCycleComparisonScreenState
       _busy = true;
       _error = null;
       _result = null;
+      _comparedRequest = null;
+      _saved = null;
+      _saveKey = null;
     });
     try {
       final result = await widget.api.compareDishwasherCycle(
@@ -231,7 +246,18 @@ class _CloudCycleComparisonScreenState
         (_appliances ?? []).map((item) => item.id).toSet(),
         request,
       );
-      if (mounted) setState(() => _result = result);
+      if (mounted) {
+        setState(() {
+          _result = result;
+          _comparedRequest = result.status == 'available' ? request : null;
+          _comparedApplianceId = result.status == 'available'
+              ? appliance.id
+              : null;
+          _saveKey = result.status == 'available'
+              ? newCloudIdempotencyKey()
+              : null;
+        });
+      }
     } on CloudApiException catch (error) {
       if (mounted) {
         setState(
@@ -245,6 +271,106 @@ class _CloudCycleComparisonScreenState
     } catch (_) {
       if (mounted) {
         setState(() => _error = 'Could not compare this cycle. Try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _saveEvidence() async {
+    final request = _comparedRequest;
+    final applianceId = _comparedApplianceId;
+    final key = _saveKey;
+    if (_busy ||
+        request == null ||
+        applianceId == null ||
+        key == null ||
+        _appliance?.id != applianceId ||
+        _result?.status != 'available') {
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final saved = await widget.api.saveDishwasherCycleEvidence(
+        widget.home.id,
+        applianceId,
+        (_appliances ?? []).map((a) => a.id).toSet(),
+        request,
+        idempotencyKey: key,
+      );
+      if (mounted && _appliance?.id == applianceId) {
+        setState(() => _saved = saved);
+      }
+    } on CloudApiException catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = switch (error.code) {
+            'history_disclosure_required' =>
+              'Accept Cloud energy history before saving this cycle.',
+            'evidence_unavailable' =>
+              'This cycle evidence changed. Refresh and compare again.',
+            'idempotency_conflict' => 'This save request conflicts with an earlier attempt. Change the cycle and try again.',
+            _ => 'Could not save this cycle. Retry to use the same request.',
+          },
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error =
+              'Could not save this cycle. Retry to use the same request.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _refreshSavedEvidence() async {
+    final saved = _saved;
+    final request = _comparedRequest;
+    final applianceId = _comparedApplianceId;
+    if (_busy ||
+        saved == null ||
+        request == null ||
+        applianceId == null ||
+        _appliance?.id != applianceId) {
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final refreshed = await widget.api.dishwasherCycleEvidence(
+        widget.home.id,
+        applianceId,
+        (_appliances ?? []).map((a) => a.id).toSet(),
+        saved.id,
+        request,
+      );
+      if (mounted && _appliance?.id == applianceId) {
+        setState(() {
+          _saved = refreshed;
+          if (refreshed.status == 'invalidated') _result = null;
+        });
+      }
+    } on CloudApiException catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = error.statusCode == 404
+              ? 'Saved cycle evidence expired or is unavailable for this home.'
+              : 'Could not refresh saved cycle evidence. Try again.',
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = 'Could not refresh saved cycle evidence. Try again.',
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -280,7 +406,7 @@ class _CloudCycleComparisonScreenState
         padding: const EdgeInsets.all(16),
         children: [
           const Text(
-            'Compare one metered dishwasher cycle with a reviewed laboratory reference. This describes a difference in conditions and use; it does not identify Waste or savings. The cycle tag and result are not saved.',
+            'Compare one metered dishwasher cycle with a reviewed laboratory reference. This describes a difference in conditions and use; it does not identify Waste or savings. You can save the verified evidence after comparing.',
           ),
           const SizedBox(height: 12),
           TextButton.icon(
@@ -334,6 +460,9 @@ class _CloudCycleComparisonScreenState
                     : (value) => setState(() {
                         _basisConfirmed = value ?? false;
                         _result = null;
+                        _comparedRequest = null;
+                        _saved = null;
+                        _saveKey = null;
                       }),
                 title: const Text(
                   'I used the listed cycle/program and reviewed the source test basis.',
@@ -383,6 +512,9 @@ class _CloudCycleComparisonScreenState
                       : (value) => setState(() {
                           _attachment = value;
                           _result = null;
+                          _comparedRequest = null;
+                          _saved = null;
+                          _saveKey = null;
                         }),
                 ),
               CheckboxListTile(
@@ -393,6 +525,9 @@ class _CloudCycleComparisonScreenState
                     : (value) => setState(() {
                         _dedicated = value ?? false;
                         _result = null;
+                        _comparedRequest = null;
+                        _saved = null;
+                        _saveKey = null;
                       }),
                 title: const Text(
                   'This plug or outlet served only this dishwasher during the tagged cycle.',
@@ -428,11 +563,35 @@ class _CloudCycleComparisonScreenState
               const Text(
                 'This is a descriptive comparison. Different load, program settings or conditions can affect the difference. No Waste or savings amount is established.',
               ),
+              if (_saved == null)
+                FilledButton(
+                  key: const Key('saveCycleEvidence'),
+                  onPressed: _busy ? null : _saveEvidence,
+                  child: const Text('Save cycle evidence'),
+                ),
             ] else
               Text(
                 _unavailableReason(_result!.reason),
                 key: const Key('cycleComparisonUnavailable'),
               ),
+          ],
+          if (_saved != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _saved!.status == 'available'
+                  ? 'Cycle evidence saved for this dishwasher.'
+                  : 'Saved cycle evidence changed and is no longer available.',
+              key: const Key('savedCycleEvidenceStatus'),
+            ),
+            if (_saved!.status == 'invalidated')
+              const Text(
+                'Review the meter coverage, attachment and appliance before comparing again.',
+              ),
+            TextButton(
+              key: const Key('refreshSavedCycleEvidence'),
+              onPressed: _busy ? null : _refreshSavedEvidence,
+              child: const Text('Refresh saved evidence'),
+            ),
           ],
         ],
       ),

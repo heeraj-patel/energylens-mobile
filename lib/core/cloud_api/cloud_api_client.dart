@@ -446,6 +446,69 @@ class CloudApiClient {
     );
   }
 
+  Future<CloudSavedCycleEvidence> saveDishwasherCycleEvidence(
+    String homeId,
+    String applianceId,
+    Set<String> ownedApplianceIds,
+    CloudCycleComparisonRequest input, {
+    required String idempotencyKey,
+  }) async {
+    if (!_programUuid.hasMatch(homeId) ||
+        !_programUuid.hasMatch(applianceId) ||
+        !_programUuid.hasMatch(idempotencyKey) ||
+        !ownedApplianceIds.any(
+          (id) => id.toLowerCase() == applianceId.toLowerCase(),
+        )) {
+      throw ArgumentError('Invalid dishwasher evidence selection or key');
+    }
+    final response = await _request(
+      'POST',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/appliances/${Uri.encodeComponent(applianceId)}/cycle-comparison/evidence',
+      jsonBody: jsonEncode(input.toJson()),
+      idempotencyKey: idempotencyKey,
+    );
+    if (response.statusCode != 201) {
+      throw const FormatException('Cycle evidence was not created');
+    }
+    final saved = CloudSavedCycleEvidence.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+      homeId: homeId,
+      applianceId: applianceId,
+      request: input,
+    );
+    if (saved.status != 'available') {
+      throw const FormatException('New cycle evidence is unavailable');
+    }
+    return saved;
+  }
+
+  Future<CloudSavedCycleEvidence> dishwasherCycleEvidence(
+    String homeId,
+    String applianceId,
+    Set<String> ownedApplianceIds,
+    String evidenceId,
+    CloudCycleComparisonRequest input,
+  ) async {
+    if (!_programUuid.hasMatch(homeId) ||
+        !_programUuid.hasMatch(applianceId) ||
+        !_programUuid.hasMatch(evidenceId) ||
+        !ownedApplianceIds.any(
+          (id) => id.toLowerCase() == applianceId.toLowerCase(),
+        )) {
+      throw ArgumentError('Invalid dishwasher evidence selection');
+    }
+    final response = await get(
+      '/v1/homes/${Uri.encodeComponent(homeId)}/appliances/${Uri.encodeComponent(applianceId)}/cycle-comparison/evidence/${Uri.encodeComponent(evidenceId)}',
+    );
+    return CloudSavedCycleEvidence.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+      homeId: homeId,
+      applianceId: applianceId,
+      request: input,
+      evidenceId: evidenceId,
+    );
+  }
+
   Future<List<CloudAttachment>> attachments(String homeId) async {
     final response = await get(
       '/v1/homes/${Uri.encodeComponent(homeId)}/attachments/',
