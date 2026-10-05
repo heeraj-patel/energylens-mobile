@@ -33,6 +33,7 @@ Map<String, dynamic> program() => {
   'revision_id': '55555555-5555-4555-8555-555555555555',
   'title': 'Appliance program',
   'administrator_name': 'City utility',
+  'administrator_kind': 'city',
   'benefit_kind': 'rebate',
   'benefit_terms': {'amount': '100'},
   'eligibility_terms': {'category': 'washer'},
@@ -306,6 +307,7 @@ void main() {
   test('accepts unknown source-cited results and location required', () {
     final candidate = CloudProgramPage.fromJson(page()).programs.single;
     expect(candidate.title, 'Appliance program');
+    expect(candidate.administratorKind, 'city');
     expect(candidate.benefitTerms['amount'], '100');
     expect(candidate.eligibilityTerms['category'], 'washer');
     expect(candidate.stackingTerms['status'], 'unknown');
@@ -365,6 +367,37 @@ void main() {
       }),
       throwsFormatException,
     );
+  });
+
+  test('accepts only the supported administrator kinds', () {
+    for (final kind in [
+      'utility',
+      'city',
+      'county',
+      'state',
+      'tribal',
+      'federal',
+      'manufacturer',
+    ]) {
+      expect(
+        CloudProgramPage.fromJson(
+          page([{...program(), 'administrator_kind': kind}]),
+        ).programs.single.administratorKind,
+        kind,
+      );
+    }
+
+    final missingKind = program()..remove('administrator_kind');
+    for (final candidate in [
+      missingKind,
+      {...program(), 'administrator_kind': 'other'},
+      {...program(), 'administrator_kind': 'Utility'},
+    ]) {
+      expect(
+        () => CloudProgramPage.fromJson(page([candidate])),
+        throwsFormatException,
+      );
+    }
   });
 
   test('requests only selected owned appliance with bearer session', () async {

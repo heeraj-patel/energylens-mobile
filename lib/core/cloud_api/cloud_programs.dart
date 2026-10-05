@@ -21,6 +21,7 @@ class CloudProgram {
     required this.id,
     required this.title,
     required this.administratorName,
+    required this.administratorKind,
     required this.benefitKind,
     required this.benefitTerms,
     required this.eligibilityTerms,
@@ -35,6 +36,7 @@ class CloudProgram {
   final String id;
   final String title;
   final String administratorName;
+  final String administratorKind;
   final String benefitKind;
   final Map<String, dynamic> benefitTerms;
   final Map<String, dynamic> eligibilityTerms;
@@ -52,6 +54,7 @@ class CloudProgram {
       'revision_id',
       'title',
       'administrator_name',
+      'administrator_kind',
       'benefit_kind',
       'benefit_terms',
       'eligibility_terms',
@@ -75,6 +78,15 @@ class CloudProgram {
         !_uuid.hasMatch(json['revision_id'] as String) ||
         !_text(json['title'], 200) ||
         !_text(json['administrator_name'], 200) ||
+        !{
+          'utility',
+          'city',
+          'county',
+          'state',
+          'tribal',
+          'federal',
+          'manufacturer',
+        }.contains(json['administrator_kind']) ||
         !_text(json['benefit_kind'], 80) ||
         json['benefit_terms'] is! Map<String, dynamic> ||
         json['eligibility_terms'] is! Map<String, dynamic> ||
@@ -104,6 +116,7 @@ class CloudProgram {
       id: json['program_id'] as String,
       title: json['title'] as String,
       administratorName: json['administrator_name'] as String,
+      administratorKind: json['administrator_kind'] as String,
       benefitKind: json['benefit_kind'] as String,
       benefitTerms: Map<String, dynamic>.from(json['benefit_terms'] as Map),
       eligibilityTerms: Map<String, dynamic>.from(
