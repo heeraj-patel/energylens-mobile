@@ -60,4 +60,53 @@ void main() {
     expect(find.text('Washer'), findsOneWidget);
     expect(find.text('   '), findsNothing);
   });
+
+  testWidgets('source amount opens source details on tap', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: PowerNowDailyCostTable(
+            rows: [
+              PowerNowDailyCostRow(
+                deviceName: 'Lamp',
+                usedTodayUsd: 0.25,
+                wastedTodayUsd: null,
+                sourceName: 'ENERGY STAR data (EPA)',
+                sourceUrl: 'https://example.com/source',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('\$0.25'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('ENERGY STAR data (EPA)\nhttps://example.com/source'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('minus removes only the selected row', (tester) async {
+    int? removed;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PowerNowDailyCostTable(
+            rows: const [
+              PowerNowDailyCostRow(
+                applianceId: 7,
+                deviceName: 'Fan',
+                usedTodayUsd: null,
+                wastedTodayUsd: null,
+              ),
+            ],
+            onRemove: (id) => removed = id,
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const Key('power-now-hide-7')));
+    expect(removed, 7);
+  });
 }

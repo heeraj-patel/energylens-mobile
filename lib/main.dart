@@ -11,9 +11,11 @@ import 'core/cloud_api/cloud_appliance.dart';
 import 'features/discovery/discovery_screen.dart';
 import 'features/discovery/discovery_api.dart';
 import 'features/discovery/discovery_credentials.dart';
-import 'features/discovery/plug_connection_status.dart';
 import 'features/discovery/electricity_settings_screen.dart';
 import 'features/energy/useful_waste_cost_card.dart';
+import 'features/energy/daily_cost.dart';
+import 'features/energy/power_now_daily_cost_table.dart';
+import 'features/energy/power_now_visibility.dart';
 import 'features/energy/cloud_estimates_section.dart';
 import 'features/energy/cloud_metered_history_screen.dart';
 import 'features/energy/cloud_cycle_comparison_screen.dart';
@@ -33,12 +35,6 @@ const _ink = Color(0xFF0F172A);
 const _muted = Color(0xFF61738B);
 const _rose = Color(0xFFE11D48);
 const _line = Color(0xFFE1E8EE);
-
-String _sampleTime(DateTime ts) {
-  final utc = ts.toUtc();
-  String two(int value) => value.toString().padLeft(2, '0');
-  return 'sampled ${utc.year}-${two(utc.month)}-${two(utc.day)} ${two(utc.hour)}:${two(utc.minute)} UTC';
-}
 
 class EnergyLensApp extends StatelessWidget {
   const EnergyLensApp({
@@ -142,6 +138,7 @@ class HomeScreen extends StatefulWidget {
     this.cloudHome,
     this.cloudApi,
     this.localPilotMode = false,
+    this.visibilityStore = const PowerNowVisibilityStore(),
   });
 
   final DiscoveryApi api;
@@ -154,6 +151,7 @@ class HomeScreen extends StatefulWidget {
   final CloudHome? cloudHome;
   final CloudApiClient? cloudApi;
   final bool localPilotMode;
+  final PowerNowVisibilityStore visibilityStore;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -172,6 +170,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _refreshGeneration = 0;
   int _meterGeneration = 0;
   Timer? _meterRefreshTimer;
+  Set<int> _hiddenPowerNowIds = {};
+  (String, String?)? _visibilityScope;
+  Future<void> _visibilityWrite = Future.value();
+  int _visibilityRevision = 0;
+
+  void _setPowerNowVisible(int applianceId, bool visible) {
+    final scope = _visibilityScope;
+    if (scope == null) return;
+    final next = {..._hiddenPowerNowIds};
+    if (visible) {
+      next.remove(applianceId);
+    } else {
+      next.add(applianceId);
+    }
+    ++_visibilityRevision;
+    setState(() => _hiddenPowerNowIds = next);
+    _visibilityWrite = _visibilityWrite
+        .then((_) => widget.visibilityStore.write(scope.$1, scope.$2, next))
+        .catchError((_) {
+          // Keep the current session usable if device storage is unavailable.
+        });
+  }
 
   @override
   void initState() {
@@ -212,6 +232,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         }
         return;
       }
+      final scope = (address, widget.cloudHome?.id);
+      final loadVisibility = _visibilityScope != scope;
+      final visibilityRevision = _visibilityRevision;
       final plugs = await widget.api.saved(address, token);
       List<SavedAppliance> appliances;
       try {
@@ -228,7 +251,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _estimates = const {};
           _meterReadings = const {};
           _baselineCoverage = const {};
+          _visibilityScope = scope;
+          if (loadVisibility) _hiddenPowerNowIds = {};
         });
+      }
+      if (loadVisibility) {
+        unawaited(() async {
+          try {
+            final hiddenIds = await widget.visibilityStore.read(
+              scope.$1,
+              scope.$2,
+            );
+            if (mounted &&
+                _visibilityScope == scope &&
+                _visibilityRevision == visibilityRevision) {
+              setState(() => _hiddenPowerNowIds = hiddenIds);
+            }
+          } catch (_) {
+            // An unavailable preference store leaves every device visible.
+          }
+        }());
       }
       unawaited(_refreshHouseholdSettings(address, token, generation));
       unawaited(
@@ -571,6 +613,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         estimates: _estimates,
         estimatesStale: !_hubConnected && _estimates.isNotEmpty,
         meterReadings: _meterReadings,
+        hiddenApplianceIds: _hiddenPowerNowIds,
+        onHideAppliance: (id) => _setPowerNowVisible(id, false),
         showZipPrompt:
             _hubConnected &&
             _householdSettings != null &&
@@ -598,6 +642,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _ => _AskAndAdd(
         api: widget.api,
         credentials: widget.credentials,
+        appliances: _appliances,
+        estimates: _estimates,
+        hiddenPowerNowIds: _hiddenPowerNowIds,
+        onShowOnPowerNow: (id) => _setPowerNowVisible(id, true),
+        onHoursChanged: _saveApplianceHours,
+        onLoadUsage: _loadApplianceUsage,
+        onUsageChanged: _saveApplianceUsage,
         cloudHome: widget.cloudHome,
         cloudApi: widget.cloudApi,
         onDevicesChanged: _refreshHub,
@@ -1014,205 +1065,6 @@ class _Setup extends StatelessWidget {
   );
 }
 
-class _CostMetricTile extends StatelessWidget {
-  const _CostMetricTile(
-    this.title,
-    this.amount,
-    this.detail, {
-    required this.color,
-  });
-  final String title;
-  final double? amount;
-  final String detail;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Expanded(
-    child: Container(
-      constraints: const BoxConstraints(minHeight: 112),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: _softSurface(context),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleSmall
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            amount == null
-                ? 'Unavailable'
-                : '\$${amount!.toStringAsFixed(2)}/month',
-            style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(color: color, fontWeight: FontWeight.w700),
-          ),
-          Text(
-            detail,
-            style: Theme.of(context).textTheme.bodySmall
-                ?.copyWith(color: _secondary(context)),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _EstimatedCostSummary extends StatelessWidget {
-  const _EstimatedCostSummary({
-    required this.appliances,
-    required this.estimates,
-  });
-  final List<SavedAppliance> appliances;
-  final Map<int, EnergyEstimate> estimates;
-
-  @override
-  Widget build(BuildContext context) {
-    final values = [
-      for (final appliance in appliances) ?estimates[appliance.id],
-    ];
-    final measured = values
-        .where(
-          (item) => item.status == 'measured' && item.estimatedCostUsd != null,
-        )
-        .toList();
-    final sourced = values
-        .where(
-          (item) => item.status != 'measured' && item.estimatedCostUsd != null,
-        )
-        .toList();
-    final pricedCount = sourced.length;
-    final sourcedLoadCount =
-        appliances.length -
-        values.where((item) => item.status == 'measured').length;
-    final loadLabel = sourcedLoadCount == 1 ? 'device' : 'devices';
-    final split = sourced.where((item) => item.activeCostUsd != null).toList();
-    final active = split.fold<double>(
-      0,
-      (sum, item) => sum + item.activeCostUsd!,
-    );
-    final standby = sourced
-        .where((item) => item.standbyCostUsd != null)
-        .fold<double>(0, (sum, item) => sum + item.standbyCostUsd!);
-    final hasStandby = sourced.any((item) => item.standbyCostUsd != null);
-    final total = sourced.fold<double>(
-      0,
-      (sum, item) => sum + (item.estimatedCostUsd ?? 0),
-    );
-    final measuredTotal = measured.fold<double>(
-      0,
-      (sum, item) => sum + item.estimatedCostUsd!,
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        UsefulWasteCostPanel(
-          scopeLabel: 'Tracked devices · ${appliances.length} saved',
-          periodLabel: 'Estimated monthly cost',
-          usefulCostUsd: null,
-          wasteCostUsd: null,
-          unclassifiedCostUsd: sourced.isEmpty ? null : total,
-          detail:
-              'Product ratings and entered use do not establish which energy was useful or wasted. Only ${sourced.length} of ${appliances.length} saved devices have a priced estimate.',
-        ),
-        const SizedBox(height: 12),
-        if (measured.isNotEmpty) ...[
-          UsefulWasteCostPanel(
-            scopeLabel: 'Metered devices · ${measured.length} tracked',
-            periodLabel: 'Observed last 30 days, covered time only',
-            usefulCostUsd: null,
-            wasteCostUsd: null,
-            unclassifiedCostUsd: measuredTotal,
-            detail: 'Meter readings show draw and cost, but device activity is needed to classify useful and wasted use.',
-          ),
-          const SizedBox(height: 12),
-        ],
-        if (measured.isNotEmpty) ...[
-          _Surface(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'OBSERVED LAST 30 DAYS',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: _secondary(context),
-                    letterSpacing: 1,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '\$${measuredTotal.toStringAsFixed(2)} from ${measured.length} metered ${measured.length == 1 ? 'device' : 'devices'}',
-                  style: Theme.of(context).textTheme.headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Only sampled intervals are counted. Each device shows its time coverage.',
-                  style: Theme.of(context).textTheme.bodySmall
-                      ?.copyWith(color: _secondary(context)),
-                ),
-              ],
-            ),
-          ),
-          if (sourced.isNotEmpty) const SizedBox(height: 12),
-        ],
-        if (sourced.isNotEmpty)
-          _Surface(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'ESTIMATED MONTHLY COST',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: _secondary(context),
-                    letterSpacing: 1,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '\$${total.toStringAsFixed(2)} from $pricedCount of $sourcedLoadCount $loadLabel',
-                  style: Theme.of(context).textTheme.headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    _CostMetricTile(
-                      'Active use',
-                      split.isEmpty ? null : active,
-                      'Known active estimates',
-                      color: _green,
-                    ),
-                    const SizedBox(width: 8),
-                    _CostMetricTile(
-                      'Standby use',
-                      hasStandby ? standby : null,
-                      'Known standby estimates',
-                      color: _rose,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Based on product ratings and entered use. Missing estimates are excluded; this is not a live meter reading.',
-                  style: Theme.of(context).textTheme.bodySmall
-                      ?.copyWith(color: _secondary(context)),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-}
-
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle(this.title, this.aside);
   final String title;
@@ -1286,6 +1138,7 @@ class _InfoRow extends StatelessWidget {
 
 class _ConnectedLoadRow extends StatefulWidget {
   const _ConnectedLoadRow({
+    super.key,
     required this.appliance,
     required this.estimate,
     required this.onHoursChanged,
@@ -1759,7 +1612,7 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
   }
 }
 
-class _PowerNow extends StatefulWidget {
+class _PowerNow extends StatelessWidget {
   const _PowerNow({
     required this.plugs,
     required this.appliances,
@@ -1767,6 +1620,8 @@ class _PowerNow extends StatefulWidget {
     required this.estimates,
     required this.estimatesStale,
     required this.meterReadings,
+    required this.hiddenApplianceIds,
+    required this.onHideAppliance,
     required this.showZipPrompt,
     required this.onDismissZipPrompt,
     required this.onOpenElectricitySettings,
@@ -1781,6 +1636,8 @@ class _PowerNow extends StatefulWidget {
   final Map<int, EnergyEstimate> estimates;
   final bool estimatesStale;
   final Map<String, DeviceEnergy> meterReadings;
+  final Set<int> hiddenApplianceIds;
+  final ValueChanged<int> onHideAppliance;
   final bool showZipPrompt;
   final VoidCallback onDismissZipPrompt;
   final VoidCallback onOpenElectricitySettings;
@@ -1789,257 +1646,55 @@ class _PowerNow extends StatefulWidget {
   final Future<ApplianceUsageProfile> Function(int, String, double)
   onUsageChanged;
 
-  @override
-  State<_PowerNow> createState() => _PowerNowState();
-}
-
-class _PowerNowState extends State<_PowerNow> {
-  final Set<String> _collapsedPlugIds = {};
-
-  List<SavedAppliance> get _allAppliances {
-    final byId = <int, SavedAppliance>{
-      for (final appliance in widget.appliances) appliance.id: appliance,
-    };
-    for (final plug in widget.plugs) {
+  List<PowerNowDailyCostRow> get _rows {
+    final attachedPlugByAppliance = <int, SavedPlug>{};
+    for (final plug in plugs) {
       if (plug.connectedAppliance case final appliance?) {
-        byId.putIfAbsent(appliance.id, () => appliance);
+        attachedPlugByAppliance.putIfAbsent(appliance.id, () => plug);
       }
     }
-    return byId.values.toList(growable: false);
-  }
-
-  List<SavedAppliance> get _standaloneAppliances {
-    final attachedIds = {
-      for (final plug in widget.plugs)
-        if (plug.connectedAppliance case final appliance?) appliance.id,
+    final all = <int, SavedAppliance>{
+      for (final appliance in appliances) appliance.id: appliance,
     };
-    return _allAppliances
-        .where((item) => !attachedIds.contains(item.id))
-        .toList();
+    for (final plug in plugs) {
+      if (plug.connectedAppliance case final appliance?) {
+        all.putIfAbsent(appliance.id, () => appliance);
+      }
+    }
+    return [
+      for (final appliance in all.values)
+        if (!hiddenApplianceIds.contains(appliance.id))
+          () {
+            final plug = attachedPlugByAppliance[appliance.id];
+            final estimate = estimates[appliance.id];
+            final sourcedCost = sourceDailyCostUsd(estimate);
+            final source = sourcedCost == null ? null : estimate?.evidence;
+            return PowerNowDailyCostRow(
+              applianceId: appliance.id,
+              deviceName: appliance.name,
+              plugName: plug?.name,
+              usedTodayUsd: sourcedCost,
+              wastedTodayUsd: null,
+              sourceName: source == null ? null : energySourceHeading(source),
+              sourceUrl: source?.sourceUrl,
+            );
+          }(),
+    ];
   }
-
-  List<Widget> _savedDevices() => [
-    _SectionTitle(
-      'Where Your Power Is Going',
-      '${widget.plugs.length} plug${widget.plugs.length == 1 ? '' : 's'} · ${_standaloneAppliances.length} standalone',
-    ),
-    const SizedBox(height: 10),
-    if (widget.plugs.isEmpty && _standaloneAppliances.isEmpty)
-      _InfoRow(
-        Icons.power_outlined,
-        widget.hubConnected
-            ? 'No smart plugs saved on this hub'
-            : 'Hub connection needed',
-        widget.hubConnected
-            ? 'Use Ask & Add to discover and save a plug.'
-            : 'Use Ask & Add to connect your EnergyLens hub.',
-      )
-    else ...[
-      for (final plug in widget.plugs) ...[
-        Builder(
-          builder: (context) {
-            final appliance = plug.connectedAppliance;
-            final expanded =
-                appliance != null && !_collapsedPlugIds.contains(plug.id);
-            final meter =
-                widget.hubConnected &&
-                    plug.connectionStatus != 'disconnected' &&
-                    plug.connectionStatus != 'identity_changed'
-                ? widget.meterReadings[plug.id]
-                : null;
-            final connectionLabel = plugConnectionLabel(
-              plug,
-              hubConnected: widget.hubConnected,
-            );
-            final meterDetail = plug.meterStatus == 'absent'
-                ? 'No energy meter · ${plug.room.isEmpty ? 'Room not set' : plug.room}'
-                : plug.meterStatus != 'verified'
-                ? 'Energy meter unverified'
-                : plug.connectionStatus == 'disconnected' ||
-                      plug.connectionStatus == 'identity_changed'
-                ? 'No current meter reading'
-                : meter?.latestWatts != null
-                ? 'Recent meter reading · ${meter!.latestWatts!.toStringAsFixed(1)} W${meter.latestSample == null ? '' : ' · ${_sampleTime(meter.latestSample!.ts)}'}'
-                : meter?.status == 'measured'
-                ? 'Meter history available · no current reading'
-                : 'Waiting for a meter reading';
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _Surface(
-                  child: Semantics(
-                    key: Key('plug-expand-${plug.id}'),
-                    button: appliance != null,
-                    expanded: expanded,
-                    label:
-                        '${plug.name}, ${plug.model}. $connectionLabel. ${plugConnectionDetail(plug)}. $meterDetail',
-                    hint: appliance == null
-                        ? null
-                        : expanded
-                        ? 'Hide connected appliance ${appliance.name}'
-                        : 'Show connected appliance ${appliance.name}',
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: appliance == null
-                          ? null
-                          : () => setState(() {
-                              if (expanded) {
-                                _collapsedPlugIds.add(plug.id);
-                              } else {
-                                _collapsedPlugIds.remove(plug.id);
-                              }
-                            }),
-                      child: Row(
-                        children: [
-                          _IconWell(Icons.power_outlined),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '${plug.name} · ${plug.model}',
-                                  style: Theme.of(context).textTheme.titleSmall
-                                      ?.copyWith(fontWeight: FontWeight.w700),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  meterDetail,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(color: _secondary(context)),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  '$connectionLabel · ${plugConnectionDetail(plug)}',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(color: _secondary(context)),
-                                ),
-                                if (meter?.status == 'measured') ...[
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    '${meter!.totalKwh.toStringAsFixed(3)} kWh measured in the last 24 hours · ${(meter.coverageFraction * 100).round()}% time coverage',
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(color: _secondary(context)),
-                                  ),
-                                  if (meter.observedCostUsd
-                                      case final cost?) ...[
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      '\$${cost.toStringAsFixed(2)} observed cost during covered time · ${meter.rateSourceLabel ?? 'Electricity rate'}',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: _secondary(context),
-                                          ),
-                                    ),
-                                  ],
-                                ],
-                              ],
-                            ),
-                          ),
-                          if (appliance != null) ...[
-                            const SizedBox(width: 8),
-                            Icon(
-                              expanded ? Icons.expand_less : Icons.expand_more,
-                              semanticLabel: expanded
-                                  ? 'Hide connected appliance'
-                                  : 'Show connected appliance',
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                if (appliance != null && expanded) ...[
-                  const SizedBox(height: 6),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 26),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 2,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.outlineVariant,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _ConnectedLoadRow(
-                            appliance: appliance,
-                            estimate: widget.estimates[appliance.id],
-                            onHoursChanged: widget.onHoursChanged,
-                            onLoadUsage: widget.onLoadUsage,
-                            onUsageChanged: widget.onUsageChanged,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 8),
-      ],
-      for (final appliance in _standaloneAppliances) ...[
-        _ConnectedLoadRow(
-          appliance: appliance,
-          estimate: widget.estimates[appliance.id],
-          onHoursChanged: widget.onHoursChanged,
-          onLoadUsage: widget.onLoadUsage,
-          onUsageChanged: widget.onUsageChanged,
-        ),
-        const SizedBox(height: 8),
-      ],
-    ],
-  ];
 
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      _Surface(
-        child: Row(
-          children: [
-            const _IconWell(Icons.energy_savings_leaf_outlined),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Your home energy, at a glance',
-                    style: Theme.of(context).textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                  Text(
-                    widget.plugs.isEmpty && _allAppliances.isEmpty
-                        ? 'Connect a device to see how your electricity is being used.'
-                        : '${_allAppliances.length} appliance${_allAppliances.length == 1 ? '' : 's'} and ${widget.plugs.length} smart plug${widget.plugs.length == 1 ? '' : 's'} saved on your hub.',
-                    style: Theme.of(context).textTheme.bodySmall
-                        ?.copyWith(color: _secondary(context)),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-      if (widget.estimatesStale) ...[
-        const SizedBox(height: 8),
+      if (estimatesStale) ...[
         const _InfoRow(
           Icons.cloud_off_outlined,
           'Hub disconnected · showing cached estimates',
           'These amounts were saved from the last hub refresh and may be out of date.',
         ),
-      ],
-      if (widget.showZipPrompt) ...[
         const SizedBox(height: 12),
+      ],
+      if (showZipPrompt) ...[
         _InfoRow(
           Icons.location_on_outlined,
           'Add your home ZIP code',
@@ -2049,139 +1704,22 @@ class _PowerNowState extends State<_PowerNow> {
             children: [
               TextButton(
                 key: const Key('setHouseholdZip'),
-                onPressed: widget.onOpenElectricitySettings,
+                onPressed: onOpenElectricitySettings,
                 child: const Text('Open profile'),
               ),
               TextButton(
                 key: const Key('dismissHouseholdZip'),
-                onPressed: widget.onDismissZipPrompt,
+                onPressed: onDismissZipPrompt,
                 child: const Text('Later'),
               ),
             ],
           ),
         ),
+        const SizedBox(height: 12),
       ],
-      const SizedBox(height: 18),
-      _EstimatedCostSummary(
-        appliances: _allAppliances,
-        estimates: widget.estimates,
+      _Surface(
+        child: PowerNowDailyCostTable(rows: _rows, onRemove: onHideAppliance),
       ),
-      const SizedBox(height: 18),
-      ..._savedDevices(),
-      const SizedBox(height: 18),
-      if (!widget.estimates.values.any(
-            (value) => value.estimatedCostUsd != null,
-          ) &&
-          !widget.meterReadings.values.any(
-            (value) => value.status == 'measured',
-          ) &&
-          !widget.estimates.values.any((value) => value.status == 'measured'))
-        _Surface(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'CURRENT PACE',
-                          style: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(
-                                color: _secondary(context),
-                                letterSpacing: 1,
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          'Right Now in Your Home',
-                          style: Theme.of(context).textTheme.headlineSmall
-                              ?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                height: 1.12,
-                              ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 9),
-                  const _IconWell(
-                    Icons.bolt_outlined,
-                    color: Color(0xFF193D5A),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 13,
-                ),
-                decoration: BoxDecoration(
-                  color: _softSurface(context),
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      '—',
-                      style: Theme.of(context).textTheme.headlineLarge
-                          ?.copyWith(
-                            color: _green,
-                            fontWeight: FontWeight.w700,
-                          ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'every hour',
-                        style: Theme.of(context).textTheme.bodySmall
-                            ?.copyWith(color: _secondary(context)),
-                      ),
-                    ),
-                    Text(
-                      '— Watts',
-                      style: Theme.of(context).textTheme.labelSmall
-                          ?.copyWith(color: _secondary(context)),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 15),
-              Container(
-                height: 12,
-                decoration: BoxDecoration(
-                  color: _softSurface(context),
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Waiting for a live reading from a connected device.',
-                style: Theme.of(context).textTheme.bodySmall
-                    ?.copyWith(color: _secondary(context)),
-              ),
-            ],
-          ),
-        ),
-      const SizedBox(height: 18),
-      const _InfoRow(
-        Icons.help_outline,
-        'What can EnergyLens show?',
-        'Measured draw, device activity, and cost will appear after hub setup.',
-      ),
-      const SizedBox(height: 18),
-      const _Setup(),
     ],
   );
 }
@@ -2594,6 +2132,13 @@ class _AskAndAdd extends StatefulWidget {
   const _AskAndAdd({
     required this.api,
     required this.credentials,
+    required this.appliances,
+    required this.estimates,
+    required this.hiddenPowerNowIds,
+    required this.onShowOnPowerNow,
+    required this.onHoursChanged,
+    required this.onLoadUsage,
+    required this.onUsageChanged,
     required this.onDevicesChanged,
     required this.autoScanDiscovery,
     required this.startInConnectAppliance,
@@ -2603,6 +2148,14 @@ class _AskAndAdd extends StatefulWidget {
 
   final DiscoveryApi api;
   final DiscoveryCredentials credentials;
+  final List<SavedAppliance> appliances;
+  final Map<int, EnergyEstimate> estimates;
+  final Set<int> hiddenPowerNowIds;
+  final ValueChanged<int> onShowOnPowerNow;
+  final Future<void> Function(int, double) onHoursChanged;
+  final Future<ApplianceUsageProfile> Function(int) onLoadUsage;
+  final Future<ApplianceUsageProfile> Function(int, String, double)
+  onUsageChanged;
   final VoidCallback onDevicesChanged;
   final bool autoScanDiscovery;
   final bool startInConnectAppliance;
@@ -2616,6 +2169,14 @@ class _AskAndAdd extends StatefulWidget {
 class _AskAndAddState extends State<_AskAndAdd> {
   late _AskMode mode;
   List<SavedAppliance> _savedHubDevices = const [];
+  List<SavedAppliance> get _hubDevices {
+    final byId = <int, SavedAppliance>{
+      for (final device in widget.appliances) device.id: device,
+      for (final device in _savedHubDevices) device.id: device,
+    };
+    return byId.values.toList(growable: false);
+  }
+
   List<CloudAppliance> _cloudDevices = const [];
   String? _cloudInventoryError;
   bool _cloudInventoryLoading = false;
@@ -2686,15 +2247,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
       if (address == null || token == null) return;
       final devices = await widget.api.appliances(address, token);
       if (mounted) {
-        setState(
-          () => _savedHubDevices = devices
-              .where(
-                (device) =>
-                    device.onboardingMethod == 'manual' ||
-                    device.onboardingMethod == 'photo',
-              )
-              .toList(),
-        );
+        setState(() => _savedHubDevices = devices);
       }
     } catch (_) {
       if (mounted) {
@@ -2937,7 +2490,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
           icon: const Icon(Icons.photo_camera_outlined),
           label: const Text('Identify from a photo'),
         ),
-        if (_savedHubDevices.isNotEmpty || _deleteError != null) ...[
+        if (_hubDevices.isNotEmpty || _deleteError != null) ...[
           const SizedBox(height: 18),
           Text(
             'Devices saved on this hub',
@@ -2948,24 +2501,51 @@ class _AskAndAddState extends State<_AskAndAdd> {
               _deleteError!,
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
-          for (final device in _savedHubDevices)
+          for (final device in _hubDevices) ...[
             Card(
               child: ListTile(
                 title: Text(device.name),
                 subtitle: Text(
-                  '${device.onboardingMethod == 'photo' ? 'Added from photo' : 'Manually added'} · '
+                  '${device.onboardingMethod == 'photo'
+                      ? 'Added from photo · '
+                      : device.onboardingMethod == 'manual'
+                      ? 'Manually added · '
+                      : ''}'
                   '${device.room.isEmpty ? device.category : '${device.room} · ${device.category}'}',
                 ),
-                trailing: IconButton(
-                  key: Key('ask-delete-appliance-${device.id}'),
-                  tooltip: 'Delete ${device.name}',
-                  onPressed: _deletingId == null
-                      ? () => _deleteHubDevice(device)
-                      : null,
-                  icon: const Icon(Icons.delete_outline),
-                ),
+                trailing:
+                    device.onboardingMethod == 'manual' ||
+                        device.onboardingMethod == 'photo'
+                    ? IconButton(
+                        key: Key('ask-delete-appliance-${device.id}'),
+                        tooltip: 'Delete ${device.name}',
+                        onPressed: _deletingId == null
+                            ? () => _deleteHubDevice(device)
+                            : null,
+                        icon: const Icon(Icons.delete_outline),
+                      )
+                    : null,
               ),
             ),
+            if (widget.hiddenPowerNowIds.contains(device.id))
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  key: Key('ask-show-power-now-${device.id}'),
+                  onPressed: () => widget.onShowOnPowerNow(device.id),
+                  child: const Text('Show on Power Now'),
+                ),
+              ),
+            _ConnectedLoadRow(
+              key: ValueKey('ask-usage-${device.id}'),
+              appliance: device,
+              estimate: widget.estimates[device.id],
+              onHoursChanged: widget.onHoursChanged,
+              onLoadUsage: widget.onLoadUsage,
+              onUsageChanged: widget.onUsageChanged,
+            ),
+            const SizedBox(height: 8),
+          ],
         ],
       ],
       if (widget.cloudHome != null && widget.cloudApi != null) ...[

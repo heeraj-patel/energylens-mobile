@@ -1,6 +1,8 @@
 import 'package:energylens_mobile/features/discovery/discovery_api.dart';
 import 'package:energylens_mobile/features/discovery/discovery_credentials.dart';
 import 'package:energylens_mobile/main.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
+import 'package:energylens_mobile/features/energy/power_now_visibility.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -31,6 +33,24 @@ class _ConnectedCredentials extends DiscoveryCredentials {
   @override
   Future<void> dismissZipPrompt() async {
     zipPromptDismissed = true;
+  }
+}
+
+class _MemoryVisibilityStore extends PowerNowVisibilityStore {
+  final values = <(String, String?), Set<int>>{};
+
+  @override
+  Future<Set<int>> read(String hubAddress, String? cloudHomeId) async => {
+    ...?values[(hubAddress, cloudHomeId)],
+  };
+
+  @override
+  Future<void> write(
+    String hubAddress,
+    String? cloudHomeId,
+    Set<int> applianceIds,
+  ) async {
+    values[(hubAddress, cloudHomeId)] = {...applianceIds};
   }
 }
 
@@ -711,7 +731,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Photo lamp'), findsOneWidget);
+    expect(find.text('Photo lamp'), findsWidgets);
     expect(find.textContaining('Added from photo'), findsOneWidget);
   });
 
@@ -759,7 +779,7 @@ void main() {
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.text('Find a smart plug'), findsOneWidget);
     expect(find.text('Enter device details'), findsOneWidget);
-    expect(find.text('Desk fan'), findsOneWidget);
+    expect(find.text('Desk fan'), findsWidgets);
 
     await tester.tap(find.text('Power Now'));
     await tester.pumpAndSettle();
@@ -778,6 +798,10 @@ void main() {
         home: HomeScreen(api: api, credentials: _ConnectedCredentials()),
       ),
     );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ask & Add'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Connect Appliance'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.byKey(const Key('appliance-profile-hours-1')),
@@ -889,7 +913,7 @@ void main() {
     expect(api.estimateCalls, greaterThan(1));
     final refreshedCta = find.byKey(const Key('setHouseholdZip'));
     expect(refreshedCta, findsNothing);
-    expect(find.textContaining('Estimated on-time: \$'), findsOneWidget);
+    expect(find.text('\$0.01'), findsOneWidget);
   });
 
   testWidgets(
@@ -948,6 +972,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Ask & Add'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Connect Appliance'));
+    await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.byKey(const Key('appliance-cycles-1')),
       200,
@@ -985,18 +1013,20 @@ void main() {
       find.byKey(const Key('ask-delete-appliance-7')),
       200,
     );
-    expect(find.text('Desk fan'), findsOneWidget);
+    expect(find.text('Desk fan'), findsWidgets);
     await tester.scrollUntilVisible(
       find.byKey(const Key('ask-delete-appliance-8')),
       200,
     );
-    expect(find.text('Photo lamp'), findsOneWidget);
+    expect(find.text('Photo lamp'), findsWidgets);
     expect(find.byKey(const Key('ask-delete-appliance-8')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('ask-delete-appliance-7')));
     await tester.tap(find.byKey(const Key('ask-delete-appliance-7')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(api.devices, hasLength(2));
+    await tester.ensureVisible(find.byKey(const Key('ask-delete-appliance-7')));
     await tester.tap(find.byKey(const Key('ask-delete-appliance-7')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Delete'));
@@ -1022,8 +1052,8 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(const EnergyLensApp());
-    expect(find.text('Hub connection needed'), findsOneWidget);
-    expect(find.textContaining('Waiting for a live reading'), findsOneWidget);
+    expect(find.text('Device'), findsOneWidget);
+    expect(find.text('Used today'), findsOneWidget);
 
     await tester.tap(find.text('Stop Waste'));
     await tester.pumpAndSettle();
@@ -1081,13 +1111,9 @@ void main() {
     },
   );
 
-  testWidgets('shows the connected appliance as an expandable child row', (
+  testWidgets('shows the connected appliance with its plug in Power Now', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       MaterialApp(
         home: HomeScreen(
@@ -1097,35 +1123,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('HUB CONNECTED'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.text('Living Room Lamp KS19 · HS103(US)'),
-      200,
-    );
     expect(find.text('Two-bulb Philips Hue White lamp'), findsOneWidget);
-    expect(find.text('Estimated on-time: \$0.27/month'), findsOneWidget);
-    expect(find.text('Bulb ratings you entered'), findsOneWidget);
-    expect(find.text('ENERGY STAR data (EPA)'), findsNothing);
-    expect(
-      tester
-          .getSemantics(find.byKey(const Key('plug-expand-ks19')))
-          .getSemanticsData()
-          .flagsCollection
-          .isExpanded
-          .toBoolOrNull(),
-      isTrue,
-    );
-
-    await tester.tap(find.byKey(const Key('plug-expand-ks19')));
-    await tester.pumpAndSettle();
-    expect(find.text('Two-bulb Philips Hue White lamp'), findsNothing);
-    expect(find.textContaining('No energy meter'), findsOneWidget);
-    expect(find.text('ESTIMATED MONTHLY COST'), findsOneWidget);
-    expect(find.text('\$0.27 from 1 of 1 device'), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('plug-expand-ks19')));
-    await tester.pumpAndSettle();
-    expect(find.text('Two-bulb Philips Hue White lamp'), findsOneWidget);
+    expect(find.text('Living Room Lamp KS19'), findsOneWidget);
+    expect(find.text('Used today'), findsOneWidget);
+    expect(find.text('Wasted today'), findsOneWidget);
+    expect(find.byKey(const Key('power-now-hide-1')), findsOneWidget);
+    expect(find.text('Estimated on-time: \$0.27/month'), findsNothing);
   });
 
   testWidgets('Sleep Check labels sufficient and unavailable coverage states', (
@@ -1173,8 +1176,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Ask & Add'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Connect Appliance'));
+    await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
-      find.text('Living Room Lamp KS19 · HS103(US)'),
+      find.byKey(const Key('appliance-hours-1')),
       200,
     );
     expect(find.text('Estimated total: \$0.32/month'), findsOneWidget);
@@ -1202,40 +1209,23 @@ void main() {
     expect(find.text('Estimated total: \$0.32/month'), findsOneWidget);
   });
 
-  testWidgets('shows measured power with its actual time coverage', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets('does not label rolling meter history as today', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: HomeScreen(
-          api: _MeteredApi(),
+          api: _MeasuredLoadApi(),
           credentials: _ConnectedCredentials(),
         ),
       ),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Office meter · HS110'), 200);
+    expect(find.text('Desk lamp'), findsOneWidget);
+    expect(find.text('Office meter'), findsOneWidget);
+    expect(find.text('N/A'), findsNWidgets(2));
     expect(
-      find.text(
-        'Recent meter reading · 100.0 W · sampled 2026-09-29 12:34 UTC',
-      ),
-      findsOneWidget,
+      find.textContaining('observed cost during covered time'),
+      findsNothing,
     );
-    expect(
-      find.text('0.125 kWh measured in the last 24 hours · 75% time coverage'),
-      findsOneWidget,
-    );
-    expect(
-      find.text(
-        '\$0.02 observed cost during covered time · Texas average (EIA)',
-      ),
-      findsOneWidget,
-    );
-    expect(find.textContaining('No energy meter'), findsNothing);
   });
 
   testWidgets(
@@ -1269,59 +1259,33 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(api.checks, 1);
-    expect(
-      find.textContaining('Plug connected · Last checked'),
-      findsOneWidget,
-    );
-    expect(find.textContaining('No energy meter'), findsOneWidget);
 
     api.status = 'disconnected';
     await tester.pump(const Duration(seconds: 60));
     await tester.pumpAndSettle();
     expect(api.checks, 2);
-    expect(
-      find.textContaining('Plug disconnected · Last checked'),
-      findsOneWidget,
-    );
-    expect(find.textContaining('No energy meter'), findsOneWidget);
+    expect(find.text('Used today'), findsOneWidget);
   });
 
-  testWidgets('labels retained Home estimates as cached during hub outage', (
+  testWidgets('labels retained daily estimates as cached during hub outage', (
     tester,
   ) async {
     final api = _OutageAfterFirstLoadApi();
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       MaterialApp(
         home: HomeScreen(api: api, credentials: _ConnectedCredentials()),
       ),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('Estimated on-time: \$0.27/month'),
-      200,
-    );
-    expect(find.text('Estimated on-time: \$0.27/month'), findsOneWidget);
+    expect(find.text('\$0.01'), findsOneWidget);
 
     api.unavailable = true;
     await tester.pump(const Duration(seconds: 60));
     await tester.pumpAndSettle();
-
     expect(find.text('HUB DISCONNECTED'), findsOneWidget);
-    expect(find.text('Estimated on-time: \$0.27/month'), findsOneWidget);
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, 1000));
-    await tester.pumpAndSettle();
+    expect(find.text('\$0.01'), findsOneWidget);
     expect(
       find.text('Hub disconnected · showing cached estimates'),
-      findsOneWidget,
-    );
-    expect(
-      find.text(
-        'These amounts were saved from the last hub refresh and may be out of date.',
-      ),
       findsOneWidget,
     );
   });
@@ -1346,13 +1310,9 @@ void main() {
     expect(energy.latestSample!.kwhCumulative, 3.201);
   });
 
-  testWidgets('keeps measured 30-day cost separate from sourced estimates', (
+  testWidgets('never converts a measured 30-day estimate to a daily amount', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       MaterialApp(
         home: HomeScreen(
@@ -1362,46 +1322,87 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Cost for Desk lamp'), 200);
-    expect(find.text('Observed last 30 days: \$2.00'), findsOneWidget);
-    expect(
-      find.text('Meter readings · 67% of the last 30 days covered'),
-      findsOneWidget,
-    );
-    expect(find.text('OBSERVED LAST 30 DAYS'), findsOneWidget);
-    expect(find.text('ESTIMATED MONTHLY COST'), findsNothing);
+    expect(find.text('Desk lamp'), findsOneWidget);
+    expect(find.text('N/A'), findsNWidgets(2));
+    expect(find.text('Observed last 30 days: \$2.00'), findsNothing);
   });
 
-  testWidgets(
-    'includes standalone appliances in the house cost without classifying waste',
-    (tester) async {
-      tester.view.physicalSize = const Size(390, 844);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      await tester.pumpWidget(
-        MaterialApp(
-          home: HomeScreen(
-            api: _StandaloneCostApi(),
-            credentials: _ConnectedCredentials(),
-          ),
+  testWidgets('includes standalone appliances even without a sourced cost', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          api: _StandaloneCostApi(),
+          credentials: _ConnectedCredentials(),
         ),
-      );
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        find.text('Cost for KitchenAid refrigerator'),
-        200,
-      );
-      expect(find.text('KitchenAid refrigerator'), findsOneWidget);
-      expect(find.text('Cost for KitchenAid refrigerator'), findsOneWidget);
-      await tester.scrollUntilVisible(
-        find.text('Tracked devices · 2 saved'),
-        200,
-      );
-      expect(find.text('\$8.99 from 2 of 2 devices'), findsOneWidget);
-      expect(find.text('Waste cost'), findsWidgets);
-      expect(find.text('Useful cost'), findsWidgets);
-      expect(find.text('Unclassified cost'), findsWidgets);
-    },
-  );
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('KitchenAid refrigerator'), findsOneWidget);
+    expect(find.text('Two-bulb Philips Hue White lamp'), findsOneWidget);
+    expect(find.text('N/A'), findsNWidgets(3));
+    expect(find.text('Waste cost'), findsNothing);
+  });
+
+  testWidgets('Power Now visibility persists and Ask & Add restores a device', (
+    tester,
+  ) async {
+    final store = _MemoryVisibilityStore();
+    final api = _ManualDevicesApi();
+    const homeA = CloudHome(
+      id: 'home-a',
+      name: 'Home A',
+      timezone: 'America/Chicago',
+      countryCode: 'US',
+      postalCode: '78732',
+    );
+    const homeB = CloudHome(
+      id: 'home-b',
+      name: 'Home B',
+      timezone: 'America/Chicago',
+      countryCode: 'US',
+      postalCode: '78732',
+    );
+    Widget app(CloudHome home) => MaterialApp(
+      home: HomeScreen(
+        api: api,
+        credentials: _ConnectedCredentials(),
+        visibilityStore: store,
+        cloudHome: home,
+      ),
+    );
+
+    await tester.pumpWidget(app(homeA));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('power-now-hide-7')));
+    await tester.pumpAndSettle();
+    expect(find.text('Desk fan'), findsNothing);
+    expect(find.text('Photo lamp'), findsOneWidget);
+
+    await tester.tap(find.text('Ask & Add'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Connect Appliance'));
+    await tester.pumpAndSettle();
+    expect(find.text('Desk fan'), findsWidgets);
+    await tester.ensureVisible(find.byKey(const Key('ask-show-power-now-7')));
+    await tester.tap(find.byKey(const Key('ask-show-power-now-7')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Power Now'));
+    await tester.pumpAndSettle();
+    expect(find.text('Desk fan'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('power-now-hide-8')));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(app(homeA));
+    await tester.pumpAndSettle();
+    expect(find.text('Photo lamp'), findsNothing);
+    expect(find.text('Desk fan'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(app(homeB));
+    await tester.pumpAndSettle();
+    expect(find.text('Photo lamp'), findsOneWidget);
+  });
 }
