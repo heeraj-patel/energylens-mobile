@@ -5,7 +5,6 @@ import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_api/cloud_faq.dart';
 import '../../core/cloud_api/cloud_home.dart';
 import '../identify/cloud_usage_questions_screen.dart';
-import 'cloud_programs_screen.dart';
 
 class CloudFaqScreen extends StatefulWidget {
   const CloudFaqScreen({super.key, required this.api, required this.home});
@@ -200,25 +199,6 @@ class _CloudFaqScreenState extends State<CloudFaqScreen> {
                   key: const Key('faqAnswer'),
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                if (_intent == 'programs_for_device') ...[
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Reviewed program candidates are checked for one saved appliance at a time. A match does not confirm eligibility or savings.',
-                  ),
-                  TextButton.icon(
-                    key: const Key('faqOpenPrograms'),
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => CloudProgramsScreen(
-                          api: widget.api,
-                          home: widget.home,
-                        ),
-                      ),
-                    ),
-                    icon: const Icon(Icons.local_offer_outlined),
-                    label: const Text('Check reviewed programs'),
-                  ),
-                ],
                 const SizedBox(height: 12),
                 for (final finding in answer.findings)
                   Card(

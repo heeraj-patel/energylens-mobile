@@ -23,7 +23,7 @@ import 'features/energy/cloud_kasa_runtime_screen.dart';
 import 'features/energy/cloud_metered_summary_screen.dart';
 import 'features/energy/cloud_faq_screen.dart';
 import 'features/energy/cloud_recommendations_screen.dart';
-import 'features/energy/cloud_programs_screen.dart';
+import 'features/energy/stop_waste_programs.dart';
 import 'features/energy/cloud_report_preview_screen.dart';
 import 'features/identify/appliance_onboarding_screen.dart';
 import 'features/identify/cloud_usage_questions_screen.dart';
@@ -984,20 +984,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                           const SizedBox(height: 12),
                           OutlinedButton.icon(
-                            key: const Key('openCloudPrograms'),
-                            onPressed: () => Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => CloudProgramsScreen(
-                                  api: widget.cloudApi!,
-                                  home: widget.cloudHome!,
-                                ),
-                              ),
-                            ),
-                            icon: const Icon(Icons.local_offer_outlined),
-                            label: const Text('Reviewed programs'),
-                          ),
-                          const SizedBox(height: 12),
-                          OutlinedButton.icon(
                             key: const Key('openCloudFaq'),
                             onPressed: () => Navigator.of(context).push(
                               MaterialPageRoute<void>(
@@ -1891,6 +1877,8 @@ class _StopWaste extends StatelessWidget {
         'Compare observed use before and after an action to see the result.',
         color: _green,
       ),
+      const SizedBox(height: 18),
+      Text('Programs', style: Theme.of(context).textTheme.titleLarge),
     ],
   );
 }
@@ -1959,6 +1947,8 @@ class _CloudStopWaste extends StatelessWidget {
         icon: const Icon(Icons.calculate_outlined),
         label: const Text('Review modeled estimates in Power Now'),
       ),
+      const SizedBox(height: 18),
+      StopWastePrograms(api: api, home: home),
     ],
   );
 }

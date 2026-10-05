@@ -266,18 +266,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(faqInsufficientAnswer), findsOneWidget);
     }
-    expect(find.byKey(const Key('faqOpenPrograms')), findsOneWidget);
-    await tester.ensureVisible(find.byKey(const Key('faqOpenPrograms')));
-    await tester.tap(find.byKey(const Key('faqOpenPrograms')));
-    await tester.pumpAndSettle();
-    expect(find.text('Reviewed programs'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('programAppliance')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Washer').last);
-    await tester.pumpAndSettle();
-    expect(find.textContaining('A home location is needed'), findsOneWidget);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('faqOpenPrograms')), findsNothing);
     await tester.tap(find.byKey(const Key('faqIntent-device_operating_cost')));
     await tester.pumpAndSettle();
     expect(

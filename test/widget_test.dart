@@ -1216,6 +1216,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Find What’s Wasting Electricity'), findsOneWidget);
     expect(find.text('No findings yet'), findsOneWidget);
+    expect(find.text('Programs'), findsOneWidget);
 
     await tester.tap(find.text('Sleep Check'));
     await tester.pumpAndSettle();

@@ -19,6 +19,15 @@ flutter run
 
 ## Cloud sign-in build configuration
 
+Stop Waste loads programs for every saved Cloud appliance from the per-appliance
+program endpoint. It combines duplicate program IDs and displays only offers
+whose availability is `open` and whose review expiry is still in the future.
+The section heading remains visible when the feed has no qualifying rows or a
+Cloud home is unavailable. Each offer shows its category, supplied title and
+benefit, administrator name, and source URL; tapping it opens the source in the
+phone's default browser. The detailed per-appliance discovery screen remains
+in code for diagnostics and is not linked from customer navigation.
+
 Release builds require these `--dart-define` values: `ENERGYLENS_OIDC_ISSUER`
 (HTTPS), `ENERGYLENS_OIDC_AUDIENCE`, `ENERGYLENS_OIDC_CLIENT_ID`,
 `ENERGYLENS_OIDC_REDIRECT_URL=io.energylens.app://login-callback`, and

@@ -116,7 +116,8 @@ void main() {
     expect(find.text('Explore ways to reduce use'), findsOneWidget);
     expect(find.textContaining('Waste is not yet assessed'), findsOneWidget);
     expect(find.text('MONITORING NOT CONNECTED'), findsNothing);
-    expect(paths, isEmpty);
+    expect(find.text('Programs'), findsOneWidget);
+    expect(paths, ['/v1/homes/${_home.id}/appliances']);
 
     await tester.ensureVisible(find.byKey(const Key('stopWasteCloudActions')));
     await tester.tap(find.byKey(const Key('stopWasteCloudActions')));
