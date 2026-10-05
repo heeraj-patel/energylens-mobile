@@ -35,6 +35,7 @@ Map<String, dynamic> program() => {
   'administrator_name': 'City utility',
   'administrator_kind': 'city',
   'benefit_kind': 'rebate',
+  'benefit_display': 'Up to 100 back',
   'benefit_terms': {'amount': '100'},
   'eligibility_terms': {'category': 'washer'},
   'stacking_terms': {'status': 'unknown'},
@@ -309,6 +310,7 @@ void main() {
     expect(candidate.title, 'Appliance program');
     expect(candidate.administratorKind, 'city');
     expect(candidate.benefitTerms['amount'], '100');
+    expect(candidate.benefitDisplay, 'Up to 100 back');
     expect(candidate.eligibilityTerms['category'], 'washer');
     expect(candidate.stackingTerms['status'], 'unknown');
     expect(candidate.availabilityStatus, 'open');
@@ -369,6 +371,35 @@ void main() {
     );
   });
 
+  test('validates concise single-line benefit display text', () {
+    expect(
+      CloudProgramPage.fromJson(
+        page([
+          {...program(), 'benefit_display': '💡' * 160},
+        ]),
+      ).programs.single.benefitDisplay.runes.length,
+      160,
+    );
+
+    final missing = program()..remove('benefit_display');
+    for (final candidate in [
+      missing,
+      {...program(), 'benefit_display': ''},
+      {...program(), 'benefit_display': '  offer'},
+      {...program(), 'benefit_display': 'offer  '},
+      {...program(), 'benefit_display': 'line one\nline two'},
+      {...program(), 'benefit_display': 'line one\rline two'},
+      {...program(), 'benefit_display': 'offer\there'},
+      {...program(), 'benefit_display': 'offer\u0000'},
+      {...program(), 'benefit_display': '💡' * 161},
+    ]) {
+      expect(
+        () => CloudProgramPage.fromJson(page([candidate])),
+        throwsFormatException,
+      );
+    }
+  });
+
   test('accepts only the supported administrator kinds', () {
     for (final kind in [
       'utility',
@@ -381,7 +412,9 @@ void main() {
     ]) {
       expect(
         CloudProgramPage.fromJson(
-          page([{...program(), 'administrator_kind': kind}]),
+          page([
+            {...program(), 'administrator_kind': kind},
+          ]),
         ).programs.single.administratorKind,
         kind,
       );

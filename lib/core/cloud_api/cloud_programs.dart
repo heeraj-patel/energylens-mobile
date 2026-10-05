@@ -13,6 +13,12 @@ bool _text(dynamic value, int max) =>
     value.isNotEmpty &&
     value.length <= max &&
     value.trim() == value;
+bool _benefitDisplay(dynamic value) =>
+    value is String &&
+    value.isNotEmpty &&
+    value.trim() == value &&
+    value.runes.length <= 160 &&
+    !value.runes.any((rune) => rune < 0x20 || (rune >= 0x7f && rune <= 0x9f));
 DateTime? _instant(dynamic value) =>
     _text(value, 64) ? DateTime.tryParse(value as String) : null;
 
@@ -23,6 +29,7 @@ class CloudProgram {
     required this.administratorName,
     required this.administratorKind,
     required this.benefitKind,
+    required this.benefitDisplay,
     required this.benefitTerms,
     required this.eligibilityTerms,
     required this.stackingTerms,
@@ -38,6 +45,7 @@ class CloudProgram {
   final String administratorName;
   final String administratorKind;
   final String benefitKind;
+  final String benefitDisplay;
   final Map<String, dynamic> benefitTerms;
   final Map<String, dynamic> eligibilityTerms;
   final Map<String, dynamic> stackingTerms;
@@ -56,6 +64,7 @@ class CloudProgram {
       'administrator_name',
       'administrator_kind',
       'benefit_kind',
+      'benefit_display',
       'benefit_terms',
       'eligibility_terms',
       'stacking_terms',
@@ -88,6 +97,7 @@ class CloudProgram {
           'manufacturer',
         }.contains(json['administrator_kind']) ||
         !_text(json['benefit_kind'], 80) ||
+        !_benefitDisplay(json['benefit_display']) ||
         json['benefit_terms'] is! Map<String, dynamic> ||
         json['eligibility_terms'] is! Map<String, dynamic> ||
         json['stacking_terms'] is! Map<String, dynamic> ||
@@ -118,6 +128,7 @@ class CloudProgram {
       administratorName: json['administrator_name'] as String,
       administratorKind: json['administrator_kind'] as String,
       benefitKind: json['benefit_kind'] as String,
+      benefitDisplay: json['benefit_display'] as String,
       benefitTerms: Map<String, dynamic>.from(json['benefit_terms'] as Map),
       eligibilityTerms: Map<String, dynamic>.from(
         json['eligibility_terms'] as Map,
