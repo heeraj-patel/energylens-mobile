@@ -2263,10 +2263,12 @@ class _AskAndAddState extends State<_AskAndAdd> {
   int? _deletingId;
 
   Future<void> _openPhotoOnboarding() async {
-    final saved = await Navigator.of(context).push<SavedAppliance>(
-      MaterialPageRoute<SavedAppliance>(
+    final saved = await Navigator.of(context).push<Object>(
+      MaterialPageRoute<Object>(
         builder: (_) => ApplianceOnboardingScreen(
           method: 'photo',
+          api: widget.api,
+          credentials: widget.credentials,
           cloudHome: widget.cloudHome,
           cloudApi: widget.cloudApi,
         ),

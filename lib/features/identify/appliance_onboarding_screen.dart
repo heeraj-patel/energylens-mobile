@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -190,18 +191,25 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   String? _error;
   String? _deleteError;
   _PendingAttachment? _pendingAttachment;
+  String? _selectedPlugId;
+  List<SavedPlug> _savedPlugs = const [];
+  bool _savedPlugsLoading = false;
   List<SavedAppliance> _saved = const [];
   final Map<int, EnergyEstimate> _estimates = {};
   final Map<int, String> _lookupStatuses = {};
 
   bool get _cloudOnly =>
-      widget.plugId == null &&
+      _selectedPlugId == null &&
       widget.cloudHome != null &&
       widget.cloudApi != null;
+
+  bool get _canSelectSavedPlug =>
+      widget.method == 'photo' && widget.plugId == null;
 
   @override
   void initState() {
     super.initState();
+    _selectedPlugId = widget.plugId;
     for (final controller in [_name, _room]) {
       controller.addListener(_cloudInputChanged);
     }
@@ -209,6 +217,43 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       controller.addListener(_cloudIdentityChanged);
     }
     if (!_cloudOnly) _restore();
+    if (_canSelectSavedPlug) unawaited(_loadSavedPlugs());
+  }
+
+  Future<void> _loadSavedPlugs() async {
+    if (_savedPlugsLoading) return;
+    setState(() => _savedPlugsLoading = true);
+    try {
+      final (address, token) = await widget.credentials.read();
+      if (address == null || token == null) {
+        if (mounted) setState(() => _savedPlugs = const []);
+        return;
+      }
+      final plugs = await widget.api.saved(address, token);
+      if (!mounted) return;
+      setState(() {
+        _savedPlugs = plugs;
+        if (_hub.text.isEmpty) _hub.text = address;
+        if (_token.text.isEmpty) _token.text = token;
+      });
+    } catch (_) {
+      // The Cloud-only path remains available when the local hub is offline.
+    } finally {
+      if (mounted) setState(() => _savedPlugsLoading = false);
+    }
+  }
+
+  void _selectSavedPlug(String? plugId) {
+    if (_busy || _pendingAttachment != null || !_canSelectSavedPlug) return;
+    if (plugId != null && !_savedPlugs.any((plug) => plug.id == plugId)) {
+      return;
+    }
+    setState(() {
+      _selectedPlugId = plugId;
+      _error = null;
+      _confirmedModel = false;
+    });
+    if (plugId != null) unawaited(_refresh());
   }
 
   void _cloudInputChanged() {
@@ -612,7 +657,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     }
     final hubAddress = _hub.text.trim();
     final hubToken = _token.text.trim();
-    final plugId = widget.plugId;
+    final plugId = _selectedPlugId;
     final hoursText = _hours.text.trim();
     final hours = hoursText.isEmpty ? null : double.tryParse(hoursText);
     final lighting = _category == 'lighting' && _loadKind == 'replaceable_bulb';
@@ -740,7 +785,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   Future<void> _attachSavedAppliance() async {
     final pending = _pendingAttachment;
     if (pending == null) return;
-    if (widget.plugId != pending.plugId ||
+    if (_selectedPlugId != pending.plugId ||
         _hub.text.trim() != pending.hubAddress) {
       setState(
         () => _error = 'Device saved, attachment pending. Return to the original plug and hub address to retry.',
@@ -1269,6 +1314,32 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                 ),
                 contentPadding: EdgeInsets.zero,
               ),
+            if (_canSelectSavedPlug) ...[
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String?>(
+                key: const Key('photoSmartPlug'),
+                initialValue: _selectedPlugId,
+                decoration: const InputDecoration(
+                  labelText: 'Smart plug',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: SizedBox.shrink(),
+                  ),
+                  for (final plug in _savedPlugs)
+                    DropdownMenuItem<String?>(
+                      value: plug.id,
+                      child: Text(plug.name),
+                    ),
+                ],
+                onChanged:
+                    _busy || _savedPlugsLoading || _pendingAttachment != null
+                    ? null
+                    : _selectSavedPlug,
+              ),
+            ],
             if (_cloudOnly) ...[
               DropdownButtonFormField<String>(
                 key: const Key('cloudApplianceFuel'),

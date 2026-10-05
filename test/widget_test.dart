@@ -768,6 +768,35 @@ class _ManualDevicesApi extends DiscoveryApi {
   }
 }
 
+class _PhotoAttachedApi extends _ManualDevicesApi {
+  bool attached = false;
+
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async => attached
+      ? const [
+          SavedPlug(
+            id: 'kp115',
+            ip: '192.168.1.30',
+            model: 'KP115',
+            name: 'KP115',
+            room: '',
+            meterStatus: 'verified',
+            lastVerifiedAt: 1,
+            connectedAppliance: SavedAppliance(
+              id: 8,
+              name: 'Photo lamp',
+              room: 'Living Room',
+              category: 'lighting',
+              manufacturer: '',
+              model: '',
+              loadKind: 'integrated_lamp',
+              onboardingMethod: 'photo',
+            ),
+          ),
+        ]
+      : [];
+}
+
 void main() {
   testWidgets('photo search is reachable from the default Ask screen', (
     tester,
@@ -819,6 +848,41 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Photo lamp'), findsWidgets);
     expect(find.textContaining('Added from photo'), findsOneWidget);
+  });
+
+  testWidgets('attached photo returns through Ask & Add to Power Now', (
+    tester,
+  ) async {
+    final api = _PhotoAttachedApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          api: api,
+          credentials: _ConnectedCredentials(),
+          initialTabIndex: 3,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('searchUsingPhoto')));
+    await tester.pumpAndSettle();
+    api.attached = true;
+    Navigator.of(tester.element(find.text('Choose photo'))).pop(
+      const SavedPlug(
+        id: 'kp115',
+        ip: '192.168.1.30',
+        model: 'KP115',
+        name: 'KP115',
+        room: '',
+        meterStatus: 'verified',
+        lastVerifiedAt: 1,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Power Now'));
+    await tester.pumpAndSettle();
+    expect(find.text('Photo lamp'), findsOneWidget);
+    expect(find.text('KP115'), findsOneWidget);
   });
 
   testWidgets('Release local pilot reaches phone-only photo entry', (

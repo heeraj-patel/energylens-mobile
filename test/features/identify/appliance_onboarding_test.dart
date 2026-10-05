@@ -230,6 +230,67 @@ class AttachmentRetryApi extends FakeApi {
   }
 }
 
+class PhotoPlugApi extends FakeApi {
+  final attachedPlugIds = <String>[];
+  int createCalls = 0;
+  bool failFirstAttachment = false;
+
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async => const [
+    SavedPlug(
+      id: 'hs103',
+      ip: '192.168.1.29',
+      model: 'HS103',
+      name: 'HS103',
+      room: '',
+      meterStatus: 'absent',
+      lastVerifiedAt: 1,
+    ),
+    SavedPlug(
+      id: 'kp115',
+      ip: '192.168.1.30',
+      model: 'KP115',
+      name: 'KP115',
+      room: '',
+      meterStatus: 'verified',
+      lastVerifiedAt: 1,
+    ),
+  ];
+
+  @override
+  Future<SavedAppliance> addAppliance(
+    String baseUrl,
+    String token,
+    ApplianceInput input,
+  ) async {
+    createCalls++;
+    return super.addAppliance(baseUrl, token, input);
+  }
+
+  @override
+  Future<SavedPlug> attachAppliance(
+    String baseUrl,
+    String token,
+    String plugId,
+    int applianceId,
+  ) async {
+    attachedPlugIds.add(plugId);
+    if (failFirstAttachment && attachedPlugIds.length == 1) {
+      throw StateError('Hub temporarily unavailable');
+    }
+    return SavedPlug(
+      id: plugId,
+      ip: '192.168.1.30',
+      model: 'KP115',
+      name: 'KP115',
+      room: '',
+      meterStatus: 'verified',
+      lastVerifiedAt: 1,
+      connectedAppliance: rows.singleWhere((row) => row.id == applianceId),
+    );
+  }
+}
+
 class SourceApi extends FakeApi {
   SourceApi(this.kind, {bool seedSaved = true}) {
     if (seedSaved) {
@@ -372,6 +433,130 @@ Future<void> scrollTo(
 }
 
 void main() {
+  testWidgets('direct photo can save to Hub and attach selected KP115', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = PhotoPlugApi();
+    Object? returned;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: FilledButton(
+              onPressed: () async {
+                returned = await Navigator.of(context).push<Object>(
+                  MaterialPageRoute(
+                    builder: (_) => ApplianceOnboardingScreen(
+                      method: 'photo',
+                      api: api,
+                      credentials: FakeCredentials(),
+                      capture: FakeCapture(),
+                      cloudHome: _cloudHome,
+                      cloudApi: _CatalogApi(fail: false),
+                    ),
+                  ),
+                );
+              },
+              child: const Text('Open photo'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open photo'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('photoSmartPlug')), findsOneWidget);
+    expect(find.byKey(const Key('hubAddress')), findsNothing);
+    await tester.tap(find.text('Take photo'));
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('photoCandidate-ABC1234')));
+    await tester.tap(find.byKey(const Key('photoCandidate-ABC1234')));
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('applianceName')));
+    await tester.enterText(
+      find.byKey(const Key('applianceName')),
+      'Office lamp',
+    );
+    await scrollTo(
+      tester,
+      find.text('I checked this full model and fuel against the label'),
+    );
+    await tester.tap(
+      find.text('I checked this full model and fuel against the label'),
+    );
+    await scrollTo(tester, find.byKey(const Key('photoSmartPlug')));
+    await tester.tap(find.byKey(const Key('photoSmartPlug')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('KP115').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('hubAddress')), findsOneWidget);
+    await scrollTo(tester, find.text('I checked this model against the label'));
+    await tester.tap(find.text('I checked this model against the label'));
+    await scrollTo(tester, find.byKey(const Key('saveAppliance')));
+    await tester.tap(find.byKey(const Key('saveAppliance')));
+    await tester.pumpAndSettle();
+
+    expect(api.createCalls, 1);
+    expect(api.rows.single.onboardingMethod, 'photo');
+    expect(api.attachedPlugIds, ['kp115']);
+    expect(returned, isA<SavedPlug>());
+    expect((returned as SavedPlug).connectedAppliance?.name, 'Office lamp');
+  });
+
+  testWidgets('direct photo attachment retry does not create a second device', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = PhotoPlugApi()..failFirstAttachment = true;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ApplianceOnboardingScreen(
+          method: 'photo',
+          api: api,
+          credentials: FakeCredentials(),
+          capture: FakeCapture(),
+          cloudHome: _cloudHome,
+          cloudApi: _CatalogApi(fail: false),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('photoSmartPlug')));
+    await tester.tap(find.byKey(const Key('photoSmartPlug')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('KP115').last);
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.text('Take photo'), delta: -300);
+    await tester.tap(find.text('Take photo'));
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('photoCandidate-ABC1234')));
+    await tester.tap(find.byKey(const Key('photoCandidate-ABC1234')));
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('applianceName')));
+    await tester.enterText(
+      find.byKey(const Key('applianceName')),
+      'Office lamp',
+    );
+    await scrollTo(tester, find.text('I checked this model against the label'));
+    await tester.tap(find.text('I checked this model against the label'));
+    await scrollTo(tester, find.byKey(const Key('saveAppliance')));
+    await tester.tap(find.byKey(const Key('saveAppliance')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('attachmentPendingNotice')), findsOneWidget);
+    expect(api.createCalls, 1);
+    await tester.tap(find.byKey(const Key('saveAppliance')));
+    await tester.pumpAndSettle();
+    expect(api.createCalls, 1);
+    expect(api.attachedPlugIds, ['kp115', 'kp115']);
+  });
+
   test('only labeled OCR model text creates a suggestion', () {
     expect(modelHintFromOcr('MODEL NO: ABC1234'), 'ABC1234');
     expect(modelHintFromOcr('SERIAL: ABC1234'), isNull);
