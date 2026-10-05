@@ -771,6 +771,11 @@ class _ManualDevicesApi extends DiscoveryApi {
     String token,
     int applianceId,
   ) async {
+    final device = devices.where((item) => item.id == applianceId).first;
+    if (device.onboardingMethod != 'manual' &&
+        device.onboardingMethod != 'photo') {
+      throw StateError('Only manually added devices can be deleted here');
+    }
     devices.removeWhere((device) => device.id == applianceId);
   }
 }
@@ -1200,6 +1205,37 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.devices, isEmpty);
   });
+
+  testWidgets(
+    'does not offer deletion for hub records outside manual and photo',
+    (tester) async {
+      final api = _ManualDevicesApi();
+      api.devices.add(
+        const SavedAppliance(
+          id: 9,
+          name: 'Discovered device',
+          room: '',
+          category: 'fan',
+          manufacturer: '',
+          model: '',
+          loadKind: 'appliance',
+          onboardingMethod: 'discovered',
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeScreen(api: api, credentials: _ConnectedCredentials()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Ask & Add'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Connect Appliance'));
+      await tester.pumpAndSettle();
+    expect(find.text('Discovered device'), findsWidgets);
+      expect(find.byKey(const Key('ask-delete-appliance-9')), findsNothing);
+    },
+  );
 
   testWidgets('shows the disconnected state without invented readings', (
     tester,
