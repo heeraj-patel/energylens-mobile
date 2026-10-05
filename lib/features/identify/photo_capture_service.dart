@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -19,6 +20,15 @@ class CapturedPhoto {
   const CapturedPhoto({required this.path, required this.bytes});
   final String path;
   final Uint8List bytes;
+}
+
+/// Physically applies EXIF orientation so previews and native OCR read the
+/// same upright pixels. Unreadable formats are left untouched for native OCR.
+Uint8List normalizePhotoOrientation(Uint8List bytes) {
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) return bytes;
+  final upright = img.bakeOrientation(decoded);
+  return Uint8List.fromList(img.encodeJpg(upright, quality: 80));
 }
 
 class PhotoCaptureService {
@@ -45,7 +55,17 @@ class PhotoCaptureService {
         }
         throw const FormatException('Choose a photo smaller than 5 MB.');
       }
-      return CapturedPhoto(path: file.path, bytes: bytes);
+      final normalizedBytes = normalizePhotoOrientation(bytes);
+      if (normalizedBytes.length > 5 * 1024 * 1024) {
+        try {
+          await File(file.path).delete();
+        } catch (_) {
+          // The picker may remove its own temporary file.
+        }
+        throw const FormatException('Choose a photo smaller than 5 MB.');
+      }
+      await File(file.path).writeAsBytes(normalizedBytes, flush: true);
+      return CapturedPhoto(path: file.path, bytes: normalizedBytes);
     } on PlatformException catch (error) {
       if (error.code == 'camera_access_denied') {
         throw const CameraPermissionDeniedException();
@@ -55,6 +75,23 @@ class PhotoCaptureService {
       }
       rethrow;
     }
+  }
+
+  /// Rotates the photo clockwise and updates its file so preview, OCR, and
+  /// barcode detection all use the same pixels.
+  Future<CapturedPhoto> rotateClockwise(CapturedPhoto photo) async {
+    final decoded = img.decodeImage(photo.bytes);
+    if (decoded == null) {
+      throw StateError('Photo rotation is unavailable for this image.');
+    }
+    final rotated = Uint8List.fromList(
+      img.encodeJpg(img.copyRotate(decoded, angle: 90), quality: 80),
+    );
+    if (rotated.length > 5 * 1024 * 1024) {
+      throw const FormatException('Choose a photo smaller than 5 MB.');
+    }
+    await File(photo.path).writeAsBytes(rotated, flush: true);
+    return CapturedPhoto(path: photo.path, bytes: rotated);
   }
 
   Future<String?> extractTextHint(String path) async {

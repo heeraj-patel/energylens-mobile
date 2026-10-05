@@ -407,6 +407,37 @@ class RetakeCapture extends PhotoCaptureService {
   Future<void> discard(CapturedPhoto photo) async {}
 }
 
+class OrientationRetryCapture extends PhotoCaptureService {
+  final readPaths = <String>[];
+
+  @override
+  Future<CapturedPhoto?> capturePhoto() async => CapturedPhoto(
+    path: '/tmp/label-upside-down.jpg',
+    bytes: Uint8List.fromList([1, 2, 3]),
+  );
+
+  @override
+  Future<String?> extractTextHint(String path) async {
+    readPaths.add(path);
+    return path.endsWith('label-upright.jpg')
+        ? 'Manufacturer: LG\nMODEL NO: WM3070HWA'
+        : null;
+  }
+
+  @override
+  Future<String?> detectUpc(String path) async => null;
+
+  @override
+  Future<CapturedPhoto> rotateClockwise(CapturedPhoto photo) async =>
+      CapturedPhoto(
+        path: '/tmp/label-upright.jpg',
+        bytes: Uint8List.fromList([4, 5, 6]),
+      );
+
+  @override
+  Future<void> discard(CapturedPhoto photo) async {}
+}
+
 class NoCandidatesApi extends FakeApi {
   @override
   Future<List<IdentificationCandidate>> identifyCandidates(
@@ -1099,7 +1130,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Take photo'));
     await tester.pumpAndSettle();
-    expect(capture.discarded, isTrue);
+    expect(capture.discarded, isFalse);
     expect(
       find.textContaining('Maker suggested from label: LG'),
       findsOneWidget,
@@ -1144,6 +1175,60 @@ void main() {
     expect(api.rows.first.model, 'ABC1234');
     expect(api.lookupStatuses[api.rows.first.id], 'no_match');
     expect(find.byKey(const Key('delete-appliance-1')), findsNothing);
+  });
+
+  testWidgets('rotating a photo updates its preview and reruns OCR', (
+    tester,
+  ) async {
+    final capture = OrientationRetryCapture();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ApplianceOnboardingScreen(
+          method: 'photo',
+          api: NoCandidatesApi(),
+          credentials: FakeCredentials(),
+          capture: capture,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Take photo'));
+    await tester.pumpAndSettle();
+    expect(capture.readPaths, ['/tmp/label-upside-down.jpg']);
+    expect(
+      (tester.widget<Image>(find.byKey(const Key('photoPreview'))).image
+              as MemoryImage)
+          .bytes,
+      [1, 2, 3],
+    );
+
+    await tester.tap(find.byTooltip('Rotate photo'));
+    await tester.pumpAndSettle();
+    expect(capture.readPaths, [
+      '/tmp/label-upside-down.jpg',
+      '/tmp/label-upright.jpg',
+    ]);
+    expect(
+      (tester.widget<Image>(find.byKey(const Key('photoPreview'))).image
+              as MemoryImage)
+          .bytes,
+      [4, 5, 6],
+    );
+    await scrollTo(tester, find.byKey(const Key('applianceManufacturer')));
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('applianceManufacturer')))
+          .controller!
+          .text,
+      'LG',
+    );
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('applianceModel')))
+          .controller!
+          .text,
+      'WM3070HWA',
+    );
   });
 
   testWidgets('retaking a photo clears only the prior maker suggestion', (

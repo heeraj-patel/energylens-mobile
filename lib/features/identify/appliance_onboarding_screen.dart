@@ -158,6 +158,23 @@ class _PendingAttachment {
   final String plugId;
 }
 
+class _PhotoRecognition {
+  const _PhotoRecognition({
+    required this.text,
+    required this.upc,
+    required this.candidates,
+    required this.lookupFailed,
+  });
+
+  final String? text;
+  final String? upc;
+  final List<IdentificationCandidate> candidates;
+  final bool lookupFailed;
+
+  String? get modelHint => modelHintFromOcr(text);
+  String? get manufacturerHint => manufacturerHintFromOcr(text);
+}
+
 class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   final _hub = TextEditingController();
   final _token = TextEditingController();
@@ -184,6 +201,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   bool _catalogFallbackAvailable = false;
   bool _candidateLookupFailed = false;
   Uint8List? _photoBytes;
+  CapturedPhoto? _photo;
   bool _confirmedModel = false;
   bool _busy = false;
   (String, String, String, String, String)? _checkedModelKey;
@@ -570,6 +588,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
 
   Future<void> _takePhoto({required bool gallery}) async {
     if (_busy) return;
+    CapturedPhoto? captured;
     setState(() {
       _busy = true;
       _error = null;
@@ -579,47 +598,17 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
           ? await widget.capture.pickFromGallery()
           : await widget.capture.capturePhoto();
       if (photo == null) return;
-      final details = await Future.wait<String?>([
-        widget.capture.extractTextHint(photo.path),
-        widget.capture.detectUpc(photo.path),
-      ]);
-      await widget.capture.discard(photo);
+      captured = photo;
+      final recognition = await _recognizePhoto(photo);
       if (!mounted) return;
-      final hint = modelHintFromOcr(details[0]);
-      final manufacturerHint = manufacturerHintFromOcr(details[0]);
-      // The full label can include a serial number beside the model. Only
-      // send the locally extracted model hint for catalog suggestions.
-      final modelOnlyOcr = hint == null ? null : 'MODEL NO: $hint';
-      List<IdentificationCandidate> candidates = const [];
-      var lookupFailed = false;
-      if (modelOnlyOcr != null || details[1] != null) {
-        try {
-          candidates = await widget.api.identifyCandidates(
-            _hub.text.trim(),
-            _token.text.trim(),
-            targetKind: widget.plugId == null ? 'appliance' : 'connected_load',
-            ocrText: modelOnlyOcr,
-            upc: details[1],
-          );
-        } catch (_) {
-          lookupFailed = true;
-        }
-      }
-      if (!mounted) return;
+      final previousPhoto = _photo;
       setState(() {
-        final replaceSuggestedMaker =
-            _manufacturer.text.trim().isEmpty ||
-            _manufacturer.text.trim() == _photoManufacturerHint;
-        _photoBytes = photo.bytes;
-        _ocrText = details[0]?.trim().isNotEmpty == true ? (hint ?? '') : null;
-        _photoManufacturerHint = manufacturerHint;
-        _upc = details[1];
-        _photoCandidates = candidates;
-        _candidateLookupFailed = lookupFailed;
-        _confirmedModel = false;
-        _model.text = hint ?? '';
-        if (replaceSuggestedMaker) _manufacturer.text = manufacturerHint ?? '';
+        _setRecognizedPhoto(photo, recognition);
       });
+      captured = null;
+      if (previousPhoto != null && previousPhoto.path != photo.path) {
+        unawaited(widget.capture.discard(previousPhoto));
+      }
     } on CameraPermissionDeniedException {
       if (mounted) {
         setState(
@@ -631,6 +620,88 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
         setState(
           () => _error = 'Photo access was denied. Allow it in settings or use the camera.',
         );
+      }
+    } on FormatException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = 'Could not read this photo. Try again or enter the model manually.',
+        );
+      }
+    } finally {
+      if (captured != null && captured.path != _photo?.path) {
+        unawaited(widget.capture.discard(captured));
+      }
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<_PhotoRecognition> _recognizePhoto(CapturedPhoto photo) async {
+    final details = await Future.wait<String?>([
+      widget.capture.extractTextHint(photo.path),
+      widget.capture.detectUpc(photo.path),
+    ]);
+    final hint = modelHintFromOcr(details[0]);
+    final modelOnlyOcr = hint == null ? null : 'MODEL NO: $hint';
+    List<IdentificationCandidate> candidates = const [];
+    var lookupFailed = false;
+    if (modelOnlyOcr != null || details[1] != null) {
+      try {
+        candidates = await widget.api.identifyCandidates(
+          _hub.text.trim(),
+          _token.text.trim(),
+          targetKind: widget.plugId == null ? 'appliance' : 'connected_load',
+          ocrText: modelOnlyOcr,
+          upc: details[1],
+        );
+      } catch (_) {
+        lookupFailed = true;
+      }
+    }
+    return _PhotoRecognition(
+      text: details[0],
+      upc: details[1],
+      candidates: candidates,
+      lookupFailed: lookupFailed,
+    );
+  }
+
+  void _setRecognizedPhoto(
+    CapturedPhoto photo,
+    _PhotoRecognition recognition,
+  ) {
+    final hint = recognition.modelHint;
+    final manufacturerHint = recognition.manufacturerHint;
+    final replaceSuggestedMaker =
+        _manufacturer.text.trim().isEmpty ||
+        _manufacturer.text.trim() == _photoManufacturerHint;
+    _photo = photo;
+    _photoBytes = photo.bytes;
+    _ocrText = recognition.text?.trim().isNotEmpty == true ? (hint ?? '') : null;
+    _photoManufacturerHint = manufacturerHint;
+    _upc = recognition.upc;
+    _photoCandidates = recognition.candidates;
+    _candidateLookupFailed = recognition.lookupFailed;
+    _confirmedModel = false;
+    _model.text = hint ?? '';
+    if (replaceSuggestedMaker) _manufacturer.text = manufacturerHint ?? '';
+  }
+
+  Future<void> _rotatePhoto() async {
+    final photo = _photo;
+    if (_busy || photo == null) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final rotated = await widget.capture.rotateClockwise(photo);
+      final recognition = await _recognizePhoto(rotated);
+      if (!mounted) return;
+      setState(() => _setRecognizedPhoto(rotated, recognition));
+      if (photo.path != rotated.path) {
+        unawaited(widget.capture.discard(photo));
       }
     } on FormatException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -1002,6 +1073,8 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
 
   @override
   void dispose() {
+    final photo = _photo;
+    if (photo != null) unawaited(widget.capture.discard(photo));
     for (final controller in [
       _hub,
       _token,
@@ -1088,9 +1161,18 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                 SizedBox(
                   height: 180,
                   child: Image.memory(
+                    key: const Key('photoPreview'),
                     _photoBytes!,
                     fit: BoxFit.contain,
                     errorBuilder: (_, _, _) => const Text('Photo captured'),
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.center,
+                  child: IconButton(
+                    tooltip: 'Rotate photo',
+                    onPressed: _busy ? null : _rotatePhoto,
+                    icon: const Icon(Icons.rotate_90_degrees_cw),
                   ),
                 ),
                 Text(
