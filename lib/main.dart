@@ -164,6 +164,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<SavedAppliance> _appliances = const [];
   Map<int, EnergyEstimate> _estimates = const {};
   Map<String, DeviceEnergy> _meterReadings = const {};
+  Map<String, (int, DeviceEnergy)> _todayMeterReadings = const {};
   Map<String, DeviceBaselineCoverage> _baselineCoverage = const {};
   ElectricitySettings? _householdSettings;
   bool _zipPromptDismissed = false;
@@ -226,6 +227,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           setState(() {
             _hubConnected = false;
             _meterReadings = const {};
+            _todayMeterReadings = const {};
             _baselineCoverage = const {};
             ++_meterGeneration;
           });
@@ -250,6 +252,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _householdSettings = null;
           _estimates = const {};
           _meterReadings = const {};
+          _todayMeterReadings = const {};
           _baselineCoverage = const {};
           _visibilityScope = scope;
           if (loadVisibility) _hiddenPowerNowIds = {};
@@ -318,6 +321,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         setState(() {
           _hubConnected = false;
           _meterReadings = const {};
+          _todayMeterReadings = const {};
           _baselineCoverage = const {};
           ++_meterGeneration;
         });
@@ -365,6 +369,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           setState(() {
             _hubConnected = false;
             _meterReadings = const {};
+            _todayMeterReadings = const {};
             _baselineCoverage = const {};
             ++_meterGeneration;
           });
@@ -400,6 +405,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         setState(() {
           _hubConnected = false;
           _meterReadings = const {};
+          _todayMeterReadings = const {};
           _baselineCoverage = const {};
           ++_meterGeneration;
         });
@@ -428,6 +434,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               if (current.id == refreshed.id) refreshed else current,
           ];
           if (refreshed.connectionStatus == 'identity_changed') {
+            final today = {..._todayMeterReadings};
+            today.remove(refreshed.id);
+            _todayMeterReadings = today;
             final applianceId = refreshed.connectedAppliance?.id;
             if (applianceId != null) {
               final next = {..._estimates};
@@ -486,7 +495,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         (address, token) = await widget.credentials.read();
       }
       if (address == null || token == null) return;
+      final hubAddress = address;
+      final hubToken = token;
       final candidates = plugs ?? _plugs;
+      if (mounted && generation == _meterGeneration) {
+        setState(() => _todayMeterReadings = const {});
+      }
       await Future.wait([
         for (final plug in candidates)
           if (plug.meterStatus == 'verified' &&
@@ -497,31 +511,84 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 'tasmota',
               }.contains(plug.localProtocol))
             () async {
-              try {
-                final reading = await widget.api.deviceEnergy(
-                  address!,
-                  token!,
+              await Future.wait([
+                _refreshPlugEnergy(
+                  hubAddress,
+                  hubToken,
                   plug.id,
-                );
-                if (mounted && generation == _meterGeneration) {
-                  setState(
-                    () =>
-                        _meterReadings = {..._meterReadings, plug.id: reading},
-                  );
-                }
-              } catch (_) {
-                if (mounted && generation == _meterGeneration) {
-                  setState(() {
-                    final next = {..._meterReadings};
-                    next.remove(plug.id);
-                    _meterReadings = next;
-                  });
-                }
-              }
+                  generation,
+                  period: 'day',
+                ),
+                if (plug.connectedAppliance != null)
+                  _refreshPlugEnergy(
+                    hubAddress,
+                    hubToken,
+                    plug.id,
+                    generation,
+                    period: 'today',
+                    attachedApplianceId: plug.connectedAppliance!.id,
+                    timezone: widget.localPilotMode
+                        ? null
+                        : widget.cloudHome?.timezone,
+                  ),
+              ]);
             }(),
       ]);
     } catch (_) {
       // A meter API failure must not hide saved plugs or sourced estimates.
+    }
+  }
+
+  Future<void> _refreshPlugEnergy(
+    String address,
+    String token,
+    String plugId,
+    int generation, {
+    required String period,
+    int? attachedApplianceId,
+    String? timezone,
+  }) async {
+    final today = period == 'today';
+    try {
+      final reading = await widget.api.deviceEnergy(
+        address,
+        token,
+        plugId,
+        period: period,
+        timezone: timezone,
+      );
+      if (mounted && generation == _meterGeneration) {
+        setState(() {
+          if (today) {
+            final currentPlug = _plugs
+                .where((plug) => plug.id == plugId)
+                .firstOrNull;
+            if (currentPlug?.connectedAppliance?.id == attachedApplianceId &&
+                currentPlug?.connectionStatus != 'identity_changed') {
+              _todayMeterReadings = {
+                ..._todayMeterReadings,
+                plugId: (attachedApplianceId!, reading),
+              };
+            }
+          } else {
+            _meterReadings = {..._meterReadings, plugId: reading};
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted && generation == _meterGeneration) {
+        setState(() {
+          if (today) {
+            final next = {..._todayMeterReadings};
+            next.remove(plugId);
+            _todayMeterReadings = next;
+          } else {
+            final next = {..._meterReadings};
+            next.remove(plugId);
+            _meterReadings = next;
+          }
+        });
+      }
     }
   }
 
@@ -613,6 +680,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         estimates: _estimates,
         estimatesStale: !_hubConnected && _estimates.isNotEmpty,
         meterReadings: _meterReadings,
+        todayMeterReadings: _todayMeterReadings,
         hiddenApplianceIds: _hiddenPowerNowIds,
         onHideAppliance: (id) => _setPowerNowVisible(id, false),
         showZipPrompt:
@@ -1620,6 +1688,7 @@ class _PowerNow extends StatelessWidget {
     required this.estimates,
     required this.estimatesStale,
     required this.meterReadings,
+    required this.todayMeterReadings,
     required this.hiddenApplianceIds,
     required this.onHideAppliance,
     required this.showZipPrompt,
@@ -1636,6 +1705,7 @@ class _PowerNow extends StatelessWidget {
   final Map<int, EnergyEstimate> estimates;
   final bool estimatesStale;
   final Map<String, DeviceEnergy> meterReadings;
+  final Map<String, (int, DeviceEnergy)> todayMeterReadings;
   final Set<int> hiddenApplianceIds;
   final ValueChanged<int> onHideAppliance;
   final bool showZipPrompt;
@@ -1669,6 +1739,13 @@ class _PowerNow extends StatelessWidget {
             final estimate = estimates[appliance.id];
             final sourcedCost = sourceDailyCostUsd(estimate);
             final source = sourcedCost == null ? null : estimate?.evidence;
+            final todayRecord =
+                plug == null || plug.connectionStatus == 'identity_changed'
+                ? null
+                : todayMeterReadings[plug.id];
+            final todayReading = todayRecord?.$1 == appliance.id
+                ? todayRecord?.$2
+                : null;
             return PowerNowDailyCostRow(
               applianceId: appliance.id,
               deviceName: appliance.name,
@@ -1677,6 +1754,8 @@ class _PowerNow extends StatelessWidget {
               wastedTodayUsd: null,
               sourceName: source == null ? null : energySourceHeading(source),
               sourceUrl: source?.sourceUrl,
+              meteredTodayUsd: todayReading?.observedCostUsd,
+              meterCoverageFraction: todayReading?.coverageFraction,
             );
           }(),
     ];

@@ -3,6 +3,7 @@ import 'package:energylens_mobile/features/discovery/discovery_credentials.dart'
 import 'package:energylens_mobile/main.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
 import 'package:energylens_mobile/features/energy/power_now_visibility.dart';
+import 'package:energylens_mobile/features/energy/power_now_daily_cost_table.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -229,6 +230,88 @@ class _StandaloneCostApi extends _ConnectedApi {
   }
 }
 
+class _TodayMeterApi extends _ConnectedApi {
+  final requests = <(String, String, String?)>[];
+
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async {
+    final appliance = (await super.saved(
+      baseUrl,
+      token,
+    )).single.connectedAppliance;
+    return [
+      SavedPlug(
+        id: 'attached-meter',
+        ip: '192.168.68.50',
+        model: 'HS110',
+        name: 'Living Room Lamp KS19',
+        room: '',
+        meterStatus: 'verified',
+        localProtocol: 'legacy_tcp',
+        lastVerifiedAt: 1,
+        connectedAppliance: appliance,
+      ),
+      const SavedPlug(
+        id: 'unattached-meter',
+        ip: '192.168.68.51',
+        model: 'HS110',
+        name: 'Unattached meter',
+        room: '',
+        meterStatus: 'verified',
+        localProtocol: 'legacy_tcp',
+        lastVerifiedAt: 1,
+      ),
+    ];
+  }
+
+  @override
+  Future<DeviceEnergy> deviceEnergy(
+    String baseUrl,
+    String token,
+    String plugId, {
+    String period = 'day',
+    String? timezone,
+    String? postalCode,
+    double? rateUsdPerKwh,
+  }) async {
+    requests.add((plugId, period, timezone));
+    return DeviceEnergy(
+      status: 'measured',
+      period: period,
+      totalKwh: 0.25,
+      coverageFraction: period == 'today' ? 0.35 : 0.8,
+      coveredSecs: period == 'today' ? 12600 : 69120,
+      observedCostUsd: period == 'today' ? 0.04 : 0.12,
+    );
+  }
+}
+
+class _IdentityDriftTodayMeterApi extends _TodayMeterApi {
+  @override
+  Future<SavedPlug> refreshPlugStatus(
+    String baseUrl,
+    String token,
+    String plugId,
+  ) async {
+    final plug = (await saved(
+      baseUrl,
+      token,
+    )).firstWhere((item) => item.id == plugId);
+    return SavedPlug(
+      id: plug.id,
+      ip: plug.ip,
+      model: plug.model,
+      name: plug.name,
+      room: plug.room,
+      meterStatus: plug.meterStatus,
+      lastVerifiedAt: plug.lastVerifiedAt,
+      localProtocol: plug.localProtocol,
+      connectedAppliance: plug.connectedAppliance,
+      connectionStatus: 'identity_changed',
+    );
+  }
+}
+
 class _MeteredApi extends DiscoveryApi {
   @override
   Future<ElectricitySettings> electricitySettings(
@@ -256,6 +339,7 @@ class _MeteredApi extends DiscoveryApi {
     String token,
     String plugId, {
     String period = 'day',
+    String? timezone,
     String? postalCode,
     double? rateUsdPerKwh,
   }) async {
@@ -447,6 +531,7 @@ class _MultiProtocolApi extends _MeteredApi {
     String token,
     String plugId, {
     String period = 'day',
+    String? timezone,
     String? postalCode,
     double? rateUsdPerKwh,
   }) async {
@@ -456,6 +541,7 @@ class _MultiProtocolApi extends _MeteredApi {
       token,
       plugId,
       period: period,
+      timezone: timezone,
       postalCode: postalCode,
       rateUsdPerKwh: rateUsdPerKwh,
     );
@@ -1127,8 +1213,93 @@ void main() {
     expect(find.text('Living Room Lamp KS19'), findsOneWidget);
     expect(find.text('Used today'), findsOneWidget);
     expect(find.text('Wasted today'), findsOneWidget);
-    expect(find.byKey(const Key('power-now-hide-1')), findsOneWidget);
+    expect(find.byKey(const Key('power-now-selection-action')), findsOneWidget);
     expect(find.text('Estimated on-time: \$0.27/month'), findsNothing);
+  });
+
+  testWidgets('keeps calendar-day meter data isolated for the attached row', (
+    tester,
+  ) async {
+    final api = _TodayMeterApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          api: api,
+          credentials: _ConnectedCredentials(),
+          cloudHome: const CloudHome(
+            id: 'home-1',
+            name: 'Home',
+            timezone: 'America/Chicago',
+            countryCode: 'US',
+            postalCode: '60601',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(api.requests, contains(('attached-meter', 'day', null)));
+    expect(
+      api.requests,
+      contains(('attached-meter', 'today', 'America/Chicago')),
+    );
+    expect(api.requests, contains(('unattached-meter', 'day', null)));
+    expect(
+      api.requests.where(
+        (request) => request.$1 == 'unattached-meter' && request.$2 == 'today',
+      ),
+      isEmpty,
+    );
+    final row = tester
+        .widget<PowerNowDailyCostTable>(find.byType(PowerNowDailyCostTable))
+        .rows
+        .single;
+    expect(row.meteredTodayUsd, 0.04);
+    expect(row.meterCoverageFraction, 0.35);
+    expect(row.usedTodayUsd, isNot(0.04));
+  });
+
+  testWidgets('local pilot omits the cloud timezone for today metering', (
+    tester,
+  ) async {
+    final api = _TodayMeterApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          api: api,
+          credentials: _ConnectedCredentials(),
+          localPilotMode: true,
+          cloudHome: const CloudHome(
+            id: 'home-1',
+            name: 'Home',
+            timezone: 'America/Chicago',
+            countryCode: 'US',
+            postalCode: '60601',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(api.requests, contains(('attached-meter', 'today', null)));
+  });
+
+  testWidgets('identity drift invalidates calendar-day appliance metering', (
+    tester,
+  ) async {
+    final api = _IdentityDriftTodayMeterApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(api: api, credentials: _ConnectedCredentials()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final row = tester
+        .widget<PowerNowDailyCostTable>(find.byType(PowerNowDailyCostTable))
+        .rows
+        .single;
+    expect(api.requests, contains(('attached-meter', 'today', null)));
+    expect(row.meteredTodayUsd, isNull);
+    expect(row.meterCoverageFraction, isNull);
   });
 
   testWidgets('Sleep Check labels sufficient and unavailable coverage states', (
@@ -1375,7 +1546,11 @@ void main() {
 
     await tester.pumpWidget(app(homeA));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('power-now-hide-7')));
+    await tester.tap(find.byKey(const Key('power-now-selection-action')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('power-now-select-7')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('power-now-selection-action')));
     await tester.pumpAndSettle();
     expect(find.text('Desk fan'), findsNothing);
     expect(find.text('Photo lamp'), findsOneWidget);
@@ -1392,7 +1567,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Desk fan'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('power-now-hide-8')));
+    await tester.tap(find.byKey(const Key('power-now-selection-action')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('power-now-select-8')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('power-now-selection-action')));
     await tester.pumpAndSettle();
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(app(homeA));

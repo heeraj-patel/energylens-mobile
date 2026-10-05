@@ -194,6 +194,8 @@ class PowerNowDailyCostRow {
     this.plugName,
     this.sourceName,
     this.sourceUrl,
+    this.meteredTodayUsd,
+    this.meterCoverageFraction,
     required this.usedTodayUsd,
     required this.wastedTodayUsd,
   });
@@ -203,6 +205,10 @@ class PowerNowDailyCostRow {
   final String? plugName;
   final String? sourceName;
   final String? sourceUrl;
+
+  /// Calendar-day meter data reserved for the approved display policy.
+  final double? meteredTodayUsd;
+  final double? meterCoverageFraction;
   final double? usedTodayUsd;
   final double? wastedTodayUsd;
 }

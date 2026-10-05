@@ -296,6 +296,7 @@ class DeviceDetailApi extends FakeDiscoveryApi {
     String token,
     String plugId, {
     String period = 'day',
+    String? timezone,
     String? postalCode,
     double? rateUsdPerKwh,
   }) async => const DeviceEnergy(
@@ -368,6 +369,7 @@ class TimestampApi extends DeviceDetailApi {
     String token,
     String plugId, {
     String period = 'day',
+    String? timezone,
     String? postalCode,
     double? rateUsdPerKwh,
   }) async => DeviceEnergy(
@@ -402,6 +404,7 @@ class PeriodRaceApi extends DeviceDetailApi {
     String token,
     String plugId, {
     String period = 'day',
+    String? timezone,
     String? postalCode,
     double? rateUsdPerKwh,
   }) async {

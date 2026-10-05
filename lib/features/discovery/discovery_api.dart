@@ -1107,10 +1107,12 @@ class DiscoveryApi {
     String token,
     String plugId, {
     String period = 'day',
+    String? timezone,
     String? postalCode,
     double? rateUsdPerKwh,
   }) async {
     final query = <String, String>{'period': period};
+    if (timezone != null) query['timezone'] = timezone;
     if (postalCode != null) query['postal_code'] = postalCode;
     if (rateUsdPerKwh != null) {
       query['rate_usd_per_kwh'] = rateUsdPerKwh.toString();
