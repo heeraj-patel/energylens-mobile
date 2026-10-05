@@ -1,11 +1,31 @@
 import 'package:flutter/material.dart';
 
 /// A compact table of precomputed daily costs for a home's devices.
-class PowerNowDailyCostTable extends StatelessWidget {
+class PowerNowDailyCostTable extends StatefulWidget {
   const PowerNowDailyCostTable({super.key, required this.rows, this.onRemove});
 
   final List<PowerNowDailyCostRow> rows;
   final ValueChanged<int>? onRemove;
+
+  @override
+  State<PowerNowDailyCostTable> createState() => _PowerNowDailyCostTableState();
+}
+
+class _PowerNowDailyCostTableState extends State<PowerNowDailyCostTable> {
+  final Set<int> _selectedIds = {};
+  bool _selecting = false;
+
+  void _applySelection() {
+    final callback = widget.onRemove;
+    if (callback == null || _selectedIds.isEmpty) return;
+    for (final id in _selectedIds.toList()) {
+      callback(id);
+    }
+    setState(() {
+      _selectedIds.clear();
+      _selecting = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,7 +35,7 @@ class PowerNowDailyCostTable extends StatelessWidget {
       fontWeight: FontWeight.w600,
     );
 
-    return Table(
+    final table = Table(
       columnWidths: const {
         0: FlexColumnWidth(2.4),
         1: FlexColumnWidth(1.15),
@@ -44,7 +64,7 @@ class PowerNowDailyCostTable extends StatelessWidget {
             const SizedBox.shrink(),
           ],
         ),
-        for (final row in rows)
+        for (final row in widget.rows)
           TableRow(
             children: [
               Padding(
@@ -73,22 +93,54 @@ class PowerNowDailyCostTable extends StatelessWidget {
                 _formatCost(row.wastedTodayUsd),
                 alignment: Alignment.centerRight,
               ),
-              if (onRemove == null || row.applianceId == null)
+              if (widget.onRemove == null || row.applianceId == null)
                 const SizedBox.shrink()
+              else if (_selecting)
+                Checkbox(
+                  key: Key('power-now-select-${row.applianceId}'),
+                  value: _selectedIds.contains(row.applianceId),
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (selected) => setState(() {
+                    if (selected == true) {
+                      _selectedIds.add(row.applianceId!);
+                    } else {
+                      _selectedIds.remove(row.applianceId);
+                    }
+                  }),
+                  semanticLabel: row.deviceName,
+                )
               else
-                IconButton(
-                  key: Key('power-now-hide-${row.applianceId}'),
-                  onPressed: () => onRemove!(row.applianceId!),
-                  icon: const Icon(Icons.remove, semanticLabel: '-'),
-                  iconSize: 17,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 32,
-                    height: 32,
-                  ),
-                ),
+                const SizedBox.shrink(),
             ],
           ),
+      ],
+    );
+
+    if (widget.onRemove == null ||
+        !widget.rows.any((row) => row.applianceId != null)) {
+      return table;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        table,
+        Align(
+          alignment: Alignment.centerRight,
+          child: IconButton(
+            key: const Key('power-now-selection-action'),
+            onPressed: _selecting
+                ? (_selectedIds.isEmpty ? null : _applySelection)
+                : () => setState(() => _selecting = true),
+            icon: Icon(
+              _selecting ? Icons.check : Icons.remove,
+              semanticLabel: _selecting ? 'Apply' : 'Remove',
+            ),
+            iconSize: 17,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          ),
+        ),
       ],
     );
   }

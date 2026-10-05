@@ -87,26 +87,42 @@ void main() {
     );
   });
 
-  testWidgets('minus removes only the selected row', (tester) async {
-    int? removed;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: PowerNowDailyCostTable(
-            rows: const [
-              PowerNowDailyCostRow(
-                applianceId: 7,
-                deviceName: 'Fan',
-                usedTodayUsd: null,
-                wastedTodayUsd: null,
-              ),
-            ],
-            onRemove: (id) => removed = id,
+  testWidgets(
+    'footer minus enters selection and checkmark hides selected rows',
+    (tester) async {
+      final removed = <int>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PowerNowDailyCostTable(
+              rows: const [
+                PowerNowDailyCostRow(
+                  applianceId: 7,
+                  deviceName: 'Fan',
+                  usedTodayUsd: null,
+                  wastedTodayUsd: null,
+                ),
+                PowerNowDailyCostRow(
+                  applianceId: 8,
+                  deviceName: 'Lamp',
+                  usedTodayUsd: null,
+                  wastedTodayUsd: null,
+                ),
+              ],
+              onRemove: removed.add,
+            ),
           ),
         ),
-      ),
-    );
-    await tester.tap(find.byKey(const Key('power-now-hide-7')));
-    expect(removed, 7);
-  });
+      );
+      await tester.tap(find.byKey(const Key('power-now-selection-action')));
+      await tester.pump();
+      expect(find.byKey(const Key('power-now-select-7')), findsOneWidget);
+      expect(find.byKey(const Key('power-now-select-8')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('power-now-select-7')));
+      await tester.tap(find.byKey(const Key('power-now-select-8')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('power-now-selection-action')));
+      expect(removed, [7, 8]);
+    },
+  );
 }
