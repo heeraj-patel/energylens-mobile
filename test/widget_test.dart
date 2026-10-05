@@ -231,6 +231,9 @@ class _StandaloneCostApi extends _ConnectedApi {
 }
 
 class _TodayMeterApi extends _ConnectedApi {
+  _TodayMeterApi({this.todayCoverage = 0.35});
+
+  final double todayCoverage;
   final requests = <(String, String, String?)>[];
 
   @override
@@ -279,9 +282,13 @@ class _TodayMeterApi extends _ConnectedApi {
       status: 'measured',
       period: period,
       totalKwh: 0.25,
-      coverageFraction: period == 'today' ? 0.35 : 0.8,
+      coverageFraction: period == 'today' ? todayCoverage : 0.8,
       coveredSecs: period == 'today' ? 12600 : 69120,
+      latestWatts: period == 'today' ? 35 : null,
       observedCostUsd: period == 'today' ? 0.04 : 0.12,
+      readings: period == 'today'
+          ? [EnergyReading(ts: DateTime.now().toUtc(), watts: 35)]
+          : const [],
     );
   }
 }
@@ -1321,6 +1328,33 @@ void main() {
     expect(row.meteredTodayUsd, 0.04);
     expect(row.meterCoverageFraction, 0.35);
     expect(row.usedTodayUsd, isNot(0.04));
+  });
+
+  testWidgets('uses fresh today meter cost when coverage reaches 80%', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          api: _TodayMeterApi(todayCoverage: 0.8),
+          credentials: _ConnectedCredentials(),
+          cloudHome: const CloudHome(
+            id: 'home-1',
+            name: 'Home',
+            timezone: 'America/Chicago',
+            countryCode: 'US',
+            postalCode: '60601',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final row = tester
+        .widget<PowerNowDailyCostTable>(find.byType(PowerNowDailyCostTable))
+        .rows
+        .single;
+    expect(row.usedTodayUsd, 0.04);
   });
 
   testWidgets('local pilot omits the cloud timezone for today metering', (

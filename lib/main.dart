@@ -1746,14 +1746,24 @@ class _PowerNow extends StatelessWidget {
             final todayReading = todayRecord?.$1 == appliance.id
                 ? todayRecord?.$2
                 : null;
+            final meteredTodayCost = freshMeteredTodayCostUsd(todayReading);
+            final displayedSource = meteredTodayCost == null ? source : null;
             return PowerNowDailyCostRow(
               applianceId: appliance.id,
               deviceName: appliance.name,
               plugName: plug?.name,
-              usedTodayUsd: sourcedCost,
+              usedTodayUsd: meteredTodayCost ?? sourcedCost,
               wastedTodayUsd: null,
-              sourceName: source == null ? null : energySourceHeading(source),
-              sourceUrl: source?.sourceUrl,
+              sourceName: displayedSource == null
+                  ? (meteredTodayCost == null
+                        ? null
+                        : todayReading?.rateSourceLabel)
+                  : energySourceHeading(displayedSource),
+              sourceUrl:
+                  displayedSource?.sourceUrl ??
+                  (meteredTodayCost == null
+                      ? null
+                      : todayReading?.rateSourceUrl),
               meteredTodayUsd: todayReading?.observedCostUsd,
               meterCoverageFraction: todayReading?.coverageFraction,
             );
