@@ -34,6 +34,10 @@ Map<String, dynamic> program() => {
   'title': 'Appliance program',
   'administrator_name': 'City utility',
   'benefit_kind': 'rebate',
+  'benefit_terms': {'amount': '100'},
+  'eligibility_terms': {'category': 'washer'},
+  'stacking_terms': {'status': 'unknown'},
+  'availability_status': 'open',
   'status': 'unknown',
   'reasons': ['provider_unknown'],
   'source_url': 'https://utility.example/program',
@@ -300,10 +304,13 @@ void main() {
   });
 
   test('accepts unknown source-cited results and location required', () {
-    expect(
-      CloudProgramPage.fromJson(page()).programs.single.title,
-      'Appliance program',
-    );
+    final candidate = CloudProgramPage.fromJson(page()).programs.single;
+    expect(candidate.title, 'Appliance program');
+    expect(candidate.benefitTerms['amount'], '100');
+    expect(candidate.eligibilityTerms['category'], 'washer');
+    expect(candidate.stackingTerms['status'], 'unknown');
+    expect(candidate.availabilityStatus, 'open');
+    expect(candidate.status, 'unknown');
     expect(
       CloudProgramPage.fromJson({
         ...page([])..remove('coverage'),
@@ -316,6 +323,8 @@ void main() {
   test('rejects unsupported claims and malformed candidates', () {
     for (final bad in [
       {...program(), 'status': 'eligible'},
+      {...program(), 'availability_status': 'awarded'},
+      {...program(), 'benefit_terms': '100'},
       {...program(), 'savings_amount': 100},
       {...program(), 'source_url': 'http://utility.example/program'},
       {...program(), 'source_sha256': 'bad'},

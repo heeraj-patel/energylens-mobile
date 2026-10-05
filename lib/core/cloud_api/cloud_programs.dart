@@ -22,6 +22,11 @@ class CloudProgram {
     required this.title,
     required this.administratorName,
     required this.benefitKind,
+    required this.benefitTerms,
+    required this.eligibilityTerms,
+    required this.stackingTerms,
+    required this.availabilityStatus,
+    required this.status,
     required this.reasons,
     required this.sourceUrl,
     required this.sourceSha256,
@@ -31,6 +36,11 @@ class CloudProgram {
   final String title;
   final String administratorName;
   final String benefitKind;
+  final Map<String, dynamic> benefitTerms;
+  final Map<String, dynamic> eligibilityTerms;
+  final Map<String, dynamic> stackingTerms;
+  final String availabilityStatus;
+  final String status;
   final List<String> reasons;
   final Uri sourceUrl;
   final String sourceSha256;
@@ -43,6 +53,10 @@ class CloudProgram {
       'title',
       'administrator_name',
       'benefit_kind',
+      'benefit_terms',
+      'eligibility_terms',
+      'stacking_terms',
+      'availability_status',
       'status',
       'reasons',
       'source_url',
@@ -62,7 +76,16 @@ class CloudProgram {
         !_text(json['title'], 200) ||
         !_text(json['administrator_name'], 200) ||
         !_text(json['benefit_kind'], 80) ||
-        json['status'] != 'unknown' ||
+        json['benefit_terms'] is! Map<String, dynamic> ||
+        json['eligibility_terms'] is! Map<String, dynamic> ||
+        json['stacking_terms'] is! Map<String, dynamic> ||
+        !{
+          'open',
+          'upcoming',
+          'exhausted',
+          'closed',
+        }.contains(json['availability_status']) ||
+        !{'unknown', 'potentially_eligible'}.contains(json['status']) ||
         reasons is! List ||
         reasons.isEmpty ||
         reasons.length > 20 ||
@@ -82,6 +105,13 @@ class CloudProgram {
       title: json['title'] as String,
       administratorName: json['administrator_name'] as String,
       benefitKind: json['benefit_kind'] as String,
+      benefitTerms: Map<String, dynamic>.from(json['benefit_terms'] as Map),
+      eligibilityTerms: Map<String, dynamic>.from(
+        json['eligibility_terms'] as Map,
+      ),
+      stackingTerms: Map<String, dynamic>.from(json['stacking_terms'] as Map),
+      availabilityStatus: json['availability_status'] as String,
+      status: json['status'] as String,
       reasons: List<String>.from(reasons),
       sourceUrl: uri,
       sourceSha256: json['source_sha256'] as String,

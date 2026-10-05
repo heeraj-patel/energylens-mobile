@@ -438,6 +438,9 @@ class AppliancePerUseBaseline {
     required this.attachmentStartedAt,
     required this.policyId,
     required this.policyRevision,
+    required this.evaluationId,
+    required this.ownershipScope,
+    required this.ownershipEpoch,
     required this.windowStart,
     required this.windowEnd,
     required this.qualifyingSessions,
@@ -455,6 +458,9 @@ class AppliancePerUseBaseline {
       attachmentStartedAt: json['attachment_started_at'] as int?,
       policyId: json['policy_id'] as int?,
       policyRevision: json['policy_revision'] as int?,
+      evaluationId: json['evaluation_id'] as int?,
+      ownershipScope: json['ownership_scope'] as String?,
+      ownershipEpoch: json['ownership_epoch'] as int?,
       windowStart: evaluation?['window_start'] == null
           ? null
           : DateTime.parse(evaluation!['window_start'] as String),
@@ -474,6 +480,9 @@ class AppliancePerUseBaseline {
   final int? attachmentStartedAt;
   final int? policyId;
   final int? policyRevision;
+  final int? evaluationId;
+  final String? ownershipScope;
+  final int? ownershipEpoch;
   final DateTime? windowStart;
   final DateTime? windowEnd;
   final int? qualifyingSessions;
@@ -484,6 +493,9 @@ class AppliancePerUseBaseline {
       status == 'ready' &&
       policyId != null &&
       attachmentStartedAt != null &&
+      evaluationId != null &&
+      ownershipScope != null &&
+      ownershipEpoch != null &&
       medianKwhPerUse != null;
 }
 
