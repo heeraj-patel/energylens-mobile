@@ -24,6 +24,7 @@ import 'features/energy/cloud_metered_summary_screen.dart';
 import 'features/energy/cloud_faq_screen.dart';
 import 'features/energy/cloud_recommendations_screen.dart';
 import 'features/energy/stop_waste_programs.dart';
+import 'features/energy/local_pilot_programs.dart';
 import 'features/energy/cloud_report_preview_screen.dart';
 import 'features/identify/appliance_onboarding_screen.dart';
 import 'features/identify/cloud_usage_questions_screen.dart';
@@ -701,7 +702,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 api: widget.cloudApi!,
                 onViewEstimates: () => setState(() => _index = 0),
               )
-            : const _StopWaste(),
+            : _StopWaste(localPilotMode: widget.localPilotMode),
       2 => _SleepCheck(
         plugs: _plugs,
         baselineCoverage: _baselineCoverage,
@@ -1800,7 +1801,9 @@ class _PowerNow extends StatelessWidget {
 }
 
 class _StopWaste extends StatelessWidget {
-  const _StopWaste();
+  const _StopWaste({required this.localPilotMode});
+
+  final bool localPilotMode;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -1879,6 +1882,7 @@ class _StopWaste extends StatelessWidget {
       ),
       const SizedBox(height: 18),
       Text('Programs', style: Theme.of(context).textTheme.titleLarge),
+      if (localPilotMode) const LocalPilotPrograms(),
     ],
   );
 }

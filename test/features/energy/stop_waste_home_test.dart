@@ -123,6 +123,7 @@ void main() {
     expect(find.textContaining('Waste is not yet assessed'), findsOneWidget);
     expect(find.text('MONITORING NOT CONNECTED'), findsNothing);
     expect(find.text('Programs'), findsOneWidget);
+    expect(find.byKey(const Key('localPilotWapProgram')), findsNothing);
     expect(paths, ['/v1/homes/${_home.id}/programs']);
 
     await tester.ensureVisible(find.byKey(const Key('stopWasteCloudActions')));

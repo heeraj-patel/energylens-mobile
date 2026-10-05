@@ -28,6 +28,12 @@ benefit, administrator name, and source URL; tapping it opens the source in the
 phone's default browser. The detailed per-appliance discovery screen remains
 in code for diagnostics and is not linked from customer navigation.
 
+`ENERGYLENS_LOCAL_PILOT` builds show one staged DOE Weatherization Assistance
+Program source card on the local Hub Stop Waste screen while its October 12,
+2026 review is current. This fallback is confined to local pilot mode and is
+never merged into the Cloud home feed. Its immutable source hash and expiry
+are recorded in `lib/features/energy/local_pilot_programs.dart`.
+
 Release builds require these `--dart-define` values: `ENERGYLENS_OIDC_ISSUER`
 (HTTPS), `ENERGYLENS_OIDC_AUDIENCE`, `ENERGYLENS_OIDC_CLIENT_ID`,
 `ENERGYLENS_OIDC_REDIRECT_URL=io.energylens.app://login-callback`, and
