@@ -61,6 +61,40 @@ void main() {
     expect(coverage.reason, 'coverage_gate_met');
   });
 
+  test('per-use value requires a ready, policy-bound attachment result', () {
+    final ready = AppliancePerUseBaseline.fromJson({
+      'appliance_id': 42,
+      'plug_id': 'plug-7',
+      'attachment_started_at': 1790000000,
+      'policy_id': 8,
+      'policy_revision': 2,
+      'status': 'ready',
+      'reason': 'sufficient_sessions',
+      'evaluation': {
+        'window_start': '2026-09-22T12:00:00Z',
+        'window_end': '2026-09-29T12:00:00Z',
+        'qualifying_sessions': 7,
+        'required_sessions': 5,
+        'median_kwh_per_use': 0.19,
+      },
+    });
+    expect(ready.hasQualifiedValue, isTrue);
+    expect(ready.medianKwhPerUse, 0.19);
+
+    final unavailable = AppliancePerUseBaseline.fromJson({
+      'appliance_id': 43,
+      'plug_id': null,
+      'attachment_started_at': null,
+      'policy_id': null,
+      'policy_revision': null,
+      'status': 'unavailable',
+      'reason': 'policy_missing',
+      'evaluation': null,
+    });
+    expect(unavailable.hasQualifiedValue, isFalse);
+    expect(unavailable.medianKwhPerUse, isNull);
+  });
+
   group('hub device energy response', () {
     test('parses measured energy and stale regional-rate metadata', () {
       final energy = DeviceEnergy.fromJson(<String, dynamic>{

@@ -429,6 +429,64 @@ class DeviceBaselineCoverage {
   final String reason;
 }
 
+class AppliancePerUseBaseline {
+  const AppliancePerUseBaseline({
+    required this.applianceId,
+    required this.status,
+    required this.reason,
+    required this.plugId,
+    required this.attachmentStartedAt,
+    required this.policyId,
+    required this.policyRevision,
+    required this.windowStart,
+    required this.windowEnd,
+    required this.qualifyingSessions,
+    required this.requiredSessions,
+    required this.medianKwhPerUse,
+  });
+
+  factory AppliancePerUseBaseline.fromJson(Map<String, dynamic> json) {
+    final evaluation = json['evaluation'] as Map<String, dynamic>?;
+    return AppliancePerUseBaseline(
+      applianceId: json['appliance_id'] as int,
+      status: json['status'] as String,
+      reason: json['reason'] as String,
+      plugId: json['plug_id'] as String?,
+      attachmentStartedAt: json['attachment_started_at'] as int?,
+      policyId: json['policy_id'] as int?,
+      policyRevision: json['policy_revision'] as int?,
+      windowStart: evaluation?['window_start'] == null
+          ? null
+          : DateTime.parse(evaluation!['window_start'] as String),
+      windowEnd: evaluation?['window_end'] == null
+          ? null
+          : DateTime.parse(evaluation!['window_end'] as String),
+      qualifyingSessions: evaluation?['qualifying_sessions'] as int?,
+      requiredSessions: evaluation?['required_sessions'] as int?,
+      medianKwhPerUse: (evaluation?['median_kwh_per_use'] as num?)?.toDouble(),
+    );
+  }
+
+  final int applianceId;
+  final String status;
+  final String reason;
+  final String? plugId;
+  final int? attachmentStartedAt;
+  final int? policyId;
+  final int? policyRevision;
+  final DateTime? windowStart;
+  final DateTime? windowEnd;
+  final int? qualifyingSessions;
+  final int? requiredSessions;
+  final double? medianKwhPerUse;
+
+  bool get hasQualifiedValue =>
+      status == 'ready' &&
+      policyId != null &&
+      attachmentStartedAt != null &&
+      medianKwhPerUse != null;
+}
+
 class EnergyReading {
   const EnergyReading({
     required this.ts,
@@ -1068,6 +1126,20 @@ class DiscoveryApi {
       'GET',
     );
     return DeviceBaselineCoverage.fromJson(response as Map<String, dynamic>);
+  }
+
+  Future<AppliancePerUseBaseline> appliancePerUseBaseline(
+    String baseUrl,
+    String token,
+    int applianceId,
+  ) async {
+    final response = await _request(
+      baseUrl,
+      token,
+      '/v1/appliances/$applianceId/baseline/per-use',
+      'GET',
+    );
+    return AppliancePerUseBaseline.fromJson(response as Map<String, dynamic>);
   }
 
   Future<SavedPlug> adopt(
