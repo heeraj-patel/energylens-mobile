@@ -602,6 +602,18 @@ class CloudApiClient {
     );
   }
 
+  Future<CloudProgramPage> homePrograms(String homeId) async {
+    if (!_programUuid.hasMatch(homeId)) {
+      throw ArgumentError.value(homeId, 'homeId');
+    }
+    final response = await get(
+      '/v1/homes/${Uri.encodeComponent(homeId)}/programs',
+    );
+    return CloudProgramPage.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
   Future<CloudProgramRefresh> requestProgramRefresh(
     String homeId,
     String applianceId,

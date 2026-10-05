@@ -69,6 +69,12 @@ void main() {
         if (request.url.path.endsWith('/appliances')) {
           return http.Response('{"appliances":[]}', 200);
         }
+        if (request.url.path.endsWith('/programs')) {
+          return http.Response(
+            '{"programs":[],"as_of":"2026-10-02T00:00:00Z","coverage":null}',
+            200,
+          );
+        }
         if (request.url.path.endsWith('/recommendations')) {
           return http.Response(
             '{"actions":[],"as_of":"2026-10-02T00:00:00Z"}',
@@ -117,7 +123,7 @@ void main() {
     expect(find.textContaining('Waste is not yet assessed'), findsOneWidget);
     expect(find.text('MONITORING NOT CONNECTED'), findsNothing);
     expect(find.text('Programs'), findsOneWidget);
-    expect(paths, ['/v1/homes/${_home.id}/appliances']);
+    expect(paths, ['/v1/homes/${_home.id}/programs']);
 
     await tester.ensureVisible(find.byKey(const Key('stopWasteCloudActions')));
     await tester.tap(find.byKey(const Key('stopWasteCloudActions')));

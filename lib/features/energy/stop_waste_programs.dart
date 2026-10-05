@@ -37,32 +37,17 @@ class _StopWasteProgramsState extends State<StopWastePrograms> {
   Future<void> _load() async {
     final generation = ++_generation;
     try {
-      final appliances = await widget.api.appliances(widget.home.id);
-      if (!mounted || generation != _generation) return;
-      final ids = appliances.map((item) => item.id).toSet();
-      final pages = await Future.wait(
-        appliances.map((item) async {
-          try {
-            return await widget.api.programs(widget.home.id, item.id, ids);
-          } catch (_) {
-            return null;
-          }
-        }),
-      );
+      final page = await widget.api.homePrograms(widget.home.id);
       if (!mounted || generation != _generation) return;
       final now = DateTime.now();
-      final byId = <String, CloudProgram>{};
-      for (final page in pages) {
-        if (page == null) continue;
-        for (final program in page.programs) {
-          if (program.availabilityStatus != 'open' ||
-              !program.reviewExpiresAt.isAfter(now)) {
-            continue;
-          }
-          byId.putIfAbsent(program.id.toLowerCase(), () => program);
+      final programs = <CloudProgram>[];
+      for (final program in page.programs) {
+        if (program.availabilityStatus == 'open' &&
+            program.reviewExpiresAt.isAfter(now)) {
+          programs.add(program);
         }
       }
-      setState(() => _programs = byId.values.toList());
+      setState(() => _programs = programs);
     } catch (_) {
       if (mounted && generation == _generation) {
         setState(() => _programs = const []);

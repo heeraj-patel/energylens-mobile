@@ -12,8 +12,6 @@ import 'package:url_launcher_platform_interface/url_launcher_platform_interface.
 import 'package:url_launcher_platform_interface/link.dart';
 
 const _homeId = '11111111-1111-4111-8111-111111111111';
-const _firstId = '22222222-2222-4222-8222-222222222222';
-const _secondId = '33333333-3333-4333-8333-333333333333';
 const _home = CloudHome(
   id: _homeId,
   name: 'Home',
@@ -80,7 +78,7 @@ Map<String, dynamic> _program(
 };
 
 void main() {
-  testWidgets('shows only current open programs across saved appliances', (
+  testWidgets('shows current home programs without saved appliances', (
     tester,
   ) async {
     final previousLauncher = UrlLauncherPlatform.instance;
@@ -90,7 +88,7 @@ void main() {
     const localId = '44444444-4444-4444-8444-444444444444';
     const federalId = '55555555-5555-4555-8555-555555555555';
     const makerId = '66666666-6666-4666-8666-666666666666';
-    final requested = <String>[];
+    final requested = <Uri>[];
     final api = CloudApiClient(
       session: CloudSession(
         config: const CloudAuthConfig(
@@ -104,48 +102,22 @@ void main() {
         authenticator: _Auth(),
       ),
       client: MockClient((request) async {
-        if (request.url.path.endsWith('/appliances')) {
-          return http.Response(
-            jsonEncode({
-              'appliances': [
-                for (final id in [_firstId, _secondId])
-                  {
-                    'id': id,
-                    'home_id': _homeId,
-                    'name': 'Device',
-                    'category': 'washer',
-                    'identity': {
-                      'brand': 'Brand',
-                      'full_model': 'Model',
-                      'fuel': 'electricity',
-                      'match_quality': 'confirmed_exact',
-                    },
-                  },
-              ],
-            }),
-            200,
-          );
-        }
-        requested.add(request.url.queryParameters['appliance_id']!);
-        final rows = request.url.queryParameters['appliance_id'] == _firstId
-            ? [
-                _program(localId, 'city'),
-                _program(federalId, 'federal'),
-                _program(
-                  '77777777-7777-4777-8777-777777777777',
-                  'county',
-                  availability: 'closed',
-                ),
-              ]
-            : [
-                _program(localId, 'city'),
-                _program(makerId, 'manufacturer'),
-                _program(
-                  '99999999-9999-4999-8999-999999999999',
-                  'state',
-                  expires: '2020-01-01T00:00:00Z',
-                ),
-              ];
+        requested.add(request.url);
+        final rows = [
+          _program(localId, 'city'),
+          _program(federalId, 'federal'),
+          _program(makerId, 'manufacturer'),
+          _program(
+            '77777777-7777-4777-8777-777777777777',
+            'county',
+            availability: 'closed',
+          ),
+          _program(
+            '99999999-9999-4999-8999-999999999999',
+            'state',
+            expires: '2020-01-01T00:00:00Z',
+          ),
+        ];
         return http.Response(
           jsonEncode({
             'programs': rows,
@@ -166,7 +138,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(requested.toSet(), {_firstId, _secondId});
+    expect(requested, hasLength(1));
+    expect(requested.single.path, '/v1/homes/$_homeId/programs');
+    expect(requested.single.query, isEmpty);
     expect(find.text('Programs'), findsOneWidget);
     expect(find.byKey(const Key('stopWasteProgram-$localId')), findsOneWidget);
     expect(

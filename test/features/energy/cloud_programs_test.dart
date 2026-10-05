@@ -464,6 +464,14 @@ void main() {
       throwsArgumentError,
     );
     expect(seen.length, 1);
+    expect(
+      (await api.homePrograms(home)).programs.single.title,
+      'Appliance program',
+    );
+    expect(seen.last.url.path, '/v1/homes/$home/programs');
+    expect(seen.last.url.query, isEmpty);
+    await expectLater(api.homePrograms('invalid'), throwsArgumentError);
+    expect(seen.length, 2);
   });
 
   test('refresh POST and GET use owner-scoped paths and header key', () async {

@@ -19,9 +19,9 @@ flutter run
 
 ## Cloud sign-in build configuration
 
-Stop Waste loads programs for every saved Cloud appliance from the per-appliance
-program endpoint. It combines duplicate program IDs and displays only offers
-whose availability is `open` and whose review expiry is still in the future.
+Stop Waste loads household and appliance-matching programs from the Cloud
+home-level program endpoint. It displays only offers whose availability is
+`open` and whose review expiry is still in the future.
 The section heading remains visible when the feed has no qualifying rows or a
 Cloud home is unavailable. Each offer shows its category, supplied title and
 benefit, administrator name, and source URL; tapping it opens the source in the
