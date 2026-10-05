@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../cloud_auth/cloud_auth.dart';
+import '../cloud_auth/cloud_dev_tls.dart';
 import 'cloud_home.dart';
 import 'cloud_appliance.dart';
 import 'cloud_catalog.dart';
@@ -57,7 +58,7 @@ class CloudAccount {
 /// Cloud bearer requests never read or send hub pairing credentials.
 class CloudApiClient {
   CloudApiClient({required this.session, http.Client? client})
-    : _client = client ?? http.Client();
+    : _client = client ?? cloudHttpClient(session.config);
   final CloudSession session;
   final http.Client _client;
 

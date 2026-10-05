@@ -53,7 +53,10 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     super.initState();
     final config = CloudAuthConfig.fromEnvironment();
     if (widget.session == null && config.isLocalAuthConfigured) {
-      _ownedLocalAuth = CloudLocalAuthClient(baseUrl: config.apiUrl);
+      _ownedLocalAuth = CloudLocalAuthClient(
+        baseUrl: config.apiUrl,
+        config: config,
+      );
     }
     _session =
         widget.session ??
@@ -369,21 +372,23 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                       onPressed: _signInLocal,
                       child: const Text('Sign in with email'),
                     ),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => CloudRecoveryScreen(
-                            service: _session.localAuth!,
-                            linkOrigin: _session.config.localAuthLinkOrigin,
+                    if (!_session.config.isDevAuthConfigured)
+                      TextButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => CloudRecoveryScreen(
+                              service: _session.localAuth!,
+                              linkOrigin: _session.config.localAuthLinkOrigin,
+                            ),
                           ),
                         ),
+                        child: const Text('Forgot password?'),
                       ),
-                      child: const Text('Forgot password?'),
-                    ),
                   ],
                   if (!_busy &&
                       (widget.registrationService != null ||
-                          (_session.config.isLocalAuthConfigured &&
+                          (!_session.config.isDevAuthConfigured &&
+                              _session.config.isLocalAuthConfigured &&
                               _session.localAuth != null))) ...[
                     const SizedBox(height: 8),
                     TextButton(

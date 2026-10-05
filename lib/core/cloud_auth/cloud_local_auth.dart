@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'cloud_auth.dart';
+import 'cloud_dev_tls.dart';
 
 class CloudLocalAuthException implements Exception {
   const CloudLocalAuthException(this.statusCode);
@@ -11,8 +12,13 @@ class CloudLocalAuthException implements Exception {
 
 /// Public first-party auth routes. The server returns 404 while its gate is off.
 class CloudLocalAuthClient implements LocalCloudAuthService {
-  CloudLocalAuthClient({required this.baseUrl, http.Client? client})
-    : _client = client ?? http.Client() {
+  CloudLocalAuthClient({
+    required this.baseUrl,
+    http.Client? client,
+    CloudAuthConfig? config,
+  }) : _client =
+           client ??
+           cloudHttpClient(config ?? CloudAuthConfig.fromEnvironment()) {
     final uri = Uri.tryParse(baseUrl);
     if (uri?.scheme != 'https' ||
         uri!.host.isEmpty ||

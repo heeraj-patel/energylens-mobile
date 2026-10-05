@@ -12,6 +12,9 @@ class CloudAuthConfig {
     required this.redirectUrl,
     required this.apiUrl,
     this.localAuthEnabled = false,
+    this.devAuthEnabled = false,
+    this.appEnvironment = '',
+    this.devCertificateSha256 = '',
     this.localAuthLinkOrigin = '',
   });
 
@@ -24,6 +27,11 @@ class CloudAuthConfig {
     localAuthEnabled: bool.fromEnvironment(
       'ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED',
     ),
+    devAuthEnabled: bool.fromEnvironment('ENERGYLENS_CLOUD_DEV_AUTH_ENABLED'),
+    appEnvironment: String.fromEnvironment('ENERGYLENS_APP_ENV'),
+    devCertificateSha256: String.fromEnvironment(
+      'ENERGYLENS_CLOUD_DEV_CERT_SHA256',
+    ),
     localAuthLinkOrigin: String.fromEnvironment(
       'ENERGYLENS_CLOUD_LOCAL_AUTH_LINK_ORIGIN',
     ),
@@ -35,6 +43,9 @@ class CloudAuthConfig {
   final String redirectUrl;
   final String apiUrl;
   final bool localAuthEnabled;
+  final bool devAuthEnabled;
+  final String appEnvironment;
+  final String devCertificateSha256;
   final String localAuthLinkOrigin;
 
   bool get hasValidApiUrl {
@@ -49,7 +60,10 @@ class CloudAuthConfig {
         !uri.hasFragment;
   }
 
-  bool get isLocalAuthConfigured => localAuthEnabled && hasValidApiUrl;
+  bool get isDevAuthConfigured =>
+      appEnvironment == 'dev' && devAuthEnabled && hasValidApiUrl;
+  bool get isLocalAuthConfigured =>
+      (localAuthEnabled || isDevAuthConfigured) && hasValidApiUrl;
   bool get hasCloudSignIn => isConfigured || isLocalAuthConfigured;
 
   bool get hasPlaceholderEndpoint {
