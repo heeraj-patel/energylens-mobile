@@ -24,6 +24,7 @@ import 'cloud_tariff.dart';
 import 'cloud_cycle_comparison.dart';
 import 'cloud_sensor.dart';
 import 'cloud_household_energy.dart';
+import 'cloud_usage_facts.dart';
 
 class CloudApiException implements Exception {
   const CloudApiException(this.statusCode, this.code);
@@ -186,6 +187,58 @@ class CloudApiClient {
     }
     return CloudVersioned(value: value, etag: _requiredEtag(response));
   }
+
+  /// Archives an active appliance. The backend requires its strong version
+  /// ETag and an idempotency key; success has no response body.
+  Future<void> archiveAppliance(
+    String homeId,
+    String applianceId, {
+    required String ifMatch,
+    required String idempotencyKey,
+  }) async {
+    _validateMutationHeaders(ifMatch, idempotencyKey);
+    if (!RegExp(r'^"[1-9][0-9]*"$').hasMatch(ifMatch)) {
+      throw ArgumentError.value(ifMatch, 'ifMatch');
+    }
+    await _request(
+      'DELETE',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/appliances/${Uri.encodeComponent(applianceId)}',
+      ifMatch: ifMatch,
+      idempotencyKey: idempotencyKey,
+    );
+  }
+
+  /// Reads at most two exact-scope, active reviewed usage facts. This owner
+  /// route is bearer authenticated; Hub mTLS routes are intentionally separate.
+  Future<CloudReviewedUsageFacts> usageFacts(CloudUsageFactScope scope) async {
+    if (!_validScopeField(scope.category, 60) ||
+        !_validScopeField(scope.manufacturer, 120) ||
+        !_validScopeField(scope.model, 120) ||
+        !_validScopeField(scope.variant, 100) ||
+        (scope.fuel != 'electricity' &&
+            !(scope.fuel == 'natural_gas' && scope.category == 'dryer'))) {
+      throw ArgumentError.value(scope, 'scope');
+    }
+    final query = Uri(queryParameters: scope.toQueryParameters()).query;
+    final response = await get('/v1/usage-facts?$query');
+    final result = CloudReviewedUsageFacts.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+    if (result.scope.category != scope.category ||
+        result.scope.manufacturer != scope.manufacturer ||
+        result.scope.model != scope.model ||
+        result.scope.fuel != scope.fuel ||
+        result.scope.variant != scope.variant) {
+      throw const FormatException('Reviewed usage fact scope changed');
+    }
+    return result;
+  }
+
+  static bool _validScopeField(String value, int maxLength) =>
+      value.isNotEmpty &&
+      value.length <= maxLength &&
+      value.trim() == value &&
+      !value.codeUnits.any((unit) => unit < 32 || unit == 127);
 
   Future<List<CloudSensor>> sensors(String homeId) async {
     final response = await get(
