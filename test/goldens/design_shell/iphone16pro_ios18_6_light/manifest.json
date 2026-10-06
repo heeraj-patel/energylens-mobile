@@ -1,0 +1,83 @@
+{
+  "revision": "design_shell_iphone16pro_ios18_6_light_v1",
+  "source": "iPhone 16 Pro simulator, iOS 18.6, static local pilot design tour",
+  "build_mode": "simulator_debug_only",
+  "capture": {
+    "advance_after_page_load_seconds": 8,
+    "label_validation": "macOS Vision OCR",
+    "status_time": "9:41"
+  },
+  "app_executable_sha256": "7b58cbdb1fa5cd2b8ff0f64acd99dc145c58c6adbba61cbeb1e55276a817a225",
+  "pages": {
+    "dashboard": {
+      "screenshot": "01-dashboard.png",
+      "png_sha256": "938fdf0d7165b84ea12e457a0f8bd726411f8e3d0e14200874a0f3403a45bdbf",
+      "app_html_sha256": "71b8c9b4f8c77d5fdd8955706196428284463a7fe81697a87d1e4c062c3ca564"
+    },
+    "devices": {
+      "screenshot": "02-devices.png",
+      "png_sha256": "f9fd90eb62d686b227cdaaf6a9b2e2004e022a33706d5abcbbcdb9c0d08616d2",
+      "app_html_sha256": "2201f2a82b6887a138a05fb3e9feecd15702177e4c14f9a696bf9a8c0578cd7e"
+    },
+    "efficiency": {
+      "screenshot": "03-efficiency.png",
+      "png_sha256": "94fb0cd397cbab7d3d47d6bf466c6e2fb43e3762214b3e0ecb7b48c882b785d6",
+      "app_html_sha256": "c317d4652726a29faa2b8c2e68bada6a259599da0ce5416b2ed78ac5380cdf74"
+    },
+    "efficiency_away": {
+      "screenshot": "04-efficiency_away.png",
+      "png_sha256": "709a008fd72d76a5b546187c8df257d80fa4fd25c7b12687b7a1cee2273eda0e",
+      "app_html_sha256": "a6a98188f996182fd70ea6bc5595a32fa7a7d290463a757f05deb0d3c28554fa"
+    },
+    "efficiency_habits": {
+      "screenshot": "05-efficiency_habits.png",
+      "png_sha256": "da256ea2679ba1e20b382ce615b5ba9d03aec6d1c7b889b311a748e9d5a940ce",
+      "app_html_sha256": "4d0e3c2e4417a6a40837dcbb52f74778b1a61320df1f34be8b63f0204fb3bfb9"
+    },
+    "efficiency_peak_rates": {
+      "screenshot": "06-efficiency_peak_rates.png",
+      "png_sha256": "58d707250df6a2e2a25363aee0ff396443765046cab33db85ac96080d6235972",
+      "app_html_sha256": "fddde9a8a3d7b375208b405441228c1163df19c25c8bfa45ca5cb4fc168cf848"
+    },
+    "perks_tips": {
+      "screenshot": "07-perks_tips.png",
+      "png_sha256": "5466eb5c68713081731a10f3e3097cf1b5904fee63923cba5ba566ebf8cc1f33",
+      "app_html_sha256": "aa1d797e8bba5e1597382f0ead87f00702c0be02fd65afa93e86ba3d52842627"
+    },
+    "settings": {
+      "screenshot": "08-settings.png",
+      "png_sha256": "ad7ac238c4e1db233660af5b52b85964923979b1f619b994f4e26299abcb4daa",
+      "app_html_sha256": "58ef407acf941c3d7fce848fa3ec1d276128400d56d88870730a241775469096"
+    },
+    "settings_manage_devices": {
+      "screenshot": "09-settings_manage_devices.png",
+      "png_sha256": "2c41585e07d6a0a92296f88ab06f652e9e9c27c00829c09d0ac7c91155a54c77",
+      "app_html_sha256": "9878b8871a02db75937b0567581a1c195bf1d3ef6bd33b154b5a29119680f2bf"
+    },
+    "settings_manual_device_entry": {
+      "screenshot": "10-settings_manual_device_entry.png",
+      "png_sha256": "da84d67d5dffab04a8207825920a2e721d05e59ef30eb00b1b63a21f891395b6",
+      "app_html_sha256": "9b44a85365858b26a55cbaaf5e837e3c944b2bf628df339f9a8a854c3a082a23"
+    },
+    "settings_photo_scan_onboarding": {
+      "screenshot": "11-settings_photo_scan_onboarding.png",
+      "png_sha256": "fe682b39839b6ecbef5c26aa571e54e33934226ca0a761c235dbfdd66aff2565",
+      "app_html_sha256": "c96fbc221d21eb0738f30139c81e931aeb22d4b708014383675bee8238dfaf26"
+    },
+    "tips_care_upgrades": {
+      "screenshot": "12-tips_care_upgrades.png",
+      "png_sha256": "3a52646d21666cf8be6eadfc264b6d9b1735a54391a56118cc7eb6b90d2244fc",
+      "app_html_sha256": "86da8d67ed80d1ec3f9311ea6cb9f71c8d536b4f80d654f49d5a2deb7a091327"
+    },
+    "tips_efficiency": {
+      "screenshot": "13-tips_efficiency.png",
+      "png_sha256": "7a0a82ac4404cb41a33246cdd7bbbf0de3a75cada7f4d660017eb12486f0d9c5",
+      "app_html_sha256": "64dc17100f896f3a4b98522656935173d96aa8cd73523a9c298a91c46d8f619d"
+    },
+    "tips_knowledge": {
+      "screenshot": "14-tips_knowledge.png",
+      "png_sha256": "49f3aec76f44b21dfcb7409a91db62dad9ff61694a48ce46e6a683d7cb40955c",
+      "app_html_sha256": "4b018605040843cce953545329feaf2eed91857312634e4f1b61df7250d74d30"
+    }
+  }
+}

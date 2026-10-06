@@ -77,7 +77,10 @@ class _DesignShellState extends State<DesignShell> {
       )
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageFinished: (_) => _installNavigation(),
+          onPageFinished: (_) {
+            _installNavigation();
+            _scheduleTourAdvance();
+          },
           onNavigationRequest: (request) {
             final uri = Uri.tryParse(request.url);
             if (uri != null &&
@@ -91,18 +94,18 @@ class _DesignShellState extends State<DesignShell> {
           },
         ),
       );
-    _loadPage();
-    if (widget.designTour) {
-      _tourTimer = Timer.periodic(const Duration(seconds: 8), (timer) {
-        if (_tourIndex + 1 >= _tourOrder.length) {
-          timer.cancel();
-          return;
-        }
-        _tourIndex++;
-        setState(() => _page = _tourOrder[_tourIndex]);
-        _loadPage();
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPage());
+  }
+
+  void _scheduleTourAdvance() {
+    if (!widget.designTour) return;
+    _tourTimer?.cancel();
+    _tourTimer = Timer(const Duration(seconds: 8), () {
+      if (!mounted || _tourIndex + 1 >= _tourOrder.length) return;
+      _tourIndex++;
+      setState(() => _page = _tourOrder[_tourIndex]);
+      _loadPage();
+    });
   }
 
   @override
