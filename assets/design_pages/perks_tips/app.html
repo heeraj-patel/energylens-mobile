@@ -1,0 +1,500 @@
+<!DOCTYPE html><html class="light" lang="en" style=""><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"><meta content="mobile_tab" name="shell-type">
+<style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#f9f9ff;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="../shared/tailwind.js"></script><script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "on-tertiary-container": "#66438b",
+          "on-error-container": "#93000a",
+          "primary": "#006686",
+          "surface-container-high": "#e0e8ff",
+          "tertiary-fixed": "#f0dbff",
+          "inverse-surface": "#263045",
+          "on-secondary-fixed-variant": "#1c4c60",
+          "surface-container-low": "#f1f3ff",
+          "on-tertiary-fixed-variant": "#59367d",
+          "on-surface-variant": "#3f484e",
+          "primary-container": "#7dd3fc",
+          "on-primary-fixed-variant": "#004d66",
+          "secondary-fixed-dim": "#a0cde5",
+          "on-primary-container": "#005b78",
+          "tertiary-fixed-dim": "#dcb8ff",
+          "surface-dim": "#d0daf5",
+          "surface-container": "#e9edff",
+          "on-error": "#ffffff",
+          "tertiary-container": "#ddbaff",
+          "on-tertiary": "#ffffff",
+          "secondary-container": "#bae6ff",
+          "primary-fixed-dim": "#7bd1fa",
+          "tertiary": "#724e97",
+          "error": "#ba1a1a",
+          "surface": "#f9f9ff",
+          "surface-container-lowest": "#ffffff",
+          "on-primary": "#ffffff",
+          "primary-fixed": "#c0e8ff",
+          "on-background": "#111b2f",
+          "secondary-fixed": "#c0e8ff",
+          "outline": "#6f787e",
+          "on-secondary-fixed": "#001e2b",
+          "surface-container-highest": "#d8e2fd",
+          "secondary": "#376479",
+          "background": "#f9f9ff",
+          "surface-bright": "#f9f9ff",
+          "on-primary-fixed": "#001e2b",
+          "inverse-on-surface": "#edf0ff",
+          "on-tertiary-fixed": "#2b024f",
+          "outline-variant": "#bec8ce",
+          "on-secondary-container": "#3c687e",
+          "surface-tint": "#006686",
+          "on-surface": "#111b2f",
+          "on-secondary": "#ffffff",
+          "error-container": "#ffdad6",
+          "surface-variant": "#d8e2fd",
+          "inverse-primary": "#7bd1fa"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.125rem",
+          "lg": "0.25rem",
+          "xl": "0.5rem",
+          "full": "0.75rem"
+        },
+        "spacing": {
+          "space-sm": "0.5rem",
+          "space-xs": "0.25rem",
+          "space-lg": "1.5rem",
+          "space-md": "1rem",
+          "margin": "1.5rem",
+          "gutter": "1rem",
+          "space-xl": "2rem"
+        },
+        "fontFamily": {
+          "body-md": [
+            "Inter"
+          ],
+          "headline-lg": [
+            "Oswald"
+          ],
+          "label-md": [
+            "Rubik"
+          ]
+        },
+        "fontSize": {
+          "body-md": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-lg": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "fontWeight": "600"
+            }
+          ],
+          "label-md": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "fontWeight": "500"
+            }
+          ]
+        }
+      },
+    },
+  }
+</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<link rel="stylesheet" href="../shared/fonts.css"></head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 bg-surface/90 backdrop-blur-xl border-b border-surface-container-high/60 shadow-[0_2px_12px_rgba(0,0,0,0.04)]"><div class="pt-safe"><div class="h-16 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><div class="w-11 h-11 flex items-center justify-center rounded-xl bg-surface-container text-primary"><span class="material-symbols-outlined text-[22px]">bolt</span></div><div class="flex flex-col"><button class="flex items-center gap-space-xs text-left group" type="button" data-el-action="perks_tips_action_001"><span class="font-label-md text-label-md text-on-surface tracking-tight font-semibold" data-el-bind="perks_tips_text_001">The Miller Home</span><span class="material-symbols-outlined text-on-surface-variant text-[18px] transition-transform group-hover:translate-y-0.5">expand_more</span></button><span class="text-[11px] leading-tight text-on-surface-variant font-label-md tracking-wider uppercase" data-el-bind="perks_tips_text_002">Perks And Tips</span></div></div><div class="flex items-center gap-space-sm"><a class="w-11 h-11 flex items-center justify-center" data-path="settings" href="#" data-el-action="perks_tips_action_002"><img alt="Profile" class="w-8 h-8 rounded-full object-cover ring-2 ring-primary-container" src="../shared/images/image-3.jpg"></a></div></div></div></header><main class="flex-1 flex flex-col relative w-full pt-16 pb-20 bg-surface"><div class="flex flex-col w-full px-gutter pb-space-xl">
+<!-- Subtle Ambient Glow Orbs -->
+<div class="relative w-full overflow-hidden">
+<div class="absolute -top-12 -left-10 w-44 h-44 rounded-full bg-primary-container/30 blur-3xl pointer-events-none"></div>
+<div class="absolute top-10 -right-12 w-48 h-48 rounded-full bg-secondary-container/40 blur-3xl pointer-events-none"></div>
+</div>
+<!-- Page Header & Joyful Savings Counter Banner -->
+<header class="flex flex-col gap-space-xs mt-space-md mb-space-lg"><h1 class="text-2xl font-black tracking-tight uppercase text-slate-900" data-el-bind="perks_tips_text_003">DISCOVER SAVINGS &amp; PERKS</h1>
+<p class="font-body-md text-body-md text-on-surface-variant" data-el-bind="perks_tips_text_004">Rebates, zero-cost habits, and instant answers tailored to your home.</p></header>
+<!-- Consistent Tab Switcher (Matching Efficiency & Settings Pill Style) -->
+<div class="relative w-full mb-space-lg">
+<div aria-label="Savings Categories" class="flex items-center gap-1 p-1 rounded-xl bg-slate-100/80 border border-slate-200/80 overflow-x-auto no-scrollbar shadow-inner" role="tablist"><button aria-controls="tab-panel-programs" aria-selected="true" class="tab-pill flex-1 py-1.5 px-2 rounded-lg text-center text-xs font-bold transition-all duration-200 bg-white text-slate-900 shadow-sm flex items-center justify-center gap-1 min-w-0" id="tab-btn-programs" onclick="switchTab('programs')" role="tab" type="button" data-el-action="perks_tips_action_003"><span class="material-symbols-outlined text-[15px]">redeem</span><span class="truncate" data-el-bind="perks_tips_text_005">Programs</span></button><button aria-controls="tab-panel-efficiency" aria-selected="false" class="tab-pill flex-1 py-1.5 px-2 rounded-lg text-center text-xs font-medium transition-all duration-200 text-slate-500 hover:text-slate-800 flex items-center justify-center gap-1 min-w-0" id="tab-btn-efficiency" onclick="switchTab('efficiency')" role="tab" type="button" data-el-action="perks_tips_action_004"><span class="material-symbols-outlined text-[15px]">eco</span><span class="truncate" data-el-bind="perks_tips_text_006">Efficiency</span></button><button aria-controls="tab-panel-upgrades" aria-selected="false" class="tab-pill flex-1 py-1.5 px-2 rounded-lg text-center text-xs font-medium transition-all duration-200 text-slate-500 hover:text-slate-800 flex items-center justify-center gap-1 min-w-0" id="tab-btn-upgrades" onclick="switchTab('upgrades')" role="tab" type="button" data-el-action="perks_tips_action_005"><span class="material-symbols-outlined text-[15px]">home_repair_service</span><span class="truncate" data-el-bind="perks_tips_text_007">Care &amp; Upgrades</span></button><button aria-controls="tab-panel-knowledge" aria-selected="false" class="tab-pill flex-1 py-1.5 px-2 rounded-lg text-center text-xs font-medium transition-all duration-200 text-slate-500 hover:text-slate-800 flex items-center justify-center gap-1 min-w-0" id="tab-btn-knowledge" onclick="switchTab('knowledge')" role="tab" type="button" data-el-action="perks_tips_action_006"><span class="material-symbols-outlined text-[15px]">help_center</span><span class="truncate" data-el-bind="perks_tips_text_008">Knowledge</span></button></div>
+</div>
+<!-- TAB PANELS CONTAINER -->
+<div class="flex flex-col gap-space-md w-full">
+<!-- TAB 1: Programs (Rebates & Grants) -->
+<section aria-labelledby="tab-btn-programs" class="flex flex-col gap-space-md" id="tab-panel-programs" role="tabpanel"><div class="flex flex-col gap-space-sm p-space-md rounded-xl bg-surface-container-low border border-surface-container-high/80 shadow-sm">
+  <div class="flex items-center justify-between pb-1 border-b border-surface-container-high/60"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-sky-600 text-[20px]">assured_workload</span><h2 class="font-bold tracking-tight text-slate-900 text-[15px]" data-el-bind="perks_tips_text_009">Utility, Solar &amp; Government Programs</h2></div><span class="px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-800 font-bold text-xs" data-el-bind="perks_tips_text_010">2 Active</span></div>
+
+  <div class="flex flex-col gap-space-sm">
+    <!-- Utility & Solar Hookup -->
+    <a class="group block p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high/80 hover:border-primary/40 transition-all duration-200 shadow-sm" href="https://example.com/utility-rebates" rel="noopener noreferrer" target="_blank" data-el-action="perks_tips_action_007">
+      <div class="flex items-start justify-between gap-space-sm mb-space-xs">
+        <div class="flex items-center gap-space-sm min-w-0">
+          <div class="w-9 h-9 rounded-lg bg-surface-container-low flex items-center justify-center text-primary flex-shrink-0">
+            <span class="material-symbols-outlined text-[20px]">solar_power</span>
+          </div>
+          <div class="flex flex-col min-w-0">
+            <h3 class="font-label-md text-label-md text-on-surface font-semibold group-hover:text-primary transition-colors truncate" data-el-bind="perks_tips_text_011">Utility &amp; Solar Hookup</h3>
+            <span class="font-body-md text-body-md text-on-surface-variant text-[12px]" data-el-bind="perks_tips_text_012">Local grid connection reward</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5 flex-shrink-0">
+          <span class="px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-md text-[12px] font-semibold" data-el-bind="perks_tips_text_013">$350 - $1,500</span>
+          <span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary text-[18px] transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5">open_in_new</span>
+        </div>
+      </div>
+      <p class="font-body-md text-body-md text-on-surface-variant text-[13px] mt-space-xs pl-11" data-el-bind="perks_tips_text_014">
+        Apply through Pacific Energy portal for bi-directional smart meter connection credits and solar installation offset.
+      </p>
+    </a>
+
+    <!-- Government Incentives -->
+    <a class="group block p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high/80 hover:border-primary/40 transition-all duration-200 shadow-sm" href="https://example.com/federal-incentives" rel="noopener noreferrer" target="_blank" data-el-action="perks_tips_action_008">
+      <div class="flex items-start justify-between gap-space-sm mb-space-xs">
+        <div class="flex items-center gap-space-sm min-w-0">
+          <div class="w-9 h-9 rounded-lg bg-surface-container-low flex items-center justify-center text-primary flex-shrink-0">
+            <span class="material-symbols-outlined text-[20px]">account_balance</span>
+          </div>
+          <div class="flex flex-col min-w-0">
+            <h3 class="font-label-md text-label-md text-on-surface font-semibold group-hover:text-primary transition-colors truncate" data-el-bind="perks_tips_text_015">Federal Clean Tech Incentive</h3>
+            <span class="font-body-md text-body-md text-on-surface-variant text-[12px]" data-el-bind="perks_tips_text_016">Federal Clean Tech 25C</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5 flex-shrink-0">
+          <span class="px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-md text-[12px] font-semibold" data-el-bind="perks_tips_text_017">$1,200 Tax Credit</span>
+          <span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary text-[18px] transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5">open_in_new</span>
+        </div>
+      </div>
+      <p class="font-body-md text-body-md text-on-surface-variant text-[13px] mt-space-xs pl-11" data-el-bind="perks_tips_text_018">
+        Claim up to 30% of project costs up to $1,200 annually for high-efficiency heat pumps, panels, and induction equipment.
+      </p>
+    </a>
+  </div>
+</div>
+
+<div class="flex flex-col gap-space-sm p-space-md rounded-xl bg-surface-container-low border border-surface-container-high/80 shadow-sm">
+  <div class="flex items-center justify-between pb-1 border-b border-surface-container-high/60"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-purple-600 text-[20px]">devices_other</span><h2 class="font-bold tracking-tight text-slate-900 text-[15px]" data-el-bind="perks_tips_text_019">Promotions by Device OEMs</h2></div><span class="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 font-bold text-xs" data-el-bind="perks_tips_text_020">1 Available</span></div>
+
+  <!-- Maker Promos -->
+  <a class="group block p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high/80 hover:border-primary/40 transition-all duration-200 shadow-sm" href="https://example.com/maker-promos" rel="noopener noreferrer" target="_blank" data-el-action="perks_tips_action_009">
+    <div class="flex items-start justify-between gap-space-sm mb-space-xs">
+      <div class="flex items-center gap-space-sm min-w-0">
+        <div class="w-9 h-9 rounded-lg bg-surface-container-low flex items-center justify-center text-tertiary flex-shrink-0">
+          <span class="material-symbols-outlined text-[20px]">loyalty</span>
+        </div>
+        <div class="flex flex-col min-w-0">
+          <h3 class="font-label-md text-label-md text-on-surface font-semibold group-hover:text-primary transition-colors truncate" data-el-bind="perks_tips_text_021">Maker Promos &amp; Coupons</h3>
+          <span class="font-body-md text-body-md text-on-surface-variant text-[12px]" data-el-bind="perks_tips_text_022">Smart Thermostats &amp; Plugs</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-1.5 flex-shrink-0">
+        <span class="px-2 py-0.5 rounded-full bg-tertiary-container/50 text-on-tertiary-container font-label-md text-[12px] font-semibold" data-el-bind="perks_tips_text_023">$50 - $200 OFF</span>
+        <span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary text-[18px] transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5">open_in_new</span>
+      </div>
+    </div>
+    <p class="font-body-md text-body-md text-on-surface-variant text-[13px] mt-space-xs pl-11" data-el-bind="perks_tips_text_024">
+      Direct manufacturer coupon codes for Ecobee, Nest, and Emporia energy monitors automatically applied at checkout.
+    </p>
+  </a>
+</div></section>
+<!-- TAB 2: Efficiency (Smart Actions / Zero-Cost Habits) -->
+<section aria-labelledby="tab-btn-efficiency" class="hidden flex flex-col gap-space-md" id="tab-panel-efficiency" role="tabpanel">
+<!-- Section Intro Card -->
+<div class="p-space-md rounded-xl bg-surface-container border border-surface-container-high/60 flex items-start gap-space-md">
+<div class="w-10 h-10 rounded-xl bg-secondary-container flex-shrink-0 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[24px]">offline_bolt</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-md text-label-md text-on-surface font-semibold" data-el-bind="perks_tips_text_025">Zero-Cost Daily Habits</span>
+<span class="font-body-md text-body-md text-on-surface-variant text-[13px]" data-el-bind="perks_tips_text_026">No equipment purchases needed. Immediate reduction on next month's bill.</span>
+</div>
+</div>
+<!-- Habit 1: Night & Away Cutoff -->
+<div class="p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm flex flex-col gap-space-xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-9 h-9 rounded-lg bg-surface-container-low flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">power_off</span>
+</div>
+<div>
+<h2 class="font-label-md text-label-md text-on-surface font-semibold" data-el-bind="perks_tips_text_027">Night &amp; Away Cutoff</h2>
+<span class="font-body-md text-body-md text-on-surface-variant text-[12px]" data-el-bind="perks_tips_text_028">Vampire load mitigation</span>
+</div>
+</div>
+<span class="px-2 py-0.5 rounded-full bg-surface-container text-primary font-label-md text-[11px] font-semibold" data-el-bind="perks_tips_text_029">Save ~$14/mo</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant text-[13px] mt-1 pl-11" data-el-bind="perks_tips_text_030">
+          Smart power strips auto-sleep gaming rigs, monitors, and audio receivers when your home enters Sleep mode at 11:30 PM.
+        </p>
+<div class="flex items-center justify-end gap-space-xs mt-space-xs">
+<button class="px-3 py-1.5 rounded-lg bg-primary-container/40 text-primary hover:bg-primary-container/70 transition-colors font-label-md text-[12px] flex items-center gap-1 font-semibold" type="button" data-el-action="perks_tips_action_010">
+<span class="material-symbols-outlined text-[15px]">toggle_on</span>
+<span class="" data-el-bind="perks_tips_text_031">Automate Cutoff</span>
+</button>
+</div>
+</div>
+<!-- Habit 2: Off-Peak Shift -->
+<div class="p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm flex flex-col gap-space-xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-9 h-9 rounded-lg bg-surface-container-low flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">schedule</span>
+</div>
+<div>
+<h2 class="font-label-md text-label-md text-on-surface font-semibold" data-el-bind="perks_tips_text_032">Off-Peak Shift</h2>
+<span class="font-body-md text-body-md text-on-surface-variant text-[12px]" data-el-bind="perks_tips_text_033">Run wash &amp; dish cycles after 9 PM</span>
+</div>
+</div>
+<span class="px-2 py-0.5 rounded-full bg-surface-container text-primary font-label-md text-[11px] font-semibold" data-el-bind="perks_tips_text_034">Save ~$22/mo</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant text-[13px] mt-1 pl-11" data-el-bind="perks_tips_text_035">
+          Electricity rates drop 42% after 9:00 PM on weekdays. Delay washing machine and dishwasher starts via delay-start timers.
+        </p>
+<div class="flex items-center justify-between mt-space-xs pt-space-xs pl-11">
+<span class="font-body-md text-body-md text-on-surface-variant text-[11px] flex items-center gap-1" data-el-bind="perks_tips_text_036">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span> Next off-peak window in 3h 14m
+          </span>
+<button class="px-3 py-1.5 rounded-lg bg-surface-container-low text-on-surface hover:text-primary transition-colors font-label-md text-[12px] flex items-center gap-1 font-medium" type="button" data-el-action="perks_tips_action_011">
+<span class="material-symbols-outlined text-[15px]">alarm</span>
+<span class="" data-el-bind="perks_tips_text_037">Set Reminder</span>
+</button>
+</div>
+</div>
+<!-- Habit 3: Weather Rhythm -->
+<div class="p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm flex flex-col gap-space-xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-9 h-9 rounded-lg bg-surface-container-low flex items-center justify-center text-tertiary">
+<span class="material-symbols-outlined text-[20px]">thermostat</span>
+</div>
+<div>
+<h2 class="font-label-md text-label-md text-on-surface font-semibold" data-el-bind="perks_tips_text_038">Weather Rhythm Pre-Cool</h2>
+<span class="font-body-md text-body-md text-on-surface-variant text-[12px]" data-el-bind="perks_tips_text_039">Pre-cool before 2 PM peak tariff</span>
+</div>
+</div>
+<span class="px-2 py-0.5 rounded-full bg-surface-container text-primary font-label-md text-[11px] font-semibold" data-el-bind="perks_tips_text_040">Save ~$19/mo</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant text-[13px] mt-1 pl-11" data-el-bind="perks_tips_text_041">
+          Drop thermostat 2°F between 11 AM - 1 PM when power is cheap, then drift through peak afternoon hours without compressor strain.
+        </p>
+<div class="flex items-center justify-end gap-space-xs mt-space-xs">
+<button class="px-3 py-1.5 rounded-lg bg-primary-container/40 text-primary hover:bg-primary-container/70 transition-colors font-label-md text-[12px] flex items-center gap-1 font-semibold" type="button" data-el-action="perks_tips_action_012">
+<span class="material-symbols-outlined text-[15px]">auto_mode</span>
+<span class="" data-el-bind="perks_tips_text_042">Sync Thermostat</span>
+</button>
+</div>
+</div>
+</section>
+<!-- TAB 3: Care & Upgrades (Maintenance & Gear) -->
+<section aria-labelledby="tab-btn-upgrades" class="hidden flex flex-col gap-space-md" id="tab-panel-upgrades" role="tabpanel">
+<!-- Section Intro Card -->
+<div class="p-space-md rounded-xl bg-surface-container border border-surface-container-high/60 flex items-start gap-space-md">
+<div class="w-10 h-10 rounded-xl bg-primary/10 flex-shrink-0 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[24px]">tune</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-md text-label-md text-on-surface font-semibold" data-el-bind="perks_tips_text_043">Equipment Health &amp; Replacements</span>
+<span class="font-body-md text-body-md text-on-surface-variant text-[13px]" data-el-bind="perks_tips_text_044">Keep motors breathing easily and unlock high-efficiency Tier 1 trade-in credits.</span>
+</div>
+</div>
+<!-- Quick Maintenance Checklist -->
+<div class="p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-9 h-9 rounded-lg bg-surface-container-low flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">handyman</span>
+</div>
+<div>
+<h2 class="font-label-md text-label-md text-on-surface font-semibold" data-el-bind="perks_tips_text_045">Quick Maintenance Checklist</h2>
+<span class="font-body-md text-body-md text-on-surface-variant text-[12px]" data-el-bind="perks_tips_text_046">Restores up to 12% HVAC efficiency</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-primary text-[20px]">checklist</span>
+</div>
+<div class="flex flex-col gap-space-xs mt-space-xs pl-11">
+<label class="flex items-center gap-space-sm py-1 cursor-pointer">
+<input checked="" class="w-4 h-4 rounded bg-surface-container text-primary focus:ring-0 border-outline-variant" type="checkbox" data-el-action="perks_tips_action_013">
+<span class="font-body-md text-body-md text-on-surface text-[13px]" data-el-bind="perks_tips_text_047">Clean refrigerator door seals &amp; vacuum rear coils</span>
+</label>
+<label class="flex items-center gap-space-sm py-1 cursor-pointer">
+<input class="w-4 h-4 rounded bg-surface-container text-primary focus:ring-0 border-outline-variant" type="checkbox" data-el-action="perks_tips_action_014">
+<span class="font-body-md text-body-md text-on-surface text-[13px]" data-el-bind="perks_tips_text_048">Swap central HVAC air filter (Last changed 78 days ago)</span>
+</label>
+<label class="flex items-center gap-space-sm py-1 cursor-pointer">
+<input class="w-4 h-4 rounded bg-surface-container text-primary focus:ring-0 border-outline-variant" type="checkbox" data-el-action="perks_tips_action_015">
+<span class="font-body-md text-body-md text-on-surface text-[13px]" data-el-bind="perks_tips_text_049">Flush water heater sediment drain valve</span>
+</label>
+</div>
+</div>
+<!-- Appliance Upgrade Card with Visual Image -->
+<div class="rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm overflow-hidden">
+<div class="relative h-28 w-full">
+<img class="w-full h-full object-cover" data-alt="A modern kitchen with ultra high efficiency matte black smart refrigerator and induction range with subtle ambient cyan backlighting, architectural home interior design, elegant and clean" src="../shared/images/image-2.jpg">
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-surface-container-lowest/40 to-transparent"></div>
+<div class="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full bg-surface-container-lowest/90 backdrop-blur-md text-primary font-label-md text-[11px] font-semibold border border-surface-container-high" data-el-bind="perks_tips_text_050">
+            Energy Star Tier 1
+          </div>
+</div>
+<div class="p-space-md flex flex-col gap-space-xs">
+<div class="flex items-center justify-between">
+<h2 class="font-label-md text-label-md text-on-surface font-semibold" data-el-bind="perks_tips_text_051">Hardware Upgrade &amp; Trade-In Guide</h2>
+<a class="text-primary hover:underline flex items-center gap-1 font-label-md text-[12px] font-semibold" href="https://example.com/trade-in-guide" rel="noopener noreferrer" target="_blank" data-el-action="perks_tips_action_016">
+<span class="" data-el-bind="perks_tips_text_052">Trade-in portal</span>
+<span class="material-symbols-outlined text-[15px]">open_in_new</span>
+</a>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant text-[13px]" data-el-bind="perks_tips_text_053">
+            Your basement dehumidifier and heat pump qualify for an estimated $240 utility buyback rebate when upgrading to inverter models.
+          </p>
+<div class="flex items-center gap-space-sm mt-space-xs pt-space-xs">
+<div class="flex items-center gap-1 text-[12px] text-primary font-label-md font-medium">
+<span class="material-symbols-outlined text-[16px]">verified</span>
+<span class="" data-el-bind="perks_tips_text_054">Rebate Pre-Approved</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- TAB 4: Knowledge (Find Answers & Advice, moved from Settings) -->
+<section aria-labelledby="tab-btn-knowledge" class="hidden flex flex-col gap-space-md" id="tab-panel-knowledge" role="tabpanel">
+<!-- Find Answers & Advice Card with KNOWLEDGE BASE Tag -->
+<div class="p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<span class="px-2.5 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-md text-[11px] font-bold tracking-wider uppercase" data-el-bind="perks_tips_text_055">
+            Knowledge Base
+          </span>
+<span class="material-symbols-outlined text-primary text-[20px]">auto_awesome</span>
+</div>
+<h2 class="font-label-md text-label-md text-on-surface font-semibold text-[17px]" data-el-bind="perks_tips_text_056">Find Answers &amp; Advice</h2>
+<p class="font-body-md text-body-md text-on-surface-variant text-[13px]" data-el-bind="perks_tips_text_057">
+          VoltSense AI analyzes your live meter telemetry and appliance usage rhythms to give you direct home answers.
+        </p>
+<!-- Search Bar with Glass Depth -->
+<div class="relative w-full mt-space-xs">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+<input class="w-full pl-9 pr-4 py-2.5 rounded-xl bg-surface-container-low text-on-surface placeholder:text-on-surface-variant text-[13px] font-body-md focus:outline-none focus:ring-1 focus:ring-primary border border-surface-container-high shadow-inner" placeholder="Search for answers from your device knowledge base..." type="text" data-el-field="perks_tips_field_001">
+</div>
+</div>
+<!-- Collapsible FAQs -->
+<div class="flex flex-col gap-space-sm">
+<h3 class="font-label-md text-label-md text-on-surface-variant font-semibold text-[12px] tracking-wider uppercase px-1" data-el-bind="perks_tips_text_058">Frequent Inquiries</h3>
+<!-- FAQ Item 1 (Expanded by default) -->
+<div class="rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm overflow-hidden">
+<button class="w-full p-space-md flex items-center justify-between text-left group" onclick="toggleFaq('faq-1')" type="button" data-el-action="perks_tips_action_017">
+<span class="font-label-md text-label-md text-on-surface font-semibold pr-space-sm" data-el-bind="perks_tips_text_059">Why is today's cost higher than yesterday?</span>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-transform duration-200 rotate-180 flex-shrink-0 text-[20px]" id="faq-1-icon">expand_more</span>
+</button>
+<div class="px-space-md pb-space-md pt-0 text-on-surface-variant font-body-md text-body-md text-[13px] flex flex-col gap-space-xs" id="faq-1-content">
+<div class="p-3 rounded-lg bg-surface-container text-on-surface flex items-start gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[18px] flex-shrink-0 mt-0.5">info</span>
+<span class="" data-el-bind="perks_tips_text_060">Central AC ran <strong data-el-bind="perks_tips_text_061">1.4 hours longer</strong> during the 2 PM peak tariff window due to 88°F outdoor heat.</span>
+</div>
+<p class="mt-1" data-el-bind="perks_tips_text_062">
+              Yesterday's temperature peaked at 76°F. Enabling Weather Rhythm can pre-cool tomorrow at 40% lower kilowatt-hour pricing.
+            </p>
+</div>
+</div>
+<!-- FAQ Item 2 -->
+<div class="rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm overflow-hidden">
+<button class="w-full p-space-md flex items-center justify-between text-left group" onclick="toggleFaq('faq-2')" type="button" data-el-action="perks_tips_action_018">
+<span class="font-label-md text-label-md text-on-surface font-semibold pr-space-sm" data-el-bind="perks_tips_text_063">Is now a cheap time to run laundry?</span>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-transform duration-200 flex-shrink-0 text-[20px]" id="faq-2-icon">expand_more</span>
+</button>
+<div class="hidden px-space-md pb-space-md pt-0 text-on-surface-variant font-body-md text-body-md text-[13px] flex flex-col gap-space-xs" id="faq-2-content">
+<p class="" data-el-bind="perks_tips_text_064">
+              Current rate is <strong class="text-on-surface" data-el-bind="perks_tips_text_065">$0.24 / kWh</strong> (Standard Mid-Day). Rates decline to <strong class="text-primary font-semibold" data-el-bind="perks_tips_text_066">$0.11 / kWh</strong> after 9:00 PM.
+            </p>
+<div class="p-3 rounded-lg bg-surface-container text-on-surface flex items-center justify-between">
+<span class="" data-el-bind="perks_tips_text_067">Estimated run cost right now: $1.42</span>
+<span class="text-primary font-semibold" data-el-bind="perks_tips_text_068">After 9 PM: $0.65</span>
+</div>
+</div>
+</div>
+<!-- FAQ Item 3 -->
+<div class="rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm overflow-hidden">
+<button class="w-full p-space-md flex items-center justify-between text-left group" onclick="toggleFaq('faq-3')" type="button" data-el-action="perks_tips_action_019">
+<span class="font-label-md text-label-md text-on-surface font-semibold pr-space-sm" data-el-bind="perks_tips_text_069">What devices are drawing power right now?</span>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-transform duration-200 flex-shrink-0 text-[20px]" id="faq-3-icon">expand_more</span>
+</button>
+<div class="hidden px-space-md pb-space-md pt-0 text-on-surface-variant font-body-md text-body-md text-[13px] flex flex-col gap-space-xs" id="faq-3-content">
+<p class="" data-el-bind="perks_tips_text_070">
+              Your whole home is currently pulling <strong class="text-on-surface" data-el-bind="perks_tips_text_071">1,480 W</strong>:
+            </p>
+<ul class="flex flex-col gap-1.5 mt-1">
+<li class="flex items-center justify-between py-1 px-2.5 rounded-lg bg-surface-container-low border border-surface-container-high/50">
+<span class="flex items-center gap-1.5" data-el-bind="perks_tips_text_072">
+<span class="material-symbols-outlined text-[16px] text-primary">mode_fan</span>
+                  HVAC Blower Fan
+                </span>
+<span class="font-semibold text-on-surface" data-el-bind="perks_tips_text_073">780 W</span>
+</li>
+<li class="flex items-center justify-between py-1 px-2.5 rounded-lg bg-surface-container-low border border-surface-container-high/50">
+<span class="flex items-center gap-1.5" data-el-bind="perks_tips_text_074">
+<span class="material-symbols-outlined text-[16px] text-primary">kitchen</span>
+                  Kitchen Refrigerator
+                </span>
+<span class="font-semibold text-on-surface" data-el-bind="perks_tips_text_075">190 W</span>
+</li>
+<li class="flex items-center justify-between py-1 px-2.5 rounded-lg bg-surface-container-low border border-surface-container-high/50">
+<span class="flex items-center gap-1.5" data-el-bind="perks_tips_text_076">
+<span class="material-symbols-outlined text-[16px] text-primary">tv</span>
+                  Living Room Media Center
+                </span>
+<span class="font-semibold text-on-surface" data-el-bind="perks_tips_text_077">140 W</span>
+</li>
+<li class="flex items-center justify-between py-1 px-2.5 rounded-lg bg-surface-container-low border border-surface-container-high/50">
+<span class="flex items-center gap-1.5" data-el-bind="perks_tips_text_078">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">home</span>
+                  Always-On Base Load
+                </span>
+<span class="font-semibold text-on-surface" data-el-bind="perks_tips_text_079">370 W</span>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</section>
+</div>
+</div>
+<script>
+  function switchTab(target) {
+    const tabs = ['programs', 'efficiency', 'upgrades', 'knowledge'];
+    
+    tabs.forEach(tab => {
+      const btn = document.getElementById('tab-btn-' + tab);
+      const panel = document.getElementById('tab-panel-' + tab);
+      
+      if (!btn || !panel) return;
+
+      if (tab === target) {
+        panel.classList.remove('hidden');
+        btn.setAttribute('aria-selected', 'true');
+        btn.className = 'tab-pill flex-1 min-w-[92px] py-2 px-3 rounded-lg text-center font-label-md text-label-md transition-all duration-200 bg-primary text-on-primary font-semibold shadow-sm flex items-center justify-center gap-1';
+      } else {
+        panel.classList.add('hidden');
+        btn.setAttribute('aria-selected', 'false');
+        btn.className = 'tab-pill flex-1 min-w-[92px] py-2 px-3 rounded-lg text-center font-label-md text-label-md transition-all duration-200 text-on-surface-variant hover:text-on-surface flex items-center justify-center gap-1';
+      }
+    });
+  }
+
+  function toggleFaq(id) {
+    const content = document.getElementById(id + '-content');
+    const icon = document.getElementById(id + '-icon');
+    if (!content || !icon) return;
+
+    if (content.classList.contains('hidden')) {
+      content.classList.remove('hidden');
+      icon.classList.add('rotate-180');
+    } else {
+      content.classList.add('hidden');
+      icon.classList.remove('rotate-180');
+    }
+  }
+</script></main><nav class="fixed bottom-0 w-full z-50 pb-safe bg-white/95 backdrop-blur border-t border-slate-200/80 shadow-[0_-2px_12px_rgba(0,0,0,0.04)]"><div class="flex justify-around items-center h-16 px-space-xs"><a class="flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-slate-500 hover:text-slate-800 transition-colors font-semibold text-xs" data-path="dashboard" href="#" data-el-action="perks_tips_action_020"><span class="material-symbols-outlined text-[22px]">space_dashboard</span><span class="leading-none tracking-tight" data-el-bind="perks_tips_text_080">Dashboard</span></a><a class="flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-slate-500 hover:text-slate-800 transition-colors font-semibold text-xs" data-path="devices" href="#" data-el-action="perks_tips_action_021"><span class="material-symbols-outlined text-[22px]">devices</span><span class="leading-none tracking-tight" data-el-bind="perks_tips_text_081">Devices</span></a><a class="flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-slate-500 hover:text-slate-800 transition-colors font-semibold text-xs" data-path="efficiency" href="#" data-el-action="perks_tips_action_022"><span class="material-symbols-outlined text-[22px]">energy_savings_leaf</span><span class="leading-none tracking-tight" data-el-bind="perks_tips_text_082">Efficiency</span></a><a aria-current="page" class="flex flex-col items-center justify-center w-14 h-12 gap-0.5 transition-colors text-sky-600 font-bold text-xs" data-path="perks-and-tips" href="#" data-el-action="perks_tips_action_023"><span class="material-symbols-outlined text-[22px] font-bold">savings</span><span class="leading-none tracking-tight" data-el-bind="perks_tips_text_083">Tips</span></a><a class="flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-slate-500 hover:text-slate-800 transition-colors font-semibold text-xs" data-path="settings" href="#" data-el-action="perks_tips_action_024"><span class="material-symbols-outlined text-[22px]">settings</span><span class="leading-none tracking-tight" data-el-bind="perks_tips_text_084">Settings</span></a></div></nav>
+
+</body></html>

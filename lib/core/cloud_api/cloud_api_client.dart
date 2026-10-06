@@ -22,6 +22,8 @@ import 'cloud_report_preview.dart';
 import 'cloud_report_delivery.dart';
 import 'cloud_tariff.dart';
 import 'cloud_cycle_comparison.dart';
+import 'cloud_sensor.dart';
+import 'cloud_household_energy.dart';
 
 class CloudApiException implements Exception {
   const CloudApiException(this.statusCode, this.code);
@@ -61,6 +63,208 @@ class CloudApiClient {
     : _client = client ?? cloudHttpClient(session.config);
   final CloudSession session;
   final http.Client _client;
+
+  Future<CloudVersioned<CloudHome>> home(String homeId) async {
+    final response = await get('/v1/homes/${Uri.encodeComponent(homeId)}');
+    final value = CloudHome.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+    if (value.id != homeId) {
+      throw const FormatException('Cloud home ID changed');
+    }
+    return CloudVersioned(value: value, etag: _requiredEtag(response));
+  }
+
+  Future<CloudHouseholdDashboard> householdDashboard(String homeId) async {
+    _validateHouseholdHomeId(homeId);
+    final response = await get(
+      '/v1/homes/${Uri.encodeComponent(homeId)}/dashboard',
+    );
+    return CloudHouseholdDashboard.fromJson(
+      _decodeObject(response.body),
+      expectedHomeId: homeId,
+    );
+  }
+
+  Future<CloudHouseholdEnergyTrends> householdEnergyTrends(
+    String homeId, {
+    required String granularity,
+  }) async {
+    _validateHouseholdHomeId(homeId);
+    if (!const {'hour', 'day', 'week', 'month'}.contains(granularity)) {
+      throw ArgumentError.value(granularity, 'granularity');
+    }
+    final query = Uri(queryParameters: {'granularity': granularity}).query;
+    final response = await get(
+      '/v1/homes/${Uri.encodeComponent(homeId)}/energy-trends?$query',
+    );
+    final value = CloudHouseholdEnergyTrends.fromJson(
+      _decodeObject(response.body),
+      expectedHomeId: homeId,
+    );
+    if (value.granularity != granularity) {
+      throw const FormatException('Household energy granularity changed');
+    }
+    return value;
+  }
+
+  static final RegExp _householdHomeUuid = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+
+  static void _validateHouseholdHomeId(String homeId) {
+    if (!_householdHomeUuid.hasMatch(homeId)) {
+      throw ArgumentError.value(homeId, 'homeId');
+    }
+  }
+
+  static Map<String, dynamic> _decodeObject(String body) {
+    final value = jsonDecode(body);
+    if (value is Map<String, dynamic>) return value;
+    throw const FormatException('Invalid household energy response object');
+  }
+
+  Future<CloudVersioned<CloudHome>> updateHome(
+    String homeId,
+    CloudHomePatch input, {
+    required String ifMatch,
+    required String idempotencyKey,
+  }) async {
+    _validateMutationHeaders(ifMatch, idempotencyKey);
+    final response = await _request(
+      'PATCH',
+      '/v1/homes/${Uri.encodeComponent(homeId)}',
+      jsonBody: jsonEncode(input.toJson()),
+      ifMatch: ifMatch,
+      idempotencyKey: idempotencyKey,
+    );
+    final value = CloudHome.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+    if (value.id != homeId) {
+      throw const FormatException('Cloud home ID changed');
+    }
+    return CloudVersioned(value: value, etag: _requiredEtag(response));
+  }
+
+  Future<CloudVersioned<CloudAppliance>> appliance(
+    String homeId,
+    String applianceId,
+  ) async {
+    final response = await get(
+      '/v1/homes/${Uri.encodeComponent(homeId)}/appliances/${Uri.encodeComponent(applianceId)}',
+    );
+    final value = CloudAppliance.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+    if (value.id != applianceId || value.homeId != homeId) {
+      throw const FormatException('Cloud appliance ownership changed');
+    }
+    return CloudVersioned(value: value, etag: _requiredEtag(response));
+  }
+
+  Future<CloudVersioned<CloudAppliance>> updateAppliance(
+    String homeId,
+    String applianceId,
+    CloudAppliancePatch input, {
+    required String ifMatch,
+    required String idempotencyKey,
+  }) async {
+    _validateMutationHeaders(ifMatch, idempotencyKey);
+    final response = await _request(
+      'PATCH',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/appliances/${Uri.encodeComponent(applianceId)}',
+      jsonBody: jsonEncode(input.toJson()),
+      ifMatch: ifMatch,
+      idempotencyKey: idempotencyKey,
+    );
+    final value = CloudAppliance.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+    if (value.id != applianceId || value.homeId != homeId) {
+      throw const FormatException('Cloud appliance ownership changed');
+    }
+    return CloudVersioned(value: value, etag: _requiredEtag(response));
+  }
+
+  Future<List<CloudSensor>> sensors(String homeId) async {
+    final response = await get(
+      '/v1/homes/${Uri.encodeComponent(homeId)}/sensors',
+    );
+    final rows = (jsonDecode(response.body) as Map<String, dynamic>)['sensors'];
+    if (rows is! List) throw const FormatException('Invalid cloud sensor list');
+    return rows
+        .map((row) => CloudSensor.fromJson(row as Map<String, dynamic>, homeId))
+        .toList();
+  }
+
+  Future<CloudSensor> createSensor(
+    String homeId,
+    CloudSensorCreate input, {
+    required String idempotencyKey,
+  }) async {
+    _validateIdempotencyKey(idempotencyKey);
+    final response = await _request(
+      'POST',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/sensors',
+      jsonBody: jsonEncode(input.toJson()),
+      idempotencyKey: idempotencyKey,
+    );
+    return CloudSensor.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+      homeId,
+    );
+  }
+
+  Future<CloudAttachment> createAttachment(
+    String homeId,
+    CloudAttachmentCreate input, {
+    required String ifMatch,
+    required String idempotencyKey,
+  }) async {
+    _validateMutationHeaders(ifMatch, idempotencyKey);
+    final response = await _request(
+      'POST',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/attachments',
+      jsonBody: jsonEncode(input.toJson()),
+      ifMatch: ifMatch,
+      idempotencyKey: idempotencyKey,
+    );
+    final value = CloudAttachment.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+      homeId,
+    );
+    if (value.sensorId != input.sensorId ||
+        value.applianceId != input.applianceId) {
+      throw const FormatException('Attachment target changed');
+    }
+    return value;
+  }
+
+  Future<CloudAttachment> closeAttachment(
+    String homeId,
+    String attachmentId,
+    CloudAttachmentClose input, {
+    required String ifMatch,
+    required String idempotencyKey,
+  }) async {
+    _validateMutationHeaders(ifMatch, idempotencyKey);
+    final response = await _request(
+      'PATCH',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/attachments/${Uri.encodeComponent(attachmentId)}',
+      jsonBody: jsonEncode(input.toJson()),
+      ifMatch: ifMatch,
+      idempotencyKey: idempotencyKey,
+    );
+    final value = CloudAttachment.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+      homeId,
+    );
+    if (value.id != attachmentId || value.endedAt == null) {
+      throw const FormatException('Attachment was not closed');
+    }
+    return value;
+  }
 
   Future<CloudReportPreview> createReportPreview(
     String homeId,
@@ -512,7 +716,7 @@ class CloudApiClient {
 
   Future<List<CloudAttachment>> attachments(String homeId) async {
     final response = await get(
-      '/v1/homes/${Uri.encodeComponent(homeId)}/attachments/',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/attachments',
     );
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     final rows = body['attachments'];
@@ -931,6 +1135,31 @@ class CloudApiClient {
   }
 
   Future<http.Response> get(String path) => _request('GET', path);
+
+  static String _requiredEtag(http.Response response) {
+    final value = response.headers['etag'];
+    if (value == null || value.trim().isEmpty) {
+      throw const FormatException('Missing resource ETag');
+    }
+    return value;
+  }
+
+  static void _validateIdempotencyKey(String key) {
+    if (!RegExp(
+      r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+    ).hasMatch(key)) {
+      throw ArgumentError.value(key, 'idempotencyKey');
+    }
+  }
+
+  static void _validateMutationHeaders(String ifMatch, String idempotencyKey) {
+    if (ifMatch.trim().isEmpty ||
+        ifMatch.contains('\r') ||
+        ifMatch.contains('\n')) {
+      throw ArgumentError.value(ifMatch, 'ifMatch');
+    }
+    _validateIdempotencyKey(idempotencyKey);
+  }
 
   Future<http.Response> _request(
     String method,

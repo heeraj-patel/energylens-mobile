@@ -28,6 +28,7 @@ import 'features/energy/local_pilot_programs.dart';
 import 'features/energy/cloud_report_preview_screen.dart';
 import 'features/identify/appliance_onboarding_screen.dart';
 import 'features/identify/cloud_usage_questions_screen.dart';
+import 'features/design/design_shell.dart';
 
 void main() => runApp(const EnergyLensApp());
 
@@ -96,30 +97,24 @@ class EnergyLensApp extends StatelessWidget {
       theme: theme(Brightness.light),
       darkTheme: theme(Brightness.dark),
       home: localPilot
-          ? const HomeScreen(
-              localPilotMode: true,
-              initialTabIndex: 3,
-              startInConnectAppliance: true,
+          ? const DesignShell(
+              designTour: bool.fromEnvironment('ENERGYLENS_DESIGN_TOUR'),
             )
           : CloudEntryGate(
               homeBuilder: (cloudHome, signOut, changeHome, cloudApi) =>
-                  HomeScreen(
-                    cloudHome: cloudHome,
-                    cloudApi: cloudApi,
-                    onCloudSignOut: signOut,
-                    onCloudChangeHome: changeHome,
-                    initialTabIndex:
-                        const bool.fromEnvironment(
-                          'ENERGYLENS_DISCOVERY_PREVIEW',
-                        )
-                        ? 3
-                        : 0,
-                    autoScanDiscovery: const bool.fromEnvironment(
-                      'ENERGYLENS_DISCOVERY_PREVIEW',
-                    ),
-                    startInConnectAppliance: const bool.fromEnvironment(
-                      'ENERGYLENS_DISCOVERY_PREVIEW',
-                    ),
+                  DesignShell(
+                    onSignOut: signOut,
+                    onChangeHome: changeHome,
+                    onReportPreview: cloudHome == null
+                        ? null
+                        : () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => CloudReportPreviewScreen(
+                                api: cloudApi,
+                                home: cloudHome,
+                              ),
+                            ),
+                          ),
                   ),
             ),
     );

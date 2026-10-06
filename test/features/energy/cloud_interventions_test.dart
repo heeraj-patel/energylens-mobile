@@ -54,7 +54,7 @@ void main() {
     final api = _api(
       MockClient((request) async {
         expect(request.headers['authorization'], 'Bearer owner-token');
-        if (request.url.path.endsWith('/attachments/')) {
+        if (request.url.path.endsWith('/attachments')) {
           return http.Response(
             jsonEncode({
               'attachments': [

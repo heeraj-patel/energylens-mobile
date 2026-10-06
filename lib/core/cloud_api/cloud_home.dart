@@ -28,6 +28,8 @@ class CloudHome {
     required this.timezone,
     required this.countryCode,
     required this.postalCode,
+    this.version,
+    this.etag,
   });
 
   final String id;
@@ -35,6 +37,8 @@ class CloudHome {
   final String timezone;
   final String countryCode;
   final String postalCode;
+  final int? version;
+  final String? etag;
 
   factory CloudHome.fromJson(Map<String, dynamic> json) {
     final location = json['location'];
@@ -54,7 +58,42 @@ class CloudHome {
       timezone: json['timezone'] as String,
       countryCode: location['country_code'] as String,
       postalCode: location['postal_code'] as String,
+      version: json['version'] as int?,
     );
+  }
+}
+
+class CloudHomePatch {
+  const CloudHomePatch({
+    this.name,
+    this.timezone,
+    this.countryCode,
+    this.postalCode,
+  });
+  final String? name;
+  final String? timezone;
+  final String? countryCode;
+  final String? postalCode;
+
+  Map<String, dynamic> toJson() {
+    final result = <String, dynamic>{};
+    if (name != null) result['name'] = name;
+    if (timezone != null) result['timezone'] = timezone;
+    if (countryCode != null || postalCode != null) {
+      if (countryCode == null || postalCode == null) {
+        throw ArgumentError('Both countryCode and postalCode are required');
+      }
+      result['location'] = {
+        'country_code': countryCode,
+        'postal_code': postalCode,
+        'city': null,
+        'county': null,
+        'precision': 'postal_code',
+        'source': 'user_entered',
+      };
+    }
+    if (result.isEmpty) throw ArgumentError('Home update must not be empty');
+    return result;
   }
 }
 

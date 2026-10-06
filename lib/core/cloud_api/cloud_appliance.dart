@@ -94,3 +94,62 @@ class CloudApplianceCreate {
     },
   };
 }
+
+class CloudAppliancePatch {
+  const CloudAppliancePatch({
+    this.name,
+    this.category,
+    this.room,
+    this.clearRoom = false,
+    this.identity,
+  });
+  final String? name;
+  final String? category;
+  final String? room;
+  final bool clearRoom;
+  final CloudApplianceIdentityPatch? identity;
+
+  Map<String, dynamic> toJson() {
+    final result = <String, dynamic>{};
+    if (name != null) result['name'] = name;
+    if (category != null) result['category'] = category;
+    if (room != null && clearRoom) {
+      throw ArgumentError('room and clearRoom cannot both be set');
+    }
+    if (room != null) result['room'] = room;
+    if (clearRoom) result['room'] = null;
+    if (identity != null) result['identity'] = identity!.toJson();
+    if (result.isEmpty) {
+      throw ArgumentError('Appliance update must not be empty');
+    }
+    return result;
+  }
+}
+
+class CloudApplianceIdentityPatch {
+  const CloudApplianceIdentityPatch({
+    required this.brand,
+    required this.fullModel,
+    required this.fuel,
+    required this.matchQuality,
+    this.variant,
+    this.region,
+    this.catalogProductId,
+  });
+  final String brand;
+  final String fullModel;
+  final String fuel;
+  final String matchQuality;
+  final String? variant;
+  final String? region;
+  final String? catalogProductId;
+  Map<String, dynamic> toJson() => {
+    'brand': brand,
+    'full_model': fullModel,
+    'fuel': fuel,
+    'match_quality': matchQuality,
+    if (variant != null) 'variant': variant,
+    if (region != null) 'region': region,
+    if (catalogProductId != null) 'catalog_product_id': catalogProductId,
+  };
+}

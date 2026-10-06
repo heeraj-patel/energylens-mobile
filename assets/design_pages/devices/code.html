@@ -1,0 +1,306 @@
+<!DOCTYPE html><html lang="en" style=""><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"><meta content="mobile_tab" name="shell-type"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Oswald:wght@500;600;700&amp;family=Rubik:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#f9f9ff;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "on-tertiary-container": "#66438b",
+          "on-error-container": "#93000a",
+          "primary": "#006686",
+          "surface-container-high": "#e0e8ff",
+          "tertiary-fixed": "#f0dbff",
+          "inverse-surface": "#263045",
+          "on-secondary-fixed-variant": "#1c4c60",
+          "surface-container-low": "#f1f3ff",
+          "on-tertiary-fixed-variant": "#59367d",
+          "on-surface-variant": "#3f484e",
+          "primary-container": "#7dd3fc",
+          "on-primary-container": "#005b78",
+          "secondary-fixed-dim": "#a0cde5",
+          "tertiary-fixed-dim": "#dcb8ff",
+          "surface-dim": "#d0daf5",
+          "surface-container": "#e9edff",
+          "on-error": "#ffffff",
+          "tertiary-container": "#ddbaff",
+          "on-tertiary": "#ffffff",
+          "secondary-container": "#bae6ff",
+          "primary-fixed-dim": "#7bd1fa",
+          "tertiary": "#724e97",
+          "error": "#ba1a1a",
+          "surface": "#f9f9ff",
+          "surface-container-lowest": "#ffffff",
+          "on-primary": "#ffffff",
+          "primary-fixed": "#c0e8ff",
+          "on-background": "#111b2f",
+          "secondary-fixed": "#c0e8ff",
+          "outline": "#6f787e",
+          "on-secondary-fixed": "#001e2b",
+          "surface-container-highest": "#d8e2fd",
+          "secondary": "#376479",
+          "background": "#f9f9ff",
+          "surface-bright": "#f9f9ff",
+          "on-primary-fixed": "#001e2b",
+          "inverse-on-surface": "#edf0ff",
+          "on-tertiary-fixed": "#2b024f",
+          "outline-variant": "#bec8ce",
+          "on-secondary-container": "#3c687e",
+          "surface-tint": "#006686",
+          "on-surface": "#111b2f",
+          "on-secondary": "#ffffff",
+          "error-container": "#ffdad6",
+          "surface-variant": "#d8e2fd",
+          "inverse-primary": "#7bd1fa"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.125rem",
+          "lg": "0.25rem",
+          "xl": "0.5rem",
+          "full": "0.75rem"
+        },
+        "spacing": {
+          "space-sm": "0.5rem",
+          "space-xs": "0.25rem",
+          "space-lg": "1.5rem",
+          "space-md": "1rem",
+          "margin": "1.5rem",
+          "gutter": "1rem",
+          "space-xl": "2rem"
+        },
+        "fontFamily": {
+          "body-md": [
+            "Inter"
+          ],
+          "headline-lg": [
+            "Oswald"
+          ],
+          "label-md": [
+            "Rubik"
+          ]
+        },
+        "fontSize": {
+          "body-md": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-lg": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "fontWeight": "600"
+            }
+          ],
+          "label-md": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "fontWeight": "500"
+            }
+          ]
+        }
+      },
+    },
+  }
+</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 bg-surface/90 backdrop-blur-xl border-b border-surface-container-high/60 shadow-sm"><div class="pt-safe"><div class="h-16 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><div class="w-11 h-11 flex items-center justify-center rounded-xl bg-primary-container text-on-primary-container shadow-xs"><span class="material-symbols-outlined text-[22px]">bolt</span></div><div class="flex flex-col"><button class="flex items-center gap-space-xs text-left group" type="button"><span class="font-label-md text-label-md text-on-surface tracking-tight font-semibold">The Miller Home</span><span class="material-symbols-outlined text-on-surface-variant text-[18px] transition-transform group-hover:translate-y-0.5">expand_more</span></button><span class="text-[11px] leading-tight text-on-surface-variant font-label-md tracking-wider uppercase">Devices</span></div></div><div class="flex items-center gap-space-sm"><a class="w-11 h-11 flex items-center justify-center" data-path="settings" href="#"><img alt="Profile" class="w-8 h-8 rounded-full object-cover ring-2 ring-primary/40 shadow-xs" src="https://lh3.googleusercontent.com/aida/AEtjO1W-Tyu5A3GUkOzusByZtUZVf_qaje7C2U4HagWF_nKDACe0a_0PvfDA_ElxcRcD5_QtpKscCtGtnXw6E3QUGW3Gddc-Kao4zf7i3hFmp6v6baxAf73dM5oixAYP-YNhnDN1lcaln8LqEEJ3Q1RZbal9gZISP1Ucj44o50Bc6AfGhy9gSBhPXpfM29nIXaPORoe_8gyyuXJKfaylYbtdy8vQHbS8T-U0q3X_lxG8H9eJ92vobiZ7v3-R1-0"></a></div></div></div></header><main class="flex-1 flex flex-col relative w-full pt-16 pb-20 bg-surface"><div class="flex flex-col w-full px-gutter space-y-space-md pb-space-lg">
+<!-- Subtle Ambient Glow Card -->
+<div class="relative w-full overflow-hidden rounded-xl bg-surface-container-lowest border border-surface-container-high/80 p-space-md shadow-sm">
+<div class="absolute -top-12 -right-12 w-44 h-44 bg-primary-container/30 rounded-full blur-3xl pointer-events-none"></div>
+<div class="absolute -bottom-10 -left-10 w-36 h-36 bg-secondary-container/40 rounded-full blur-2xl pointer-events-none"></div>
+<!-- Header Section -->
+<div class="relative z-10 flex flex-col gap-space-sm">
+<div class="flex items-start justify-between gap-space-sm">
+<div class="flex flex-col">
+<span class="font-headline-lg text-[22px] font-bold text-on-surface uppercase tracking-tight">HOME DEVICES</span>
+
+</div>
+<a class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container text-primary hover:bg-surface-container-high border border-outline-variant/50 transition-colors shadow-xs shrink-0" data-path="settings" href="#"><span class="material-symbols-outlined text-[16px]">monitoring</span><span class="font-label-md text-[12px] font-semibold">Daily Overview</span></a>
+</div>
+<!-- Quick Glancer Stats Mini-Bar -->
+<div class="grid grid-cols-2 gap-4 mt-2 pt-2 bg-surface-container-low rounded-lg p-2.5 border border-surface-container-high/60"><div class="flex flex-col"><span class="font-label-md text-[10px] tracking-wide uppercase text-on-surface-variant">Total Waste</span><span class="font-headline-lg text-label-md font-semibold text-[#d97706] tracking-tight">$1.14<span class="text-[10px] font-normal text-on-surface-variant ml-0.5">/day</span></span></div><div class="flex flex-col"><span class="font-label-md text-[10px] tracking-wide uppercase text-on-surface-variant">Productive</span><span class="font-headline-lg text-label-md font-semibold text-[#059669] tracking-tight">$6.67<span class="text-[10px] font-normal text-on-surface-variant ml-0.5">/day</span></span></div></div>
+</div>
+</div>
+<!-- Filters & Controls Card -->
+<div class="flex flex-col space-y-space-sm">
+<!-- Filter Chips (Horizontal Scroll) -->
+<div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5" id="status-filter-group"><button class="filter-chip active-chip px-3 py-1.5 rounded-full text-label-md text-[12px] font-medium bg-primary text-on-primary shadow-xs shrink-0 transition-all flex items-center gap-1" type="button"><span class="">All</span><span class="w-4 h-4 rounded-full bg-on-primary/25 text-[10px] flex items-center justify-center font-bold">18</span></button><button class="filter-chip px-3 py-1.5 rounded-full text-label-md text-[12px] font-medium bg-surface-container-lowest border border-outline-variant/60 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low shrink-0 transition-all flex items-center gap-1" type="button"><span class="w-1.5 h-1.5 rounded-full bg-[#059669]"></span><span class="">Active</span><span class="text-[11px] text-on-surface-variant ml-0.5">(6)</span></button><button class="filter-chip px-3 py-1.5 rounded-full text-label-md text-[12px] font-medium bg-surface-container-lowest border border-outline-variant/60 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low shrink-0 transition-all flex items-center gap-1" type="button"><span class="w-1.5 h-1.5 rounded-full bg-[#d97706]"></span><span class="">Idle</span><span class="text-[11px] text-on-surface-variant ml-0.5">(4)</span></button><button class="filter-chip px-3 py-1.5 rounded-full text-label-md text-[12px] font-medium bg-surface-container-lowest border border-outline-variant/60 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low shrink-0 transition-all flex items-center gap-1" type="button"><span class="w-1.5 h-1.5 rounded-full bg-outline"></span><span class="">Standby</span></button></div>
+<!-- Sort Selector Bar -->
+<div class="flex items-center justify-between px-1">
+<span class="font-label-md text-[11px] font-bold text-on-surface uppercase tracking-wider flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">sort</span>SORT BY</span>
+<div class="flex items-center bg-surface-container p-0.5 border border-outline-variant/40 rounded-xl" id="sort-pill-group"><button class="sort-pill px-2.5 py-1 rounded-xl text-label-md text-[11px] font-medium text-on-surface-variant hover:text-on-surface transition-all" type="button">Name</button><button class="sort-pill px-2.5 py-1 rounded-xl text-label-md text-[11px] font-medium text-on-surface-variant hover:text-on-surface transition-all" type="button">Usage $</button><button class="sort-pill active-sort px-2.5 py-1 rounded-xl text-label-md text-[11px] font-bold bg-surface-container-lowest text-primary shadow-sm transition-all flex items-center gap-0.5" type="button"><span class="">Waste $</span><span class="material-symbols-outlined text-[12px]">arrow_downward</span></button></div>
+</div>
+</div>
+<!-- Devices Feed -->
+<div class="flex flex-col space-y-2.5" id="devices-feed">
+<!-- 1. Study Desktop & Rig -->
+<div class="group relative flex flex-col p-3 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm transition-all hover:border-primary-container"><div class="flex items-center justify-between gap-space-sm"><div class="flex items-center gap-3 min-w-0"><div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center text-primary shrink-0 shadow-inner"><span class="material-symbols-outlined text-[20px]">desktop_windows</span></div><div class="flex flex-col min-w-0"><div class="flex items-center gap-1.5"><span class="font-label-md text-label-md font-semibold text-on-surface truncate">Study Desktop &amp; Rig</span></div><span class="font-label-md text-[12px] text-on-surface-variant truncate">Plug 4 • Study</span></div></div><div class="flex flex-col items-end shrink-0"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#fffbeb] text-[#d97706] border border-[#fde68a]"><span class="w-1 h-1 rounded-full bg-[#d97706] animate-ping"></span> Idle (3h)</span></div></div><div class="mt-2.5 pt-2 flex items-center justify-between bg-surface-container-low rounded-lg px-2.5 py-1.5"><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-on-surface-variant">Useful:</span><span class="font-label-md text-[12px] font-medium text-[#059669]">$0.68</span></div><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-[#d97706] font-medium">Waste:</span><span class="font-label-md text-[12px] font-bold text-[#d97706]">$0.35</span></div></div></div>
+<!-- 2. Living Room 65" TV -->
+<div class="group relative flex flex-col p-3 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm transition-all hover:border-primary-container"><div class="flex items-center justify-between gap-space-sm"><div class="flex items-center gap-3 min-w-0"><div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center text-secondary shrink-0"><span class="material-symbols-outlined text-[20px]">tv</span></div><div class="flex flex-col min-w-0"><span class="font-label-md text-label-md font-semibold text-on-surface truncate">Living Room 65" TV</span><span class="font-label-md text-[12px] text-on-surface-variant truncate">Living Room</span></div></div><div class="flex flex-col items-end shrink-0"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-surface-container-high text-on-surface-variant border border-outline-variant/50">Standby</span></div></div><div class="mt-2.5 pt-2 flex items-center justify-between bg-surface-container-low rounded-lg px-2.5 py-1.5"><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-on-surface-variant">Useful:</span><span class="font-label-md text-[12px] font-medium text-[#059669]">$0.20</span></div><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-[#d97706] font-medium">Waste:</span><span class="font-label-md text-[12px] font-bold text-[#d97706]">$0.22</span></div></div></div>
+<!-- 3. Phone & Tablet Chargers -->
+<div class="group relative flex flex-col p-3 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm transition-all hover:border-primary-container"><div class="flex items-center justify-between gap-space-sm"><div class="flex items-center gap-3 min-w-0"><div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center text-secondary shrink-0"><span class="material-symbols-outlined text-[20px]">power</span></div><div class="flex flex-col min-w-0"><span class="font-label-md text-label-md font-semibold text-on-surface truncate">Phone &amp; Tablet Chargers</span><span class="font-label-md text-[12px] text-on-surface-variant truncate">Bedroom</span></div></div><div class="flex flex-col items-end shrink-0"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#fffbeb] text-[#d97706] border border-[#fde68a]">Idle</span></div></div><div class="mt-2.5 pt-2 flex items-center justify-between bg-surface-container-low rounded-lg px-2.5 py-1.5"><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-on-surface-variant">Useful:</span><span class="font-label-md text-[12px] font-medium text-[#059669]">$0.00</span></div><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-[#d97706] font-medium">Waste:</span><span class="font-label-md text-[12px] font-bold text-[#d97706]">$0.09</span></div></div></div>
+<!-- 4. Kitchen Refrigerator -->
+<div class="group relative flex flex-col p-3 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm transition-all hover:border-primary-container">
+<div class="flex items-center justify-between gap-space-sm">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[20px]">kitchen</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-md text-label-md font-semibold text-on-surface truncate">Kitchen Refrigerator</span>
+<span class="font-label-md text-[12px] text-on-surface-variant truncate">Kitchen Circuit 1</span>
+</div>
+</div>
+<div class="flex flex-col items-end shrink-0">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#059669]/10 text-[#059669] border border-[#059669]/25"><span class="w-1 h-1 rounded-full bg-[#059669]"></span>Active</span>
+</div>
+</div>
+<div class="mt-2.5 pt-2 flex items-center justify-between bg-surface-container-low rounded-lg px-2.5 py-1.5"><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-on-surface-variant">Useful:</span><span class="font-label-md text-[12px] font-medium text-[#059669]">$0.84</span></div><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-on-surface-variant">Waste:</span><span class="font-label-md text-[12px] font-semibold text-secondary">$0.00</span></div></div>
+</div>
+<!-- 5. Hallway Central AC -->
+<div class="group relative flex flex-col p-3 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm transition-all hover:border-primary-container">
+<div class="flex items-center justify-between gap-space-sm">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[20px]">mode_fan</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-md text-label-md font-semibold text-on-surface truncate">Hallway Central AC</span>
+<span class="font-label-md text-[12px] text-on-surface-variant truncate">Eco 74°F</span>
+</div>
+</div>
+<div class="flex flex-col items-end shrink-0">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#059669]/10 text-[#059669] border border-[#059669]/25"><span class="w-1 h-1 rounded-full bg-[#059669]"></span>Active</span>
+</div>
+</div>
+<div class="mt-2.5 pt-2 flex items-center justify-between bg-surface-container-low rounded-lg px-2.5 py-1.5"><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-on-surface-variant">Useful:</span><span class="font-label-md text-[12px] font-medium text-[#059669]">$2.45</span></div><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-[#d97706] font-medium">Waste:</span><span class="font-label-md text-[12px] font-bold text-[#d97706]">$0.04</span></div></div>
+</div>
+<!-- 6. Living Room Soundbar -->
+<div class="group relative flex flex-col p-3 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm transition-all hover:border-primary-container"><div class="flex items-center justify-between gap-space-sm"><div class="flex items-center gap-3 min-w-0"><div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center text-secondary shrink-0"><span class="material-symbols-outlined text-[20px]">speaker</span></div><div class="flex flex-col min-w-0"><span class="font-label-md text-label-md font-semibold text-on-surface truncate">Living Room Soundbar</span><span class="font-label-md text-[12px] text-on-surface-variant truncate">AV Strip</span></div></div><div class="flex flex-col items-end shrink-0"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-surface-container-high text-on-surface-variant border border-outline-variant/50">Standby</span></div></div><div class="mt-2.5 pt-2 flex items-center justify-between bg-surface-container-low rounded-lg px-2.5 py-1.5"><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-on-surface-variant">Useful:</span><span class="font-label-md text-[12px] font-medium text-[#059669]">$0.15</span></div><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-[#d97706] font-medium">Waste:</span><span class="font-label-md text-[12px] font-bold text-[#d97706]">$0.18</span></div></div></div>
+<!-- 7. Home Office Monitors -->
+<div class="group relative flex flex-col p-3 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm transition-all hover:border-primary-container"><div class="flex items-center justify-between gap-space-sm"><div class="flex items-center gap-3 min-w-0"><div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center text-primary shrink-0"><span class="material-symbols-outlined text-[20px]">monitor</span></div><div class="flex flex-col min-w-0"><span class="font-label-md text-label-md font-semibold text-on-surface truncate">Home Office Monitors</span><span class="font-label-md text-[12px] text-on-surface-variant truncate">Dual 27"</span></div></div><div class="flex flex-col items-end shrink-0"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#fffbeb] text-[#d97706] border border-[#fde68a]">Idle</span></div></div><div class="mt-2.5 pt-2 flex items-center justify-between bg-surface-container-low rounded-lg px-2.5 py-1.5"><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-on-surface-variant">Useful:</span><span class="font-label-md text-[12px] font-medium text-[#059669]">$0.22</span></div><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-[#d97706] font-medium">Waste:</span><span class="font-label-md text-[12px] font-bold text-[#d97706]">$0.14</span></div></div></div>
+<!-- 8. Mesh Wi-Fi Gateway & Router -->
+<div class="group relative flex flex-col p-3 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm transition-all hover:border-primary-container">
+<div class="flex items-center justify-between gap-space-sm">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[20px]">router</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-md text-label-md font-semibold text-on-surface truncate">Mesh Wi-Fi Gateway &amp; Router</span>
+<span class="font-label-md text-[12px] text-on-surface-variant truncate">Main Hall • 24/7 Priority</span>
+</div>
+</div>
+<div class="flex flex-col items-end shrink-0">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#059669]/10 text-[#059669] border border-[#059669]/25">Active (24/7)</span>
+</div>
+</div>
+<div class="mt-2.5 pt-2 flex items-center justify-between bg-surface-container-low rounded-lg px-2.5 py-1.5"><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-on-surface-variant">Useful:</span><span class="font-label-md text-[12px] font-medium text-[#059669]">$0.18</span></div><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-on-surface-variant">Waste:</span><span class="font-label-md text-[12px] font-semibold text-secondary">$0.00</span></div></div>
+</div>
+<!-- 9. Subwoofer & Amp Rack -->
+<div class="group relative flex flex-col p-3 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm transition-all hover:border-primary-container"><div class="flex items-center justify-between gap-space-sm"><div class="flex items-center gap-3 min-w-0"><div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center text-secondary shrink-0"><span class="material-symbols-outlined text-[20px]">surround_sound</span></div><div class="flex flex-col min-w-0"><span class="font-label-md text-label-md font-semibold text-on-surface truncate">Subwoofer &amp; Amp Rack</span><span class="font-label-md text-[12px] text-on-surface-variant truncate">Media Corner</span></div></div><div class="flex flex-col items-end shrink-0"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-surface-container-high text-on-surface-variant border border-outline-variant/50">Standby</span></div></div><div class="mt-2.5 pt-2 flex items-center justify-between bg-surface-container-low rounded-lg px-2.5 py-1.5"><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-on-surface-variant">Useful:</span><span class="font-label-md text-[12px] font-medium text-[#059669]">$0.05</span></div><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-[#d97706] font-medium">Waste:</span><span class="font-label-md text-[12px] font-bold text-[#d97706]">$0.12</span></div></div></div>
+<!-- 10. Central Heat Pump -->
+<div class="group relative flex flex-col p-3 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm transition-all hover:border-primary-container">
+<div class="flex items-center justify-between gap-space-sm">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[20px]">heat_pump</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-md text-label-md font-semibold text-on-surface truncate">Central Heat Pump</span>
+<span class="font-label-md text-[12px] text-on-surface-variant truncate">240V Circuit</span>
+</div>
+</div>
+<div class="flex flex-col items-end shrink-0">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#059669]/10 text-[#059669] border border-[#059669]/25"><span class="w-1 h-1 rounded-full bg-[#059669]"></span>Active</span>
+</div>
+</div>
+<div class="mt-2.5 pt-2 flex items-center justify-between bg-surface-container-low rounded-lg px-2.5 py-1.5"><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-on-surface-variant">Useful:</span><span class="font-label-md text-[12px] font-medium text-[#059669]">$1.90</span></div><div class="flex items-center gap-1.5"><span class="font-label-md text-[11px] text-[#d97706] font-medium">Waste:</span><span class="font-label-md text-[12px] font-bold text-[#d97706]">$0.02</span></div></div>
+</div>
+</div>
+<!-- Pagination Component -->
+<div class="flex flex-col items-center gap-2 pt-2">
+<div class="flex items-center justify-between w-full px-1">
+<span class="font-label-md text-[12px] text-on-surface-variant font-medium">Showing 1–10 of 18 devices</span>
+<div class="flex items-center gap-1.5">
+<!-- Previous (Disabled) -->
+<button class="w-8 h-8 rounded-lg bg-surface-container-low text-outline flex items-center justify-center opacity-50 cursor-not-allowed border border-outline-variant/40" disabled="" type="button">
+<span class="material-symbols-outlined text-[18px]">chevron_left</span>
+</button>
+<!-- Page 1 (Active) -->
+<button class="w-8 h-8 rounded-lg bg-primary text-on-primary font-label-md text-[12px] font-bold flex items-center justify-center shadow-xs" type="button">
+          1
+        </button>
+<!-- Page 2 -->
+<button class="w-8 h-8 rounded-lg bg-surface-container-lowest text-on-surface hover:bg-surface-container font-label-md text-[12px] font-medium flex items-center justify-center transition-colors border border-outline-variant/60" type="button">
+          2
+        </button>
+<!-- Next -->
+<button class="w-8 h-8 rounded-lg bg-surface-container-lowest text-on-surface hover:bg-surface-container flex items-center justify-center transition-colors border border-outline-variant/60" type="button">
+<span class="material-symbols-outlined text-[18px]">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Pairing / Settings Action Callout Card -->
+<div class="relative overflow-hidden rounded-xl bg-surface-container-lowest border border-surface-container-high/80 p-space-md shadow-sm">
+<div class="flex items-start gap-3">
+<div class="w-10 h-10 rounded-xl bg-secondary-container text-on-secondary-container flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[20px]">add_circle</span>
+</div>
+<div class="flex flex-col space-y-2 flex-1 min-w-0">
+<div class="flex flex-col">
+<span class="font-label-md text-label-md font-semibold text-on-surface">Need to pair or remove an appliance?</span>
+<span class="font-body-md text-body-md text-[12px] text-on-surface-variant leading-relaxed">Smart Plugs can be auto-calibrated or assigned to custom automation routines.</span>
+</div>
+<a class="inline-flex items-center justify-center gap-1.5 w-full py-2.5 px-3 rounded-lg bg-secondary-container text-on-secondary-container hover:bg-secondary-container/80 transition-all font-label-md text-[13px] font-semibold text-center shadow-xs" data-path="settings" href="#">
+<span class="">Manage Devices in Settings</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</a>
+</div>
+</div>
+</div>
+</div>
+<script>
+  (function() {
+    // Micro-interactions for Filter Chips
+    const filterGroup = document.getElementById('status-filter-group');
+    if (filterGroup) {
+      const chips = filterGroup.querySelectorAll('.filter-chip');
+      chips.forEach(chip => {
+        chip.addEventListener('click', () => {
+          chips.forEach(c => {
+            c.classList.remove('bg-primary', 'text-on-primary', 'shadow-xs');
+            c.classList.add('bg-surface-container-lowest', 'text-on-surface-variant', 'border', 'border-outline-variant/60');
+          });
+          chip.classList.remove('bg-surface-container-lowest', 'text-on-surface-variant', 'border', 'border-outline-variant/60');
+          chip.classList.add('bg-primary', 'text-on-primary', 'shadow-xs');
+        });
+      });
+    }
+
+    // Micro-interactions for Sort Pills
+    const sortGroup = document.getElementById('sort-pill-group');
+    if (sortGroup) {
+      const pills = sortGroup.querySelectorAll('.sort-pill');
+      pills.forEach(pill => {
+        pill.addEventListener('click', () => {
+          pills.forEach(p => {
+            p.classList.remove('bg-surface-container-lowest', 'text-primary', 'font-semibold', 'shadow-xs');
+            p.classList.add('text-on-surface-variant', 'font-medium');
+          });
+          pill.classList.remove('text-on-surface-variant', 'font-medium');
+          pill.classList.add('bg-surface-container-lowest', 'text-primary', 'font-semibold', 'shadow-xs');
+        });
+      });
+    }
+  })();
+</script></main><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface/90 backdrop-blur-xl border-t border-surface-container-high/60 shadow-lg" data-active-classes="text-primary font-semibold"><div class="flex justify-around items-center h-16 px-space-xs"><a class="flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors" data-path="dashboard" href="#"><span class="material-symbols-outlined text-[22px]">space_dashboard</span><span class="font-label-md text-[12px] font-semibold leading-none tracking-tight">Dashboard</span></a><a aria-current="page" class="flex flex-col items-center justify-center w-14 h-12 gap-0.5 transition-colors text-primary font-bold" data-path="devices" href="#"><span class="material-symbols-outlined text-[22px]">devices</span><span class="font-label-md text-[12px] font-bold leading-none tracking-tight">Devices</span></a><a class="flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors" data-path="efficiency" href="#"><span class="material-symbols-outlined text-[22px]">energy_savings_leaf</span><span class="font-label-md text-[12px] font-semibold leading-none tracking-tight">Efficiency</span></a><a class="flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors" data-path="perks-and-tips" href="#"><span class="material-symbols-outlined text-[22px]">savings</span><span class="font-label-md text-[12px] font-semibold leading-none tracking-tight">Tips</span></a><a class="flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors" data-path="settings" href="#"><span class="material-symbols-outlined text-[22px]">settings</span><span class="font-label-md text-[12px] font-semibold leading-none tracking-tight">Settings</span></a></div></nav>
+
+</body></html>

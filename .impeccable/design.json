@@ -1,245 +1,428 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-27T15:00:00Z",
-  "title": "Design System: EnergyLens Light Mobile",
+  "generatedAt": "2026-10-06T19:37:31Z",
+  "title": "Design System: EnergyLens Glacier Energy Mobile",
   "extensions": {
     "colorMeta": {
-      "ink": {
-        "role": "neutral",
-        "displayName": "Midnight Ink",
-        "canonical": "#0f172a",
+      "primary": {
+        "role": "primary",
+        "displayName": "Deep teal",
+        "canonical": "#006686",
         "tonalRamp": [
-          "#080d16",
-          "#0f172a",
-          "#253248",
-          "#3d4a5e",
-          "#576477",
-          "#748092",
-          "#a0a9b5",
-          "#f8fafc"
+          "#0d333f",
+          "#17596d",
+          "#2282a0",
+          "#2dabd2",
+          "#5fbfdd",
+          "#92d3e8",
+          "#c4e7f3",
+          "#eaf7fb"
         ]
       },
-      "canvas": {
-        "role": "neutral",
-        "displayName": "Cool Canvas",
-        "canonical": "#f8fafc",
+      "primary-container": {
+        "role": "primary",
+        "displayName": "Ice blue",
+        "canonical": "#7dd3fc",
         "tonalRamp": [
-          "#18202b",
-          "#283545",
-          "#3b4b5e",
-          "#50627a",
-          "#718195",
-          "#9aa7b6",
-          "#c5ced7",
-          "#f8fafc"
+          "#0d2f3f",
+          "#17526d",
+          "#2277a0",
+          "#2d9dd2",
+          "#5fb4dd",
+          "#92cce8",
+          "#c4e4f3",
+          "#eaf5fb"
+        ]
+      },
+      "on-primary-container": {
+        "role": "primary",
+        "displayName": "Deep ice ink",
+        "canonical": "#005b78",
+        "tonalRamp": [
+          "#0d333f",
+          "#17596d",
+          "#2281a0",
+          "#2daad2",
+          "#5fbfdd",
+          "#92d3e8",
+          "#c4e7f3",
+          "#eaf7fb"
+        ]
+      },
+      "secondary": {
+        "role": "secondary",
+        "displayName": "Slate blue",
+        "canonical": "#376479",
+        "tonalRamp": [
+          "#182b35",
+          "#294b5b",
+          "#3d6e85",
+          "#5091af",
+          "#7aabc2",
+          "#a4c6d6",
+          "#cee0e9",
+          "#edf4f7"
+        ]
+      },
+      "secondary-container": {
+        "role": "secondary",
+        "displayName": "Pale sky",
+        "canonical": "#bae6ff",
+        "tonalRamp": [
+          "#0d2d3f",
+          "#174e6d",
+          "#2272a0",
+          "#2d96d2",
+          "#5fafdd",
+          "#92c9e8",
+          "#c4e2f3",
+          "#eaf5fb"
+        ]
+      },
+      "tertiary": {
+        "role": "tertiary",
+        "displayName": "Soft violet",
+        "canonical": "#724e97",
+        "tonalRamp": [
+          "#261a32",
+          "#422d57",
+          "#604280",
+          "#7f57a8",
+          "#9e7fbd",
+          "#bca8d2",
+          "#dbd0e7",
+          "#f2eef6"
+        ]
+      },
+      "tertiary-container": {
+        "role": "tertiary",
+        "displayName": "Pale violet",
+        "canonical": "#ddbaff",
+        "tonalRamp": [
+          "#270d3f",
+          "#43176d",
+          "#6222a0",
+          "#812dd2",
+          "#9f5fdd",
+          "#bd92e8",
+          "#dcc4f3",
+          "#f2eafb"
         ]
       },
       "surface": {
         "role": "neutral",
-        "displayName": "White Surface",
+        "displayName": "Cool white canvas",
+        "canonical": "#f9f9ff",
+        "tonalRamp": [
+          "#263045",
+          "#3f484e",
+          "#6f787e",
+          "#bec8ce",
+          "#d0daf5",
+          "#e0e8ff",
+          "#f1f3ff",
+          "#f9f9ff"
+        ]
+      },
+      "surface-container-lowest": {
+        "role": "neutral",
+        "displayName": "White card",
         "canonical": "#ffffff",
         "tonalRamp": [
-          "#18202b",
-          "#283545",
-          "#3b4b5e",
-          "#50627a",
-          "#718195",
-          "#9aa7b6",
-          "#c5ced7",
+          "#263045",
+          "#3f484e",
+          "#6f787e",
+          "#bec8ce",
+          "#d0daf5",
+          "#e0e8ff",
+          "#f1f3ff",
           "#ffffff"
         ]
       },
-      "line": {
+      "surface-container-low": {
         "role": "neutral",
-        "displayName": "Pale Blue Line",
-        "canonical": "#e1e8ee",
+        "displayName": "Pale blue inset",
+        "canonical": "#f1f3ff",
         "tonalRamp": [
-          "#17232b",
-          "#283740",
-          "#3b4c57",
-          "#506572",
-          "#718696",
-          "#9aaab6",
-          "#c5d1d9",
-          "#e1e8ee"
+          "#0d143f",
+          "#17246d",
+          "#2234a0",
+          "#2d44d2",
+          "#5f71dd",
+          "#929ee8",
+          "#c4cbf3",
+          "#eaecfb"
         ]
       },
-      "primary": {
+      "surface-container-high": {
+        "role": "neutral",
+        "displayName": "Raised ice surface",
+        "canonical": "#e0e8ff",
+        "tonalRamp": [
+          "#0d1a3f",
+          "#172d6d",
+          "#2242a0",
+          "#2d57d2",
+          "#5f80dd",
+          "#92a8e8",
+          "#c4d0f3",
+          "#eaeefb"
+        ]
+      },
+      "surface-container-highest": {
+        "role": "neutral",
+        "displayName": "Strong ice surface",
+        "canonical": "#d8e2fd",
+        "tonalRamp": [
+          "#0d1b3f",
+          "#172e6d",
+          "#2244a0",
+          "#2d59d2",
+          "#5f81dd",
+          "#92a9e8",
+          "#c4d1f3",
+          "#eaeefb"
+        ]
+      },
+      "on-surface": {
+        "role": "neutral",
+        "displayName": "Midnight navy",
+        "canonical": "#111b2f",
+        "tonalRamp": [
+          "#142038",
+          "#233861",
+          "#33528e",
+          "#446cbb",
+          "#718fcc",
+          "#9eb2dc",
+          "#cbd6ec",
+          "#ecf0f8"
+        ]
+      },
+      "on-surface-variant": {
+        "role": "neutral",
+        "displayName": "Slate text",
+        "canonical": "#3f484e",
+        "tonalRamp": [
+          "#22272a",
+          "#3b4449",
+          "#57636b",
+          "#72828d",
+          "#94a0a8",
+          "#b6bec4",
+          "#d8dcdf",
+          "#f1f3f4"
+        ]
+      },
+      "outline-variant": {
+        "role": "neutral",
+        "displayName": "Quiet outline",
+        "canonical": "#bec8ce",
+        "tonalRamp": [
+          "#21282c",
+          "#39454c",
+          "#53646e",
+          "#6e8491",
+          "#90a2ac",
+          "#b3bfc6",
+          "#d6dde0",
+          "#f0f3f4"
+        ]
+      },
+      "error": {
+        "role": "error",
+        "displayName": "Waste red",
+        "canonical": "#ba1a1a",
+        "tonalRamp": [
+          "#3f0d0d",
+          "#6d1717",
+          "#a02222",
+          "#d22d2d",
+          "#dd5f5f",
+          "#e89292",
+          "#f3c4c4",
+          "#fbeaea"
+        ]
+      },
+      "useful": {
+        "role": "secondary",
+        "displayName": "Useful green",
+        "canonical": "#059669",
+        "tonalRamp": [
+          "#0d3f30",
+          "#176d53",
+          "#22a079",
+          "#2dd29f",
+          "#5fddb6",
+          "#92e8cd",
+          "#c4f3e4",
+          "#eafbf5"
+        ]
+      },
+      "navigation-active": {
         "role": "primary",
-        "displayName": "Emerald Action",
-        "canonical": "#008f68",
+        "displayName": "Selected sky blue",
+        "canonical": "#0284c7",
         "tonalRamp": [
-          "#003326",
-          "#00523d",
-          "#006e51",
-          "#008f68",
-          "#1eaa80",
-          "#55c39d",
-          "#9cdec4",
-          "#e3f5ed"
-        ]
-      },
-      "muted": {
-        "role": "neutral",
-        "displayName": "Blue Gray",
-        "canonical": "#61738b",
-        "tonalRamp": [
-          "#18202b",
-          "#283545",
-          "#3b4b5e",
-          "#50627a",
-          "#61738b",
-          "#8492a4",
-          "#b1bbc7",
-          "#e7ebef"
-        ]
-      },
-      "primary-soft": {
-        "role": "primary",
-        "displayName": "Primary Soft",
-        "canonical": "#e3f5ed",
-        "tonalRamp": [
-          "#073c2b",
-          "#146044",
-          "#28845f",
-          "#49a67d",
-          "#78c49e",
-          "#a9dcc0",
-          "#cdebdc",
-          "#e3f5ed"
-        ]
-      },
-      "rose": {
-        "role": "tertiary",
-        "displayName": "Rose",
-        "canonical": "#e11d48",
-        "tonalRamp": [
-          "#4c071a",
-          "#7a102b",
-          "#aa1740",
-          "#e11d48",
-          "#eb5271",
-          "#f17e96",
-          "#f7afbe",
-          "#fff1f2"
-        ]
-      },
-      "rose-soft": {
-        "role": "tertiary",
-        "displayName": "Rose Soft",
-        "canonical": "#fff1f2",
-        "tonalRamp": [
-          "#5c1823",
-          "#852d3b",
-          "#ad4e5a",
-          "#d97983",
-          "#e9a8ae",
-          "#f4c4c8",
-          "#fbdfe1",
-          "#fff1f2"
-        ]
-      },
-      "blue": {
-        "role": "neutral",
-        "displayName": "Blue",
-        "canonical": "#007fbe",
-        "tonalRamp": [
-          "#003044",
-          "#004966",
-          "#006b91",
-          "#007fbe",
-          "#2699cb",
-          "#65b8db",
-          "#a7d9ed",
-          "#eff8ff"
+          "#082838",
+          "#0a405a",
+          "#0b5a7e",
+          "#0875a8",
+          "#0284c7",
+          "#38aee2",
+          "#85d1ef",
+          "#d8f1fa"
         ]
       }
     },
     "typographyMeta": {
-      "headline": {
-        "displayName": "Section Headline",
-        "purpose": "Bold compact headings establish each section."
+      "headline-lg": {
+        "displayName": "Oswald headline",
+        "purpose": "Compressed section headings and large metric emphasis."
       },
-      "body": {
-        "displayName": "Interface Body",
-        "purpose": "Readable interface copy explains disconnected and unavailable states."
+      "body-md": {
+        "displayName": "Inter body",
+        "purpose": "Readable energy, cost, and explanatory content."
+      },
+      "label-md": {
+        "displayName": "Rubik label",
+        "purpose": "Tabs, buttons, field labels, and compact navigation."
       }
     },
     "shadows": [
       {
+        "name": "header",
+        "value": "0 2px 12px rgba(17,27,47,0.06)",
+        "purpose": "Subtle separation for the fixed top bar."
+      },
+      {
+        "name": "bottom-navigation",
+        "value": "0 -2px 12px rgba(17,27,47,0.06)",
+        "purpose": "Subtle separation for the fixed bottom bar."
+      },
+      {
         "name": "card-low",
-        "value": "elevation 1; shadowColor #141C4761",
-        "purpose": "Subtle lift below bordered white cards."
+        "value": "0 1px 2px rgba(17,27,47,0.08)",
+        "purpose": "Quiet card and selected-tab lift."
+      }
+    ],
+    "motion": [
+      {
+        "name": "control-transition",
+        "value": "200ms ease",
+        "purpose": "Button, tab, and hover state changes."
+      },
+      {
+        "name": "chart-transition",
+        "value": "500ms ease",
+        "purpose": "Energy bar and chart changes where present."
       }
     ],
     "breakpoints": [
       {
-        "name": "navigation-rail",
-        "value": "720dp",
-        "purpose": "Uses a labeled NavigationRail on wider layouts; phones use a bottom NavigationBar."
+        "name": "reference-phone-min",
+        "value": "390px"
+      },
+      {
+        "name": "reference-phone-max",
+        "value": "430px"
       }
     ]
   },
   "components": [
     {
-      "name": "Content Surface",
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Compact ice-blue action from the approved pages.",
+      "html": "<button class=\"ds-btn-primary\">Save Device</button>",
+      "css": ".ds-btn-primary{background:#7dd3fc;color:#005b78;border:0;border-radius:8px;padding:8px 12px;font:600 14px/20px Rubik,sans-serif;box-shadow:0 1px 2px rgba(17,27,47,.08);transition:opacity .2s,transform .2s}.ds-btn-primary:hover{opacity:.95}.ds-btn-primary:focus-visible{outline:2px solid #006686;outline-offset:2px}.ds-btn-primary:active{transform:scale(.98)}"
+    },
+    {
+      "name": "Confirm button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Deep teal confirmation used by Settings forms.",
+      "html": "<button class=\"ds-btn-confirm\">Save Device</button>",
+      "css": ".ds-btn-confirm{background:#006686;color:#fff;border:0;border-radius:8px;padding:10px 12px;font:600 12px/18px Rubik,sans-serif;box-shadow:0 1px 2px rgba(17,27,47,.08);transition:opacity .2s,transform .2s}.ds-btn-confirm:hover{opacity:.95}.ds-btn-confirm:focus-visible{outline:2px solid #7dd3fc;outline-offset:2px}.ds-btn-confirm:active{transform:scale(.98)}"
+    },
+    {
+      "name": "Text field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Soft inset field from Manual Device Entry.",
+      "html": "<label class=\"ds-label\" for=\"ds-device\">Device Name</label><input class=\"ds-input\" id=\"ds-device\" placeholder=\"e.g. Living Room Air Conditioner\">",
+      "css": ".ds-label{display:block;margin-bottom:4px;color:#3f484e;font:500 11px/16px Rubik,sans-serif;letter-spacing:.05em;text-transform:uppercase}.ds-input{display:block;width:100%;padding:8px 12px;border:1px solid rgba(190,200,206,.3);border-radius:8px;background:#f1f3ff;color:#111b2f;font:400 12px/18px Inter,sans-serif}.ds-input:focus-visible{outline:0;border-color:#006686;box-shadow:0 0 0 2px rgba(125,211,252,.35)}.ds-input:disabled{opacity:.55}"
+    },
+    {
+      "name": "Surface card",
       "kind": "card",
       "refersTo": "surface-card",
-      "description": "Material card with pale border, low elevation, and 16dp inset.",
-      "html": "<article class=\"ds-card\"><strong>Power, when it’s measured</strong><p>Waiting for a live reading</p></article>",
-      "css": ".ds-card { padding: 16px; border: 1px solid #e1e8ee; border-radius: 22px; background: #fff; color: #0f172a; box-shadow: 0 1px 3px #1c476114; font: 14px/1.5 system-ui, sans-serif; } .ds-card strong { font-size: 24px; font-weight: 700; } .ds-card p { color: #61738b; }"
+      "description": "White content surface with quiet outline and shadow.",
+      "html": "<div class=\"ds-card\"><strong>Energy Lens</strong><p>Useful Power</p></div>",
+      "css": ".ds-card{padding:16px;background:#fff;color:#111b2f;border:1px solid rgba(190,200,206,.4);border-radius:8px;box-shadow:0 1px 2px rgba(17,27,47,.08);font:400 16px/24px Inter,sans-serif}.ds-card strong{display:block;font:600 24px/32px Oswald,sans-serif;text-transform:uppercase}.ds-card p{margin:8px 0 0;color:#3f484e}"
     },
     {
-      "name": "Bottom Navigation",
+      "name": "Inset metric",
+      "kind": "card",
+      "refersTo": "inset-metric",
+      "description": "Pale blue data tile used inside main cards.",
+      "html": "<div class=\"ds-metric\"><span>Useful Power</span><strong>$6.96<small>/day</small></strong></div>",
+      "css": ".ds-metric{padding:8px;background:#f1f3ff;border:1px solid rgba(216,226,253,.6);border-radius:4px;color:#3f484e;font:500 14px/20px Rubik,sans-serif}.ds-metric strong{display:block;margin-top:4px;color:#059669;font:700 28px/32px Inter,sans-serif}.ds-metric small{font-size:14px;font-weight:400;color:#3f484e}"
+    },
+    {
+      "name": "Selected section tab",
+      "kind": "chip",
+      "description": "Raised selected tab within a pale segmented track.",
+      "html": "<div class=\"ds-track\"><button class=\"ds-tab\">Programs</button><button class=\"ds-tab ds-tab-selected\">Efficiency</button></div>",
+      "css": ".ds-track{display:flex;gap:4px;padding:4px;border:1px solid rgba(190,200,206,.5);border-radius:12px;background:#f1f3ff}.ds-tab{flex:1;padding:6px 8px;border:0;border-radius:8px;background:transparent;color:#3f484e;font:500 12px/18px Rubik,sans-serif;transition:background .2s,color .2s}.ds-tab:hover{color:#111b2f}.ds-tab:focus-visible{outline:2px solid #006686;outline-offset:1px}.ds-tab-selected{background:#fff;color:#111b2f;font-weight:700;box-shadow:0 1px 2px rgba(17,27,47,.08)}"
+    },
+    {
+      "name": "Bottom navigation",
       "kind": "nav",
-      "refersTo": "native-navigation",
-      "description": "Four native Material destinations with a soft emerald selection indicator; wide screens use a labeled NavigationRail.",
-      "html": "<nav class=\"ds-nav\"><button>Power Now</button><button class=\"ds-selected\" aria-current=\"page\">Stop Waste</button><button>Sleep Check</button><button>Ask &amp; Add</button></nav>",
-      "css": ".ds-nav { display: flex; height: 80px; justify-content: space-around; padding: 8px; background: #fff; color: #0f172a; font: 600 11px system-ui, sans-serif; } .ds-nav button { min-height: 48px; padding: 8px 12px; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; } .ds-nav .ds-selected { border-radius: 999px; background: #e3f5ed; color: #008f68; } .ds-nav button:focus-visible { outline: auto; outline-offset: 2px; }"
-    },
-    {
-      "name": "Round Icon Well",
-      "kind": "custom",
-      "refersTo": "round-icon",
-      "description": "42dp circular tinted icon background for section and setup cues.",
-      "html": "<span class=\"ds-icon\" aria-hidden=\"true\">⚡</span>",
-      "css": ".ds-icon { display: inline-grid; width: 42px; height: 42px; place-items: center; border-radius: 50%; background: #e3f5ed; color: #008f68; font: 24px system-ui, sans-serif; }"
-    },
-    {
-      "name": "Metric Placeholder",
-      "kind": "custom",
-      "refersTo": "empty-metric",
-      "description": "Inset metric tile with an explicit unavailable label and supporting explanation.",
-      "html": "<section class=\"ds-metric\"><strong>Useful power</strong><p>Activity and device context will explain what is doing useful work.</p></section>",
-      "css": ".ds-metric { padding: 15px; border-radius: 16px; background: #f8fafc; color: #0f172a; font: 14px/1.5 system-ui, sans-serif; } .ds-metric strong { font-size: 14px; font-weight: 700; } .ds-metric p { margin: 9px 0 0; color: #61738b; font-size: 12px; }"
-    },
-    {
-      "name": "Setup Disclosure",
-      "kind": "custom",
-      "refersTo": "setup-disclosure",
-      "description": "Native expansion affordance listing prerequisites for connecting a monitored device.",
-      "html": "<details class=\"ds-details\"><summary>What you’ll need</summary><p>A compatible plug, local hub, and the upcoming connection flow.</p></details>",
-      "css": ".ds-details { padding: 8px 0; color: #0f172a; font: 14px/1.5 system-ui, sans-serif; } .ds-details summary { color: inherit; font-weight: 700; cursor: pointer; } .ds-details p { color: #61738b; } .ds-details summary:focus-visible { outline: auto; outline-offset: 2px; }"
+      "refersTo": "bottom-navigation",
+      "description": "Five-destination fixed mobile navigation.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item ds-nav-active\" href=\"#\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 3h8v8H3zm10 0h8v5h-8zm0 7h8v11h-8zM3 13h8v8H3z\"/></svg><span>Dashboard</span></a><a class=\"ds-nav-item\" href=\"#\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 5h12v10H3zm14 4h4v10h-4zM7 17h8v2H7z\"/></svg><span>Devices</span></a></nav>",
+      "css": ".ds-nav{display:flex;justify-content:space-around;align-items:center;min-height:64px;padding:0 4px;background:rgba(255,255,255,.95);border-top:1px solid rgba(190,200,206,.6);box-shadow:0 -2px 12px rgba(17,27,47,.06);font:600 12px/16px Rubik,sans-serif}.ds-nav-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:72px;height:48px;color:#6b7280;text-decoration:none;transition:color .2s}.ds-nav-item:hover{color:#111b2f}.ds-nav-item:focus-visible{outline:2px solid #006686;outline-offset:2px}.ds-nav-item svg{width:22px;height:22px;fill:currentColor}.ds-nav-active{color:#0284c7;font-weight:700}"
     }
   ],
   "narrative": {
-    "northStar": "Evidence at Home",
-    "overview": "The mobile implementation follows the local Figma export /Users/nik/Downloads/energylens.pdf: page 9 (Stop Waste), page 10 (Sleep Check), and page 12 (Power Now). Ask & Add follows /Users/nik/Downloads/stitch_intelligent_energy_waste_monitor/ask_anything_easy_add_light/screen.png. The PDF mobile screens are primary layout authority; web desktop adapts their hierarchy and styling. Flutter retains EnergyLens branding and native Material navigation and text scaling. The current interface has disconnected and unavailable states, with no readings, verified savings, assistant responses, or device controls.",
+    "northStar": "Clear Energy at Home",
+    "overview": "The approved fourteen HTML pages form a light, compact mobile system. Cool white and pale blue surfaces give energy and cost information room to scan. Deep teal identifies actions and interface icons, while sky blue marks the selected bottom destination; green and warm warning colors distinguish useful use and waste in the data. The visual tone is clear, calm, and approachable.\n\nThe source pages are the authority for future mobile work. Build new work in this system, then check it against the supplied pages and actual device captures. The older emerald Flutter system, four-section navigation, and the supplied Glacier dark-glass prose describe earlier or conflicting directions. They are not the visual reference for new customer pages.",
     "keyCharacteristics": [
-      "EnergyLens brand",
-      "light surfaces",
-      "clear disconnected state",
-      "honest unavailable data"
+      "light ice-blue surfaces",
+      "Oswald headings with Inter content and Rubik labels",
+      "compact cards and metric tiles",
+      "five-part bottom navigation",
+      "soft borders and restrained shadows"
     ],
-    "rules": [],
+    "rules": [
+      {
+        "name": "The Source Palette Rule",
+        "body": "Reuse the values in the frontmatter and the approved page HTML. Do not substitute the earlier emerald navigation palette or the dark-glass colors from the conflicting source prose.",
+        "section": "colors"
+      },
+      {
+        "name": "The Three-Font Rule",
+        "body": "Preserve each family's role; do not replace the pages with platform system text or use Oswald for body paragraphs.",
+        "section": "typography"
+      },
+      {
+        "name": "The Five-Section Rule",
+        "body": "Dashboard, Devices, Efficiency, Tips, and Settings remain the primary navigation. Their named variants are separate page states, not extra bottom destinations.",
+        "section": "layout"
+      }
+    ],
     "dos": [
-      "Do distinguish unavailable, estimated, and measured values.",
-      "Do keep hub-disconnected status neutral and visible.",
-      "Do follow the documented Figma pages and Ask & Add screen."
+      "Do use the fourteen approved HTML pages and bundled assets as the visual and wording reference for new mobile work.",
+      "Do use Dashboard HTML and Knowledge HTML FAQ where their PNGs disagree; the owner chose those variants.",
+      "Do keep the initial page copy, sample values, font roles, and component states exact until the owner approves a change.",
+      "Do compare the resulting screen on a physical iPhone in Release mode."
     ],
     "donts": [
-      "Don’t copy illustrative readings, names, savings, or household claims from the references.",
-      "Don’t imply active readings, verified outcomes, assistant responses, or device controls."
+      "Don't reuse the earlier four-section emerald Flutter design system as new-screen guidance.",
+      "Don't apply the dark glassmorphism prose from the supplied Glacier DESIGN.md to these light HTML pages.",
+      "Don't treat sample energy values or savings in the visual references as measured evidence."
     ]
   }
 }

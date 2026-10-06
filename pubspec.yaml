@@ -44,6 +44,7 @@ dependencies:
   flutter_appauth: ^12.0.2
   http: ^1.5.0
   timezone: ^0.11.1
+  webview_flutter: ^4.14.1
 
 dev_dependencies:
   flutter_test:
@@ -67,6 +68,24 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  assets:
+    - assets/design_pages/dashboard/
+    - assets/design_pages/devices/
+    - assets/design_pages/efficiency/
+    - assets/design_pages/efficiency_away/
+    - assets/design_pages/efficiency_habits/
+    - assets/design_pages/efficiency_peak_rates/
+    - assets/design_pages/perks_tips/
+    - assets/design_pages/settings/
+    - assets/design_pages/settings_manage_devices/
+    - assets/design_pages/settings_manual_device_entry/
+    - assets/design_pages/settings_photo_scan_onboarding/
+    - assets/design_pages/tips_care_upgrades/
+    - assets/design_pages/tips_efficiency/
+    - assets/design_pages/tips_knowledge/
+    - assets/design_pages/shared/
+    - assets/design_pages/shared/fonts/
+    - assets/design_pages/shared/images/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

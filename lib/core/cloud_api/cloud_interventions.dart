@@ -9,12 +9,18 @@ class CloudAttachment {
     required this.applianceId,
     required this.startedAt,
     this.endedAt,
+    this.sensorId,
+    this.identityRevision,
+    this.version,
   });
   final String id;
   final String homeId;
   final String applianceId;
   final DateTime startedAt;
   final DateTime? endedAt;
+  final String? sensorId;
+  final int? identityRevision;
+  final int? version;
 
   factory CloudAttachment.fromJson(Map<String, dynamic> json, String homeId) {
     final start = DateTime.tryParse(
@@ -40,6 +46,9 @@ class CloudAttachment {
       applianceId: json['appliance_id'] as String,
       startedAt: start,
       endedAt: end,
+      sensorId: json['sensor_id'] as String?,
+      identityRevision: json['identity_revision'] as int?,
+      version: json['version'] as int?,
     );
   }
 

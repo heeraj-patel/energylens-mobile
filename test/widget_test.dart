@@ -897,10 +897,18 @@ void main() {
     expect(find.text('KP115'), findsOneWidget);
   });
 
-  testWidgets('Release local pilot reaches phone-only photo entry', (
+  testWidgets('legacy local pilot reaches phone-only photo entry', (
     tester,
   ) async {
-    await tester.pumpWidget(const EnergyLensApp(localPilot: true));
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: HomeScreen(
+          localPilotMode: true,
+          initialTabIndex: 3,
+          startInConnectAppliance: true,
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('localPilotNotice')), findsOneWidget);
     expect(
@@ -1237,14 +1245,14 @@ void main() {
     },
   );
 
-  testWidgets('shows the disconnected state without invented readings', (
+  testWidgets('legacy home shows disconnected state without invented readings', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(const EnergyLensApp());
+    await tester.pumpWidget(const MaterialApp(home: HomeScreen()));
     expect(find.text('Device'), findsOneWidget);
     expect(find.text('Used today'), findsOneWidget);
 
