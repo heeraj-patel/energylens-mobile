@@ -1,5 +1,6 @@
 import '../../core/cloud_api/cloud_api_client.dart';
 import '../../core/cloud_api/cloud_appliance.dart';
+import '../../core/cloud_api/cloud_appliance_list.dart';
 import '../../core/cloud_api/cloud_interventions.dart';
 import '../../core/cloud_api/cloud_metered_summary.dart';
 import '../../core/cloud_api/cloud_sensor.dart';
@@ -7,10 +8,13 @@ import '../../core/cloud_api/cloud_sensor.dart';
 /// Owner-scoped reads used by the Devices domain. These endpoints do not share
 /// a snapshot token, so their results must not be added into a household total.
 abstract interface class DevicesDomainSource {
-  Future<List<CloudAppliance>> appliances(String homeId);
+  Future<CloudApplianceList> applianceList(String homeId);
   Future<List<CloudAttachment>> attachments(String homeId);
   Future<List<CloudSensor>> sensors(String homeId);
-  Future<CloudMeteredSummaryPage> meteredSummaries(String homeId);
+  Future<CloudMeteredSummaryPage> meteredSummaries(
+    String homeId, {
+    String? cursor,
+  });
 }
 
 class CloudDevicesDomainSource implements DevicesDomainSource {
@@ -18,16 +22,18 @@ class CloudDevicesDomainSource implements DevicesDomainSource {
   final CloudApiClient api;
 
   @override
-  Future<List<CloudAppliance>> appliances(String homeId) =>
-      api.appliances(homeId);
+  Future<CloudApplianceList> applianceList(String homeId) =>
+      api.applianceList(homeId);
   @override
   Future<List<CloudAttachment>> attachments(String homeId) =>
       api.attachments(homeId);
   @override
   Future<List<CloudSensor>> sensors(String homeId) => api.sensors(homeId);
   @override
-  Future<CloudMeteredSummaryPage> meteredSummaries(String homeId) =>
-      api.meteredSummaries(homeId, granularity: 'day');
+  Future<CloudMeteredSummaryPage> meteredSummaries(
+    String homeId, {
+    String? cursor,
+  }) => api.meteredSummaries(homeId, granularity: 'day', cursor: cursor);
 }
 
 /// One measured bucket, with its own time and coverage. It is not a full-day
@@ -57,10 +63,29 @@ class DeviceInventoryItem {
   final List<String> activeAttachmentIds;
   final List<DeviceMeasuredBucket> measuredBuckets;
 
+  /// A single observed bucket, not a device or period total.
+  double? get latestMeasuredBucketWh =>
+      measuredBuckets.isEmpty ? null : measuredBuckets.first.energyWh;
+
   /// No tariff, waste policy or live state is established by these endpoints.
   double? get cost => null;
   double? get wasteEnergyWh => null;
   String? get liveState => null;
+}
+
+enum DeviceLocalSort { name, latestMeasuredBucketDesc }
+
+class DeviceLocalPage {
+  const DeviceLocalPage({
+    required this.items,
+    required this.matchingCount,
+    required this.nextOffset,
+    required this.isGlobalEnergyRanking,
+  });
+  final List<DeviceInventoryItem> items;
+  final int matchingCount;
+  final int? nextOffset;
+  final bool isGlobalEnergyRanking;
 }
 
 class DevicesDomainSnapshot {
@@ -68,10 +93,77 @@ class DevicesDomainSnapshot {
     required this.homeId,
     required this.items,
     required this.hasMoreMeteredPages,
+    required this.dataMode,
+    required this.fixtureRevision,
+    this.isCurrent,
   });
+
+  /// The local inventory envelope. The unpaged appliance API currently has no
+  /// continuation or revision token; reject larger results rather than imply
+  /// that a globally complete view was obtained.
+  static const maxLocalInventory = 100;
   final String homeId;
   final List<DeviceInventoryItem> items;
   final bool hasMoreMeteredPages;
+  final CloudApplianceDataMode dataMode;
+  final String? fixtureRevision;
+  final bool Function()? isCurrent;
+  bool get isSample => dataMode == CloudApplianceDataMode.sample;
+
+  /// Pages are frozen within this one read. A later read, mutation, sign-out,
+  /// or home switch invalidates the result. The measured sort is explicitly a
+  /// local observed-bucket order, never a global energy ranking.
+  DeviceLocalPage localPage({
+    int offset = 0,
+    int limit = 20,
+    String? nameContains,
+    DeviceLocalSort sort = DeviceLocalSort.name,
+  }) {
+    if (isCurrent != null && !isCurrent!()) {
+      throw StateError('Devices snapshot is stale');
+    }
+    if (offset < 0 || limit < 1 || limit > maxLocalInventory) {
+      throw RangeError('Invalid local page bounds');
+    }
+    final query = nameContains?.trim().toLowerCase();
+    final matches = items
+        .where(
+          (item) =>
+              query == null ||
+              query.isEmpty ||
+              item.appliance.name.toLowerCase().contains(query),
+        )
+        .toList();
+    matches.sort((a, b) {
+      if (sort == DeviceLocalSort.latestMeasuredBucketDesc) {
+        final aEnergy = a.latestMeasuredBucketWh;
+        final bEnergy = b.latestMeasuredBucketWh;
+        if (aEnergy == null && bEnergy != null) return 1;
+        if (aEnergy != null && bEnergy == null) return -1;
+        if (aEnergy != null && bEnergy != null) {
+          final byEnergy = bEnergy.compareTo(aEnergy);
+          if (byEnergy != 0) return byEnergy;
+        }
+      } else {
+        final byName = a.appliance.name.toLowerCase().compareTo(
+          b.appliance.name.toLowerCase(),
+        );
+        if (byName != 0) return byName;
+      }
+      return a.appliance.id.compareTo(b.appliance.id);
+    });
+    final end = (offset + limit).clamp(0, matches.length);
+    return DeviceLocalPage(
+      items: List.unmodifiable(
+        offset >= matches.length
+            ? <DeviceInventoryItem>[]
+            : matches.sublist(offset, end),
+      ),
+      matchingCount: matches.length,
+      nextOffset: end < matches.length ? end : null,
+      isGlobalEnergyRanking: false,
+    );
+  }
 
   /// List resources have no common snapshot token. Never present a derived
   /// total as an atomic household measurement.
@@ -82,6 +174,8 @@ class DevicesDomainSnapshot {
 
 class DevicesDomainRepository {
   DevicesDomainRepository(this.source);
+  static const maxMeteredPages = 5;
+  static const maxMeteredRows = 250;
   final DevicesDomainSource source;
   String? _homeId;
   int _generation = 0;
@@ -91,6 +185,9 @@ class DevicesDomainRepository {
     _generation++;
   }
 
+  /// Call after appliance, attachment, sensor, or metered-evidence mutation.
+  void invalidate() => clear();
+
   Future<DevicesDomainSnapshot?> fetch(String homeId) async {
     if (!_uuid.hasMatch(homeId)) throw ArgumentError.value(homeId, 'homeId');
     _homeId = homeId;
@@ -98,22 +195,106 @@ class DevicesDomainRepository {
     bool stale() => generation != _generation || _homeId != homeId;
     try {
       final results = await Future.wait<Object>([
-        source.appliances(homeId),
+        source.applianceList(homeId),
         source.attachments(homeId),
         source.sensors(homeId),
-        source.meteredSummaries(homeId),
       ]);
       if (stale()) return null;
+      final inventory = results[0] as CloudApplianceList;
+      final metered = inventory.isSample
+          ? const CloudMeteredSummaryPage(
+              granularity: 'day',
+              summaries: [],
+              nextCursor: null,
+            )
+          : await _readMetered(homeId, stale);
+      if (stale() || metered == null) return null;
       return _compose(
         homeId,
-        results[0] as List<CloudAppliance>,
+        inventory,
         results[1] as List<CloudAttachment>,
         results[2] as List<CloudSensor>,
-        results[3] as CloudMeteredSummaryPage,
+        metered,
+        () => !stale(),
       );
     } catch (_) {
       if (stale()) return null;
       rethrow;
+    }
+  }
+
+  Future<CloudMeteredSummaryPage?> _readMetered(
+    String homeId,
+    bool Function() stale,
+  ) async {
+    var restarted = false;
+    while (true) {
+      final rows = <CloudMeteredSummary>[];
+      final cursors = <String>{};
+      final bucketIds = <(String, DateTime, String, String, int, String?)>{};
+      String? cursor;
+      var pages = 0;
+      try {
+        while (true) {
+          if (stale()) return null;
+          final page = await source.meteredSummaries(homeId, cursor: cursor);
+          if (stale()) return null;
+          if (page.granularity != 'day' || page.summaries.length > 100) {
+            throw const FormatException('Invalid Devices metered page');
+          }
+          pages++;
+          for (final row in page.summaries) {
+            final id = (
+              row.kind,
+              row.bucketStart,
+              row.sensorId,
+              row.hubId,
+              row.ownershipEpoch,
+              row.attachmentId,
+            );
+            if (!bucketIds.add(id)) {
+              throw const FormatException('Duplicate Devices metered bucket');
+            }
+            if (rows.length == maxMeteredRows) {
+              return CloudMeteredSummaryPage(
+                granularity: 'day',
+                summaries: rows,
+                nextCursor: page.nextCursor ?? cursor ?? 'bounded',
+              );
+            }
+            rows.add(row);
+          }
+          final next = page.nextCursor;
+          if (next == null) {
+            return CloudMeteredSummaryPage(
+              granularity: 'day',
+              summaries: rows,
+              nextCursor: null,
+            );
+          }
+          if (next.isEmpty || !cursors.add(next)) {
+            throw const FormatException('Devices metered cursor loop');
+          }
+          if (pages == maxMeteredPages || rows.length == maxMeteredRows) {
+            return CloudMeteredSummaryPage(
+              granularity: 'day',
+              summaries: rows,
+              nextCursor: next,
+            );
+          }
+          cursor = next;
+        }
+      } on CloudApiException catch (error) {
+        if (stale()) return null;
+        if (cursor != null &&
+            !restarted &&
+            error.statusCode == 409 &&
+            error.code == 'evidence_changed') {
+          restarted = true;
+          continue;
+        }
+        rethrow;
+      }
     }
   }
 }
@@ -124,11 +305,23 @@ final _uuid = RegExp(
 
 DevicesDomainSnapshot _compose(
   String homeId,
-  List<CloudAppliance> appliances,
+  CloudApplianceList applianceList,
   List<CloudAttachment> attachments,
   List<CloudSensor> sensors,
   CloudMeteredSummaryPage page,
+  bool Function() isCurrent,
 ) {
+  final appliances = applianceList.appliances;
+  if (appliances.length > DevicesDomainSnapshot.maxLocalInventory) {
+    throw const FormatException('Devices inventory exceeds local envelope');
+  }
+  if (applianceList.dataMode == CloudApplianceDataMode.sample
+      ? applianceList.fixtureRevision == null ||
+            !RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+                .hasMatch(applianceList.fixtureRevision!)
+      : applianceList.fixtureRevision != null) {
+    throw const FormatException('Invalid appliance provenance');
+  }
   if (page.granularity != 'day' ||
       appliances.any((a) => a.homeId != homeId) ||
       attachments.any((a) => a.homeId != homeId) ||
@@ -158,7 +351,7 @@ DevicesDomainSnapshot _compose(
   }
 
   final items = appliances.map((appliance) {
-    final active = attachments
+    final active = (applianceList.isSample ? <CloudAttachment>[] : attachments)
         .where(
           (a) =>
               a.applianceId == appliance.id &&
@@ -168,7 +361,8 @@ DevicesDomainSnapshot _compose(
         )
         .toList();
     final buckets = <DeviceMeasuredBucket>[];
-    for (final summary in page.summaries) {
+    for (final summary
+        in applianceList.isSample ? <CloudMeteredSummary>[] : page.summaries) {
       if (summary.kind != 'energy' ||
           summary.status != 'complete' ||
           summary.allocationMethod != 'exact' ||
@@ -199,7 +393,13 @@ DevicesDomainSnapshot _compose(
         ),
       );
     }
-    buckets.sort((a, b) => b.bucketStart.compareTo(a.bucketStart));
+    buckets.sort((a, b) {
+      final byStart = b.bucketStart.compareTo(a.bucketStart);
+      if (byStart != 0) return byStart;
+      final byCorrection = b.computedAt.compareTo(a.computedAt);
+      if (byCorrection != 0) return byCorrection;
+      return a.attachmentId.compareTo(b.attachmentId);
+    });
     return DeviceInventoryItem(
       appliance: appliance,
       activeAttachmentIds: List.unmodifiable(active.map((a) => a.id)),
@@ -210,6 +410,9 @@ DevicesDomainSnapshot _compose(
   return DevicesDomainSnapshot(
     homeId: homeId,
     items: List.unmodifiable(items),
-    hasMoreMeteredPages: page.nextCursor != null,
+    hasMoreMeteredPages: !applianceList.isSample && page.nextCursor != null,
+    dataMode: applianceList.dataMode,
+    fixtureRevision: applianceList.fixtureRevision,
+    isCurrent: isCurrent,
   );
 }

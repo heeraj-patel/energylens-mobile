@@ -1,6 +1,13 @@
+import 'dart:async';
+
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_entry_gate.dart';
+import 'package:energylens_mobile/core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
+import 'package:energylens_mobile/features/design/design_context_coordinator.dart';
+import 'package:energylens_mobile/features/design/report_preview_domain_repository.dart';
+import 'package:energylens_mobile/features/identify/onboarding_draft_store.dart';
+import 'package:energylens_mobile/features/identify/onboarding_persistence_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -43,6 +50,33 @@ class FailingAuth extends Auth {
   @override
   Future<CloudTokens> signIn(CloudAuthConfig config) async => throw error;
 }
+
+class RecordingDesignAdapters implements DesignContextAdapters {
+  int clears = 0;
+  @override
+  void clear() => clears++;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class MemoryDraftStorage implements OnboardingDraftStorage {
+  String? value;
+  @override
+  Future<String?> read() async => value;
+  @override
+  Future<void> write(String data) async => value = data;
+  @override
+  Future<void> clear() async => value = null;
+}
+
+const firstHomeId = '11111111-1111-1111-1111-111111111111';
+const secondHomeId = '22222222-2222-2222-2222-222222222222';
+const verifiedAccountId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const acceptedPreferences =
+    '{"version":1,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}';
+
+String ownedHomes([String second = secondHomeId]) =>
+    '{"homes":[{"id":"$firstHomeId","name":"First home","timezone":"America/Chicago","location":{"country_code":"US","postal_code":"60601"}},{"id":"$second","name":"Second home","timezone":"America/Chicago","location":{"country_code":"US","postal_code":"60601"}}]}';
 
 void main() {
   testWidgets('sign-in reports user cancellation separately from failures', (
@@ -396,6 +430,197 @@ void main() {
       find.text('Verify your email address before continuing.'),
       findsOneWidget,
     );
+    api.close();
+  });
+
+  testWidgets('verified owned home binds; switch and sign-out clear context', (
+    tester,
+  ) async {
+    final store = Store();
+    final session = CloudSession(
+      config: config,
+      store: store,
+      authenticator: Auth(),
+    );
+    final adapters = RecordingDesignAdapters();
+    final coordinator = DesignContextCoordinator(adapters);
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/me') {
+          return http.Response(
+            '{"id":"$verifiedAccountId","email":null,"email_verified":true}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/me/preferences') {
+          return http.Response(
+            acceptedPreferences,
+            200,
+            headers: {'etag': '"1"'},
+          );
+        }
+        return http.Response(ownedHomes(), 200);
+      }),
+    );
+    final draftStorage = MemoryDraftStorage();
+    final auxiliary = CloudAuxiliaryDomainLifecycle(
+      drafts: DurableOnboardingDrafts(
+        draftStorage,
+        OnboardingPersistenceRepository(CloudOnboardingPersistenceSource(api)),
+      ),
+      reports: ReportPreviewDomainRepository(
+        CloudReportPreviewDomainSource(api),
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          session: session,
+          api: api,
+          designContextCoordinator: coordinator,
+          auxiliaryDomainLifecycle: auxiliary,
+          homeBuilder: (_, signOut, changeHome, _) => Scaffold(
+            body: Column(
+              children: [
+                TextButton(
+                  onPressed: changeHome,
+                  child: const Text('Switch home'),
+                ),
+                TextButton(onPressed: signOut, child: const Text('Leave home')),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(coordinator.context, isNull);
+    await tester.tap(find.text('First home'));
+    await tester.pumpAndSettle();
+    expect(coordinator.context?.accountId, verifiedAccountId);
+    expect(coordinator.context?.homeId, firstHomeId);
+    expect(auxiliary.verifiedHomeId, firstHomeId);
+    await auxiliary.drafts.stage(
+      const OnboardingDraft(
+        name: 'Fridge',
+        category: 'refrigerator',
+        brand: 'Acme',
+        fullModel: 'A123',
+        fuel: 'electricity',
+      ),
+    );
+    await tester.tap(find.text('Switch home'));
+    await tester.pumpAndSettle();
+    expect(coordinator.context, isNull);
+    expect(auxiliary.verifiedHomeId, isNull);
+    await tester.tap(find.text('Second home'));
+    await tester.pumpAndSettle();
+    expect(coordinator.context?.homeId, secondHomeId);
+    expect(auxiliary.verifiedHomeId, secondHomeId);
+    expect(await auxiliary.drafts.restore(), isNull);
+    await tester.tap(find.text('Leave home'));
+    await tester.pumpAndSettle();
+    expect(coordinator.context, isNull);
+    expect(auxiliary.verifiedHomeId, isNull);
+    expect(draftStorage.value, isNull);
+    expect(store.tokens, isNull);
+    expect(adapters.clears, greaterThanOrEqualTo(4));
+    api.close();
+  });
+
+  testWidgets('late owned homes response cannot bind after sign-out', (
+    tester,
+  ) async {
+    final delayedHomes = Completer<http.Response>();
+    final session = CloudSession(
+      config: config,
+      store: Store(),
+      authenticator: Auth(),
+    );
+    final coordinator = DesignContextCoordinator(RecordingDesignAdapters());
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/me') {
+          return http.Response(
+            '{"id":"account-1","email":null,"email_verified":true}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/me/preferences') {
+          return http.Response(
+            acceptedPreferences,
+            200,
+            headers: {'etag': '"1"'},
+          );
+        }
+        return delayedHomes.future;
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          session: session,
+          api: api,
+          designContextCoordinator: coordinator,
+          homeBuilder: (_, _, _, _) => const Text('Private Home'),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byTooltip('Sign out'));
+    await tester.pump();
+    delayedHomes.complete(http.Response(ownedHomes(), 200));
+    await tester.pumpAndSettle();
+    expect(coordinator.context, isNull);
+    expect(find.text('First home'), findsNothing);
+    api.close();
+  });
+
+  testWidgets('malformed or unowned home IDs never enter design context', (
+    tester,
+  ) async {
+    final session = CloudSession(
+      config: config,
+      store: Store(),
+      authenticator: Auth(),
+    );
+    final coordinator = DesignContextCoordinator(RecordingDesignAdapters());
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/me') {
+          return http.Response(
+            '{"id":"account-1","email":null,"email_verified":true}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/me/preferences') {
+          return http.Response(
+            acceptedPreferences,
+            200,
+            headers: {'etag': '"1"'},
+          );
+        }
+        return http.Response(ownedHomes('not-a-uuid'), 200);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          session: session,
+          api: api,
+          designContextCoordinator: coordinator,
+          homeBuilder: (_, _, _, _) => const Text('Private Home'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Second home'));
+    await tester.pumpAndSettle();
+    expect(coordinator.context, isNull);
     api.close();
   });
 }

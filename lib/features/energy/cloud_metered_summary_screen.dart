@@ -28,11 +28,18 @@ class _CloudMeteredSummaryScreenState extends State<CloudMeteredSummaryScreen> {
   bool _loading = false;
   int _pages = 0;
   int _generation = 0;
+  bool _conflictRestarted = false;
 
   @override
   void initState() {
     super.initState();
     _refresh();
+  }
+
+  @override
+  void didUpdateWidget(covariant CloudMeteredSummaryScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.home.id != widget.home.id) _refresh();
   }
 
   Future<void> _refresh() async {
@@ -41,6 +48,7 @@ class _CloudMeteredSummaryScreenState extends State<CloudMeteredSummaryScreen> {
       _rows.clear();
       _nextCursor = null;
       _pages = 0;
+      _conflictRestarted = false;
       _error = null;
       _loading = true;
     });
@@ -69,6 +77,29 @@ class _CloudMeteredSummaryScreenState extends State<CloudMeteredSummaryScreen> {
         _nextCursor = page.nextCursor;
         _pages++;
       });
+    } on CloudApiException catch (error) {
+      if (mounted &&
+          generation == _generation &&
+          cursor != null &&
+          error.statusCode == 409 &&
+          error.code == 'evidence_changed' &&
+          !_conflictRestarted) {
+        _conflictRestarted = true;
+        setState(() {
+          _rows.clear();
+          _nextCursor = null;
+          _pages = 0;
+        });
+        await _fetch(generation);
+        return;
+      }
+      if (mounted && generation == _generation) {
+        setState(
+          () => _error = cursor == null
+              ? 'Could not load Cloud meter summaries. Refresh to try again.'
+              : 'Could not load the next summary page. Try again.',
+        );
+      }
     } catch (_) {
       if (mounted && generation == _generation) {
         setState(

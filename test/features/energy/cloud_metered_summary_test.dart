@@ -69,6 +69,25 @@ Map<String, dynamic> _row(String kind) => {
   ],
 };
 
+Map<String, dynamic> _gapRow(int day) => {
+  ..._row('coverage_gap'),
+  'bucket_start': '2026-10-${day.toString().padLeft(2, '0')}T00:00:00Z',
+  'gap_overlap_count': 1,
+  'dropped_count_started': 0,
+};
+
+http.Response _page(int day, String? next) => http.Response(
+  jsonEncode({
+    'granularity': 'day',
+    'summaries': [_gapRow(day)],
+    'next_cursor': next,
+  }),
+  200,
+);
+
+http.Response _conflict() =>
+    http.Response(jsonEncode({'code': 'evidence_changed'}), 409);
+
 void main() {
   testWidgets(
     'daily and hourly rows retain distinct meanings and cursor scope',
@@ -156,6 +175,167 @@ void main() {
       api.close();
     },
   );
+
+  testWidgets('evidence conflict restarts once without mixing pages', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final requests = <http.Request>[];
+    final api = _api(
+      MockClient((request) async {
+        requests.add(request);
+        return switch (requests.length) {
+          1 => _page(1, 'before-correction'),
+          2 => _conflict(),
+          3 => _page(2, 'after-correction'),
+          _ => _page(3, null),
+        };
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudMeteredSummaryScreen(api: api, home: home),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('moreMeteredSummaries')));
+    await tester.tap(find.byKey(const Key('moreMeteredSummaries')));
+    await tester.pumpAndSettle();
+    expect(requests, hasLength(3));
+    expect(requests[1].url.queryParameters['cursor'], 'before-correction');
+    expect(requests[2].url.queryParameters.containsKey('cursor'), isFalse);
+    expect(find.textContaining('Could not load'), findsNothing);
+    expect(find.byKey(const Key('moreMeteredSummaries')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('moreMeteredSummaries')));
+    await tester.tap(find.byKey(const Key('moreMeteredSummaries')));
+    await tester.pumpAndSettle();
+    expect(requests[3].url.queryParameters['cursor'], 'after-correction');
+    expect(find.text('UTC bucket: 2026-10-01T00:00:00.000Z'), findsNothing);
+    expect(find.text('UTC bucket: 2026-10-02T00:00:00.000Z'), findsOneWidget);
+    expect(find.text('UTC bucket: 2026-10-03T00:00:00.000Z'), findsOneWidget);
+    api.close();
+  });
+
+  testWidgets('repeated evidence conflict stops after one restart', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var calls = 0;
+    final api = _api(
+      MockClient((request) async {
+        calls++;
+        if (calls == 1) return _page(1, 'first');
+        if (calls == 2) return _conflict();
+        if (calls == 3) return _page(2, 'second');
+        return _conflict();
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudMeteredSummaryScreen(api: api, home: home),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('moreMeteredSummaries')));
+    await tester.tap(find.byKey(const Key('moreMeteredSummaries')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('moreMeteredSummaries')));
+    await tester.tap(find.byKey(const Key('moreMeteredSummaries')));
+    await tester.pumpAndSettle();
+    expect(calls, 4);
+    expect(find.byKey(const Key('meteredSummaryError')), findsOneWidget);
+    expect(find.text('UTC bucket: 2026-10-02T00:00:00.000Z'), findsOneWidget);
+    api.close();
+  });
+
+  testWidgets('home and granularity changes start a fresh query', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const otherHome = CloudHome(
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      name: 'Other home',
+      timezone: 'UTC',
+      countryCode: 'US',
+      postalCode: '10001',
+    );
+    final requests = <http.Request>[];
+    final api = _api(
+      MockClient((request) async {
+        requests.add(request);
+        final day = requests.length;
+        final granularity = request.url.queryParameters['granularity'];
+        return http.Response(
+          jsonEncode({
+            'granularity': granularity ?? 'day',
+            'summaries': [_gapRow(day)],
+            'next_cursor': 'next',
+          }),
+          200,
+        );
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudMeteredSummaryScreen(api: api, home: home),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Hourly'));
+    await tester.tap(find.text('Hourly'));
+    await tester.pumpAndSettle();
+    expect(requests.last.url.queryParameters['granularity'], 'hour');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudMeteredSummaryScreen(api: api, home: otherHome),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(requests.last.url.path, contains(otherHome.id));
+    expect(requests.last.url.queryParameters['granularity'], 'hour');
+    expect(find.text('Other home'), findsOneWidget);
+    api.close();
+  });
+
+  testWidgets('authentication and server errors remain visible', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    for (final status in [401, 500]) {
+      final api = _api(
+        MockClient((request) async {
+          if (request.url.queryParameters.containsKey('cursor')) {
+            return http.Response('{}', status);
+          }
+          return _page(1, 'next');
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CloudMeteredSummaryScreen(api: api, home: home),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('moreMeteredSummaries')));
+      await tester.tap(find.byKey(const Key('moreMeteredSummaries')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('meteredSummaryError')), findsOneWidget);
+      expect(find.text('UTC bucket: 2026-10-01T00:00:00.000Z'), findsOneWidget);
+      api.close();
+    }
+  });
 
   test('rejects unknown summary kind and mismatched granularity', () async {
     final api = _api(

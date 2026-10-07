@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_appliance_list.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_interventions.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_metered_summary.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_sensor.dart';
@@ -27,6 +29,19 @@ CloudAppliance appliance(String home) => CloudAppliance(
   matchQuality: 'confirmed_exact',
 );
 
+CloudAppliance namedAppliance(String home, String id, String name) =>
+    CloudAppliance(
+      id: id,
+      homeId: home,
+      name: name,
+      category: 'other',
+      room: null,
+      brand: 'Brand',
+      fullModel: 'Model',
+      fuel: 'electric',
+      matchQuality: 'confirmed_exact',
+    );
+
 CloudAttachment attachment(String home, {String? sensor = sensorId}) =>
     CloudAttachment(
       id: attachmentId,
@@ -52,16 +67,18 @@ CloudMeteredSummary measured({
   String status = 'complete',
   String method = 'exact',
   int epoch = 2,
+  int dayOffset = 0,
+  double energyWh = 1250,
 }) => CloudMeteredSummary(
   kind: 'energy',
-  bucketStart: day,
+  bucketStart: day.add(Duration(days: dayOffset)),
   sensorId: sensorId,
   hubId: 'hub',
   ownershipEpoch: epoch,
   computedAt: day.add(const Duration(days: 1)),
   sourceCount: 1,
   attachmentId: attachment,
-  energyWh: status == 'complete' ? 1250 : null,
+  energyWh: status == 'complete' ? energyWh : null,
   coveredSeconds: status == 'complete' ? 3600 : null,
   intervalCount: 1,
   status: status,
@@ -74,17 +91,25 @@ class FakeSource implements DevicesDomainSource {
     required this.attachmentRead,
     required this.sensorRead,
     required this.summaryRead,
+    this.dataMode = CloudApplianceDataMode.household,
+    this.fixtureRevision,
   });
   final Future<List<CloudAppliance>> Function(String) applianceRead;
   final Future<List<CloudAttachment>> Function(String) attachmentRead;
   final Future<List<CloudSensor>> Function(String) sensorRead;
-  final Future<CloudMeteredSummaryPage> Function(String) summaryRead;
+  final Future<CloudMeteredSummaryPage> Function(String, String?) summaryRead;
+  final CloudApplianceDataMode dataMode;
+  final String? fixtureRevision;
   int calls = 0;
 
   @override
-  Future<List<CloudAppliance>> appliances(String homeId) {
+  Future<CloudApplianceList> applianceList(String homeId) async {
     calls++;
-    return applianceRead(homeId);
+    return CloudApplianceList(
+      appliances: await applianceRead(homeId),
+      dataMode: dataMode,
+      fixtureRevision: fixtureRevision,
+    );
   }
 
   @override
@@ -100,9 +125,12 @@ class FakeSource implements DevicesDomainSource {
   }
 
   @override
-  Future<CloudMeteredSummaryPage> meteredSummaries(String homeId) {
+  Future<CloudMeteredSummaryPage> meteredSummaries(
+    String homeId, {
+    String? cursor,
+  }) {
     calls++;
-    return summaryRead(homeId);
+    return summaryRead(homeId, cursor);
   }
 }
 
@@ -111,30 +139,238 @@ FakeSource fixed({
   String? nextCursor,
   String? applianceHome,
   int sensorEpoch = 2,
+  CloudApplianceDataMode dataMode = CloudApplianceDataMode.household,
+  String? fixtureRevision,
 }) => FakeSource(
+  dataMode: dataMode,
+  fixtureRevision: fixtureRevision,
   applianceRead: (home) async => [appliance(applianceHome ?? home)],
   attachmentRead: (home) async => [attachment(home)],
   sensorRead: (home) async => [sensor(home, epoch: sensorEpoch)],
-  summaryRead: (_) async => CloudMeteredSummaryPage(
+  summaryRead: (_, cursor) async => CloudMeteredSummaryPage(
     granularity: 'day',
-    summaries: summaries ?? [measured()],
-    nextCursor: nextCursor,
+    summaries: cursor == null ? (summaries ?? [measured()]) : const [],
+    nextCursor: cursor == null ? nextCursor : null,
   ),
 );
 
+FakeSource paged(
+  Future<CloudMeteredSummaryPage> Function(String, String?) read, {
+  CloudApplianceDataMode dataMode = CloudApplianceDataMode.household,
+  String? fixtureRevision,
+}) => FakeSource(
+  applianceRead: (home) async => [appliance(home)],
+  attachmentRead: (home) async => [attachment(home)],
+  sensorRead: (home) async => [sensor(home)],
+  summaryRead: read,
+  dataMode: dataMode,
+  fixtureRevision: fixtureRevision,
+);
+
 void main() {
+  test(
+    'traverses unchanged pages and keeps local ranking non-global',
+    () async {
+      final cursors = <String?>[];
+      final result = (await DevicesDomainRepository(
+        paged((_, cursor) async {
+          cursors.add(cursor);
+          return CloudMeteredSummaryPage(
+            granularity: 'day',
+            summaries: [measured(dayOffset: cursor == null ? 0 : -1)],
+            nextCursor: cursor == null ? 'next' : null,
+          );
+        }),
+      ).fetch(homeA))!;
+      expect(cursors, [null, 'next']);
+      expect(result.items.single.measuredBuckets, hasLength(2));
+      expect(result.hasMoreMeteredPages, isFalse);
+      expect(
+        result
+            .localPage(sort: DeviceLocalSort.latestMeasuredBucketDesc)
+            .isGlobalEnergyRanking,
+        isFalse,
+      );
+      expect(result.householdEnergyWh, isNull);
+    },
+  );
+
+  test('evidence correction discards old pages and restarts once', () async {
+    final cursors = <String?>[];
+    var firstPages = 0;
+    final result = (await DevicesDomainRepository(
+      paged((_, cursor) async {
+        cursors.add(cursor);
+        if (cursor == 'old') {
+          throw const CloudApiException(409, 'evidence_changed');
+        }
+        if (cursor == null) {
+          firstPages++;
+          return CloudMeteredSummaryPage(
+            granularity: 'day',
+            summaries: [measured(energyWh: firstPages == 1 ? 10 : 20)],
+            nextCursor: firstPages == 1 ? 'old' : 'new',
+          );
+        }
+        return CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: [measured(dayOffset: -1)],
+          nextCursor: null,
+        );
+      }),
+    ).fetch(homeA))!;
+    expect(cursors, [null, 'old', null, 'new']);
+    expect(result.items.single.measuredBuckets.map((b) => b.energyWh), [
+      20,
+      1250,
+    ]);
+    expect(result.hasMoreMeteredPages, isFalse);
+  });
+
+  test('repeated evidence conflict and other errors propagate', () async {
+    for (final error in [
+      const CloudApiException(409, 'evidence_changed'),
+      const CloudApiException(401, 'unauthorized'),
+      const CloudApiException(500, 'server_error'),
+    ]) {
+      var firstPages = 0;
+      final source = paged((_, cursor) async {
+        if (cursor != null) throw error;
+        firstPages++;
+        return CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: [measured()],
+          nextCursor: 'next',
+        );
+      });
+      await expectLater(
+        DevicesDomainRepository(source).fetch(homeA),
+        throwsA(same(error)),
+      );
+      expect(firstPages, error.statusCode == 409 ? 2 : 1);
+    }
+  });
+
+  test('page bound keeps an explicit incomplete marker', () async {
+    var calls = 0;
+    final result = (await DevicesDomainRepository(
+      paged((_, cursor) async {
+        calls++;
+        return CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: [measured(dayOffset: calls)],
+          nextCursor: 'page-$calls',
+        );
+      }),
+    ).fetch(homeA))!;
+    expect(calls, DevicesDomainRepository.maxMeteredPages);
+    expect(
+      result.items.single.measuredBuckets,
+      hasLength(DevicesDomainRepository.maxMeteredPages),
+    );
+    expect(result.hasMoreMeteredPages, isTrue);
+  });
+
+  test('row bound keeps an explicit incomplete marker', () async {
+    var calls = 0;
+    final result = (await DevicesDomainRepository(
+      paged((_, cursor) async {
+        calls++;
+        return CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: List.generate(
+            100,
+            (index) => measured(dayOffset: calls * 100 + index),
+          ),
+          nextCursor: 'page-$calls',
+        );
+      }),
+    ).fetch(homeA))!;
+    expect(calls, 3);
+    expect(
+      result.items.single.measuredBuckets,
+      hasLength(DevicesDomainRepository.maxMeteredRows),
+    );
+    expect(result.hasMoreMeteredPages, isTrue);
+  });
+
+  test('cursor loops and duplicate bucket identities fail closed', () async {
+    final loop = paged(
+      (_, cursor) async => CloudMeteredSummaryPage(
+        granularity: 'day',
+        summaries: [measured(dayOffset: cursor == null ? 0 : -1)],
+        nextCursor: 'again',
+      ),
+    );
+    await expectLater(
+      DevicesDomainRepository(loop).fetch(homeA),
+      throwsFormatException,
+    );
+    final duplicate = paged(
+      (_, cursor) async => CloudMeteredSummaryPage(
+        granularity: 'day',
+        summaries: [measured()],
+        nextCursor: cursor == null ? 'next' : null,
+      ),
+    );
+    await expectLater(
+      DevicesDomainRepository(duplicate).fetch(homeA),
+      throwsFormatException,
+    );
+  });
+
+  test('sample inventory does not request household metering', () async {
+    final source = paged(
+      (_, _) async => throw StateError('metering called'),
+      dataMode: CloudApplianceDataMode.sample,
+      fixtureRevision: 'synthetic-household-v1',
+    );
+    final result = (await DevicesDomainRepository(source).fetch(homeA))!;
+    expect(source.calls, 3);
+    expect(result.items.single.measuredBuckets, isEmpty);
+    expect(result.hasMoreMeteredPages, isFalse);
+  });
+
+  test('home switch discards pending cursor response', () async {
+    final oldPage = Completer<CloudMeteredSummaryPage>();
+    final source = paged((home, cursor) {
+      if (home == homeA && cursor != null) return oldPage.future;
+      return Future.value(
+        CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: home == homeA ? [measured()] : const [],
+          nextCursor: home == homeA ? 'next' : null,
+        ),
+      );
+    });
+    final repository = DevicesDomainRepository(source);
+    final pending = repository.fetch(homeA);
+    await Future<void>.delayed(Duration.zero);
+    expect((await repository.fetch(homeB))?.homeId, homeB);
+    oldPage.complete(
+      const CloudMeteredSummaryPage(
+        granularity: 'day',
+        summaries: [],
+        nextCursor: null,
+      ),
+    );
+    expect(await pending, isNull);
+  });
+
   test(
     'keeps exact measured bucket and all unsupported values unknown',
     () async {
       final result = await DevicesDomainRepository(fixed(nextCursor: 'more'))
           .fetch(homeA);
       expect(result?.homeId, homeA);
+      expect(result?.dataMode, CloudApplianceDataMode.household);
+      expect(result?.fixtureRevision, isNull);
       expect(result?.items, hasLength(1));
       final item = result!.items.single;
       expect(item.activeAttachmentIds, [attachmentId]);
       expect(item.measuredBuckets.single.energyWh, 1250);
       expect(item.measuredBuckets.single.coveredSeconds, 3600);
-      expect(result.hasMoreMeteredPages, isTrue);
+      expect(result.hasMoreMeteredPages, isFalse);
       expect(item.cost, isNull);
       expect(item.wasteEnergyWh, isNull);
       expect(item.liveState, isNull);
@@ -151,13 +387,47 @@ void main() {
     );
   });
 
+  test(
+    'sample inventory cannot acquire household measurement or attachment',
+    () async {
+      final result = await DevicesDomainRepository(
+        fixed(
+          dataMode: CloudApplianceDataMode.sample,
+          fixtureRevision: 'synthetic-household-v1',
+          nextCursor: 'more',
+        ),
+      ).fetch(homeA);
+      expect(result?.isSample, isTrue);
+      expect(result?.fixtureRevision, 'synthetic-household-v1');
+      expect(result?.items.single.activeAttachmentIds, isEmpty);
+      expect(result?.items.single.measuredBuckets, isEmpty);
+      expect(result?.hasMoreMeteredPages, isFalse);
+      expect(result?.householdEnergyWh, isNull);
+    },
+  );
+
+  test('rejects malformed source provenance', () async {
+    await expectLater(
+      DevicesDomainRepository(fixed(dataMode: CloudApplianceDataMode.sample))
+          .fetch(homeA),
+      throwsFormatException,
+    );
+    await expectLater(
+      DevicesDomainRepository(fixed(fixtureRevision: 'wrong')).fetch(homeA),
+      throwsFormatException,
+    );
+  });
+
   test('withholds unverified, conflicting and mismatched energy', () async {
     final source = fixed(
       summaries: [
         measured(status: 'overlap_conflict'),
-        measured(method: 'duration_proportional'),
-        measured(epoch: 99),
-        measured(attachment: '66666666-6666-4666-8666-666666666666'),
+        measured(method: 'duration_proportional', dayOffset: 1),
+        measured(epoch: 99, dayOffset: 2),
+        measured(
+          attachment: '66666666-6666-4666-8666-666666666666',
+          dayOffset: 3,
+        ),
       ],
     );
     final result = await DevicesDomainRepository(source).fetch(homeA);
@@ -172,7 +442,7 @@ void main() {
           : Future.value([appliance(home)]),
       attachmentRead: (home) async => [attachment(home)],
       sensorRead: (home) async => [sensor(home)],
-      summaryRead: (_) async => CloudMeteredSummaryPage(
+      summaryRead: (_, _) async => CloudMeteredSummaryPage(
         granularity: 'day',
         summaries: const [],
         nextCursor: null,
@@ -190,7 +460,7 @@ void main() {
         applianceRead: (_) => pendingAppliances.future,
         attachmentRead: (home) async => [attachment(home)],
         sensorRead: (home) async => [sensor(home)],
-        summaryRead: (_) async => CloudMeteredSummaryPage(
+        summaryRead: (_, _) async => CloudMeteredSummaryPage(
           granularity: 'day',
           summaries: const [],
           nextCursor: null,
@@ -213,7 +483,7 @@ void main() {
         applianceRead: (_) async => throw StateError('offline'),
         attachmentRead: (_) async => const [],
         sensorRead: (_) async => const [],
-        summaryRead: (_) async => const CloudMeteredSummaryPage(
+        summaryRead: (_, _) async => const CloudMeteredSummaryPage(
           granularity: 'day',
           summaries: [],
           nextCursor: null,
@@ -221,5 +491,119 @@ void main() {
       ),
     );
     await expectLater(failing.fetch(homeA), throwsStateError);
+  });
+
+  test(
+    'bounded local pages sort names with stable ID ties and filter',
+    () async {
+      final rows = [
+        namedAppliance(homeA, 'z', 'Lamp'),
+        namedAppliance(homeA, 'b', 'Fan'),
+        namedAppliance(homeA, 'a', 'fan'),
+      ];
+      final result = (await DevicesDomainRepository(
+        FakeSource(
+          applianceRead: (_) async => rows,
+          attachmentRead: (_) async => [],
+          sensorRead: (_) async => [],
+          summaryRead: (_, _) async => const CloudMeteredSummaryPage(
+            granularity: 'day',
+            summaries: [],
+            nextCursor: null,
+          ),
+        ),
+      ).fetch(homeA))!;
+      final first = result.localPage(limit: 1);
+      expect(first.items.single.appliance.id, 'a');
+      expect(first.matchingCount, 3);
+      expect(first.nextOffset, 1);
+      expect(
+        result
+            .localPage(offset: first.nextOffset!, limit: 1)
+            .items
+            .single
+            .appliance
+            .id,
+        'b',
+      );
+      expect(result.localPage(nameContains: ' la ').matchingCount, 1);
+      expect(() => result.localPage(limit: 101), throwsRangeError);
+      expect(() => result.localPage(offset: -1), throwsRangeError);
+    },
+  );
+
+  test('observed energy sorts known first and remains non-global', () async {
+    final rows = [
+      appliance(homeA),
+      namedAppliance(homeA, 'a', 'Unknown'),
+      namedAppliance(homeA, 'b', 'Unknown'),
+    ];
+    final result = (await DevicesDomainRepository(
+      FakeSource(
+        applianceRead: (_) async => rows,
+        attachmentRead: (_) async => [attachment(homeA)],
+        sensorRead: (_) async => [sensor(homeA)],
+        summaryRead: (_, cursor) async => CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: cursor == null ? [measured()] : [],
+          nextCursor: cursor == null ? 'more' : null,
+        ),
+      ),
+    ).fetch(homeA))!;
+    final page = result.localPage(
+      sort: DeviceLocalSort.latestMeasuredBucketDesc,
+    );
+    expect(page.items.map((item) => item.appliance.id), [
+      applianceId,
+      'a',
+      'b',
+    ]);
+    expect(page.isGlobalEnergyRanking, isFalse);
+    expect(result.hasMoreMeteredPages, isFalse);
+    expect(result.householdEnergyWh, isNull);
+  });
+
+  test('large inventory refuses local completeness', () async {
+    final rows = List.generate(
+      DevicesDomainSnapshot.maxLocalInventory,
+      (index) => namedAppliance(homeA, 'id-$index', 'Appliance $index'),
+    );
+    Future<DevicesDomainSnapshot?> fetch(List<CloudAppliance> inventory) =>
+        DevicesDomainRepository(
+          FakeSource(
+            applianceRead: (_) async => inventory,
+            attachmentRead: (_) async => [],
+            sensorRead: (_) async => [],
+            summaryRead: (_, _) async => const CloudMeteredSummaryPage(
+              granularity: 'day',
+              summaries: [],
+              nextCursor: null,
+            ),
+          ),
+        ).fetch(homeA);
+    expect(
+      (await fetch(rows))?.items.length,
+      DevicesDomainSnapshot.maxLocalInventory,
+    );
+    final overLimit = [...rows, namedAppliance(homeA, 'extra', 'Extra')];
+    await expectLater(fetch(overLimit), throwsFormatException);
+  });
+
+  test('mutation and later evidence read invalidate earlier pages', () async {
+    final repository = DevicesDomainRepository(fixed());
+    final earlier = (await repository.fetch(homeA))!;
+    expect(earlier.localPage().items, hasLength(1));
+    final later = (await repository.fetch(homeA))!;
+    expect(() => earlier.localPage(), throwsStateError);
+    expect(later.localPage().items, hasLength(1));
+    repository.invalidate();
+    expect(() => later.localPage(), throwsStateError);
+  });
+
+  test('home switch invalidates already returned local pages', () async {
+    final repository = DevicesDomainRepository(fixed());
+    final previous = (await repository.fetch(homeA))!;
+    await repository.fetch(homeB);
+    expect(() => previous.localPage(), throwsStateError);
   });
 }

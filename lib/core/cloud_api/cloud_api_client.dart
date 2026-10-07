@@ -6,6 +6,8 @@ import '../cloud_auth/cloud_auth.dart';
 import '../cloud_auth/cloud_dev_tls.dart';
 import 'cloud_home.dart';
 import 'cloud_appliance.dart';
+import 'cloud_appliance_list.dart';
+import 'cloud_appliance_detail.dart';
 import 'cloud_catalog.dart';
 import 'cloud_estimate.dart';
 import 'cloud_hub_claim.dart';
@@ -125,6 +127,20 @@ class CloudApiClient {
     throw const FormatException('Invalid household energy response object');
   }
 
+  static String? _caseInsensitiveHeader(
+    Map<String, String> headers,
+    String name,
+  ) {
+    final matches = headers.entries
+        .where((entry) => entry.key.toLowerCase() == name)
+        .map((entry) => entry.value)
+        .toList();
+    if (matches.length > 1) {
+      throw const FormatException('Duplicate appliance provenance header');
+    }
+    return matches.isEmpty ? null : matches.single;
+  }
+
   Future<CloudVersioned<CloudHome>> updateHome(
     String homeId,
     CloudHomePatch input, {
@@ -152,6 +168,16 @@ class CloudApiClient {
     String homeId,
     String applianceId,
   ) async {
+    final detail = await applianceDetail(homeId, applianceId);
+    return CloudVersioned(value: detail.appliance, etag: detail.etag);
+  }
+
+  /// Reads one appliance while retaining its response validator and source.
+  /// Missing provenance headers are the legacy household response contract.
+  Future<CloudApplianceDetail> applianceDetail(
+    String homeId,
+    String applianceId,
+  ) async {
     final response = await get(
       '/v1/homes/${Uri.encodeComponent(homeId)}/appliances/${Uri.encodeComponent(applianceId)}',
     );
@@ -161,7 +187,37 @@ class CloudApiClient {
     if (value.id != applianceId || value.homeId != homeId) {
       throw const FormatException('Cloud appliance ownership changed');
     }
-    return CloudVersioned(value: value, etag: _requiredEtag(response));
+    final modeHeader = _caseInsensitiveHeader(
+      response.headers,
+      'x-energylens-data-mode',
+    );
+    final revisionHeader = _caseInsensitiveHeader(
+      response.headers,
+      'x-energylens-fixture-revision',
+    );
+    final CloudApplianceDataMode dataMode;
+    final String? fixtureRevision;
+    if (modeHeader == null && revisionHeader == null) {
+      dataMode = CloudApplianceDataMode.household;
+      fixtureRevision = null;
+    } else if (modeHeader == 'household' && revisionHeader == null) {
+      dataMode = CloudApplianceDataMode.household;
+      fixtureRevision = null;
+    } else if (modeHeader == 'sample' &&
+        revisionHeader != null &&
+        RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+            .hasMatch(revisionHeader)) {
+      dataMode = CloudApplianceDataMode.sample;
+      fixtureRevision = revisionHeader;
+    } else {
+      throw const FormatException('Invalid cloud appliance provenance');
+    }
+    return CloudApplianceDetail(
+      appliance: value,
+      etag: _requiredEtag(response),
+      dataMode: dataMode,
+      fixtureRevision: fixtureRevision,
+    );
   }
 
   Future<CloudVersioned<CloudAppliance>> updateAppliance(
@@ -430,12 +486,41 @@ class CloudApiClient {
   }
 
   Future<List<CloudAppliance>> appliances(String homeId) async {
+    return (await applianceList(homeId)).appliances;
+  }
+
+  Future<CloudApplianceList> applianceList(String homeId) async {
     final response = await get(
       '/v1/homes/${Uri.encodeComponent(homeId)}/appliances',
     );
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final body = _decodeObject(response.body);
+    final modeHeader = _caseInsensitiveHeader(
+      response.headers,
+      'x-energylens-data-mode',
+    );
+    final revisionHeader = _caseInsensitiveHeader(
+      response.headers,
+      'x-energylens-fixture-revision',
+    );
+    final CloudApplianceDataMode dataMode;
+    final String? fixtureRevision;
+    if (modeHeader == null && revisionHeader == null) {
+      dataMode = CloudApplianceDataMode.household;
+      fixtureRevision = null;
+    } else if (modeHeader == 'household' && revisionHeader == null) {
+      dataMode = CloudApplianceDataMode.household;
+      fixtureRevision = null;
+    } else if (modeHeader == 'sample' &&
+        revisionHeader != null &&
+        RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+            .hasMatch(revisionHeader)) {
+      dataMode = CloudApplianceDataMode.sample;
+      fixtureRevision = revisionHeader;
+    } else {
+      throw const FormatException('Invalid cloud appliance provenance');
+    }
     final rows = body['appliances'];
-    if (rows is! List) {
+    if (rows is! List || rows.any((row) => row is! Map<String, dynamic>)) {
       throw const FormatException('Invalid cloud appliance list');
     }
     final appliances = rows
@@ -444,7 +529,11 @@ class CloudApiClient {
     if (appliances.any((item) => item.homeId != homeId)) {
       throw const FormatException('Cloud appliance belongs to another home');
     }
-    return appliances;
+    return CloudApplianceList(
+      appliances: List.unmodifiable(appliances),
+      dataMode: dataMode,
+      fixtureRevision: fixtureRevision,
+    );
   }
 
   Future<List<CloudTariff>> electricityTariffs(String homeId) =>

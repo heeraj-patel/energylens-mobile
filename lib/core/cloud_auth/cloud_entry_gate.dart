@@ -3,6 +3,8 @@ import 'package:flutter_appauth/flutter_appauth.dart';
 
 import '../cloud_api/cloud_api_client.dart';
 import '../cloud_api/cloud_home.dart';
+import '../../features/design/design_context_coordinator.dart';
+import 'cloud_auxiliary_domain_lifecycle.dart';
 import 'cloud_home_entry.dart';
 import 'cloud_auth.dart';
 import 'cloud_preferences_screen.dart';
@@ -17,6 +19,8 @@ class CloudEntryGate extends StatefulWidget {
     this.session,
     this.api,
     this.registrationService,
+    this.designContextCoordinator,
+    this.auxiliaryDomainLifecycle,
   });
   final Widget Function(
     CloudHome? selectedHome,
@@ -29,6 +33,10 @@ class CloudEntryGate extends StatefulWidget {
   final CloudApiClient? api;
   final CloudRegistrationService? registrationService;
 
+  /// Receives only account and home IDs verified through this gate's Cloud API.
+  final DesignContextCoordinator? designContextCoordinator;
+  final CloudAuxiliaryDomainLifecycle? auxiliaryDomainLifecycle;
+
   @override
   State<CloudEntryGate> createState() => _CloudEntryGateState();
 }
@@ -36,6 +44,8 @@ class CloudEntryGate extends StatefulWidget {
 class _CloudEntryGateState extends State<CloudEntryGate> {
   late final CloudSession _session;
   late final CloudApiClient _api;
+  late final DesignContextCoordinator _designContextCoordinator;
+  late final CloudAuxiliaryDomainLifecycle _auxiliaryDomainLifecycle;
   CloudLocalAuthClient? _ownedLocalAuth;
   final _localEmail = TextEditingController();
   final _localPassword = TextEditingController();
@@ -47,6 +57,17 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   CloudHome? _selectedHome;
   String? _homeListError;
   bool _homeLoading = false;
+  String? _verifiedAccountId;
+  int _lifecycleEpoch = 0;
+
+  void _invalidateDesignContext() {
+    _lifecycleEpoch++;
+    _verifiedAccountId = null;
+    _selectedHome = null;
+    _homes = const [];
+    _designContextCoordinator.signOut();
+    _auxiliaryDomainLifecycle.clear().ignore();
+  }
 
   @override
   void initState() {
@@ -67,11 +88,18 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
           localAuth: _ownedLocalAuth,
         );
     _api = widget.api ?? CloudApiClient(session: _session);
+    _designContextCoordinator =
+        widget.designContextCoordinator ??
+        DesignContextCoordinator.forCloudApi(_api);
+    _auxiliaryDomainLifecycle =
+        widget.auxiliaryDomainLifecycle ??
+        CloudAuxiliaryDomainLifecycle.forCloudApi(_api);
     _restore();
   }
 
   @override
   void dispose() {
+    _invalidateDesignContext();
     if (widget.api == null) _api.close();
     _ownedLocalAuth?.close();
     _localEmail.dispose();
@@ -97,9 +125,12 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   }
 
   Future<void> _validate() async {
+    final epoch = _lifecycleEpoch;
     try {
       final account = await _api.me();
+      if (!mounted || epoch != _lifecycleEpoch) return;
       if (!account.emailVerified) {
+        _invalidateDesignContext();
         if (mounted) {
           setState(() {
             _authenticated = false;
@@ -109,6 +140,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         return;
       }
       final preferences = await _api.accountPreferences();
+      if (!mounted || epoch != _lifecycleEpoch) return;
+      _verifiedAccountId = account.id;
       if (mounted) {
         setState(() {
           _authenticated = true;
@@ -118,6 +151,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       }
       if (preferences.value.historyAccepted) await _loadHomes();
     } on CloudApiException catch (error) {
+      if (!mounted || epoch != _lifecycleEpoch) return;
+      _invalidateDesignContext();
       if (error.statusCode == 401 || error.statusCode == 403) {
         await _session.signOut();
       }
@@ -130,6 +165,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         });
       }
     } catch (_) {
+      if (!mounted || epoch != _lifecycleEpoch) return;
+      _invalidateDesignContext();
       if (mounted) {
         setState(() {
           _authenticated = false;
@@ -140,9 +177,11 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   }
 
   Future<void> _loadHomes() async {
+    final epoch = _lifecycleEpoch;
     if (mounted) setState(() => _homeLoading = true);
     try {
       final homes = await _api.homes();
+      if (!mounted || epoch != _lifecycleEpoch) return;
       if (mounted) {
         setState(() {
           _homes = homes;
@@ -150,42 +189,106 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         });
       }
     } on CloudApiException catch (error) {
+      if (!mounted || epoch != _lifecycleEpoch) return;
       if (error.statusCode == 401 || error.statusCode == 403) {
+        _invalidateDesignContext();
         await _session.signOut();
         if (mounted) {
           setState(() {
             _authenticated = false;
             _selectedHome = null;
             _homes = const [];
+            _homeLoading = false;
             _message = 'Your cloud sign-in expired. Sign in again.';
           });
         }
         return;
       }
+      if (_selectedHome != null) _invalidateDesignContext();
       if (mounted) {
         setState(() {
           _homes = const [];
+          _selectedHome = null;
+          _homeLoading = false;
           _homeListError = error.statusCode == 404
               ? 'Cloud homes are not available yet.'
               : 'Could not load homes (${error.code}). Refresh to try again.';
         });
       }
     } catch (_) {
+      if (!mounted || epoch != _lifecycleEpoch) return;
+      if (_selectedHome != null) _invalidateDesignContext();
       if (mounted) {
         setState(() {
           _homes = const [];
+          _selectedHome = null;
+          _homeLoading = false;
           _homeListError = 'Could not reach Cloud. Refresh to try again.';
         });
       }
     } finally {
-      if (mounted) setState(() => _homeLoading = false);
+      if (mounted && epoch == _lifecycleEpoch) {
+        setState(() => _homeLoading = false);
+      }
     }
   }
 
-  Future<CloudHome> _createHome(CloudHomeCreate input, String key) =>
-      _api.createHome(input, idempotencyKey: key);
+  Future<CloudHome> _createHome(CloudHomeCreate input, String key) async {
+    final epoch = _lifecycleEpoch;
+    try {
+      final home = await _api.createHome(input, idempotencyKey: key);
+      if (!mounted || epoch != _lifecycleEpoch || _verifiedAccountId == null) {
+        throw StateError('Cloud account changed during home creation');
+      }
+      _homes = [..._homes.where((item) => item.id != home.id), home];
+      return home;
+    } on CloudApiException catch (error) {
+      if (mounted &&
+          epoch == _lifecycleEpoch &&
+          (error.statusCode == 401 || error.statusCode == 403)) {
+        _invalidateDesignContext();
+        await _session.signOut();
+        if (mounted) {
+          setState(() {
+            _authenticated = false;
+            _selectedHome = null;
+            _homes = const [];
+          });
+        }
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _selectHome(CloudHome home) async {
+    final accountId = _verifiedAccountId;
+    if (accountId == null || !_homes.any((item) => item.id == home.id)) return;
+    // The current UI can still select legacy IDs; they never enter the typed
+    // design context, whose household adapters require UUID home IDs.
+    final epoch = ++_lifecycleEpoch;
+    try {
+      _designContextCoordinator.useVerifiedContext(
+        VerifiedDesignContext(
+          accountId: accountId,
+          homeId: home.id,
+          mode: DesignContextMode.household,
+        ),
+      );
+    } on ArgumentError {
+      _designContextCoordinator.signOut();
+    }
+    try {
+      await _auxiliaryDomainLifecycle.selectVerifiedHome(accountId, home.id);
+    } catch (_) {
+      // A device-local draft storage failure must not deny a verified home.
+      _auxiliaryDomainLifecycle.clear().ignore();
+    }
+    if (!mounted || epoch != _lifecycleEpoch) return;
+    setState(() => _selectedHome = home);
+  }
 
   Future<void> _signIn() async {
+    _invalidateDesignContext();
     setState(() {
       _busy = true;
       _message = null;
@@ -222,6 +325,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       return;
     }
     setState(() {
+      _invalidateDesignContext();
       _busy = true;
       _message = null;
     });
@@ -252,6 +356,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   }
 
   Future<void> _signOut() async {
+    _invalidateDesignContext();
     await _session.signOut();
     if (mounted) {
       setState(() {
@@ -294,6 +399,9 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
             _signOut();
           },
           () {
+            _lifecycleEpoch++;
+            _designContextCoordinator.signOut();
+            _auxiliaryDomainLifecycle.clear().ignore();
             setState(() => _selectedHome = null);
             _loadHomes();
           },
@@ -306,7 +414,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         listError: _homeListError,
         onRefresh: _loadHomes,
         onCreate: _createHome,
-        onSelect: (home) => setState(() => _selectedHome = home),
+        onSelect: _selectHome,
         onSignOut: () {
           _signOut();
         },

@@ -68,6 +68,7 @@ class CloudApplianceCreate {
     this.variant,
     this.region,
     this.catalogProductId,
+    this.matchQuality = 'confirmed_exact',
   });
   final String name;
   final String category;
@@ -78,6 +79,7 @@ class CloudApplianceCreate {
   final String? variant;
   final String? region;
   final String? catalogProductId;
+  final String matchQuality;
 
   Map<String, dynamic> toJson() => {
     'name': name,
@@ -89,7 +91,7 @@ class CloudApplianceCreate {
       'fuel': fuel,
       if (variant != null) 'variant': variant,
       if (region != null) 'region': region,
-      'match_quality': 'confirmed_exact',
+      'match_quality': matchQuality,
       if (catalogProductId != null) 'catalog_product_id': catalogProductId,
     },
   };

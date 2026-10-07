@@ -22,14 +22,18 @@ class CloudDashboardDomainSource implements DashboardDomainSource {
 }
 
 class DashboardDomainSnapshot {
-  const DashboardDomainSnapshot(this.dashboard, this.trends);
+  const DashboardDomainSnapshot(this.dashboard, this.trends, {this.isCurrent});
   final CloudHouseholdDashboard dashboard;
   final CloudHouseholdEnergyTrends trends;
+  final bool Function()? isCurrent;
 
   String get homeId => dashboard.homeId;
   String get snapshotId => dashboard.snapshotId;
   String get dataMode => dashboard.dataMode;
   CloudEnergyAllocation get totals => dashboard.totals;
+
+  bool matchesHomeAndSnapshot(String homeId) =>
+      (isCurrent?.call() ?? false) && _sameSnapshot(dashboard, trends, homeId);
 }
 
 /// Invalidates pending reads when navigation, home switch or sign-out occurs.
@@ -62,7 +66,11 @@ class DashboardDomainRepository {
       if (!_sameSnapshot(dashboard, trends, homeId)) {
         throw const FormatException('Dashboard and trends disagree');
       }
-      return DashboardDomainSnapshot(dashboard, trends);
+      return DashboardDomainSnapshot(
+        dashboard,
+        trends,
+        isCurrent: () => !stale(),
+      );
     } catch (_) {
       if (stale()) return null;
       rethrow;
