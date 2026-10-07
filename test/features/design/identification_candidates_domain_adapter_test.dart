@@ -6,6 +6,7 @@ import 'package:energylens_mobile/features/design/identification_candidates_doma
 import 'package:energylens_mobile/features/design/manage_devices_domain_repository.dart';
 import 'package:energylens_mobile/features/design/dashboard_domain_repository.dart';
 import 'package:energylens_mobile/features/design/devices_domain_repository.dart';
+import 'package:energylens_mobile/features/design/devices_runtime_evidence_adapter.dart';
 import 'package:energylens_mobile/features/design/efficiency_domain_repository.dart';
 import 'package:energylens_mobile/features/design/efficiency_away_domain_adapter.dart';
 import 'package:energylens_mobile/features/design/efficiency_habits_domain_adapter.dart';
@@ -178,6 +179,10 @@ class _NoopAdapters implements DesignContextAdapters {
   Future<DashboardDomainSnapshot?> dashboard(String homeId) async => null;
   @override
   Future<DevicesDomainSnapshot?> devices(String homeId) async => null;
+  @override
+  Future<DevicesRuntimeEvidenceSnapshot?> devicesRuntimeEvidence(
+    String homeId,
+  ) async => null;
   @override
   Future<EfficiencyDomainSnapshot?> efficiency(
     String homeId,

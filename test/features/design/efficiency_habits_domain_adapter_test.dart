@@ -4,7 +4,6 @@ import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_estimate.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_household_energy.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_recommendations.dart';
-import 'package:energylens_mobile/features/design/dashboard_domain_repository.dart';
 import 'package:energylens_mobile/features/design/efficiency_domain_repository.dart';
 import 'package:energylens_mobile/features/design/efficiency_habits_domain_adapter.dart';
 import 'package:flutter_test/flutter_test.dart';

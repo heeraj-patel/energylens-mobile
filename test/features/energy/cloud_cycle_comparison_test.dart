@@ -206,7 +206,7 @@ void main() {
               200,
             );
           }
-          if (request.url.path == '/v1/homes/$homeId/attachments/') {
+          if (request.url.path == '/v1/homes/$homeId/attachments') {
             return http.Response(
               jsonEncode({
                 'attachments': [

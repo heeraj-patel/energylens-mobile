@@ -17,8 +17,9 @@ void main() {
   });
 
   tearDown(() async {
-    if (await tempDirectory.exists())
+    if (await tempDirectory.exists()) {
       await tempDirectory.delete(recursive: true);
+    }
   });
 
   CloudAppliance appliance({String id = 'appliance-42'}) => CloudAppliance(
