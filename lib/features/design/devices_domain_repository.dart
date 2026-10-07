@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../../core/cloud_api/cloud_api_client.dart';
 import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_api/cloud_appliance_list.dart';
@@ -179,6 +181,7 @@ class DevicesDomainSnapshot {
 
 class DevicesDomainRepository {
   DevicesDomainRepository(this.source);
+  static const maxConsistencyAttempts = 2;
   static const maxMeteredPages = 5;
   static const maxMeteredRows = 250;
   final DevicesDomainSource source;
@@ -193,33 +196,64 @@ class DevicesDomainRepository {
   /// Call after appliance, attachment, sensor, or metered-evidence mutation.
   void invalidate() => clear();
 
+  /// Rechecks the three inventory routes after metered pagination. Matching
+  /// reads reduce mixed evidence but cannot establish a shared server snapshot.
   Future<DevicesDomainSnapshot?> fetch(String homeId) async {
     if (!_uuid.hasMatch(homeId)) throw ArgumentError.value(homeId, 'homeId');
     _homeId = homeId;
     final generation = ++_generation;
     bool stale() => generation != _generation || _homeId != homeId;
     try {
-      final results = await Future.wait<Object>([
-        source.applianceList(homeId),
-        source.attachments(homeId),
-        source.sensors(homeId),
-      ]);
-      if (stale()) return null;
-      final inventory = results[0] as CloudApplianceList;
-      final metered = await _readMetered(homeId, stale, inventory);
-      if (stale() || metered == null) return null;
-      return _compose(
-        homeId,
-        inventory,
-        results[1] as List<CloudAttachment>,
-        results[2] as List<CloudSensor>,
-        metered,
-        () => !stale(),
-      );
+      for (var attempt = 0; attempt < maxConsistencyAttempts; attempt++) {
+        try {
+          final before = await _readInventory(homeId);
+          if (stale()) return null;
+          final metered = await _readMetered(homeId, stale, before.inventory);
+          if (stale() || metered == null) return null;
+          final after = await _readInventory(homeId);
+          if (stale()) return null;
+          if (before.fingerprint != after.fingerprint) {
+            if (attempt + 1 < maxConsistencyAttempts) continue;
+            throw const FormatException(
+              'Devices inventory changed during read',
+            );
+          }
+          return _compose(
+            homeId,
+            before.inventory,
+            before.attachments,
+            before.sensors,
+            metered,
+            () => !stale(),
+          );
+        } on CloudApiException catch (error) {
+          if (stale()) return null;
+          if (attempt + 1 < maxConsistencyAttempts &&
+              error.statusCode == 409 &&
+              error.code == 'evidence_changed') {
+            continue;
+          }
+          rethrow;
+        }
+      }
+      throw StateError('Devices consistency attempts exhausted');
     } catch (_) {
       if (stale()) return null;
       rethrow;
     }
+  }
+
+  Future<_DeviceInventoryRead> _readInventory(String homeId) async {
+    final results = await Future.wait<Object>([
+      source.applianceList(homeId),
+      source.attachments(homeId),
+      source.sensors(homeId),
+    ]);
+    return _DeviceInventoryRead(
+      results[0] as CloudApplianceList,
+      results[1] as List<CloudAttachment>,
+      results[2] as List<CloudSensor>,
+    );
   }
 
   Future<CloudMeteredSummaryPage?> _readMetered(
@@ -227,86 +261,132 @@ class DevicesDomainRepository {
     bool Function() stale,
     CloudApplianceList inventory,
   ) async {
-    var restarted = false;
+    final rows = <CloudMeteredSummary>[];
+    final cursors = <String>{};
+    final bucketIds = <(String, DateTime, String, String, int, String?)>{};
+    String? cursor;
+    var pages = 0;
     while (true) {
-      final rows = <CloudMeteredSummary>[];
-      final cursors = <String>{};
-      final bucketIds = <(String, DateTime, String, String, int, String?)>{};
-      String? cursor;
-      var pages = 0;
-      try {
-        while (true) {
-          if (stale()) return null;
-          final page = await source.meteredSummaries(homeId, cursor: cursor);
-          if (stale()) return null;
-          if (page.granularity != 'day' || page.summaries.length > 100) {
-            throw const FormatException('Invalid Devices metered page');
-          }
-          if (page.dataMode != inventory.dataMode ||
-              page.fixtureRevision != inventory.fixtureRevision) {
-            throw const FormatException('Devices metered provenance changed');
-          }
-          pages++;
-          for (final row in page.summaries) {
-            final id = (
-              row.kind,
-              row.bucketStart,
-              row.sensorId,
-              row.hubId,
-              row.ownershipEpoch,
-              row.attachmentId,
-            );
-            if (!bucketIds.add(id)) {
-              throw const FormatException('Duplicate Devices metered bucket');
-            }
-            if (rows.length == maxMeteredRows) {
-              return CloudMeteredSummaryPage(
-                granularity: 'day',
-                summaries: rows,
-                nextCursor: page.nextCursor ?? cursor ?? 'bounded',
-                dataMode: page.dataMode,
-                fixtureRevision: page.fixtureRevision,
-              );
-            }
-            rows.add(row);
-          }
-          final next = page.nextCursor;
-          if (next == null) {
-            return CloudMeteredSummaryPage(
-              granularity: 'day',
-              summaries: rows,
-              nextCursor: null,
-              dataMode: page.dataMode,
-              fixtureRevision: page.fixtureRevision,
-            );
-          }
-          if (next.isEmpty || !cursors.add(next)) {
-            throw const FormatException('Devices metered cursor loop');
-          }
-          if (pages == maxMeteredPages || rows.length == maxMeteredRows) {
-            return CloudMeteredSummaryPage(
-              granularity: 'day',
-              summaries: rows,
-              nextCursor: next,
-              dataMode: page.dataMode,
-              fixtureRevision: page.fixtureRevision,
-            );
-          }
-          cursor = next;
-        }
-      } on CloudApiException catch (error) {
-        if (stale()) return null;
-        if (cursor != null &&
-            !restarted &&
-            error.statusCode == 409 &&
-            error.code == 'evidence_changed') {
-          restarted = true;
-          continue;
-        }
-        rethrow;
+      if (stale()) return null;
+      final page = await source.meteredSummaries(homeId, cursor: cursor);
+      if (stale()) return null;
+      if (page.granularity != 'day' || page.summaries.length > 100) {
+        throw const FormatException('Invalid Devices metered page');
       }
+      if (page.dataMode != inventory.dataMode ||
+          page.fixtureRevision != inventory.fixtureRevision) {
+        throw const FormatException('Devices metered provenance changed');
+      }
+      pages++;
+      for (final row in page.summaries) {
+        final id = (
+          row.kind,
+          row.bucketStart,
+          row.sensorId,
+          row.hubId,
+          row.ownershipEpoch,
+          row.attachmentId,
+        );
+        if (!bucketIds.add(id)) {
+          throw const FormatException('Duplicate Devices metered bucket');
+        }
+        if (rows.length == maxMeteredRows) {
+          return CloudMeteredSummaryPage(
+            granularity: 'day',
+            summaries: rows,
+            nextCursor: page.nextCursor ?? cursor ?? 'bounded',
+            dataMode: page.dataMode,
+            fixtureRevision: page.fixtureRevision,
+          );
+        }
+        rows.add(row);
+      }
+      final next = page.nextCursor;
+      if (next == null) {
+        return CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: rows,
+          nextCursor: null,
+          dataMode: page.dataMode,
+          fixtureRevision: page.fixtureRevision,
+        );
+      }
+      if (next.isEmpty || !cursors.add(next)) {
+        throw const FormatException('Devices metered cursor loop');
+      }
+      if (pages == maxMeteredPages || rows.length == maxMeteredRows) {
+        return CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: rows,
+          nextCursor: next,
+          dataMode: page.dataMode,
+          fixtureRevision: page.fixtureRevision,
+        );
+      }
+      cursor = next;
     }
   }
+}
+
+class _DeviceInventoryRead {
+  _DeviceInventoryRead(this.inventory, this.attachments, this.sensors);
+
+  final CloudApplianceList inventory;
+  final List<CloudAttachment> attachments;
+  final List<CloudSensor> sensors;
+
+  String get fingerprint => jsonEncode({
+    'mode': inventory.dataMode.name,
+    'fixture_revision': inventory.fixtureRevision,
+    'appliances':
+        (inventory.appliances.toList()..sort((a, b) => a.id.compareTo(b.id)))
+            .map(
+              (a) => [
+                a.id,
+                a.homeId,
+                a.name,
+                a.category,
+                a.room,
+                a.brand,
+                a.fullModel,
+                a.fuel,
+                a.variant,
+                a.region,
+                a.catalogProductId,
+                a.matchQuality,
+              ],
+            )
+            .toList(),
+    'attachments': (attachments.toList()..sort((a, b) => a.id.compareTo(b.id)))
+        .map(
+          (a) => [
+            a.id,
+            a.homeId,
+            a.applianceId,
+            a.startedAt.toUtc().toIso8601String(),
+            a.endedAt?.toUtc().toIso8601String(),
+            a.sensorId,
+            a.identityRevision,
+            a.version,
+          ],
+        )
+        .toList(),
+    'sensors': (sensors.toList()..sort((a, b) => a.id.compareTo(b.id)))
+        .map(
+          (s) => [
+            s.id,
+            s.homeId,
+            s.kind,
+            [...s.capabilities]..sort(),
+            s.hubId,
+            s.ownershipEpoch,
+            s.localSensorId,
+            s.version,
+            s.parentSensorId,
+          ],
+        )
+        .toList(),
+  });
 }
 
 final _uuid = RegExp(

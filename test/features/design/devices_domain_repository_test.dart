@@ -99,7 +99,7 @@ class FakeSource implements DevicesDomainSource {
   final Future<List<CloudSensor>> Function(String) sensorRead;
   final Future<CloudMeteredSummaryPage> Function(String, String?) summaryRead;
   final CloudApplianceDataMode dataMode;
-  final String? fixtureRevision;
+  String? fixtureRevision;
   int calls = 0;
 
   @override
@@ -229,6 +229,197 @@ void main() {
     expect(result.hasMoreMeteredPages, isFalse);
   });
 
+  test('concurrent evidence conflict restarts every Devices source', () async {
+    final oldCursorEntered = Completer<void>();
+    final oldCursor = Completer<CloudMeteredSummaryPage>();
+    var corrected = false;
+    var applianceReads = 0;
+    var attachmentReads = 0;
+    var sensorReads = 0;
+    final source = FakeSource(
+      applianceRead: (home) async {
+        applianceReads++;
+        return [namedAppliance(home, applianceId, corrected ? 'New' : 'Old')];
+      },
+      attachmentRead: (home) async {
+        attachmentReads++;
+        return [attachment(home)];
+      },
+      sensorRead: (home) async {
+        sensorReads++;
+        return [sensor(home)];
+      },
+      summaryRead: (_, cursor) {
+        if (cursor == 'old') {
+          oldCursorEntered.complete();
+          return oldCursor.future;
+        }
+        return Future.value(
+          CloudMeteredSummaryPage(
+            granularity: 'day',
+            summaries: [measured(energyWh: corrected ? 20 : 10)],
+            nextCursor: corrected ? null : 'old',
+          ),
+        );
+      },
+    );
+    final pending = DevicesDomainRepository(source).fetch(homeA);
+    await oldCursorEntered.future;
+    corrected = true;
+    oldCursor.completeError(const CloudApiException(409, 'evidence_changed'));
+    final result = (await pending)!;
+    expect(result.items.single.appliance.name, 'New');
+    expect(result.items.single.latestMeasuredBucketWh, 20);
+    expect(applianceReads, 3);
+    expect(attachmentReads, 3);
+    expect(sensorReads, 3);
+  });
+
+  test(
+    'post-pagination revalidation retries changed inventory and versions',
+    () async {
+      final pageEntered = Completer<void>();
+      final oldPage = Completer<CloudMeteredSummaryPage>();
+      var corrected = false;
+      var applianceReads = 0;
+      var attachmentReads = 0;
+      var sensorReads = 0;
+      final source = FakeSource(
+        applianceRead: (home) async {
+          applianceReads++;
+          return [namedAppliance(home, applianceId, corrected ? 'New' : 'Old')];
+        },
+        attachmentRead: (home) async {
+          attachmentReads++;
+          return [
+            CloudAttachment(
+              id: attachmentId,
+              homeId: home,
+              applianceId: applianceId,
+              startedAt: day.subtract(const Duration(days: 1)),
+              sensorId: sensorId,
+              version: corrected ? 2 : 1,
+            ),
+          ];
+        },
+        sensorRead: (home) async {
+          sensorReads++;
+          return [
+            CloudSensor(
+              id: sensorId,
+              homeId: home,
+              kind: 'plug',
+              capabilities: const ['power'],
+              hubId: 'hub',
+              ownershipEpoch: 2,
+              localSensorId: 'local',
+              version: corrected ? 2 : 1,
+            ),
+          ];
+        },
+        summaryRead: (_, _) {
+          if (!corrected) {
+            pageEntered.complete();
+            return oldPage.future;
+          }
+          return Future.value(
+            CloudMeteredSummaryPage(
+              granularity: 'day',
+              summaries: [measured(energyWh: 20)],
+              nextCursor: null,
+            ),
+          );
+        },
+      );
+      final pending = DevicesDomainRepository(source).fetch(homeA);
+      await pageEntered.future;
+      corrected = true;
+      oldPage.complete(
+        CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: [measured(energyWh: 10)],
+          nextCursor: null,
+        ),
+      );
+      final result = (await pending)!;
+      expect(result.items.single.appliance.name, 'New');
+      expect(result.items.single.latestMeasuredBucketWh, 20);
+      expect(applianceReads, 4);
+      expect(attachmentReads, 4);
+      expect(sensorReads, 4);
+    },
+  );
+
+  test(
+    'continuously changing inventory is withheld after bounded retry',
+    () async {
+      var reads = 0;
+      final source = FakeSource(
+        applianceRead: (home) async => [
+          namedAppliance(home, applianceId, 'Revision ${++reads}'),
+        ],
+        attachmentRead: (_) async => [],
+        sensorRead: (_) async => [],
+        summaryRead: (_, _) async => const CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: [],
+          nextCursor: null,
+        ),
+      );
+      await expectLater(
+        DevicesDomainRepository(source).fetch(homeA),
+        throwsFormatException,
+      );
+      expect(reads, 4);
+    },
+  );
+
+  test('changed sample provenance after metering retries whole read', () async {
+    final pageEntered = Completer<void>();
+    final oldPage = Completer<CloudMeteredSummaryPage>();
+    var summaryReads = 0;
+    late final FakeSource source;
+    source = FakeSource(
+      dataMode: CloudApplianceDataMode.sample,
+      fixtureRevision: 'fixture-v1',
+      applianceRead: (home) async => [appliance(home)],
+      attachmentRead: (_) async => [],
+      sensorRead: (_) async => [],
+      summaryRead: (_, _) {
+        summaryReads++;
+        if (summaryReads == 1) {
+          pageEntered.complete();
+          return oldPage.future;
+        }
+        return Future.value(
+          CloudMeteredSummaryPage(
+            granularity: 'day',
+            summaries: const [],
+            nextCursor: null,
+            dataMode: CloudApplianceDataMode.sample,
+            fixtureRevision: source.fixtureRevision,
+          ),
+        );
+      },
+    );
+    final pending = DevicesDomainRepository(source).fetch(homeA);
+    await pageEntered.future;
+    source.fixtureRevision = 'fixture-v2';
+    oldPage.complete(
+      const CloudMeteredSummaryPage(
+        granularity: 'day',
+        summaries: [],
+        nextCursor: null,
+        dataMode: CloudApplianceDataMode.sample,
+        fixtureRevision: 'fixture-v1',
+      ),
+    );
+    final result = (await pending)!;
+    expect(result.fixtureRevision, 'fixture-v2');
+    expect(summaryReads, 2);
+    expect(source.calls, 14);
+  });
+
   test('repeated evidence conflict and other errors propagate', () async {
     for (final error in [
       const CloudApiException(409, 'evidence_changed'),
@@ -334,7 +525,7 @@ void main() {
       fixtureRevision: 'synthetic-household-v1',
     );
     final result = (await DevicesDomainRepository(source).fetch(homeA))!;
-    expect(source.calls, 4);
+    expect(source.calls, 7);
     expect(result.sampleMeteredSummaries.single.status, 'no_intervals');
     expect(result.sampleMeteredSummaries.single.energyWh, isNull);
     expect(result.items.single.measuredBuckets, isEmpty);
