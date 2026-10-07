@@ -106,6 +106,36 @@ class DurableOnboardingDrafts {
   Future<PendingOnboardingDraft> stage(OnboardingDraft draft) =>
       _ordered(() => _stage(draft));
 
+  /// Commits only the draft and retry key already stored for this scope.
+  /// A caller must explicitly approve this mutation after reviewing the draft.
+  Future<CloudAppliance?> commit(
+    PendingOnboardingDraft pending, {
+    required bool explicitlyApproved,
+  }) => _ordered(() async {
+    if (!explicitlyApproved) {
+      throw StateError('Onboarding draft requires explicit approval');
+    }
+    _requireScope();
+    final raw = await storage.read();
+    final current = raw == null ? null : _parse(raw);
+    if (current == null ||
+        current.userId != _userId ||
+        current.homeId != _homeId ||
+        current.key != pending.operationKey ||
+        jsonEncode(current.draft.validated().toJson()) !=
+            jsonEncode(pending.draft.validated().toJson())) {
+      throw StateError('Onboarding draft changed before commit');
+    }
+    final generation = _scopeGeneration;
+    final result = await repository.save(
+      current.draft,
+      operationKey: current.key,
+    );
+    if (generation != _scopeGeneration) return null;
+    if (result != null) await storage.clear();
+    return result;
+  });
+
   Future<CloudAppliance?> save(OnboardingDraft draft) async {
     final generation = _scopeGeneration;
     final pending = await _ordered(() => _stage(draft, generation: generation));

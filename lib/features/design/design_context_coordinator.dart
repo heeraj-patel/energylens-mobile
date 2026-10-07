@@ -2,11 +2,18 @@ import '../../core/cloud_api/cloud_appliance_list.dart';
 import '../../core/cloud_api/cloud_api_client.dart';
 import 'dashboard_domain_repository.dart';
 import 'devices_domain_repository.dart';
+import 'efficiency_away_domain_adapter.dart';
 import 'efficiency_domain_repository.dart';
+import 'efficiency_habits_domain_adapter.dart';
+import 'efficiency_peak_rates_adapter.dart';
 import 'knowledge_domain_repository.dart';
 import 'manage_devices_domain_repository.dart';
 import 'settings_domain_repository.dart';
 import 'tips_domain_repository.dart';
+import '../discovery/discovery_credentials.dart';
+import 'identification_candidates_domain_adapter.dart';
+import 'devices_runtime_evidence_adapter.dart';
+import 'devices_consistency_snapshot.dart';
 
 /// Supplied only after the native auth layer verifies account ownership of the
 /// selected home. This value contains no bearer token or WebView state.
@@ -35,10 +42,14 @@ abstract interface class DesignContextAdapters {
   void clear();
   Future<DashboardDomainSnapshot?> dashboard(String homeId);
   Future<DevicesDomainSnapshot?> devices(String homeId);
+  Future<DevicesRuntimeEvidenceSnapshot?> devicesRuntimeEvidence(String homeId);
   Future<EfficiencyDomainSnapshot?> efficiency(
     String homeId,
     EfficiencyPage page,
   );
+  Future<EfficiencyAwayDomainSnapshot?> efficiencyAway(String homeId);
+  Future<EfficiencyHabitsSnapshot?> efficiencyHabits(String homeId);
+  Future<EfficiencyPeakRatesSnapshot?> efficiencyPeakRates(String homeId);
   Future<TipsDomainSnapshot?> tips(String homeId, TipsPage page);
   Future<SettingsDomainSnapshot?> settings(String homeId);
   Future<ManageDevicesDomainSnapshot?> manageDevices(String homeId);
@@ -53,7 +64,11 @@ class RepositoryDesignContextAdapters implements DesignContextAdapters {
   const RepositoryDesignContextAdapters({
     required this.dashboardRepository,
     required this.devicesRepository,
+    required this.devicesRuntimeEvidenceAdapter,
     required this.efficiencyRepository,
+    required this.efficiencyAwayAdapter,
+    required this.efficiencyHabitsAdapter,
+    required this.efficiencyPeakRatesAdapter,
     required this.tipsRepository,
     required this.settingsRepository,
     required this.manageDevicesRepository,
@@ -62,7 +77,11 @@ class RepositoryDesignContextAdapters implements DesignContextAdapters {
 
   final DashboardDomainRepository dashboardRepository;
   final DevicesDomainRepository devicesRepository;
+  final DevicesRuntimeEvidenceAdapter devicesRuntimeEvidenceAdapter;
   final EfficiencyDomainRepository efficiencyRepository;
+  final EfficiencyAwayDomainAdapter efficiencyAwayAdapter;
+  final EfficiencyHabitsDomainAdapter efficiencyHabitsAdapter;
+  final EfficiencyPeakRatesAdapter efficiencyPeakRatesAdapter;
   final TipsDomainRepository tipsRepository;
   final SettingsDomainRepository settingsRepository;
   final ManageDevicesDomainRepository manageDevicesRepository;
@@ -72,6 +91,7 @@ class RepositoryDesignContextAdapters implements DesignContextAdapters {
   void clear() {
     dashboardRepository.clear();
     devicesRepository.clear();
+    devicesRuntimeEvidenceAdapter.invalidate();
     efficiencyRepository.clear();
     tipsRepository.clear();
     settingsRepository.clear();
@@ -86,10 +106,23 @@ class RepositoryDesignContextAdapters implements DesignContextAdapters {
   Future<DevicesDomainSnapshot?> devices(String homeId) =>
       devicesRepository.fetch(homeId);
   @override
+  Future<DevicesRuntimeEvidenceSnapshot?> devicesRuntimeEvidence(
+    String homeId,
+  ) => devicesRuntimeEvidenceAdapter.fetch(homeId);
+  @override
   Future<EfficiencyDomainSnapshot?> efficiency(
     String homeId,
     EfficiencyPage page,
   ) => efficiencyRepository.fetch(homeId, page);
+  @override
+  Future<EfficiencyAwayDomainSnapshot?> efficiencyAway(String homeId) =>
+      efficiencyAwayAdapter.fetch(homeId);
+  @override
+  Future<EfficiencyHabitsSnapshot?> efficiencyHabits(String homeId) =>
+      efficiencyHabitsAdapter.fetch(homeId);
+  @override
+  Future<EfficiencyPeakRatesSnapshot?> efficiencyPeakRates(String homeId) =>
+      efficiencyPeakRatesAdapter.fetch(homeId);
   @override
   Future<TipsDomainSnapshot?> tips(String homeId, TipsPage page) =>
       tipsRepository.fetch(homeId, page);
@@ -128,34 +161,56 @@ class DesignContextRead {
 /// sign-out invalidates outstanding reads, including errors that arrive late.
 /// A null result means the read was invalidated or the adapter had no result.
 class DesignContextCoordinator {
-  DesignContextCoordinator(this.adapters);
+  DesignContextCoordinator(this.adapters, {this.identificationCandidates});
+
+  final IdentificationCandidatesDomainAdapter? identificationCandidates;
 
   /// Uses the same authenticated native client as CloudEntryGate. Nothing in
   /// this assembly is exposed to the WebView or visible shell.
-  factory DesignContextCoordinator.forCloudApi(CloudApiClient api) =>
-      DesignContextCoordinator(
-        RepositoryDesignContextAdapters(
-          dashboardRepository: DashboardDomainRepository(
-            CloudDashboardDomainSource(api),
-          ),
-          devicesRepository: DevicesDomainRepository(
-            CloudDevicesDomainSource(api),
-          ),
-          efficiencyRepository: EfficiencyDomainRepository(
-            CloudEfficiencyDomainSource(api),
-          ),
-          tipsRepository: TipsDomainRepository(CloudTipsDomainSource(api)),
-          settingsRepository: SettingsDomainRepository(
-            CloudSettingsDomainSource(api),
-          ),
-          manageDevicesRepository: ManageDevicesDomainRepository(
-            CloudManageDevicesDomainSource(api),
-          ),
-          knowledgeRepository: KnowledgeDomainRepository(
-            CloudKnowledgeDomainSource(api),
-          ),
+  factory DesignContextCoordinator.forCloudApi(
+    CloudApiClient api, {
+    DiscoveryCredentials credentials = const DiscoveryCredentials(),
+  }) {
+    final efficiencyRepository = EfficiencyDomainRepository(
+      CloudEfficiencyDomainSource(api),
+    );
+    return DesignContextCoordinator(
+      RepositoryDesignContextAdapters(
+        dashboardRepository: DashboardDomainRepository(
+          CloudDashboardDomainSource(api),
         ),
-      );
+        devicesRepository: DevicesDomainRepository(
+          CloudDevicesDomainSource(api),
+        ),
+        devicesRuntimeEvidenceAdapter: DevicesRuntimeEvidenceAdapter(
+          CloudDevicesRuntimeEvidenceSource(api),
+        ),
+        efficiencyRepository: efficiencyRepository,
+        efficiencyAwayAdapter: EfficiencyAwayDomainAdapter(
+          efficiencyRepository,
+        ),
+        efficiencyHabitsAdapter: EfficiencyHabitsDomainAdapter(
+          efficiencyRepository,
+        ),
+        efficiencyPeakRatesAdapter: EfficiencyPeakRatesAdapter(
+          CloudEfficiencyPeakRatesSource(api),
+        ),
+        tipsRepository: TipsDomainRepository(CloudTipsDomainSource(api)),
+        settingsRepository: SettingsDomainRepository(
+          CloudSettingsDomainSource(api),
+        ),
+        manageDevicesRepository: ManageDevicesDomainRepository(
+          CloudManageDevicesDomainSource(api),
+        ),
+        knowledgeRepository: KnowledgeDomainRepository(
+          CloudKnowledgeDomainSource(api),
+        ),
+      ),
+      identificationCandidates: IdentificationCandidatesDomainAdapter(
+        DiscoveryIdentificationCandidatesSource(credentials: credentials),
+      ),
+    );
+  }
 
   final DesignContextAdapters adapters;
   VerifiedDesignContext? _context;
@@ -172,6 +227,7 @@ class DesignContextCoordinator {
     }
     _generation++;
     adapters.clear();
+    identificationCandidates?.useVerifiedContext(context);
     _context = context;
   }
 
@@ -179,6 +235,7 @@ class DesignContextCoordinator {
     _generation++;
     _context = null;
     adapters.clear();
+    identificationCandidates?.clear();
   }
 
   Future<DesignContextRead?> read(String page) async {
@@ -201,17 +258,10 @@ class DesignContextCoordinator {
           context.homeId,
           EfficiencyPage.overview,
         ),
-        'efficiency_away' => await adapters.efficiency(
+        'efficiency_away' => await adapters.efficiencyAway(context.homeId),
+        'efficiency_habits' => await adapters.efficiencyHabits(context.homeId),
+        'efficiency_peak_rates' => await adapters.efficiencyPeakRates(
           context.homeId,
-          EfficiencyPage.away,
-        ),
-        'efficiency_habits' => await adapters.efficiency(
-          context.homeId,
-          EfficiencyPage.habits,
-        ),
-        'efficiency_peak_rates' => await adapters.efficiency(
-          context.homeId,
-          EfficiencyPage.peak,
         ),
         'perks_tips' => await adapters.tips(context.homeId, TipsPage.perksTips),
         'tips_efficiency' => await adapters.tips(
@@ -245,6 +295,23 @@ class DesignContextCoordinator {
     }
   }
 
+  Future<IdentificationCandidatesSnapshot?> lookupIdentificationCandidates({
+    required String targetKind,
+    String? ocrText,
+    String? upc,
+  }) async {
+    if (_context == null) throw StateError('No verified design context');
+    final candidates = identificationCandidates;
+    if (candidates == null) {
+      throw StateError('Identification lookup is not configured');
+    }
+    return candidates.lookup(
+      targetKind: targetKind,
+      ocrText: ocrText,
+      upc: upc,
+    );
+  }
+
   Future<DesignContextRead?> answerKnowledge(
     String questionId, {
     String? applianceId,
@@ -275,6 +342,112 @@ class DesignContextCoordinator {
       rethrow;
     }
   }
+
+  /// Runtime is an independent optional read. It is never folded into the
+  /// device inventory snapshot or displayed by the static shell.
+  Future<DesignContextRead?> readDevicesRuntimeEvidence() async {
+    final context = _context;
+    if (context == null) throw StateError('No verified design context');
+    if (context.mode != DesignContextMode.household) {
+      throw StateError('Runtime evidence is unavailable in sample context');
+    }
+    final generation = _generation;
+    bool stale() => generation != _generation || !identical(context, _context);
+    try {
+      final value = await adapters.devicesRuntimeEvidence(context.homeId);
+      if (stale() || value == null) return null;
+      if (value.homeId.toLowerCase() != context.homeId.toLowerCase() ||
+          value.isSample) {
+        throw const FormatException('Runtime evidence context changed');
+      }
+      return DesignContextRead(
+        accountId: context.accountId,
+        homeId: context.homeId,
+        mode: context.mode,
+        page: 'devices_runtime_evidence',
+        value: value,
+      );
+    } catch (_) {
+      if (stale()) return null;
+      rethrow;
+    }
+  }
+
+  /// Keeps inventory and Kasa runtime separate while accepting both only for
+  /// one verified household context generation. Their source reads have no
+  /// common revision token, so callers must not infer an atomic measurement.
+  Future<DesignContextRead?> readDevicesConsistency() async {
+    final context = _context;
+    if (context == null) throw StateError('No verified design context');
+    if (context.mode != DesignContextMode.household) {
+      throw StateError('Devices consistency is unavailable in sample context');
+    }
+    final generation = _generation;
+    bool stale() => generation != _generation || !identical(context, _context);
+    try {
+      final results = await Future.wait<Object?>([
+        adapters.devices(context.homeId),
+        adapters.devicesRuntimeEvidence(context.homeId),
+      ]);
+      if (stale() || results.any((result) => result == null)) return null;
+      final inventory = results[0] as DevicesDomainSnapshot;
+      final runtime = results[1] as DevicesRuntimeEvidenceSnapshot;
+      if (inventory.isCurrent == null ||
+          !inventory.isCurrent!() ||
+          !runtime.isCurrent()) {
+        return null;
+      }
+      _validateValue(context, inventory);
+      if (runtime.homeId.toLowerCase() != context.homeId.toLowerCase() ||
+          runtime.isSample ||
+          inventory.items.length > DevicesDomainSnapshot.maxLocalInventory ||
+          runtime.evidence.length > DevicesRuntimeEvidenceAdapter.maxRows) {
+        throw const FormatException(
+          'Devices consistency context or bound changed',
+        );
+      }
+      final active = <String, String>{};
+      final applianceIds = <String>{};
+      for (final item in inventory.items) {
+        if (!applianceIds.add(item.appliance.id) ||
+            item.appliance.homeId.toLowerCase() !=
+                context.homeId.toLowerCase()) {
+          throw const FormatException('Ambiguous Devices inventory');
+        }
+        for (final attachmentId in item.activeAttachmentIds) {
+          if (active.containsKey(attachmentId)) {
+            throw const FormatException('Ambiguous Devices attachment');
+          }
+          active[attachmentId] = item.appliance.id;
+        }
+      }
+      final snapshotIds = <String>{};
+      for (final evidence in runtime.evidence) {
+        if (!snapshotIds.add(evidence.snapshotId) ||
+            active[evidence.attachmentId] != evidence.applianceId) {
+          throw const FormatException('Ambiguous Devices runtime evidence');
+        }
+      }
+      if (stale() || !inventory.isCurrent!() || !runtime.isCurrent()) {
+        return null;
+      }
+      return DesignContextRead(
+        accountId: context.accountId,
+        homeId: context.homeId,
+        mode: context.mode,
+        page: 'devices_consistency',
+        value: DevicesConsistencySnapshot(
+          inventory,
+          runtime,
+          isCurrent: () =>
+              !stale() && inventory.isCurrent!() && runtime.isCurrent(),
+        ),
+      );
+    } catch (_) {
+      if (stale()) return null;
+      rethrow;
+    }
+  }
 }
 
 void _validateValue(VerifiedDesignContext context, Object value) {
@@ -290,6 +463,19 @@ void _validateValue(VerifiedDesignContext context, Object value) {
     mode = value.energy.dataMode == 'sample'
         ? DesignContextMode.sample
         : DesignContextMode.household;
+  } else if (value is EfficiencyAwayDomainSnapshot) {
+    homeId = value.homeId;
+    mode = value.dataMode == 'sample'
+        ? DesignContextMode.sample
+        : DesignContextMode.household;
+  } else if (value is EfficiencyHabitsSnapshot) {
+    homeId = value.homeId;
+    mode = value.energy.dataMode == 'sample'
+        ? DesignContextMode.sample
+        : DesignContextMode.household;
+  } else if (value is EfficiencyPeakRatesSnapshot) {
+    homeId = value.homeId;
+    mode = DesignContextMode.household;
   } else if (value is DevicesDomainSnapshot) {
     homeId = value.homeId;
     mode = value.dataMode == CloudApplianceDataMode.sample
@@ -338,7 +524,6 @@ const _sampleModeReadablePages = <String>{
   'efficiency',
   'efficiency_away',
   'efficiency_habits',
-  'efficiency_peak_rates',
   'settings_manage_devices',
   'settings_manual_device_entry',
   'settings_photo_scan_onboarding',

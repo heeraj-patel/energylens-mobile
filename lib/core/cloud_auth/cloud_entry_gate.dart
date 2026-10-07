@@ -16,6 +16,7 @@ class CloudEntryGate extends StatefulWidget {
   const CloudEntryGate({
     super.key,
     required this.homeBuilder,
+    this.verifiedHomeBuilder,
     this.session,
     this.api,
     this.registrationService,
@@ -29,6 +30,16 @@ class CloudEntryGate extends StatefulWidget {
     CloudApiClient cloudApi,
   )
   homeBuilder;
+
+  /// Used for a selected home so nonvisual reads share the gate's verified lifecycle.
+  final Widget Function(
+    CloudHome selectedHome,
+    VoidCallback signOut,
+    VoidCallback changeHome,
+    CloudApiClient cloudApi,
+    CloudAuxiliaryDomainLifecycle lifecycle,
+  )?
+  verifiedHomeBuilder;
   final CloudSession? session;
   final CloudApiClient? api;
   final CloudRegistrationService? registrationService;
@@ -393,20 +404,26 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       }
       final selected = _selectedHome;
       if (selected != null) {
-        return widget.homeBuilder(
-          selected,
-          () {
-            _signOut();
-          },
-          () {
-            _lifecycleEpoch++;
-            _designContextCoordinator.signOut();
-            _auxiliaryDomainLifecycle.clear().ignore();
-            setState(() => _selectedHome = null);
-            _loadHomes();
-          },
-          _api,
-        );
+        void signOut() {
+          _signOut();
+        }
+
+        void changeHome() {
+          _lifecycleEpoch++;
+          _designContextCoordinator.signOut();
+          _auxiliaryDomainLifecycle.clear().ignore();
+          setState(() => _selectedHome = null);
+          _loadHomes();
+        }
+
+        return widget.verifiedHomeBuilder?.call(
+              selected,
+              signOut,
+              changeHome,
+              _api,
+              _auxiliaryDomainLifecycle,
+            ) ??
+            widget.homeBuilder(selected, signOut, changeHome, _api);
       }
       return CloudHomeEntry(
         homes: _homes,

@@ -18,6 +18,7 @@ CloudReportPreview preview({
   bool stale = false,
   DateTime? expires,
   String id = previewId,
+  CloudReportDeliveryStatus? latestDelivery,
 }) => CloudReportPreview(
   id,
   hash ?? hashA,
@@ -27,6 +28,7 @@ CloudReportPreview preview({
   stale,
   const [],
   const [],
+  latestDelivery: latestDelivery,
 );
 
 class Source implements ReportPreviewDomainSource {
@@ -100,6 +102,32 @@ void main() {
       );
       expect(expired!.status, ReportPreviewStatus.expired);
       expect(expired.requiresNewApproval, isTrue);
+    },
+  );
+
+  test(
+    'readback carries latest delivery without changing approval state',
+    () async {
+      final source = Source();
+      final delivery = CloudReportDeliveryStatus(
+        id: '66666666-6666-4666-8666-666666666666',
+        state: 'sent',
+        createdAt: now.subtract(const Duration(minutes: 2)),
+        sentAt: now.subtract(const Duration(minutes: 1)),
+      );
+      source.fetchResult = (_, id, _) async =>
+          preview(id: id, latestDelivery: delivery, hash: hashA);
+
+      final result = await repository(source).fetch(
+        homeId: homeA,
+        previewId: previewId,
+        ownedApplianceIds: {applianceId},
+      );
+
+      expect(result!.preview.latestDelivery, same(delivery));
+      expect(result.snapshotSha256, hashA);
+      expect(result.status, ReportPreviewStatus.current);
+      expect(result.requiresNewApproval, isFalse);
     },
   );
 

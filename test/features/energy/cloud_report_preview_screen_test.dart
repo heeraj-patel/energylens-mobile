@@ -1,9 +1,15 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
+import 'package:energylens_mobile/core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
+import 'package:energylens_mobile/features/design/report_preview_domain_repository.dart';
+import 'package:energylens_mobile/features/design/report_delivery_domain_adapter.dart';
+import 'package:energylens_mobile/features/identify/onboarding_draft_store.dart';
+import 'package:energylens_mobile/features/identify/onboarding_persistence_repository.dart';
 import 'package:energylens_mobile/features/energy/cloud_report_preview_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,6 +26,33 @@ const home = CloudHome(
 const applianceId = '22222222-2222-4222-8222-222222222222';
 const previewId = '55555555-5555-4555-8555-555555555555';
 const deliveryId = '66666666-6666-4666-8666-666666666666';
+const accountA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const accountB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+class _DraftStorage implements OnboardingDraftStorage {
+  @override
+  Future<String?> read() async => null;
+  @override
+  Future<void> write(String data) async {}
+  @override
+  Future<void> clear() async {}
+}
+
+class _DraftSource implements OnboardingPersistenceSource {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+CloudAuxiliaryDomainLifecycle _lifecycle(
+  CloudApiClient api,
+) => CloudAuxiliaryDomainLifecycle(
+  drafts: DurableOnboardingDrafts(
+    _DraftStorage(),
+    OnboardingPersistenceRepository(_DraftSource()),
+  ),
+  reports: ReportPreviewDomainRepository(CloudReportPreviewDomainSource(api)),
+  deliveries: ReportDeliveryDomainAdapter(CloudReportDeliveryDomainSource(api)),
+);
 
 class _Store implements CloudTokenStore {
   @override
@@ -214,4 +247,82 @@ void main() {
     expect(find.byKey(const Key('requestReportDelivery')), findsNothing);
     api.close();
   });
+
+  testWidgets(
+    'late recipient-free preview read is hidden after account switch',
+    (tester) async {
+      final pendingRead = Completer<http.Response>();
+      var reads = 0;
+      final api = _api(
+        MockClient((request) async {
+          if (request.url.path.endsWith('/appliances')) {
+            return http.Response(
+              jsonEncode({
+                'appliances': [
+                  {
+                    'id': applianceId,
+                    'home_id': home.id,
+                    'name': 'Washer',
+                    'category': 'washer',
+                    'identity': {
+                      'brand': 'LG',
+                      'full_model': 'WM3070HWA',
+                      'fuel': 'electricity',
+                      'match_quality': 'confirmed_exact',
+                    },
+                  },
+                ],
+              }),
+              200,
+            );
+          }
+          if (request.url.path.endsWith('/reports/preview')) {
+            return http.Response(jsonEncode(_preview()), 201);
+          }
+          if (request.url.path.endsWith('/reports/previews/$previewId')) {
+            reads++;
+            return pendingRead.future;
+          }
+          fail('Unexpected request: ${request.url.path}');
+        }),
+      );
+      final lifecycle = _lifecycle(api);
+      await lifecycle.selectVerifiedHome(accountA, home.id);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CloudReportPreviewScreen(
+            api: api,
+            home: home,
+            lifecycle: lifecycle,
+            accountId: accountA,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('reportAppliance-$applianceId')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create private preview'));
+      await tester.pump();
+      expect(reads, 1);
+      await lifecycle.selectVerifiedHome(accountB, home.id);
+      pendingRead.complete(
+        http.Response(
+          jsonEncode({
+            ..._preview(),
+            'latest_delivery': {
+              'id': deliveryId,
+              'state': 'pending',
+              'created_at': DateTime.now().toUtc().toIso8601String(),
+              'sent_at': null,
+            },
+          }),
+          200,
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(const Key('reportStatus')), findsNothing);
+      expect(lifecycle.isVerifiedScope(accountA, home.id), isFalse);
+      api.close();
+    },
+  );
 }

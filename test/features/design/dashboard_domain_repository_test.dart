@@ -114,6 +114,66 @@ void main() {
     expect(snapshot?.totals.evidenceBasis, 'synthetic');
   });
 
+  test(
+    'keeps measured energy and unclassified cost aligned across one bucket',
+    () async {
+      final dashboardJson = _body('dashboard');
+      final trendsJson = _body('energy_trends');
+      final allocation = {
+        'energy': {'value': '13.570000000000000001', 'unit': 'kWh'},
+        'cost': null,
+        'useful_energy': null,
+        'useful_cost': null,
+        'waste_energy': null,
+        'waste_cost': null,
+        'unclassified_energy': {
+          'value': '13.570000000000000001',
+          'unit': 'kWh',
+        },
+        'unclassified_cost': {
+          'amount': '3.000000000000000001',
+          'currency': 'USD',
+        },
+        'availability': 'partial',
+      'evidence_basis': 'mixed',
+      };
+      dashboardJson['totals'] = allocation;
+      trendsJson['totals'] = allocation;
+      trendsJson['buckets'] = [
+        {
+          'start_local': '2026-10-06T00:00:00-05:00',
+          'end_exclusive_local': '2026-10-06T01:00:00-05:00',
+          'allocation': allocation,
+          'coverage_fraction': '1',
+        },
+      ];
+      final source = _Reads(
+        (_) async => _dashboard(dashboardJson),
+        (_) async => _trends(trendsJson),
+      );
+
+      final snapshot = await DashboardDomainRepository(source).fetch(homeA);
+
+      expect(snapshot!.snapshotId, 'household-snapshot');
+      expect(snapshot.dashboard.snapshotId, snapshot.trends.snapshotId);
+      expect(snapshot.totals.energy!.value, '13.570000000000000001');
+      expect(
+        snapshot.trends.buckets.single.allocation.energy!.value,
+        snapshot.totals.energy!.value,
+      );
+      expect(snapshot.totals.unclassifiedCost!.amount, '3.000000000000000001');
+      expect(
+        snapshot.trends.buckets.single.allocation.unclassifiedCost!.amount,
+        snapshot.totals.unclassifiedCost!.amount,
+      );
+      expect(snapshot.totals.unclassifiedCost!.currency, 'USD');
+      expect(
+        snapshot.trends.buckets.single.allocation.unclassifiedCost!.currency,
+        snapshot.totals.unclassifiedCost!.currency,
+      );
+    },
+  );
+
   test('rejects mixed mode, snapshot, period and totals', () async {
     for (final change in ['data_mode', 'snapshot_id', 'period', 'totals']) {
       final series = jsonDecode(

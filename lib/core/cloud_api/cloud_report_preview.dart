@@ -96,6 +96,58 @@ class CloudReportItem {
   final CloudReportEstimate? estimate;
 }
 
+/// Recipient-free status for the most recent delivery request on a preview.
+class CloudReportDeliveryStatus {
+  const CloudReportDeliveryStatus({
+    required this.id,
+    required this.state,
+    required this.createdAt,
+    required this.sentAt,
+  });
+
+  final String id, state;
+  final DateTime createdAt;
+  final DateTime? sentAt;
+
+  factory CloudReportDeliveryStatus.fromJson(
+    Map<String, dynamic> json,
+    String previewId,
+  ) {
+    final id = json['id'];
+    final state = json['state'];
+    final createdRaw = json['created_at'];
+    final sentRaw = json['sent_at'];
+    if (json.keys.toSet().difference({
+          'id',
+          'state',
+          'created_at',
+          'sent_at',
+        }).isNotEmpty ||
+        id is! String ||
+        !_uuid.hasMatch(id) ||
+        id == previewId ||
+        !{'pending', 'sent', 'canceled'}.contains(state) ||
+        createdRaw is! String ||
+        (sentRaw != null && sentRaw is! String)) {
+      throw const FormatException('Invalid report delivery status');
+    }
+    final created = DateTime.tryParse(createdRaw);
+    final sent = sentRaw == null ? null : DateTime.tryParse(sentRaw as String);
+    if (created == null ||
+        (sentRaw != null && sent == null) ||
+        ((state == 'sent') != (sent != null)) ||
+        (sent != null && sent.isBefore(created))) {
+      throw const FormatException('Invalid report delivery status');
+    }
+    return CloudReportDeliveryStatus(
+      id: id,
+      state: state as String,
+      createdAt: created,
+      sentAt: sent,
+    );
+  }
+}
+
 class CloudReportPreview {
   const CloudReportPreview(
     this.id,
@@ -105,13 +157,15 @@ class CloudReportPreview {
     this.expiresAt,
     this.stale,
     this.assumptions,
-    this.items,
-  );
+    this.items, {
+    this.latestDelivery,
+  });
   final String id, snapshotSha256, homeId;
   final DateTime createdAt, expiresAt;
   final bool stale;
   final List<String> assumptions;
   final List<CloudReportItem> items;
+  final CloudReportDeliveryStatus? latestDelivery;
   bool get isStale => stale || !DateTime.now().isBefore(expiresAt);
 
   factory CloudReportPreview.fromJson(
@@ -127,6 +181,7 @@ class CloudReportPreview {
     final stale = json['stale'];
     final rawAssumptions = json['assumptions'];
     final rawItems = json['items'];
+    final rawLatestDelivery = json['latest_delivery'];
     if (!_uuid.hasMatch(id) ||
         !_digest.hasMatch(digest) ||
         responseHome.toLowerCase() != homeId.toLowerCase() ||
@@ -176,6 +231,9 @@ class CloudReportPreview {
         ),
       );
     }
+    final latestDelivery = rawLatestDelivery == null
+        ? null
+        : CloudReportDeliveryStatus.fromJson(_object(rawLatestDelivery), id);
     return CloudReportPreview(
       id,
       digest,
@@ -185,6 +243,7 @@ class CloudReportPreview {
       stale,
       List.unmodifiable(assumptions),
       List.unmodifiable(items),
+      latestDelivery: latestDelivery,
     );
   }
 }

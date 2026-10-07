@@ -4,12 +4,14 @@ class CloudTariff {
     required this.rate,
     required this.sourceAsOf,
     required this.effectiveFrom,
+    this.effectiveTo,
   });
 
   final String homeId;
   final String rate;
   final DateTime sourceAsOf;
   final DateTime effectiveFrom;
+  final DateTime? effectiveTo;
 
   factory CloudTariff.fromJson(
     Map<String, dynamic> json,
@@ -23,6 +25,13 @@ class CloudTariff {
     final effectiveFrom = DateTime.tryParse(
       json['effective_from'] is String ? json['effective_from'] as String : '',
     );
+    final effectiveTo = json['effective_to'] == null
+        ? null
+        : DateTime.tryParse(
+            json['effective_to'] is String
+                ? json['effective_to'] as String
+                : '',
+          );
     if (json['id'] is! String ||
         json['home_id'] != homeId ||
         json['revision'] is! int ||
@@ -42,7 +51,9 @@ class CloudTariff {
         (json['source_ref'] as String).isEmpty ||
         json['is_fallback'] is! bool ||
         sourceAsOf == null ||
-        effectiveFrom == null) {
+        effectiveFrom == null ||
+        (json['effective_to'] != null && effectiveTo == null) ||
+        (effectiveTo != null && !effectiveFrom.isBefore(effectiveTo))) {
       throw const FormatException('Invalid cloud tariff');
     }
     return CloudTariff(
@@ -50,6 +61,7 @@ class CloudTariff {
       rate: json['rate'] as String,
       sourceAsOf: sourceAsOf,
       effectiveFrom: effectiveFrom,
+      effectiveTo: effectiveTo,
     );
   }
 }

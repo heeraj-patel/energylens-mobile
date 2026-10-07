@@ -71,4 +71,78 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test('parses optional recipient-free latest delivery status', () {
+    final base = payload();
+    expect(
+      CloudReportPreview.fromJson(base, home, {appliance}).latestDelivery,
+      isNull,
+    );
+    final withNull = {...base, 'latest_delivery': null};
+    expect(
+      CloudReportPreview.fromJson(withNull, home, {appliance}).latestDelivery,
+      isNull,
+    );
+
+    final delivered = CloudReportPreview.fromJson(
+      {
+        ...base,
+        'latest_delivery': {
+          'id': '66666666-6666-4666-8666-666666666666',
+          'state': 'sent',
+          'created_at': '2026-09-28T12:01:00Z',
+          'sent_at': '2026-09-28T12:02:00Z',
+        },
+      },
+      home,
+      {appliance},
+    );
+    expect(delivered.latestDelivery!.state, 'sent');
+    expect(delivered.latestDelivery!.sentAt, DateTime.utc(2026, 9, 28, 12, 2));
+    // Delivery metadata is outside the immutable preview approval hash.
+    expect(delivered.snapshotSha256, 'a' * 64);
+  });
+
+  test(
+    'rejects malformed, recipient-bearing, and cross-preview delivery data',
+    () {
+      final invalidStatuses = <Map<String, dynamic>>[
+        {
+          'id': '66666666-6666-4666-8666-666666666666',
+          'state': 'pending',
+          'created_at': '2026-09-28T12:01:00Z',
+          'sent_at': '2026-09-28T12:02:00Z',
+        },
+        {
+          'id': '66666666-6666-4666-8666-666666666666',
+          'state': 'sent',
+          'created_at': '2026-09-28T12:01:00Z',
+          'sent_at': null,
+        },
+        {
+          'id': '66666666-6666-4666-8666-666666666666',
+          'state': 'pending',
+          'created_at': '2026-09-28T12:01:00Z',
+          'sent_at': null,
+          'recipients': ['owner@example.com'],
+        },
+        {
+          'id': id,
+          'state': 'canceled',
+          'created_at': '2026-09-28T12:01:00Z',
+          'sent_at': null,
+        },
+      ];
+      for (final status in invalidStatuses) {
+        expect(
+          () => CloudReportPreview.fromJson(
+            {...payload(), 'latest_delivery': status},
+            home,
+            {appliance},
+          ),
+          throwsFormatException,
+        );
+      }
+    },
+  );
 }

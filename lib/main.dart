@@ -45,6 +45,8 @@ class EnergyLensApp extends StatelessWidget {
   });
 
   final bool localPilot;
+  static final GlobalKey<NavigatorState> _navigatorKey =
+      GlobalKey<NavigatorState>();
 
   @override
   Widget build(BuildContext context) {
@@ -92,6 +94,7 @@ class EnergyLensApp extends StatelessWidget {
     }
 
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'EnergyLens',
       debugShowCheckedModeBanner: false,
       theme: theme(Brightness.light),
@@ -107,7 +110,7 @@ class EnergyLensApp extends StatelessWidget {
                     onChangeHome: changeHome,
                     onReportPreview: cloudHome == null
                         ? null
-                        : () => Navigator.of(context).push(
+                        : () => _navigatorKey.currentState?.push(
                             MaterialPageRoute<void>(
                               builder: (_) => CloudReportPreviewScreen(
                                 api: cloudApi,
@@ -116,6 +119,32 @@ class EnergyLensApp extends StatelessWidget {
                             ),
                           ),
                   ),
+              verifiedHomeBuilder:
+                  (cloudHome, signOut, changeHome, cloudApi, lifecycle) =>
+                      DesignShell(
+                        onSignOut: signOut,
+                        onChangeHome: changeHome,
+                        onReportPreview: () {
+                          final accountId = lifecycle.verifiedAccountId;
+                          if (accountId == null ||
+                              !lifecycle.isVerifiedScope(
+                                accountId,
+                                cloudHome.id,
+                              )) {
+                            return;
+                          }
+                          _navigatorKey.currentState?.push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => CloudReportPreviewScreen(
+                                api: cloudApi,
+                                home: cloudHome,
+                                lifecycle: lifecycle,
+                                accountId: accountId,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
             ),
     );
   }

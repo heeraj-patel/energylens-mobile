@@ -1,0 +1,121 @@
+import '../../core/cloud_api/cloud_report_delivery.dart';
+import '../../core/cloud_api/cloud_report_preview.dart';
+import 'report_preview_domain_repository.dart';
+
+/// The delivery adapter can only queue a request against a freshly read
+/// preview. It does not send email or claim that delivery completed.
+abstract interface class ReportDeliveryDomainSource {
+  Future<CloudReportPreview> reportPreview(
+    String homeId,
+    String previewId,
+    Set<String> ownedApplianceIds,
+  );
+
+  Future<CloudReportDelivery> queueReportDelivery(
+    String homeId,
+    String previewId,
+    String approvedSnapshotSha256,
+    List<String> recipients, {
+    required String idempotencyKey,
+  });
+}
+
+enum ReportDeliveryStatus { queued, rejected, contextChanged }
+
+class ReportDeliveryDomainResult {
+  const ReportDeliveryDomainResult(this.status, {this.delivery});
+
+  final ReportDeliveryStatus status;
+  final CloudReportDelivery? delivery;
+}
+
+/// Explicit, nonvisual approval gate for queuing a report delivery request.
+class ReportDeliveryDomainAdapter {
+  ReportDeliveryDomainAdapter(this.source, {DateTime Function()? now})
+    : _now = now ?? DateTime.now;
+
+  final ReportDeliveryDomainSource source;
+  final DateTime Function() _now;
+  String? _homeId;
+  int _generation = 0;
+
+  void clear() {
+    _homeId = null;
+    _generation++;
+  }
+
+  Future<ReportDeliveryDomainResult> queue({
+    required ReportPreviewDomainSnapshot preview,
+    required bool explicitlyApproved,
+    required String approvedSnapshotSha256,
+    required String recipients,
+    required Set<String> ownedApplianceIds,
+    required String idempotencyKey,
+  }) async {
+    final homeId = preview.homeId;
+    if (_homeId != homeId) {
+      _homeId = homeId;
+      _generation++;
+    }
+    final generation = _generation;
+    bool contextChanged() => generation != _generation || _homeId != homeId;
+
+    final normalizedRecipients = validatedReportRecipients(recipients);
+    if (!explicitlyApproved ||
+        preview.status != ReportPreviewStatus.current ||
+        approvedSnapshotSha256 != preview.snapshotSha256 ||
+        normalizedRecipients == null ||
+        !_uuidV4.hasMatch(idempotencyKey)) {
+      return const ReportDeliveryDomainResult(ReportDeliveryStatus.rejected);
+    }
+
+    try {
+      final current = await source.reportPreview(
+        homeId,
+        preview.preview.id,
+        Set.unmodifiable(ownedApplianceIds.map((id) => id.toLowerCase())),
+      );
+      if (contextChanged()) {
+        return const ReportDeliveryDomainResult(
+          ReportDeliveryStatus.contextChanged,
+        );
+      }
+      if (current.homeId.toLowerCase() != homeId.toLowerCase() ||
+          current.id != preview.preview.id ||
+          current.stale ||
+          !_now().toUtc().isBefore(current.expiresAt.toUtc()) ||
+          current.snapshotSha256 != preview.snapshotSha256 ||
+          current.snapshotSha256 != approvedSnapshotSha256) {
+        return const ReportDeliveryDomainResult(ReportDeliveryStatus.rejected);
+      }
+
+      final delivery = await source.queueReportDelivery(
+        homeId,
+        current.id,
+        approvedSnapshotSha256,
+        List.unmodifiable(normalizedRecipients),
+        idempotencyKey: idempotencyKey,
+      );
+      if (contextChanged()) {
+        return const ReportDeliveryDomainResult(
+          ReportDeliveryStatus.contextChanged,
+        );
+      }
+      return ReportDeliveryDomainResult(
+        ReportDeliveryStatus.queued,
+        delivery: delivery,
+      );
+    } catch (_) {
+      if (contextChanged()) {
+        return const ReportDeliveryDomainResult(
+          ReportDeliveryStatus.contextChanged,
+        );
+      }
+      rethrow;
+    }
+  }
+}
+
+final _uuidV4 = RegExp(
+  r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+);

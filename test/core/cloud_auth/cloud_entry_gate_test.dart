@@ -6,6 +6,7 @@ import 'package:energylens_mobile/core/cloud_auth/cloud_entry_gate.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import 'package:energylens_mobile/features/design/design_context_coordinator.dart';
 import 'package:energylens_mobile/features/design/report_preview_domain_repository.dart';
+import 'package:energylens_mobile/features/design/report_delivery_domain_adapter.dart';
 import 'package:energylens_mobile/features/identify/onboarding_draft_store.dart';
 import 'package:energylens_mobile/features/identify/onboarding_persistence_repository.dart';
 import 'package:flutter/material.dart';
@@ -471,6 +472,9 @@ void main() {
       ),
       reports: ReportPreviewDomainRepository(
         CloudReportPreviewDomainSource(api),
+      ),
+      deliveries: ReportDeliveryDomainAdapter(
+        CloudReportDeliveryDomainSource(api),
       ),
     );
     await tester.pumpWidget(

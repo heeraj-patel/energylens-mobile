@@ -165,6 +165,84 @@ void main() {
   );
 
   test(
+    'household reads preserve measured energy and estimated unclassified money',
+    () async {
+      final dashboardJson = _dashboard();
+      final trendsJson = _trends();
+      for (final body in [dashboardJson, trendsJson]) {
+        final totals = body['totals'] as Map<String, dynamic>;
+        totals['energy'] = {'value': '13.570000000000000001', 'unit': 'kWh'};
+        totals['unclassified_energy'] = {
+          'value': '13.570000000000000001',
+          'unit': 'kWh',
+        };
+        totals['cost'] = null;
+        totals['unclassified_cost'] = {
+          'amount': '3.000000000000000001',
+          'currency': 'USD',
+        };
+        totals['evidence_basis'] = 'mixed';
+      }
+      final bucket =
+          (trendsJson['buckets'] as List).single as Map<String, dynamic>;
+      final bucketAllocation = bucket['allocation'] as Map<String, dynamic>;
+      bucketAllocation['energy'] = {
+        'value': '13.570000000000000001',
+        'unit': 'kWh',
+      };
+      bucketAllocation['unclassified_energy'] = {
+        'value': '13.570000000000000001',
+        'unit': 'kWh',
+      };
+      bucketAllocation['cost'] = null;
+      bucketAllocation['unclassified_cost'] = {
+        'amount': '3.000000000000000001',
+        'currency': 'USD',
+      };
+      bucketAllocation['evidence_basis'] = 'mixed';
+      final client = _api(
+        MockClient(
+          (request) async => http.Response(
+            jsonEncode(
+              request.url.path.endsWith('dashboard')
+                  ? dashboardJson
+                  : trendsJson,
+            ),
+            200,
+          ),
+        ),
+      );
+
+      final dashboard = await client.householdDashboard(homeId);
+      final trends = await client.householdEnergyTrends(
+        homeId,
+        granularity: 'hour',
+      );
+
+      expect(dashboard.dataMode, 'household');
+      expect(dashboard.totals.energy!.value, '13.570000000000000001');
+      expect(dashboard.totals.cost, isNull);
+      expect(dashboard.totals.unclassifiedCost!.amount, '3.000000000000000001');
+      expect(dashboard.totals.unclassifiedCost!.currency, 'USD');
+      expect(trends.totals.unclassifiedCost!.amount, '3.000000000000000001');
+      expect(trends.totals.unclassifiedCost!.currency, 'USD');
+      expect(
+        trends.buckets.single.allocation.energy!.value,
+        trends.totals.energy!.value,
+      );
+      expect(
+        trends.buckets.single.allocation.unclassifiedCost!.amount,
+        trends.totals.unclassifiedCost!.amount,
+      );
+      expect(
+        trends.buckets.single.allocation.unclassifiedCost!.currency,
+        trends.totals.unclassifiedCost!.currency,
+      );
+      client.close();
+    },
+  );
+
+  test(
     'rejects invalid home IDs and trend granularity before sending',
     () async {
       var calls = 0;

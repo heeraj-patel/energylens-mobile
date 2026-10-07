@@ -105,6 +105,36 @@ void main() {
     expect(result.encode(), isNot(contains('dashboard_text_014')));
   });
 
+  test('unclassified cost alone leaves useful and waste slots unknown', () {
+    final read = _dashboardRead(
+      alterDashboard: (json) {
+        json['totals']['energy'] = {'value': '24', 'unit': 'kWh'};
+        json['totals']['unclassified_energy'] = {'value': '24', 'unit': 'kWh'};
+        json['totals']['unclassified_cost'] = {
+          'amount': '4.800000000000000001',
+          'currency': 'USD',
+        };
+      },
+      alterTrends: (json) {
+        json['totals']['energy'] = {'value': '24', 'unit': 'kWh'};
+        json['totals']['unclassified_energy'] = {'value': '24', 'unit': 'kWh'};
+        json['totals']['unclassified_cost'] = {
+          'amount': '4.800000000000000001',
+          'currency': 'USD',
+        };
+      },
+    );
+
+    final result = prepareDesignNumericBindings(read);
+
+    expect(result.bindings, isEmpty);
+    expect(result.unknownBindingIds, {
+      'dashboard_text_006',
+      'dashboard_text_009',
+    });
+    expect(result.encode(), isNot(contains('4.800000000000000001')));
+  });
+
   test('rejects unsafe value, mismatched snapshot, mode, and period', () {
     expect(
       () => prepareDesignNumericBindings(

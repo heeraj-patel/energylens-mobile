@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_report_preview.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_report_delivery.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import 'package:energylens_mobile/features/design/report_preview_domain_repository.dart';
+import 'package:energylens_mobile/features/design/report_delivery_domain_adapter.dart';
 import 'package:energylens_mobile/features/identify/onboarding_draft_store.dart';
 import 'package:energylens_mobile/features/identify/onboarding_persistence_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +14,9 @@ const accountB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const homeA = '11111111-1111-4111-8111-111111111111';
 const homeB = '22222222-2222-4222-8222-222222222222';
 const previewId = '55555555-5555-4555-8555-555555555555';
+const retryKey = '66666666-6666-4666-8666-666666666666';
+const deliveryId = '77777777-7777-4777-8777-777777777777';
+final digest = 'a' * 64;
 const draft = OnboardingDraft(
   name: 'Fridge',
   category: 'refrigerator',
@@ -40,7 +45,7 @@ class _ReportSource implements ReportPreviewDomainSource {
   int calls = 0;
   CloudReportPreview preview(String homeId, String id) => CloudReportPreview(
     id,
-    'a' * 64,
+    digest,
     homeId,
     DateTime.utc(2026, 10, 6),
     DateTime.utc(2027, 10, 6),
@@ -66,15 +71,56 @@ class _ReportSource implements ReportPreviewDomainSource {
   }
 }
 
+class _DeliverySource implements ReportDeliveryDomainSource {
+  Completer<CloudReportPreview>? pendingRead;
+  int reads = 0;
+  int queues = 0;
+  String? lastKey;
+  @override
+  Future<CloudReportPreview> reportPreview(
+    String homeId,
+    String id,
+    Set<String> owned,
+  ) {
+    reads++;
+    return pendingRead?.future ??
+        Future.value(_ReportSource().preview(homeId, id));
+  }
+
+  @override
+  Future<CloudReportDelivery> queueReportDelivery(
+    String homeId,
+    String id,
+    String sha,
+    List<String> recipients, {
+    required String idempotencyKey,
+  }) async {
+    queues++;
+    lastKey = idempotencyKey;
+    return CloudReportDelivery(
+      deliveryId,
+      id,
+      recipients,
+      'pending',
+      DateTime.utc(2026, 10, 6),
+    );
+  }
+}
+
 CloudAuxiliaryDomainLifecycle _lifecycle(
   _Storage storage,
-  _ReportSource source,
-) => CloudAuxiliaryDomainLifecycle(
+  _ReportSource source, [
+  _DeliverySource? deliverySource,
+]) => CloudAuxiliaryDomainLifecycle(
   drafts: DurableOnboardingDrafts(
     storage,
     OnboardingPersistenceRepository(_PersistenceSource()),
   ),
   reports: ReportPreviewDomainRepository(source),
+  deliveries: ReportDeliveryDomainAdapter(
+    deliverySource ?? _DeliverySource(),
+    now: () => DateTime.utc(2026, 10, 6),
+  ),
 );
 
 void main() {
@@ -143,5 +189,54 @@ void main() {
     await service.clear();
     source.pending!.complete(source.preview(homeB, previewId));
     expect(await afterSwitch, isNull);
+  });
+
+  test('delivery requires verified scope and explicit approval, preserving retry key', () async {
+    final deliveries = _DeliverySource();
+    final service = _lifecycle(_Storage(), _ReportSource(), deliveries);
+    final preview = ReportPreviewDomainSnapshot(
+      homeId: homeA,
+      preview: _ReportSource().preview(homeA, previewId),
+      status: ReportPreviewStatus.current,
+    );
+    Future<ReportDeliveryDomainResult> submit(bool approved) =>
+        service.queueReportDelivery(
+          preview: preview,
+          explicitlyApproved: approved,
+          approvedSnapshotSha256: digest,
+          recipients: 'owner@example.com',
+          ownedApplianceIds: const {},
+          idempotencyKey: retryKey,
+        );
+    await expectLater(submit(true), throwsStateError);
+    await service.selectVerifiedHome(accountA, homeA);
+    expect((await submit(false)).status, ReportDeliveryStatus.rejected);
+    expect(deliveries.reads, 0);
+    expect((await submit(true)).status, ReportDeliveryStatus.queued);
+    expect(deliveries.lastKey, retryKey);
+  });
+
+  test('home switch suppresses a pending delivery before queueing', () async {
+    final deliveries = _DeliverySource()
+      ..pendingRead = Completer<CloudReportPreview>();
+    final service = _lifecycle(_Storage(), _ReportSource(), deliveries);
+    await service.selectVerifiedHome(accountA, homeA);
+    final preview = ReportPreviewDomainSnapshot(
+      homeId: homeA,
+      preview: _ReportSource().preview(homeA, previewId),
+      status: ReportPreviewStatus.current,
+    );
+    final pending = service.queueReportDelivery(
+      preview: preview,
+      explicitlyApproved: true,
+      approvedSnapshotSha256: digest,
+      recipients: 'owner@example.com',
+      ownedApplianceIds: const {},
+      idempotencyKey: retryKey,
+    );
+    await service.selectVerifiedHome(accountA, homeB);
+    deliveries.pendingRead!.complete(_ReportSource().preview(homeA, previewId));
+    expect((await pending).status, ReportDeliveryStatus.contextChanged);
+    expect(deliveries.queues, 0);
   });
 }
