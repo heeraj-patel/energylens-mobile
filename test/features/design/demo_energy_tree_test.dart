@@ -281,7 +281,11 @@ void main() {
           localDate: day.period.localDate,
           deviceId: realApplianceId,
           profileCategory: 'router',
-          wasteSeconds: day.period.seconds,
+          durationEvidence: WasteDurationEvidence(
+            seconds: day.period.seconds,
+            evidenceId: 'duration-verified-1',
+            intervalKind: WasteDurationIntervalKind.verifiedIdle,
+          ),
           kbResult: KbWasteResult.wasteEvidenceUnavailableAfterKb,
           kbResultId: 'kb-final-1',
         );
@@ -290,6 +294,7 @@ void main() {
       expect(row.origin, DemoValueOrigin.mock);
       expect(row.wasteProvenance, 'dummy_after_kb_miss');
       expect(row.kbWasteResultId, 'kb-final-1');
+      expect(row.wasteDurationEvidenceId, 'duration-verified-1');
       expect(row.cost.wasteMicros, 2400);
       expect(row.cost.wasteCents, 0);
       expect(
@@ -329,13 +334,18 @@ void main() {
         localDate: '2026-09-30',
         deviceId: realApplianceId,
         profileCategory: 'dryer',
-        wasteSeconds: period.seconds,
+        durationEvidence: WasteDurationEvidence(
+          seconds: period.seconds,
+          evidenceId: 'duration-verified-1',
+          intervalKind: WasteDurationIntervalKind.verifiedOff,
+        ),
         kbResult: KbWasteResult.wasteEvidenceUnavailableAfterKb,
         kbResultId: 'kb-final-2',
       );
       final row = result.day('2026-09-30').devices.first;
       expect(row.origin, DemoValueOrigin.measured);
       expect(row.sourceId, 'meter-1');
+      expect(row.wasteDurationEvidenceId, 'duration-verified-1');
       expect(row.cost.wasteMicros, 240000);
       expect(row.cost.unclassifiedMicros, 760000);
       expect(row.cost.totalMicros, 1000000);
@@ -384,7 +394,11 @@ void main() {
             localDate: '2026-09-30',
             deviceId: realApplianceId,
             profileCategory: profile,
-            wasteSeconds: period.seconds,
+            durationEvidence: WasteDurationEvidence(
+          seconds: period.seconds,
+          evidenceId: 'duration-verified-1',
+          intervalKind: WasteDurationIntervalKind.verifiedOff,
+        ),
             kbResult: result,
             kbResultId: 'kb-final-3',
           );
@@ -402,6 +416,22 @@ void main() {
       );
       expect(dummyWasteDrawForProfile('sensor'), isNull);
       expect(dummyWasteDrawForProfile('freezer'), DummyWasteDraw.high);
+      expect(
+        () => WasteDurationEvidence(
+          seconds: 0,
+          evidenceId: 'duration-verified-1',
+          intervalKind: WasteDurationIntervalKind.verifiedOff,
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => WasteDurationEvidence(
+          seconds: 1,
+          evidenceId: ' ',
+          intervalKind: WasteDurationIntervalKind.verifiedIdle,
+        ),
+        throwsFormatException,
+      );
       final capped = apply(
         KbWasteResult.wasteEvidenceUnavailableAfterKb,
         'dryer',
@@ -414,7 +444,26 @@ void main() {
           localDate: '2026-09-30',
           deviceId: realApplianceId,
           profileCategory: 'dryer',
-          wasteSeconds: period.seconds,
+          durationEvidence: WasteDurationEvidence(
+          seconds: period.seconds,
+          evidenceId: 'duration-verified-1',
+          intervalKind: WasteDurationIntervalKind.verifiedOff,
+        ),
+          kbResult: KbWasteResult.wasteEvidenceUnavailableAfterKb,
+          kbResultId: 'kb-final-3',
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => month.applyDummyWasteAfterKb(
+          localDate: '2026-09-30',
+          deviceId: realApplianceId,
+          profileCategory: 'router',
+          durationEvidence: WasteDurationEvidence(
+            seconds: period.seconds + 1,
+            evidenceId: 'duration-verified-2',
+            intervalKind: WasteDurationIntervalKind.verifiedOff,
+          ),
           kbResult: KbWasteResult.wasteEvidenceUnavailableAfterKb,
           kbResultId: 'kb-final-3',
         ),

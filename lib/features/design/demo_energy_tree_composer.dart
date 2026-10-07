@@ -6,6 +6,22 @@ import 'demo_energy_tree.dart';
 import 'demo_energy_tree_live_adapter.dart';
 import 'devices_domain_repository.dart';
 
+/// A verified off/idle duration for one owned appliance in one local day.
+/// The source adapter is responsible for verifying the interval and its ID.
+class VerifiedDemoWasteDay {
+  const VerifiedDemoWasteDay({
+    required this.homeId,
+    required this.applianceId,
+    required this.period,
+    required this.duration,
+  });
+
+  final String homeId;
+  final String applianceId;
+  final DemoDayPeriod period;
+  final WasteDurationEvidence duration;
+}
+
 /// Composes one home-local calendar month from demo leaves and complete,
 /// priced device days. The returned tree retains origin and evidence on every
 /// leaf, and its device and home totals are derived from those leaves.
@@ -23,6 +39,7 @@ class DemoEnergyTreeComposer {
     DevicesDomainSnapshot? snapshot,
     List<CloudTariff> electricityTariffs = const [],
     List<VerifiedDemoApplianceMapping> mappings = const [],
+    List<VerifiedDemoWasteDay> verifiedWasteDays = const [],
   }) {
     if (!referenceUtc.isUtc) {
       throw ArgumentError.value(referenceUtc, 'referenceUtc', 'Expected UTC');
@@ -80,6 +97,31 @@ class DemoEnergyTreeComposer {
         }
         try {
           tree = candidate.mergeInto(tree);
+          final matchingWasteDays = verifiedWasteDays.where(
+            (value) =>
+                value.homeId.toLowerCase() == homeId.toLowerCase() &&
+                value.applianceId.toLowerCase() ==
+                    candidate.reading.deviceId.toLowerCase() &&
+                value.period.sameAs(day.period),
+          ).toList();
+          final matchingAppliances = snapshot.items.where(
+            (item) =>
+                item.appliance.id.toLowerCase() ==
+                candidate.reading.deviceId.toLowerCase(),
+          ).toList();
+          if (matchingWasteDays.length == 1 &&
+              matchingAppliances.length == 1 &&
+              matchingAppliances.single.appliance.kbWasteResult != null) {
+            final appliance = matchingAppliances.single.appliance;
+            tree = tree.applyDummyWasteAfterKb(
+              localDate: day.period.localDate,
+              deviceId: appliance.id,
+              profileCategory: appliance.category,
+              durationEvidence: matchingWasteDays.single.duration,
+              kbResult: KbWasteResult.wasteEvidenceUnavailableAfterKb,
+              kbResultId: appliance.kbWasteResult!.id,
+            );
+          }
         } on FormatException {
           // A malformed mapping or conflicting branch is not live evidence.
         }

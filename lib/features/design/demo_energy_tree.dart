@@ -14,6 +14,26 @@ enum KbWasteResult {
 
 enum DummyWasteDraw { low, high }
 
+/// Verified evidence that a device was off or idle for a measured interval.
+/// Callers must not infer a full-day duration from missing data.
+enum WasteDurationIntervalKind { verifiedOff, verifiedIdle }
+
+class WasteDurationEvidence {
+  WasteDurationEvidence({
+    required this.seconds,
+    required this.evidenceId,
+    required this.intervalKind,
+  }) {
+    if (seconds <= 0 || evidenceId.trim().isEmpty) {
+      throw const FormatException('Invalid verified waste duration evidence');
+    }
+  }
+
+  final int seconds;
+  final String evidenceId;
+  final WasteDurationIntervalKind intervalKind;
+}
+
 /// Provisional low-draw device and high-draw appliance groupings from the
 /// versioned category profiles. Unlisted categories stay unresolved.
 DummyWasteDraw? dummyWasteDrawForProfile(String profileCategory) {
@@ -138,6 +158,7 @@ class DemoBranch {
     this.mappingEvidenceId,
     this.wasteProvenance,
     this.kbWasteResultId,
+    this.wasteDurationEvidenceId,
   });
 
   final String deviceId;
@@ -153,6 +174,7 @@ class DemoBranch {
   final String? mappingEvidenceId;
   final String? wasteProvenance;
   final String? kbWasteResultId;
+  final String? wasteDurationEvidenceId;
 }
 
 class DemoDayTree {
@@ -188,15 +210,14 @@ class DemoDayTree {
   DemoDayTree applyDummyWasteAfterKb({
     required String deviceId,
     required String profileCategory,
-    required int wasteSeconds,
+    required WasteDurationEvidence durationEvidence,
     required KbWasteResult kbResult,
     required String kbResultId,
   }) {
     if (kbResult != KbWasteResult.wasteEvidenceUnavailableAfterKb ||
         kbResultId.isEmpty ||
         !_uuid.hasMatch(deviceId) ||
-        wasteSeconds < 0 ||
-        wasteSeconds > period.seconds) {
+        durationEvidence.seconds > period.seconds) {
       throw const FormatException('No final KB waste fallback decision');
     }
     final draw = dummyWasteDrawForProfile(profileCategory);
@@ -206,7 +227,8 @@ class DemoDayTree {
     // USD micros/hour: $0.0001 for low draw, $0.01 for high draw.
     // A day or month is summed in micros before any cent display rounding.
     final rateMicrosPerHour = draw == DummyWasteDraw.low ? 100 : 10000;
-    final proposedMicros = (rateMicrosPerHour * wasteSeconds + 1800) ~/ 3600;
+    final proposedMicros =
+        (rateMicrosPerHour * durationEvidence.seconds + 1800) ~/ 3600;
     final rows = devices.toList();
     final index = rows.indexWhere((row) => row.deviceId == deviceId);
     if (index >= 0) {
@@ -237,6 +259,7 @@ class DemoDayTree {
         mappingEvidenceId: row.mappingEvidenceId,
         wasteProvenance: 'dummy_after_kb_miss',
         kbWasteResultId: kbResultId,
+        wasteDurationEvidenceId: durationEvidence.evidenceId,
       );
     } else {
       rows.add(
@@ -252,6 +275,7 @@ class DemoDayTree {
           sourceId: kbResultId,
           wasteProvenance: 'dummy_after_kb_miss',
           kbWasteResultId: kbResultId,
+          wasteDurationEvidenceId: durationEvidence.evidenceId,
         ),
       );
     }
@@ -428,7 +452,7 @@ class DemoMonthTree {
     required String localDate,
     required String deviceId,
     required String profileCategory,
-    required int wasteSeconds,
+    required WasteDurationEvidence durationEvidence,
     required KbWasteResult kbResult,
     required String kbResultId,
   }) {
@@ -444,7 +468,7 @@ class DemoMonthTree {
                 ? day.applyDummyWasteAfterKb(
                     deviceId: deviceId,
                     profileCategory: profileCategory,
-                    wasteSeconds: wasteSeconds,
+                    durationEvidence: durationEvidence,
                     kbResult: kbResult,
                     kbResultId: kbResultId,
                   )

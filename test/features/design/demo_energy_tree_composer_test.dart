@@ -32,17 +32,20 @@ DeviceInventoryItem item(
   DemoDayPeriod period, {
   double energyWh = 5000,
   double? coveredSeconds,
+  String category = 'computer',
+  CloudKbWasteResult? kbWasteResult,
 }) => DeviceInventoryItem(
   appliance: CloudAppliance(
     id: id,
     homeId: home,
     name: id,
-    category: 'computer',
+    category: category,
     room: null,
     brand: 'Example',
     fullModel: 'Example',
     fuel: 'electricity',
     matchQuality: 'confirmed_exact',
+    kbWasteResult: kbWasteResult,
   ),
   activeAttachmentIds: [attachmentId],
   measuredBuckets: [
@@ -73,6 +76,7 @@ DevicesDomainSnapshot snapshot(
 DemoMonthTree compose({
   DevicesDomainSnapshot? devices,
   List<VerifiedDemoApplianceMapping> mappings = const [],
+  List<VerifiedDemoWasteDay> verifiedWasteDays = const [],
 }) => const DemoEnergyTreeComposer().compose(
   homeId: home,
   timezone: 'America/Chicago',
@@ -80,6 +84,7 @@ DemoMonthTree compose({
   snapshot: devices,
   electricityTariffs: [tariff],
   mappings: mappings,
+  verifiedWasteDays: verifiedWasteDays,
 );
 
 void main() {
@@ -170,5 +175,52 @@ void main() {
     final result = compose(devices: snapshot([duplicate, duplicate]));
     expect(result.homeCost.totalCents, mock.homeCost.totalCents);
     expect(result.day('2026-10-07').devices, hasLength(18));
+  });
+
+  test('final KB miss needs a verified duration before dummy allocation', () {
+    const kbResult = CloudKbWasteResult(
+      id: 'kb-final-waste-1',
+      status: 'waste_evidence_unavailable_after_kb',
+    );
+    final device = item(
+      distinctId,
+      distinctAttachment,
+      today,
+      category: 'tv',
+      kbWasteResult: kbResult,
+    );
+    final withoutDuration = compose(devices: snapshot([device]));
+    final unchanged = withoutDuration.day('2026-10-07').devices.last;
+    expect(unchanged.cost.wasteMicros, 0);
+    expect(unchanged.wasteDurationEvidenceId, isNull);
+
+    final verified = VerifiedDemoWasteDay(
+      homeId: home,
+      applianceId: distinctId,
+      period: today,
+      duration: WasteDurationEvidence(
+        seconds: 3600,
+        evidenceId: 'verified-idle-interval',
+        intervalKind: WasteDurationIntervalKind.verifiedIdle,
+      ),
+    );
+    final result = compose(
+      devices: snapshot([device]),
+      verifiedWasteDays: [verified],
+    );
+    final row = result.day('2026-10-07').devices.last;
+    expect(row.cost.totalMicros, unchanged.cost.totalMicros);
+    expect(row.cost.wasteMicros, 10000);
+    expect(row.cost.unclassifiedMicros,
+        unchanged.cost.unclassifiedMicros - 10000);
+    expect(row.kbWasteResultId, kbResult.id);
+    expect(row.wasteDurationEvidenceId, 'verified-idle-interval');
+    expect(result.homeCost.totalMicros, withoutDuration.homeCost.totalMicros);
+
+    final duplicate = compose(
+      devices: snapshot([device]),
+      verifiedWasteDays: [verified, verified],
+    );
+    expect(duplicate.day('2026-10-07').devices.last.cost.wasteMicros, 0);
   });
 }
