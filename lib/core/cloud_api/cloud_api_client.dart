@@ -503,6 +503,15 @@ class CloudApiClient {
       response.headers,
       'x-energylens-fixture-revision',
     );
+    final inventoryRevision = _caseInsensitiveHeader(
+      response.headers,
+      'x-energylens-inventory-revision',
+    );
+    if (inventoryRevision != null &&
+        !RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+            .hasMatch(inventoryRevision)) {
+      throw const FormatException('Invalid cloud inventory revision');
+    }
     final CloudApplianceDataMode dataMode;
     final String? fixtureRevision;
     if (modeHeader == null && revisionHeader == null) {
@@ -534,6 +543,7 @@ class CloudApiClient {
       appliances: List.unmodifiable(appliances),
       dataMode: dataMode,
       fixtureRevision: fixtureRevision,
+      inventoryRevision: inventoryRevision,
     );
   }
 
@@ -1054,9 +1064,23 @@ class CloudApiClient {
       response.headers,
       'x-energylens-fixture-revision',
     );
+    final evidenceRevision = _caseInsensitiveHeader(
+      response.headers,
+      'x-energylens-evidence-revision',
+    );
+    if (evidenceRevision != null &&
+        !RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+            .hasMatch(evidenceRevision)) {
+      throw const FormatException('Invalid metered evidence revision');
+    }
     if (modeHeader == null && revisionHeader == null ||
         modeHeader == 'household' && revisionHeader == null) {
-      return page;
+      return CloudMeteredSummaryPage(
+        granularity: page.granularity,
+        summaries: page.summaries,
+        nextCursor: page.nextCursor,
+        evidenceRevision: evidenceRevision,
+      );
     }
     if (modeHeader == 'sample' &&
         revisionHeader != null &&
@@ -1068,6 +1092,7 @@ class CloudApiClient {
         nextCursor: page.nextCursor,
         dataMode: CloudApplianceDataMode.sample,
         fixtureRevision: revisionHeader,
+        evidenceRevision: evidenceRevision,
       );
     }
     throw const FormatException('Invalid metered summary provenance');

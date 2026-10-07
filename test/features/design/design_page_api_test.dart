@@ -175,6 +175,48 @@ void main() {
     expect(parse(message({'entity_id': 'foreign_device'})), isNull);
     expect(parse(message({'unexpected': true})), isNull);
     expect(parse('x' * 4097), isNull);
+    expect(parse('{'), isNull);
+    expect(parse('[]'), isNull);
+    expect(parse(message({'action': 42})), isNull);
+    expect(parse(message({'target_page': 42})), isNull);
+    expect(parse(message({'entity_id': 'device_1'})), isNull);
+    for (final action in ['report_preview', 'change_home', 'sign_out']) {
+      expect(
+        parse(message({'action': action, 'target_page': null}))?.action,
+        action,
+      );
+      expect(
+        parse(message({'action': action, 'target_page': 'devices'})),
+        isNull,
+      );
+      expect(
+        parse(
+          message({
+            'action': action,
+            'target_page': null,
+            'entity_id': 'device_1',
+          }),
+        ),
+        isNull,
+      );
+    }
+    expect(parse(message({'home_id': null})), isNull);
+    expect(parse(message({'page': null})), isNull);
+    expect(parse(message({'version': '1'})), isNull);
+    expect(
+      parse(message({'target_page': 'devices', 'entity_id': null})),
+      isNotNull,
+    );
+    expect(parse(message({'padding': 'é' * 2100})), isNull);
+    expect(
+      DesignBridgeMessage.parse(
+        message({}),
+        expectedHomeId: '',
+        expectedPage: 'dashboard',
+        ownedEntityIds: const {},
+      ),
+      isNull,
+    );
   });
 
   test(

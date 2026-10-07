@@ -11,11 +11,15 @@ class CloudApplianceList {
     required this.appliances,
     required this.dataMode,
     required this.fixtureRevision,
+    this.inventoryRevision,
   });
 
   final List<CloudAppliance> appliances;
   final CloudApplianceDataMode dataMode;
   final String? fixtureRevision;
+
+  /// Opaque same-route change token. Absent on older servers.
+  final String? inventoryRevision;
 
   bool get isSample => dataMode == CloudApplianceDataMode.sample;
 }

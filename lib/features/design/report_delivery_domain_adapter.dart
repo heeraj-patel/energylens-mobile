@@ -38,10 +38,12 @@ class ReportDeliveryDomainAdapter {
   final DateTime Function() _now;
   String? _homeId;
   int _generation = 0;
+  final Map<String, String> _operations = {};
 
   void clear() {
     _homeId = null;
     _generation++;
+    _operations.clear();
   }
 
   Future<ReportDeliveryDomainResult> queue({
@@ -56,6 +58,7 @@ class ReportDeliveryDomainAdapter {
     if (_homeId != homeId) {
       _homeId = homeId;
       _generation++;
+      _operations.clear();
     }
     final generation = _generation;
     bool contextChanged() => generation != _generation || _homeId != homeId;
@@ -63,11 +66,22 @@ class ReportDeliveryDomainAdapter {
     final normalizedRecipients = validatedReportRecipients(recipients);
     if (!explicitlyApproved ||
         preview.status != ReportPreviewStatus.current ||
+        !_now().toUtc().isBefore(preview.preview.expiresAt.toUtc()) ||
         approvedSnapshotSha256 != preview.snapshotSha256 ||
         normalizedRecipients == null ||
         !_uuidV4.hasMatch(idempotencyKey)) {
       return const ReportDeliveryDomainResult(ReportDeliveryStatus.rejected);
     }
+    final operation = [
+      homeId.toLowerCase(),
+      preview.preview.id.toLowerCase(),
+      approvedSnapshotSha256,
+      ...normalizedRecipients,
+    ].join('\u0000');
+    if (_operations[idempotencyKey] case final prior? when prior != operation) {
+      return const ReportDeliveryDomainResult(ReportDeliveryStatus.rejected);
+    }
+    _operations[idempotencyKey] = operation;
 
     try {
       final current = await source.reportPreview(
@@ -100,6 +114,13 @@ class ReportDeliveryDomainAdapter {
         return const ReportDeliveryDomainResult(
           ReportDeliveryStatus.contextChanged,
         );
+      }
+      if (delivery.previewId != current.id ||
+          delivery.state != 'pending' ||
+          delivery.recipients.length != normalizedRecipients.length ||
+          !Set<String>.from(delivery.recipients)
+              .containsAll(normalizedRecipients)) {
+        throw const FormatException('Report delivery readback differs');
       }
       return ReportDeliveryDomainResult(
         ReportDeliveryStatus.queued,

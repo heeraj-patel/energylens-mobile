@@ -270,4 +270,96 @@ void main() {
       expect(retrySource.queuedKey, requestId);
     },
   );
+
+  test(
+    'uncertain queue retry binds key to exact hash and recipients',
+    () async {
+      final source = FakeSource();
+      var failOnce = true;
+      source.queue = (_, id, _, recipients, _) async {
+        if (failOnce) {
+          failOnce = false;
+          throw StateError('response lost');
+        }
+        return CloudReportDelivery(
+          deliveryId,
+          id,
+          recipients,
+          'pending',
+          clockNow,
+        );
+      };
+      final adapter = ReportDeliveryDomainAdapter(source, now: now);
+      Future<ReportDeliveryDomainResult> submit({
+        String recipients = 'user@example.com',
+        CloudReportPreview? value,
+      }) => adapter.queue(
+        preview: snapshot(value: value),
+        explicitlyApproved: true,
+        approvedSnapshotSha256: value?.snapshotSha256 ?? hash,
+        recipients: recipients,
+        ownedApplianceIds: {appliance},
+        idempotencyKey: requestId,
+      );
+      await expectLater(submit(), throwsStateError);
+      expect(
+        (await submit(recipients: 'other@example.com')).status,
+        ReportDeliveryStatus.rejected,
+      );
+      expect(
+        (await submit(value: makePreview(digest: 'b' * 64))).status,
+        ReportDeliveryStatus.rejected,
+      );
+      expect(source.queueCount, 1);
+      expect((await submit()).status, ReportDeliveryStatus.queued);
+      expect(source.queueCount, 2);
+      expect(source.queuedKey, requestId);
+    },
+  );
+
+  test('rejects mismatched delivery response after queue', () async {
+    final source = FakeSource();
+    source.queue = (_, _, _, _, _) async => CloudReportDelivery(
+      deliveryId,
+      '88888888-8888-4888-8888-888888888888',
+      const ['other@example.com'],
+      'pending',
+      clockNow,
+    );
+    final adapter = ReportDeliveryDomainAdapter(source, now: now);
+    await expectLater(
+      adapter.queue(
+        preview: snapshot(),
+        explicitlyApproved: true,
+        approvedSnapshotSha256: hash,
+        recipients: 'user@example.com',
+        ownedApplianceIds: {appliance},
+        idempotencyKey: requestId,
+      ),
+      throwsFormatException,
+    );
+  });
+
+  test('concurrent same-key requests cannot change recipients', () async {
+    final source = FakeSource();
+    final read = Completer<CloudReportPreview>();
+    source.read = (_, _, _) => read.future;
+    final adapter = ReportDeliveryDomainAdapter(source, now: now);
+    Future<ReportDeliveryDomainResult> submit(String recipients) =>
+        adapter.queue(
+          preview: snapshot(),
+          explicitlyApproved: true,
+          approvedSnapshotSha256: hash,
+          recipients: recipients,
+          ownedApplianceIds: {appliance},
+          idempotencyKey: requestId,
+        );
+    final first = submit('user@example.com');
+    final second = await submit('other@example.com');
+    expect(second.status, ReportDeliveryStatus.rejected);
+    expect(source.readCount, 1);
+    read.complete(makePreview());
+    expect((await first).status, ReportDeliveryStatus.queued);
+    expect(source.queuedRecipients, ['user@example.com']);
+  });
 }

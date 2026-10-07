@@ -250,8 +250,12 @@ class OnboardingPersistenceRepository {
       throw const FormatException('Saved appliance readback differs');
     }
     _inventory = null;
-    await refresh();
+    final inventory = await refresh();
     if (_homeId != home || _homeGeneration != generation) return null;
+    if (inventory == null ||
+        !inventory.any((row) => row.id == detail.id && row.homeId == home)) {
+      throw const FormatException('Saved appliance missing from inventory');
+    }
     operation.confirmed = detail;
     return _homeId == home && _homeGeneration == generation ? detail : null;
   }

@@ -93,6 +93,8 @@ class FakeSource implements DevicesDomainSource {
     required this.summaryRead,
     this.dataMode = CloudApplianceDataMode.household,
     this.fixtureRevision,
+    this.inventoryRevision,
+    this.inventoryRevisionRead,
   });
   final Future<List<CloudAppliance>> Function(String) applianceRead;
   final Future<List<CloudAttachment>> Function(String) attachmentRead;
@@ -100,6 +102,8 @@ class FakeSource implements DevicesDomainSource {
   final Future<CloudMeteredSummaryPage> Function(String, String?) summaryRead;
   final CloudApplianceDataMode dataMode;
   String? fixtureRevision;
+  String? inventoryRevision;
+  final String? Function()? inventoryRevisionRead;
   int calls = 0;
 
   @override
@@ -109,6 +113,7 @@ class FakeSource implements DevicesDomainSource {
       appliances: await applianceRead(homeId),
       dataMode: dataMode,
       fixtureRevision: fixtureRevision,
+      inventoryRevision: inventoryRevisionRead?.call() ?? inventoryRevision,
     );
   }
 
@@ -141,9 +146,11 @@ FakeSource fixed({
   int sensorEpoch = 2,
   CloudApplianceDataMode dataMode = CloudApplianceDataMode.household,
   String? fixtureRevision,
+  String? inventoryRevision,
 }) => FakeSource(
   dataMode: dataMode,
   fixtureRevision: fixtureRevision,
+  inventoryRevision: inventoryRevision,
   applianceRead: (home) async => [appliance(applianceHome ?? home)],
   attachmentRead: (home) async => [attachment(home)],
   sensorRead: (home) async => [sensor(home, epoch: sensorEpoch)],
@@ -160,6 +167,7 @@ FakeSource paged(
   Future<CloudMeteredSummaryPage> Function(String, String?) read, {
   CloudApplianceDataMode dataMode = CloudApplianceDataMode.household,
   String? fixtureRevision,
+  String? inventoryRevision,
 }) => FakeSource(
   applianceRead: (home) async => [appliance(home)],
   attachmentRead: (home) async => [attachment(home)],
@@ -167,6 +175,7 @@ FakeSource paged(
   summaryRead: read,
   dataMode: dataMode,
   fixtureRevision: fixtureRevision,
+  inventoryRevision: inventoryRevision,
 );
 
 void main() {
@@ -194,6 +203,88 @@ void main() {
         isFalse,
       );
       expect(result.householdEnergyWh, isNull);
+    },
+  );
+
+  test('stable revision rechecks first page after bounded traversal', () async {
+    final cursors = <String?>[];
+    final result = (await DevicesDomainRepository(
+      paged((_, cursor) async {
+        cursors.add(cursor);
+        return CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: [measured(dayOffset: cursor == null ? 0 : -1)],
+          nextCursor: cursor == null ? 'next' : null,
+          evidenceRevision: 'v1-1',
+        );
+      }),
+    ).fetch(homeA))!;
+    expect(cursors, [null, 'next', null]);
+    expect(result.items.single.measuredBuckets, hasLength(2));
+  });
+
+  test(
+    'revision change on later page retries full Devices read once',
+    () async {
+      final cursors = <String?>[];
+      var firstPages = 0;
+      final source = paged((_, cursor) async {
+        cursors.add(cursor);
+        if (cursor == null) firstPages++;
+        final revision = firstPages == 1 && cursor != null ? 'v1-2' : 'v1-1';
+        return CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: [measured(dayOffset: cursor == null ? 0 : -1)],
+          nextCursor: cursor == null ? 'next' : null,
+          evidenceRevision: revision,
+        );
+      });
+      final result = (await DevicesDomainRepository(source).fetch(homeA))!;
+      expect(cursors, [null, 'next', null, 'next', null]);
+      expect(source.calls, 14);
+      expect(result.items.single.measuredBuckets, hasLength(2));
+    },
+  );
+
+  test(
+    'single page correction after traversal retries then withholds',
+    () async {
+      var reads = 0;
+      final source = paged((_, _) async {
+        reads++;
+        return CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: [measured(energyWh: reads.toDouble())],
+          nextCursor: null,
+          evidenceRevision: 'v1-$reads',
+        );
+      });
+      await expectLater(
+        DevicesDomainRepository(source).fetch(homeA),
+        throwsFormatException,
+      );
+      expect(reads, 4);
+      expect(source.calls, 10);
+    },
+  );
+
+  test(
+    'one-page correction after traversal restarts and uses new data',
+    () async {
+      var reads = 0;
+      final source = paged((_, _) async {
+        reads++;
+        final corrected = reads > 1;
+        return CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: [measured(energyWh: corrected ? 20 : 10)],
+          nextCursor: null,
+          evidenceRevision: corrected ? 'v1-2' : 'v1-1',
+        );
+      });
+      final result = (await DevicesDomainRepository(source).fetch(homeA))!;
+      expect(reads, 4);
+      expect(result.items.single.latestMeasuredBucketWh, 20);
     },
   );
 
@@ -373,6 +464,189 @@ void main() {
       expect(reads, 4);
     },
   );
+
+  for (final changedField in ['version', 'archived_at', 'identity']) {
+    test(
+      'appliance $changedField mutation without revision retries read',
+      () async {
+        final pageEntered = Completer<void>();
+        final oldPage = Completer<CloudMeteredSummaryPage>();
+        var changed = false;
+        var applianceReads = 0;
+        var pageReads = 0;
+        final source = FakeSource(
+          applianceRead: (home) async {
+            applianceReads++;
+            return [
+              CloudAppliance(
+                id: applianceId,
+                homeId: home,
+                name: 'Appliance',
+                category: 'other',
+                room: null,
+                brand: changedField == 'identity' && changed ? 'New' : 'Old',
+                fullModel: 'Model',
+                fuel: 'electric',
+                matchQuality: 'confirmed_exact',
+                version: changedField == 'version' && changed ? 2 : 1,
+                archivedAt: changedField == 'archived_at' && changed
+                    ? day
+                    : null,
+              ),
+            ];
+          },
+          attachmentRead: (_) async => [],
+          sensorRead: (_) async => [],
+          summaryRead: (_, _) {
+            pageReads++;
+            if (pageReads == 1) {
+              pageEntered.complete();
+              return oldPage.future;
+            }
+            return Future.value(
+              const CloudMeteredSummaryPage(
+                granularity: 'day',
+                summaries: [],
+                nextCursor: null,
+              ),
+            );
+          },
+        );
+        final pending = DevicesDomainRepository(source).fetch(homeA);
+        await pageEntered.future;
+        changed = true;
+        oldPage.complete(
+          const CloudMeteredSummaryPage(
+            granularity: 'day',
+            summaries: [],
+            nextCursor: null,
+          ),
+        );
+        final result = (await pending)!;
+        expect(applianceReads, 4);
+        expect(pageReads, 2);
+        expect(
+          result.items.single.appliance.version,
+          changedField == 'version' ? 2 : 1,
+        );
+        expect(
+          result.items.single.appliance.archivedAt,
+          changedField == 'archived_at' ? day : null,
+        );
+        expect(
+          result.items.single.appliance.brand,
+          changedField == 'identity' ? 'New' : 'Old',
+        );
+      },
+    );
+  }
+
+  test(
+    'continuous appliance version churn without revision is bounded',
+    () async {
+      var applianceReads = 0;
+      final source = FakeSource(
+        applianceRead: (home) async => [
+          CloudAppliance(
+            id: applianceId,
+            homeId: home,
+            name: 'Appliance',
+            category: 'other',
+            room: null,
+            brand: 'Brand',
+            fullModel: 'Model',
+            fuel: 'electric',
+            matchQuality: 'confirmed_exact',
+            version: ++applianceReads,
+          ),
+        ],
+        attachmentRead: (_) async => [],
+        sensorRead: (_) async => [],
+        summaryRead: (_, _) async => const CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: [],
+          nextCursor: null,
+        ),
+      );
+      await expectLater(
+        DevicesDomainRepository(source).fetch(homeA),
+        throwsFormatException,
+      );
+      expect(applianceReads, 4);
+      expect(source.calls, 14);
+    },
+  );
+
+  test(
+    'inventory revision detects same-row ABA during metered pagination',
+    () async {
+      final nextPageEntered = Completer<void>();
+      final oldNextPage = Completer<CloudMeteredSummaryPage>();
+      var firstPages = 0;
+      late final FakeSource source;
+      source = FakeSource(
+        inventoryRevision: 'rev-1',
+        applianceRead: (home) async => [appliance(home)],
+        attachmentRead: (home) async => [attachment(home)],
+        sensorRead: (home) async => [sensor(home)],
+        summaryRead: (_, cursor) {
+          if (cursor == 'old') {
+            nextPageEntered.complete();
+            return oldNextPage.future;
+          }
+          firstPages++;
+          return Future.value(
+            CloudMeteredSummaryPage(
+              granularity: 'day',
+              summaries: [measured(energyWh: firstPages == 1 ? 10 : 20)],
+              nextCursor: firstPages == 1 ? 'old' : null,
+            ),
+          );
+        },
+      );
+      final pending = DevicesDomainRepository(source).fetch(homeA);
+      await nextPageEntered.future;
+      // The visible rows return to their original values, but the server token
+      // advances across the mutation and must invalidate the old metered read.
+      source.inventoryRevision = 'rev-3';
+      oldNextPage.complete(
+        CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: [measured(dayOffset: -1, energyWh: 10)],
+          nextCursor: null,
+        ),
+      );
+      final result = (await pending)!;
+      expect(result.items.single.latestMeasuredBucketWh, 20);
+      expect(result.items.single.measuredBuckets, hasLength(1));
+      expect(firstPages, 2);
+      expect(source.calls, 15); // Four full inventory reads, three pages.
+    },
+  );
+
+  test('continuous revision churn exhausts the bounded retry', () async {
+    var applianceReads = 0;
+    final source = FakeSource(
+      applianceRead: (home) async => [appliance(home)],
+      attachmentRead: (home) async => [attachment(home)],
+      sensorRead: (home) async => [sensor(home)],
+      inventoryRevisionRead: () => 'rev-${++applianceReads}',
+      summaryRead: (_, _) async => const CloudMeteredSummaryPage(
+        granularity: 'day',
+        summaries: [],
+        nextCursor: null,
+      ),
+    );
+    await expectLater(
+      DevicesDomainRepository(source).fetch(homeA),
+      throwsFormatException,
+    );
+    expect(applianceReads, 4);
+    expect(
+      source.calls,
+      14,
+    ); // Two attempts, each with two inventories and a page.
+  });
 
   test('changed sample provenance after metering retries whole read', () async {
     final pageEntered = Completer<void>();

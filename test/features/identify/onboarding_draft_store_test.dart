@@ -37,6 +37,7 @@ class Source implements OnboardingPersistenceSource {
   int creates = 0;
   final List<String> keys = [];
   bool uncertain = false;
+  bool omitFromInventory = false;
   CloudAppliance row(String home) => CloudAppliance(
     id: applianceId,
     homeId: home,
@@ -66,7 +67,8 @@ class Source implements OnboardingPersistenceSource {
   @override
   Future<CloudAppliance> detail(String home, String id) async => row(home);
   @override
-  Future<List<CloudAppliance>> inventory(String home) async => [row(home)];
+  Future<List<CloudAppliance>> inventory(String home) async =>
+      omitFromInventory ? [] : [row(home)];
   @override
   Future<String> version(String home, String id) async => '"1"';
   @override
@@ -113,6 +115,30 @@ void main() {
     expect(changed.operationKey, isNot(first.operationKey));
     await Future.wait([store.save(draft), store.save(draft)]);
     expect(source.creates, 1);
+  });
+  test('missing inventory readback keeps draft and retry key after restart', () async {
+    final storage = MemoryStorage();
+    final source = Source()..omitFromInventory = true;
+    final first = manager(storage, source);
+    await first.selectScope(userA, homeA);
+    final pending = await first.stage(draft);
+    await expectLater(
+      first.commit(pending, explicitlyApproved: true),
+      throwsFormatException,
+    );
+    expect((await first.restore())!.operationKey, pending.operationKey);
+
+    source.omitFromInventory = false;
+    final restarted = manager(storage, source);
+    await restarted.selectScope(userA, homeA);
+    final restored = (await restarted.restore())!;
+    expect(restored.operationKey, pending.operationKey);
+    expect(
+      (await restarted.commit(restored, explicitlyApproved: true))?.id,
+      applianceId,
+    );
+    expect(source.keys, [pending.operationKey, pending.operationKey]);
+    expect(await restarted.restore(), isNull);
   });
   test('exact draft identity controls key reuse and explicit commit', () async {
     final source = Source();

@@ -5,6 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'design_context_coordinator.dart';
+import 'design_page_read_dispatcher.dart';
+import 'live_devices_card_renderer.dart';
+import 'live_devices_projection.dart';
+
 /// The approved design files are complete mobile pages. Keep their markup and
 /// wording in assets/design_pages; this shell only supplies native navigation.
 class DesignShell extends StatefulWidget {
@@ -13,12 +18,16 @@ class DesignShell extends StatefulWidget {
     this.onSignOut,
     this.onChangeHome,
     this.onReportPreview,
+    this.designContextCoordinator,
     this.designTour = false,
   });
 
   final VoidCallback? onSignOut;
   final VoidCallback? onChangeHome;
   final VoidCallback? onReportPreview;
+
+  /// Native-only verified scope. It is never passed into the WebView.
+  final DesignContextCoordinator? designContextCoordinator;
   final bool designTour;
 
   @override
@@ -60,6 +69,11 @@ class _DesignShellState extends State<DesignShell> {
   ];
 
   late final WebViewController _controller;
+  late final DesignPageReadDispatcher _pageReads;
+  static const _liveDevicesRenderer = LiveDevicesCardRenderer();
+  int _pageLoadGeneration = 0;
+  bool _pageReady = false;
+  LiveDevicesProjection? _devicesProjection;
   Timer? _tourTimer;
   int _tourIndex = 0;
   final List<String> _history = [];
@@ -68,6 +82,7 @@ class _DesignShellState extends State<DesignShell> {
   @override
   void initState() {
     super.initState();
+    _pageReads = DesignPageReadDispatcher(widget.designContextCoordinator);
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFFF9F9FF))
@@ -77,9 +92,10 @@ class _DesignShellState extends State<DesignShell> {
       )
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageFinished: (_) {
+          onPageFinished: (url) {
             _installNavigation();
             _scheduleTourAdvance();
+            unawaited(_onPageFinished(url));
           },
           onNavigationRequest: (request) {
             final uri = Uri.tryParse(request.url);
@@ -97,6 +113,18 @@ class _DesignShellState extends State<DesignShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadPage());
   }
 
+  @override
+  void didUpdateWidget(covariant DesignShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(
+      oldWidget.designContextCoordinator,
+      widget.designContextCoordinator,
+    )) {
+      _pageReads.useCoordinator(widget.designContextCoordinator);
+      unawaited(_loadPage());
+    }
+  }
+
   void _scheduleTourAdvance() {
     if (!widget.designTour) return;
     _tourTimer?.cancel();
@@ -111,21 +139,118 @@ class _DesignShellState extends State<DesignShell> {
   @override
   void dispose() {
     _tourTimer?.cancel();
+    _invalidatePageLoad();
+    _pageReads.dispose();
     super.dispose();
   }
 
   Future<void> _loadPage() async {
+    if (!mounted) return;
+    _invalidatePageLoad();
+    final page = _page;
+    final generation = _pageLoadGeneration;
+    unawaited(_readPage(page, generation));
     // app.html is a self-contained copy of the approved HTML. The source
     // code.html and screen.png remain byte-for-byte references alongside it.
-    await _controller.loadFlutterAsset('assets/design_pages/$_page/app.html');
+    await _controller.loadFlutterAsset('assets/design_pages/$page/app.html');
+  }
+
+  void _invalidatePageLoad() {
+    _pageLoadGeneration++;
+    _pageReady = false;
+    _devicesProjection = null;
+  }
+
+  bool _isCurrentPageLoad(String page, int generation) =>
+      mounted && _page == page && _pageLoadGeneration == generation;
+
+  Future<void> _readPage(String page, int generation) async {
+    await _pageReads.load(page);
+    if (!_isCurrentPageLoad(page, generation) || page != 'devices') return;
+    final read = _pageReads.latestRead;
+    if (read == null || read.mode != DesignContextMode.household) return;
+    try {
+      final projection = prepareLiveDevicesProjection(read);
+      if (!_isCurrentPageLoad(page, generation) ||
+          !identical(_pageReads.latestRead, read)) {
+        return;
+      }
+      _devicesProjection = projection;
+      await _applyDevicesProjection(generation);
+    } catch (_) {
+      // Keep the approved static cards when a native read cannot be projected.
+    }
+  }
+
+  Future<void> _onPageFinished(String url) async {
+    final page = _page;
+    final generation = _pageLoadGeneration;
+    final path = Uri.tryParse(url)?.path;
+    if (!_isCurrentPageLoad(page, generation) ||
+        path == null ||
+        !path.endsWith('assets/design_pages/$page/app.html')) {
+      return;
+    }
+    _pageReady = true;
+    if (page != 'devices') return;
+    final context = widget.designContextCoordinator?.context;
+    if (context == null || context.mode != DesignContextMode.household) return;
+    try {
+      final installed = await _controller.runJavaScriptReturningResult(
+        _liveDevicesRenderer.installationScript(
+          homeId: context.homeId,
+          generation: generation,
+        ),
+      );
+      if (installed != true ||
+          !_isCurrentPageLoad(page, generation) ||
+          !identical(widget.designContextCoordinator?.context, context)) {
+        return;
+      }
+      await _applyDevicesProjection(generation);
+    } catch (_) {
+      // A WebView failure leaves the static asset intact.
+    }
+  }
+
+  Future<void> _applyDevicesProjection(int generation) async {
+    final projection = _devicesProjection;
+    final read = _pageReads.latestRead;
+    final context = widget.designContextCoordinator?.context;
+    if (!_pageReady ||
+        !_isCurrentPageLoad('devices', generation) ||
+        projection == null ||
+        read?.page != 'devices' ||
+        context == null ||
+        context.mode != DesignContextMode.household ||
+        read?.accountId != context.accountId ||
+        read?.homeId != context.homeId ||
+        projection.homeId != context.homeId ||
+        projection.mode != DesignContextMode.household) {
+      return;
+    }
+    try {
+      await _controller.runJavaScriptReturningResult(
+        _liveDevicesRenderer.appendScript(
+          projection: projection,
+          generation: generation,
+        ),
+      );
+    } catch (_) {
+      // The renderer is additive; static cards remain on script failure.
+    }
   }
 
   void _open(String route) {
     if (route == 'sign_out') {
+      _invalidatePageLoad();
+      _pageReads.clear();
       widget.onSignOut?.call();
       return;
     }
     if (route == 'change_home') {
+      _invalidatePageLoad();
+      _pageReads.clear();
       widget.onChangeHome?.call();
       return;
     }

@@ -37,7 +37,11 @@ void main() {
     'represents effective marginal tariff and leaves TOU unsupported',
     () async {
       final source = _Source([
-        _tariff(rate: '0.19', effectiveFrom: DateTime.utc(2026, 1, 1)),
+        _tariff(
+          rate: '0.19',
+          effectiveFrom: DateTime.utc(2026, 1, 1),
+          effectiveTo: DateTime.utc(2026, 8, 1),
+        ),
         _tariff(rate: '0.24', effectiveFrom: DateTime.utc(2026, 8, 1)),
         _tariff(rate: '0.30', effectiveFrom: DateTime.utc(2026, 11, 1)),
       ]);
@@ -122,5 +126,17 @@ void main() {
 
     expect(snapshot.status, EfficiencyTariffStatus.unavailable);
     expect(snapshot.marginalRateUsdPerKwh, isNull);
+  });
+
+  test('rejects overlapping effective electricity revisions', () async {
+    final adapter = EfficiencyPeakRatesAdapter(
+      _Source([
+        _tariff(rate: '0.19', effectiveFrom: DateTime.utc(2026, 1, 1)),
+        _tariff(rate: '0.24', effectiveFrom: DateTime.utc(2026, 8, 1)),
+      ]),
+      clock: () => now,
+    );
+
+    await expectLater(adapter.fetch(homeA), throwsFormatException);
   });
 }

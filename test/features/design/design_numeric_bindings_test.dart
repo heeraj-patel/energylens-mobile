@@ -97,6 +97,53 @@ void main() {
     });
   });
 
+  test('accepts home-local spring and fall DST calendar days', () {
+    for (final window in <(String, String)>[
+      ('2026-03-08T00:00:00-06:00', '2026-03-09T00:00:00-05:00'),
+      ('2026-11-01T00:00:00-05:00', '2026-11-02T00:00:00-06:00'),
+    ]) {
+      final result = prepareDesignNumericBindings(
+        _dashboardRead(
+          useful: '1.00',
+          alterDashboard: (json) {
+            json['period']['start_local'] = window.$1;
+            json['period']['end_exclusive_local'] = window.$2;
+          },
+          alterTrends: (json) {
+            json['period']['start_local'] = window.$1;
+            json['period']['end_exclusive_local'] = window.$2;
+          },
+        ),
+      );
+
+      expect(result.bindings.single.text, '\$1.00');
+    }
+  });
+
+  test('rejects non-midnight or multi-day dashboard periods', () {
+    for (final window in <(String, String)>[
+      ('2026-03-08T00:00:00-06:00', '2026-03-09T01:00:00-05:00'),
+      ('2026-03-08T00:00:00-06:00', '2026-03-10T00:00:00-05:00'),
+    ]) {
+      expect(
+        () => prepareDesignNumericBindings(
+          _dashboardRead(
+            useful: '1.00',
+            alterDashboard: (json) {
+              json['period']['start_local'] = window.$1;
+              json['period']['end_exclusive_local'] = window.$2;
+            },
+            alterTrends: (json) {
+              json['period']['start_local'] = window.$1;
+              json['period']['end_exclusive_local'] = window.$2;
+            },
+          ),
+        ),
+        throwsFormatException,
+      );
+    }
+  });
+
   test('omits unknown costs and never fills weekly or savings slots', () {
     final result = prepareDesignNumericBindings(_dashboardRead(useful: '1.00'));
     expect(result.bindings.map((b) => b.id), ['dashboard_text_006']);

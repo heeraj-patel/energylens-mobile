@@ -12,6 +12,10 @@ class CloudAppliance {
     this.region,
     this.catalogProductId,
     required this.matchQuality,
+    this.version,
+    this.createdAt,
+    this.updatedAt,
+    this.archivedAt,
   });
 
   final String id;
@@ -26,6 +30,10 @@ class CloudAppliance {
   final String? region;
   final String? catalogProductId;
   final String matchQuality;
+  final int? version;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final DateTime? archivedAt;
 
   factory CloudAppliance.fromJson(Map<String, dynamic> json) {
     final identity = json['identity'];
@@ -53,8 +61,15 @@ class CloudAppliance {
       region: identity['region'] as String?,
       catalogProductId: identity['catalog_product_id'] as String?,
       matchQuality: identity['match_quality'] as String,
+      version: json['version'] as int?,
+      createdAt: _optionalInstant(json['created_at']),
+      updatedAt: _optionalInstant(json['updated_at']),
+      archivedAt: _optionalInstant(json['archived_at']),
     );
   }
+
+  static DateTime? _optionalInstant(Object? value) =>
+      value == null ? null : DateTime.parse(value as String);
 }
 
 class CloudApplianceCreate {

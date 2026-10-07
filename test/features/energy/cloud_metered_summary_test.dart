@@ -113,6 +113,59 @@ void main() {
     api.close();
   });
 
+  test('metered page accepts optional opaque evidence revision', () async {
+    for (final revision in <String?>[null, 'v1-42', 'A' * 128]) {
+      final api = _api(
+        MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'granularity': 'day',
+              'summaries': [],
+              'next_cursor': null,
+            }),
+            200,
+            headers: revision == null
+                ? const {}
+                : {'X-EnergyLens-Evidence-Revision': revision},
+          ),
+        ),
+      );
+      final page = await api.meteredSummaries(home.id, granularity: 'day');
+      expect(page.evidenceRevision, revision);
+      expect(page.dataMode, CloudApplianceDataMode.household);
+      api.close();
+    }
+  });
+
+  test('metered page rejects malformed evidence revision', () async {
+    for (final revision in <String>[
+      '',
+      ' bad',
+      'bad revision',
+      'a/b',
+      'A' * 129,
+    ]) {
+      final api = _api(
+        MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'granularity': 'day',
+              'summaries': [],
+              'next_cursor': null,
+            }),
+            200,
+            headers: {'X-EnergyLens-Evidence-Revision': revision},
+          ),
+        ),
+      );
+      await expectLater(
+        api.meteredSummaries(home.id, granularity: 'day'),
+        throwsFormatException,
+      );
+      api.close();
+    }
+  });
+
   test('metered page rejects malformed provenance pairs', () async {
     for (final headers in <Map<String, String>>[
       {'x-energylens-data-mode': 'sample'},

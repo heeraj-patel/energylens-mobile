@@ -17,6 +17,7 @@ class CloudEntryGate extends StatefulWidget {
     super.key,
     required this.homeBuilder,
     this.verifiedHomeBuilder,
+    this.verifiedDesignHomeBuilder,
     this.session,
     this.api,
     this.registrationService,
@@ -40,6 +41,18 @@ class CloudEntryGate extends StatefulWidget {
     CloudAuxiliaryDomainLifecycle lifecycle,
   )?
   verifiedHomeBuilder;
+
+  /// Supplies the same native coordinator whose scope is managed by this gate.
+  /// Its context is null when a selected legacy home has no valid UUID.
+  final Widget Function(
+    CloudHome selectedHome,
+    VoidCallback signOut,
+    VoidCallback changeHome,
+    CloudApiClient cloudApi,
+    CloudAuxiliaryDomainLifecycle lifecycle,
+    DesignContextCoordinator designContextCoordinator,
+  )?
+  verifiedDesignHomeBuilder;
   final CloudSession? session;
   final CloudApiClient? api;
   final CloudRegistrationService? registrationService;
@@ -416,7 +429,15 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
           _loadHomes();
         }
 
-        return widget.verifiedHomeBuilder?.call(
+        return widget.verifiedDesignHomeBuilder?.call(
+              selected,
+              signOut,
+              changeHome,
+              _api,
+              _auxiliaryDomainLifecycle,
+              _designContextCoordinator,
+            ) ??
+            widget.verifiedHomeBuilder?.call(
               selected,
               signOut,
               changeHome,

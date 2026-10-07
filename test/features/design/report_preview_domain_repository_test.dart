@@ -131,6 +131,33 @@ void main() {
     },
   );
 
+  test('delivery status readback advances from pending to sent', () async {
+    final source = Source();
+    final repo = repository(source);
+    var state = 'pending';
+    source.fetchResult = (_, id, _) async => preview(
+      id: id,
+      latestDelivery: CloudReportDeliveryStatus(
+        id: '66666666-6666-4666-8666-666666666666',
+        state: state,
+        createdAt: now.subtract(const Duration(minutes: 2)),
+        sentAt: state == 'sent'
+            ? now.subtract(const Duration(minutes: 1))
+            : null,
+      ),
+    );
+    Future<ReportPreviewDomainSnapshot?> fetch() => repo.fetch(
+      homeId: homeA,
+      previewId: previewId,
+      ownedApplianceIds: {applianceId},
+    );
+    expect((await fetch())!.preview.latestDelivery!.state, 'pending');
+    state = 'sent';
+    final sent = await fetch();
+    expect(sent!.preview.latestDelivery!.state, 'sent');
+    expect(sent.preview.latestDelivery!.sentAt, isNotNull);
+  });
+
   test(
     'home switch prevents previous home response from being returned',
     () async {

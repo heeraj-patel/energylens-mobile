@@ -168,6 +168,7 @@ class CloudMeteredSummaryPage {
     required this.nextCursor,
     this.dataMode = CloudApplianceDataMode.household,
     this.fixtureRevision,
+    this.evidenceRevision,
   });
 
   final String granularity;
@@ -175,6 +176,9 @@ class CloudMeteredSummaryPage {
   final String? nextCursor;
   final CloudApplianceDataMode dataMode;
   final String? fixtureRevision;
+
+  /// Opaque version for this metered evidence stream only.
+  final String? evidenceRevision;
   bool get isSample => dataMode == CloudApplianceDataMode.sample;
 
   factory CloudMeteredSummaryPage.fromJson(Map<String, dynamic> json) {

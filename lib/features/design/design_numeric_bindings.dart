@@ -1,3 +1,6 @@
+import 'package:timezone/data/latest.dart' as tz_data;
+import 'package:timezone/timezone.dart' as tz;
+
 import '../../core/cloud_api/cloud_household_energy.dart';
 import 'dashboard_domain_repository.dart';
 import 'design_context_coordinator.dart';
@@ -16,6 +19,42 @@ class DesignNumericBindings {
 }
 
 const _dashboardDailyIds = <String>{'dashboard_text_006', 'dashboard_text_009'};
+
+final bool _timeZonesReady = _initializeTimeZones();
+
+bool _initializeTimeZones() {
+  tz_data.initializeTimeZones();
+  return true;
+}
+
+bool _isOneHomeLocalDay(CloudHouseholdDashboard dashboard) {
+  if (!_timeZonesReady) return false;
+  try {
+    final location = tz.getLocation(dashboard.timezone);
+    final start = tz.TZDateTime.from(dashboard.period.start, location);
+    final end = tz.TZDateTime.from(dashboard.period.endExclusive, location);
+    final startIsMidnight =
+        start.hour == 0 &&
+        start.minute == 0 &&
+        start.second == 0 &&
+        start.millisecond == 0 &&
+        start.microsecond == 0;
+    final endIsMidnight =
+        end.hour == 0 &&
+        end.minute == 0 &&
+        end.second == 0 &&
+        end.millisecond == 0 &&
+        end.microsecond == 0;
+    final nextDate = DateTime.utc(start.year, start.month, start.day + 1);
+    return startIsMidnight &&
+        endIsMidnight &&
+        end.year == nextDate.year &&
+        end.month == nextDate.month &&
+        end.day == nextDate.day;
+  } catch (_) {
+    return false;
+  }
+}
 
 // The Devices API currently has no tariff or waste policy. Its measured Wh
 // buckets cannot fill these daily cost slots or any whole-device total.
@@ -70,13 +109,10 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
   }
 
   final dashboard = value.dashboard;
-  final duration = dashboard.period.endExclusive.difference(
-    dashboard.period.start,
-  );
   if (dashboard.trendPeriod != 'day') {
     return DesignNumericBindings(const [], _dashboardDailyIds);
   }
-  if (duration != const Duration(days: 1)) {
+  if (!_isOneHomeLocalDay(dashboard)) {
     throw const FormatException('Dashboard daily period changed');
   }
 

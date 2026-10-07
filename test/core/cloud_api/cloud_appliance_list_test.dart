@@ -81,9 +81,36 @@ void main() {
     final result = await api.applianceList(_homeId);
     expect(result.dataMode, CloudApplianceDataMode.household);
     expect(result.fixtureRevision, isNull);
+    expect(result.inventoryRevision, isNull);
     expect(result.appliances.single.homeId, _homeId);
     api.close();
   });
+
+  test(
+    'retains appliance version and lifecycle fields for consistency reads',
+    () async {
+      final row = _appliance()
+        ..addAll({
+          'version': 3,
+          'created_at': '2026-10-01T12:00:00Z',
+          'updated_at': '2026-10-06T12:00:00Z',
+          'archived_at': '2026-10-07T12:00:00Z',
+        });
+      final api = _api(
+        (_) async => _response(
+          body: {
+            'appliances': [row],
+          },
+        ),
+      );
+      final appliance = (await api.applianceList(_homeId)).appliances.single;
+      expect(appliance.version, 3);
+      expect(appliance.createdAt, DateTime.utc(2026, 10, 1, 12));
+      expect(appliance.updatedAt, DateTime.utc(2026, 10, 6, 12));
+      expect(appliance.archivedAt, DateTime.utc(2026, 10, 7, 12));
+      api.close();
+    },
+  );
 
   test('preserves valid same-route sample provenance', () async {
     final api = _api(
@@ -91,6 +118,7 @@ void main() {
         headers: {
           'X-EnergyLens-Data-Mode': 'sample',
           'X-EnergyLens-Fixture-Revision': 'synthetic-household-v1',
+          'X-EnergyLens-Inventory-Revision': 'rev_0001.A',
         },
       ),
     );
@@ -98,8 +126,25 @@ void main() {
     expect(result.dataMode, CloudApplianceDataMode.sample);
     expect(result.isSample, isTrue);
     expect(result.fixtureRevision, 'synthetic-household-v1');
+    expect(result.inventoryRevision, 'rev_0001.A');
     api.close();
   });
+
+  test(
+    'accepts household inventory revision without fixture provenance',
+    () async {
+      final api = _api(
+        (_) async => _response(
+          headers: {'x-energylens-inventory-revision': 'household-2'},
+        ),
+      );
+      final result = await api.applianceList(_homeId);
+      expect(result.dataMode, CloudApplianceDataMode.household);
+      expect(result.fixtureRevision, isNull);
+      expect(result.inventoryRevision, 'household-2');
+      api.close();
+    },
+  );
 
   test('legacy appliances caller still receives the appliance list', () async {
     final api = _api((_) async => _response());
@@ -127,6 +172,25 @@ void main() {
     ];
     for (final headers in cases) {
       final api = _api((_) async => _response(headers: headers));
+      await expectLater(api.applianceList(_homeId), throwsFormatException);
+      api.close();
+    }
+  });
+
+  test('rejects unsafe inventory revision values', () async {
+    for (final value in [
+      '',
+      ' two',
+      'two words',
+      'a/b',
+      'a\nb',
+      'é',
+      'x' * 129,
+    ]) {
+      final api = _api(
+        (_) async =>
+            _response(headers: {'X-EnergyLens-Inventory-Revision': value}),
+      );
       await expectLater(api.applianceList(_homeId), throwsFormatException);
       api.close();
     }

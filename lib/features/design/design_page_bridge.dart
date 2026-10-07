@@ -24,10 +24,13 @@ class DesignPageRequestGate {
     _generation++;
   }
 
-  bool accepts(DesignPageTicket ticket, DesignPageSnapshot response) =>
+  bool acceptsTicket(DesignPageTicket ticket) =>
       ticket.generation == _generation &&
       ticket.homeId == _homeId &&
-      ticket.page == _page &&
+      ticket.page == _page;
+
+  bool accepts(DesignPageTicket ticket, DesignPageSnapshot response) =>
+      acceptsTicket(ticket) &&
       response.homeId == _homeId &&
       response.page == _page;
 }
@@ -71,7 +74,11 @@ class DesignBridgeMessage {
     required String expectedPage,
     required Set<String> ownedEntityIds,
   }) {
-    if (utf8.encode(raw).length > maxMessageBytes) return null;
+    if (expectedHomeId.isEmpty ||
+        !designPageIds.contains(expectedPage) ||
+        utf8.encode(raw).length > maxMessageBytes) {
+      return null;
+    }
     Object? decoded;
     try {
       decoded = jsonDecode(raw);
@@ -82,7 +89,6 @@ class DesignBridgeMessage {
         decoded['version'] != version ||
         decoded['home_id'] != expectedHomeId ||
         decoded['page'] != expectedPage ||
-        !designPageIds.contains(expectedPage) ||
         decoded['action'] is! String ||
         !allowedActions.contains(decoded['action']) ||
         decoded.keys.any(
@@ -110,7 +116,7 @@ class DesignBridgeMessage {
           entity != null) {
         return null;
       }
-    } else if (target != null) {
+    } else if (target != null || entity != null) {
       return null;
     }
     return DesignBridgeMessage(
@@ -145,4 +151,112 @@ String encodeDesignTextBindings(Iterable<DesignTextBinding> bindings) {
     rows.add(binding.toJson());
   }
   return jsonEncode({'version': 1, 'bindings': rows});
+}
+
+/// Dormant protocol for a future WebView caller. The page's approved binding
+/// counts are frozen in docs/design_page_binding_map.json. No credentials or
+/// arbitrary JavaScript supplied by a response enter either script.
+class DesignTextBindingRenderer {
+  const DesignTextBindingRenderer(this.gate);
+
+  final DesignPageRequestGate gate;
+
+  static const _bindingCounts = <String, int>{
+    'dashboard': 43,
+    'devices': 102,
+    'efficiency': 77,
+    'efficiency_away': 73,
+    'efficiency_habits': 55,
+    'efficiency_peak_rates': 55,
+    'perks_tips': 84,
+    'settings': 62,
+    'settings_manage_devices': 70,
+    'settings_manual_device_entry': 70,
+    'settings_photo_scan_onboarding': 72,
+    'tips_care_upgrades': 34,
+    'tips_efficiency': 29,
+    'tips_knowledge': 21,
+  };
+
+  static const _contextKey = '__energyLensTextBindingContext';
+
+  String? installationScript(DesignPageTicket ticket) {
+    if (!gate.acceptsTicket(ticket)) return null;
+    final context = _encodedContext(ticket);
+    return '''
+(() => {
+  const context = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob('$context'), c => c.charCodeAt(0))));
+  const first = document.querySelector('[data-el-bind]');
+  if (!first || !first.getAttribute('data-el-bind').startsWith(context.page + '_text_')) return false;
+  const installed = window.$_contextKey;
+  if (installed && installed.generation >= context.generation) return false;
+  window.$_contextKey = context;
+  return true;
+})()
+''';
+  }
+
+  /// Returns null if navigation, a home change, or sign-out superseded [ticket].
+  /// The JavaScript repeats the context check because WebView calls may queue.
+  String? updateScript(
+    DesignPageTicket ticket,
+    Iterable<DesignTextBinding> bindings,
+  ) {
+    if (!gate.acceptsTicket(ticket)) return null;
+    final rows = bindings.toList(growable: false);
+    final count = _bindingCounts[ticket.page];
+    if (count == null || rows.length > count) {
+      throw ArgumentError('Invalid design text binding count');
+    }
+    final ids = <String>{};
+    for (final row in rows) {
+      final match = RegExp('^${RegExp.escape(ticket.page)}_text_([0-9]{3})\$')
+          .firstMatch(row.id);
+      final ordinal = match == null ? null : int.tryParse(match.group(1)!);
+      if (ordinal == null ||
+          ordinal < 1 ||
+          ordinal > count ||
+          !ids.add(row.id)) {
+        throw ArgumentError('Invalid design text binding ID');
+      }
+    }
+    final payload = jsonEncode({
+      'context': _context(ticket),
+      'bindings': jsonDecode(encodeDesignTextBindings(rows))['bindings'],
+    });
+    if (utf8.encode(payload).length > 65536) {
+      throw ArgumentError('Design text binding payload too large');
+    }
+    final encoded = base64Encode(utf8.encode(payload));
+    return '''
+(() => {
+  const payload = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob('$encoded'), c => c.charCodeAt(0))));
+  const current = window.$_contextKey;
+  const expected = payload.context;
+  if (!current || current.homeId !== expected.homeId || current.page !== expected.page || current.generation !== expected.generation) return false;
+  const first = document.querySelector('[data-el-bind]');
+  if (!first || !first.getAttribute('data-el-bind').startsWith(expected.page + '_text_')) return false;
+  const elements = Array.from(document.querySelectorAll('[data-el-bind]'));
+  const targets = [];
+  for (const row of payload.bindings) {
+    const matches = elements.filter(node => node.getAttribute('data-el-bind') === row.id);
+    if (matches.length !== 1) return false;
+    const textNodes = Array.from(matches[0].childNodes).filter(node => node.nodeType === Node.TEXT_NODE);
+    if (textNodes.length !== 1) return false;
+    targets.push([textNodes[0], row.text]);
+  }
+  for (const [node, value] of targets) node.textContent = value;
+  return true;
+})()
+''';
+  }
+
+  Map<String, Object> _context(DesignPageTicket ticket) => {
+    'homeId': ticket.homeId,
+    'page': ticket.page,
+    'generation': ticket.generation,
+  };
+
+  String _encodedContext(DesignPageTicket ticket) =>
+      base64Encode(utf8.encode(jsonEncode(_context(ticket))));
 }

@@ -80,6 +80,111 @@ String ownedHomes([String second = secondHomeId]) =>
     '{"homes":[{"id":"$firstHomeId","name":"First home","timezone":"America/Chicago","location":{"country_code":"US","postal_code":"60601"}},{"id":"$second","name":"Second home","timezone":"America/Chicago","location":{"country_code":"US","postal_code":"60601"}}]}';
 
 void main() {
+  testWidgets('native design builder receives gate-owned verified lifecycle', (
+    tester,
+  ) async {
+    final session = CloudSession(
+      config: config,
+      store: Store(),
+      authenticator: Auth(),
+    );
+    final coordinator = DesignContextCoordinator(RecordingDesignAdapters());
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/me') {
+          return http.Response(
+            '{"id":"$verifiedAccountId","email":null,"email_verified":true}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/me/preferences') {
+          return http.Response(
+            acceptedPreferences,
+            200,
+            headers: {'etag': '"1"'},
+          );
+        }
+        return http.Response(ownedHomes(), 200);
+      }),
+    );
+    final auxiliary = CloudAuxiliaryDomainLifecycle(
+      drafts: DurableOnboardingDrafts(
+        MemoryDraftStorage(),
+        OnboardingPersistenceRepository(CloudOnboardingPersistenceSource(api)),
+      ),
+      reports: ReportPreviewDomainRepository(
+        CloudReportPreviewDomainSource(api),
+      ),
+      deliveries: ReportDeliveryDomainAdapter(
+        CloudReportDeliveryDomainSource(api),
+      ),
+    );
+    final seenHomes = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          session: session,
+          api: api,
+          designContextCoordinator: coordinator,
+          auxiliaryDomainLifecycle: auxiliary,
+          homeBuilder: (_, _, _, _) => const Text('Preview home'),
+          verifiedDesignHomeBuilder:
+              (
+                home,
+                signOut,
+                changeHome,
+                receivedApi,
+                lifecycle,
+                receivedCoordinator,
+              ) {
+                expect(identical(receivedApi, api), isTrue);
+                expect(identical(receivedCoordinator, coordinator), isTrue);
+                expect(
+                  receivedCoordinator.context?.accountId,
+                  verifiedAccountId,
+                );
+                expect(receivedCoordinator.context?.homeId, home.id);
+                expect(
+                  lifecycle.isVerifiedScope(verifiedAccountId, home.id),
+                  isTrue,
+                );
+                seenHomes.add(home.id);
+                return Scaffold(
+                  body: Column(
+                    children: [
+                      TextButton(
+                        onPressed: changeHome,
+                        child: const Text('Change selected home'),
+                      ),
+                      TextButton(
+                        onPressed: signOut,
+                        child: const Text('Sign out selected home'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('First home'));
+    await tester.pumpAndSettle();
+    expect(seenHomes, contains(firstHomeId));
+    await tester.tap(find.text('Change selected home'));
+    expect(coordinator.context, isNull);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Second home'));
+    await tester.pumpAndSettle();
+    expect(seenHomes, contains(secondHomeId));
+    await tester.tap(find.text('Sign out selected home'));
+    expect(coordinator.context, isNull);
+    await tester.pumpAndSettle();
+    expect(find.text('Sign in'), findsOneWidget);
+    api.close();
+  });
+
   testWidgets('sign-in reports user cancellation separately from failures', (
     tester,
   ) async {

@@ -234,6 +234,12 @@ class DevicesDomainRepository {
             continue;
           }
           rethrow;
+        } on _MeteredRevisionChanged {
+          if (stale()) return null;
+          if (attempt + 1 < maxConsistencyAttempts) continue;
+          throw const FormatException(
+            'Devices metered evidence changed during read',
+          );
         }
       }
       throw StateError('Devices consistency attempts exhausted');
@@ -265,7 +271,34 @@ class DevicesDomainRepository {
     final cursors = <String>{};
     final bucketIds = <(String, DateTime, String, String, int, String?)>{};
     String? cursor;
+    String? evidenceRevision;
     var pages = 0;
+    Future<CloudMeteredSummaryPage?> finish(String? nextCursor) async {
+      if (evidenceRevision != null) {
+        if (stale()) return null;
+        final first = await source.meteredSummaries(homeId);
+        if (stale()) return null;
+        if (first.granularity != 'day' || first.summaries.length > 100) {
+          throw const FormatException('Invalid Devices metered page');
+        }
+        if (first.dataMode != inventory.dataMode ||
+            first.fixtureRevision != inventory.fixtureRevision) {
+          throw const FormatException('Devices metered provenance changed');
+        }
+        if (first.evidenceRevision != evidenceRevision) {
+          throw const _MeteredRevisionChanged();
+        }
+      }
+      return CloudMeteredSummaryPage(
+        granularity: 'day',
+        summaries: rows,
+        nextCursor: nextCursor,
+        dataMode: inventory.dataMode,
+        fixtureRevision: inventory.fixtureRevision,
+        evidenceRevision: evidenceRevision,
+      );
+    }
+
     while (true) {
       if (stale()) return null;
       final page = await source.meteredSummaries(homeId, cursor: cursor);
@@ -276,6 +309,11 @@ class DevicesDomainRepository {
       if (page.dataMode != inventory.dataMode ||
           page.fixtureRevision != inventory.fixtureRevision) {
         throw const FormatException('Devices metered provenance changed');
+      }
+      if (pages == 0) {
+        evidenceRevision = page.evidenceRevision;
+      } else if (page.evidenceRevision != evidenceRevision) {
+        throw const _MeteredRevisionChanged();
       }
       pages++;
       for (final row in page.summaries) {
@@ -291,41 +329,27 @@ class DevicesDomainRepository {
           throw const FormatException('Duplicate Devices metered bucket');
         }
         if (rows.length == maxMeteredRows) {
-          return CloudMeteredSummaryPage(
-            granularity: 'day',
-            summaries: rows,
-            nextCursor: page.nextCursor ?? cursor ?? 'bounded',
-            dataMode: page.dataMode,
-            fixtureRevision: page.fixtureRevision,
-          );
+          return finish(page.nextCursor ?? cursor ?? 'bounded');
         }
         rows.add(row);
       }
       final next = page.nextCursor;
       if (next == null) {
-        return CloudMeteredSummaryPage(
-          granularity: 'day',
-          summaries: rows,
-          nextCursor: null,
-          dataMode: page.dataMode,
-          fixtureRevision: page.fixtureRevision,
-        );
+        return finish(null);
       }
       if (next.isEmpty || !cursors.add(next)) {
         throw const FormatException('Devices metered cursor loop');
       }
       if (pages == maxMeteredPages || rows.length == maxMeteredRows) {
-        return CloudMeteredSummaryPage(
-          granularity: 'day',
-          summaries: rows,
-          nextCursor: next,
-          dataMode: page.dataMode,
-          fixtureRevision: page.fixtureRevision,
-        );
+        return finish(next);
       }
       cursor = next;
     }
   }
+}
+
+class _MeteredRevisionChanged implements Exception {
+  const _MeteredRevisionChanged();
 }
 
 class _DeviceInventoryRead {
@@ -338,6 +362,7 @@ class _DeviceInventoryRead {
   String get fingerprint => jsonEncode({
     'mode': inventory.dataMode.name,
     'fixture_revision': inventory.fixtureRevision,
+    'inventory_revision': inventory.inventoryRevision,
     'appliances':
         (inventory.appliances.toList()..sort((a, b) => a.id.compareTo(b.id)))
             .map(
@@ -354,6 +379,10 @@ class _DeviceInventoryRead {
                 a.region,
                 a.catalogProductId,
                 a.matchQuality,
+                a.version,
+                a.createdAt?.toUtc().toIso8601String(),
+                a.updatedAt?.toUtc().toIso8601String(),
+                a.archivedAt?.toUtc().toIso8601String(),
               ],
             )
             .toList(),

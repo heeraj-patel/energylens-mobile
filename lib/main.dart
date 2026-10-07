@@ -119,32 +119,36 @@ class EnergyLensApp extends StatelessWidget {
                             ),
                           ),
                   ),
-              verifiedHomeBuilder:
-                  (cloudHome, signOut, changeHome, cloudApi, lifecycle) =>
-                      DesignShell(
-                        onSignOut: signOut,
-                        onChangeHome: changeHome,
-                        onReportPreview: () {
-                          final accountId = lifecycle.verifiedAccountId;
-                          if (accountId == null ||
-                              !lifecycle.isVerifiedScope(
-                                accountId,
-                                cloudHome.id,
-                              )) {
-                            return;
-                          }
-                          _navigatorKey.currentState?.push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => CloudReportPreviewScreen(
-                                api: cloudApi,
-                                home: cloudHome,
-                                lifecycle: lifecycle,
-                                accountId: accountId,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+              verifiedDesignHomeBuilder:
+                  (
+                    cloudHome,
+                    signOut,
+                    changeHome,
+                    cloudApi,
+                    lifecycle,
+                    designContextCoordinator,
+                  ) => DesignShell(
+                    onSignOut: signOut,
+                    onChangeHome: changeHome,
+                    designContextCoordinator: designContextCoordinator,
+                    onReportPreview: () {
+                      final accountId = lifecycle.verifiedAccountId;
+                      if (accountId == null ||
+                          !lifecycle.isVerifiedScope(accountId, cloudHome.id)) {
+                        return;
+                      }
+                      _navigatorKey.currentState?.push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => CloudReportPreviewScreen(
+                            api: cloudApi,
+                            home: cloudHome,
+                            lifecycle: lifecycle,
+                            accountId: accountId,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
             ),
     );
   }

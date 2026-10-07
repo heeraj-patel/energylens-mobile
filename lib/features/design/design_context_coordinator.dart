@@ -226,6 +226,15 @@ class DesignContextCoordinator {
   int _generation = 0;
 
   VerifiedDesignContext? get context => _context;
+  int get generation => _generation;
+
+  bool supportsPageRead(String page) {
+    final context = _context;
+    return context != null &&
+        _readablePages.contains(page) &&
+        (context.mode != DesignContextMode.sample ||
+            _sampleModeReadablePages.contains(page));
+  }
 
   void useVerifiedContext(VerifiedDesignContext context) {
     final previous = _context;

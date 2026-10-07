@@ -67,16 +67,14 @@ class EfficiencyPeakRatesAdapter {
       throw const FormatException('Tariff source date is in the future');
     }
 
-    final effective =
-        tariffs
-            .where(
-              (tariff) =>
-                  !tariff.effectiveFrom.toUtc().isAfter(now) &&
-                  (tariff.effectiveTo == null ||
-                      now.isBefore(tariff.effectiveTo!.toUtc())),
-            )
-            .toList()
-          ..sort((a, b) => b.effectiveFrom.compareTo(a.effectiveFrom));
+    final effective = tariffs
+        .where(
+          (tariff) =>
+              !tariff.effectiveFrom.toUtc().isAfter(now) &&
+              (tariff.effectiveTo == null ||
+                  now.isBefore(tariff.effectiveTo!.toUtc())),
+        )
+        .toList();
     if (effective.isEmpty) {
       return EfficiencyPeakRatesSnapshot(
         homeId: homeId,
@@ -86,8 +84,14 @@ class EfficiencyPeakRatesAdapter {
         effectiveFrom: null,
       );
     }
+    // The cloud tariff list selects one effective revision per fuel. If an
+    // alternate source returns overlapping revisions, choosing one locally
+    // could silently claim the wrong current rate.
+    if (effective.length != 1) {
+      throw const FormatException('Ambiguous effective electricity tariff');
+    }
 
-    final tariff = effective.first;
+    final tariff = effective.single;
     final sourceDate = tariff.sourceAsOf.toUtc();
     final isStale = !sourceDate.isAfter(now.subtract(_rateLifetime));
     return EfficiencyPeakRatesSnapshot(
