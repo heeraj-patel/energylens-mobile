@@ -215,6 +215,37 @@ void main() {
     },
   );
 
+  test('usage facts parses standby power as a reference fact', () async {
+    final standby = fact()
+      ..['measurement_kind'] = 'standby_power'
+      ..['value'] = '0.4'
+      ..['unit'] = 'W'
+      ..['cycle_definition'] = null
+      ..['test_basis'] = 'Eco Standby Mode'
+      ..['operation_mode'] = 'Eco Standby Mode'
+      ..['included_energy'] = {
+        'components': ['standby_electricity'],
+        'evidence_text': 'includes standby electricity alone',
+        'status': 'documented',
+      };
+    final client = api(
+      MockClient(
+        (_) async =>
+            http.Response(jsonEncode(response(factOverride: standby)), 200),
+      ),
+    );
+
+    final parsed = await client.usageFacts(scope);
+
+    expect(parsed.facts.single.measurementKind, 'standby_power');
+    expect(parsed.facts.single.value, '0.4');
+    expect(parsed.facts.single.unit, 'W');
+    expect(parsed.facts.single.includedEnergy.components, [
+      'standby_electricity',
+    ]);
+    client.close();
+  });
+
   test('usage facts accepts empty exact-scope response and optional provenance fields', () async {
     final emptyClient = api(
       MockClient(
