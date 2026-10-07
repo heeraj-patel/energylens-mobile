@@ -17,6 +17,12 @@ void main() {
       final mapping = entry.value as Map<String, dynamic>;
       final html = File('assets/design_pages/$page/app.html')
           .readAsStringSync();
+      final chromeMatch = RegExp(
+        r'EnergyLensChrome\.mount\((\{.*?\})\);',
+        dotAll: true,
+      ).firstMatch(html);
+      expect(chromeMatch, isNotNull, reason: '$page shared chrome');
+      final chrome = jsonDecode(chromeMatch!.group(1)!) as Map<String, dynamic>;
       final allIds = <String>{};
       for (final category in <String, String>{
         'bindings': 'data-el-bind',
@@ -28,12 +34,29 @@ void main() {
             .map((item) => (item as Map<String, dynamic>)['id'] as String)
             .toSet();
         expect(declared, hasLength(items.length), reason: '$page IDs');
-        final actual = RegExp('${category.value}="([^"]+)"')
+        final raw = RegExp('${category.value}="([^"]+)"')
             .allMatches(html)
             .map((match) => match.group(1)!)
             .toList();
-        expect(actual.toSet(), declared, reason: '$page ${category.key}');
-        expect(actual, hasLength(declared.length), reason: '$page duplicates');
+        expect(
+          raw.toSet(),
+          hasLength(raw.length),
+          reason: '$page raw duplicates',
+        );
+        final shared =
+            (category.key == 'bindings'
+                    ? [
+                        ...chrome['headerBindings'] as List<dynamic>,
+                        ...chrome['footerBindings'] as List<dynamic>,
+                      ]
+                    : category.key == 'actions'
+                    ? [
+                        ...chrome['headerActions'] as List<dynamic>,
+                        ...chrome['footerActions'] as List<dynamic>,
+                      ]
+                    : const <dynamic>[])
+                .cast<String>();
+        expect({...raw, ...shared}, declared, reason: '$page ${category.key}');
         for (final id in declared) {
           expect(allIds.add(id), isTrue, reason: '$page duplicate ID');
           expect(id, startsWith('${page}_'));

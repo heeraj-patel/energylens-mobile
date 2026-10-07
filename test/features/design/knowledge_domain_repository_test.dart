@@ -60,6 +60,31 @@ void main() {
     },
   );
 
+  test('related phrases and spelling variants rank supported questions', () {
+    final repository = KnowledgeDomainRepository(_Source());
+    String? first(String query) => repository.search(query).firstOrNull?.id;
+
+    expect(
+      first('why is my power bill high'),
+      'high_bill_possible_contributors',
+    );
+    expect(first('standby waste'), 'top_waste_opportunities');
+    expect(
+      first('how much does my fridge cost to run'),
+      'device_operating_cost',
+    );
+    expect(first('lower my bill'), 'reduce_cost');
+    expect(first('utility rebates'), 'programs_for_device');
+    expect(first('rebtaes'), 'programs_for_device');
+    expect(repository.search('zzzz qqqq'), isEmpty);
+    expect(
+      repository
+          .search('rebates')
+          .every((question) => faqIntents.containsKey(question.id)),
+      isTrue,
+    );
+  });
+
   test(
     'unsupported intent is unavailable and makes no backend request',
     () async {

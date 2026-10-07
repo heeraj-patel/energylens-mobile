@@ -129,4 +129,83 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test(
+    'mapped unclassified measured cost uses mock proportions only for display',
+    () {
+      final mock = buildSeptember2026DemoTree(homeId: _homeId);
+      final period = mock.day('2026-09-30').period;
+      final original = mock.day('2026-09-30').devices.first;
+      final mapped = mock.mergeMeasured(
+        RealDeviceDay(
+          homeId: _homeId,
+          deviceId: _mappedId,
+          period: period,
+          coveredSeconds: period.seconds,
+          usefulWh: 0,
+          wasteWh: 0,
+          unclassifiedWh: 2000,
+          tariffRateUnitsPerKwh: 20000000,
+          tariffId: 'tariff-1',
+          meterEvidenceId: 'meter-mapped',
+        ),
+        verifiedMockBranchId: original.deviceId,
+        mappingEvidenceId: 'reviewed-map',
+      );
+      final projection = DemoEnergyProjection.fromTree(
+        tree: mapped,
+        homeId: _homeId,
+        referenceLocalDate: '2026-09-30',
+      );
+      final leaf = projection.deviceDayLeaves.first;
+      final expectedUseful =
+          (leaf.cost.totalMicros * original.cost.usefulMicros +
+              (original.cost.usefulMicros + original.cost.wasteMicros) ~/ 2) ~/
+          (original.cost.usefulMicros + original.cost.wasteMicros);
+
+      expect(leaf.cost.unclassifiedCents, 40);
+      expect(leaf.cost.usefulMicros, 0);
+      expect(leaf.cost.wasteMicros, 0);
+      expect(leaf.illustrativePresentationCost, isNotNull);
+      expect(leaf.presentationCost.usefulMicros, expectedUseful);
+      expect(
+        leaf.presentationCost.wasteMicros,
+        leaf.cost.totalMicros - expectedUseful,
+      );
+      expect(leaf.presentationCost.totalMicros, leaf.cost.totalMicros);
+      expect(
+        projection.homeDayCost.totalMicros,
+        projection.presentedHomeDayCost.totalMicros,
+      );
+      expect(projection.presentedHomeDayCost.unclassifiedMicros, 0);
+      expect(projection.hasUnknownPresentedDayCost, isFalse);
+
+      final distinct = mapped.mergeMeasured(
+        RealDeviceDay(
+          homeId: _homeId,
+          deviceId: _distinctId,
+          period: period,
+          coveredSeconds: period.seconds,
+          usefulWh: 0,
+          wasteWh: 0,
+          unclassifiedWh: 1000,
+          tariffRateUnitsPerKwh: 20000000,
+          tariffId: 'tariff-1',
+          meterEvidenceId: 'meter-distinct',
+        ),
+      );
+      final mixed = DemoEnergyProjection.fromTree(
+        tree: distinct,
+        homeId: _homeId,
+        referenceLocalDate: '2026-09-30',
+      );
+      expect(mixed.deviceDayLeaves.last.illustrativePresentationCost, isNull);
+      expect(mixed.presentedHomeDayCost.unclassifiedCents, 20);
+      expect(mixed.hasUnknownPresentedDayCost, isTrue);
+      expect(
+        mixed.homeDayCost.totalMicros,
+        mixed.presentedHomeDayCost.totalMicros,
+      );
+    },
+  );
 }

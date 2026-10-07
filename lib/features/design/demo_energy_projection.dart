@@ -22,8 +22,34 @@ class DemoEnergyProjection {
   DemoCost get unattributedDayCost => referenceDay.unattributed.cost;
   List<DemoBranch> get deviceDayLeaves => referenceDay.devices;
 
-  /// Any unclassified priced real leaf keeps the five approved aggregate
-  /// slots on their packaged demo fallback until its display is approved.
+  /// Customer presentation totals include approved illustrative mapped splits.
+  /// Source totals above retain unclassified measured costs for provenance.
+  DemoCost get presentedDevicesDayCost => referenceDay.devices.fold(
+    DemoCost.zero,
+    (sum, leaf) => sum + leaf.presentationCost,
+  );
+  DemoCost get presentedHomeDayCost =>
+      presentedDevicesDayCost + referenceDay.unattributed.presentationCost;
+  DemoCost get presentedMonthToDateCost {
+    var sum = DemoCost.zero;
+    for (final day in tree.days) {
+      if (day.period.localDate.compareTo(referenceLocalDate) > 0) break;
+      sum =
+          sum +
+          day.devices.fold(
+            DemoCost.zero,
+            (daily, leaf) => daily + leaf.presentationCost,
+          ) +
+          day.unattributed.presentationCost;
+    }
+    return sum;
+  }
+
+  bool get hasUnknownPresentedDayCost =>
+      presentedHomeDayCost.unclassifiedMicros > 0;
+
+  /// Source-side unknown cost remains visible to internal provenance checks,
+  /// even when a mapped leaf has an approved illustrative display split.
   bool get hasUnclassifiedMonthToDateCost =>
       monthToDateCost.unclassifiedMicros > 0;
 

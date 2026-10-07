@@ -34,16 +34,14 @@ class DemoEnergyBindings {
           throw const FormatException('Dashboard demo day changed');
         }
         final day = _day(tree, localDate);
+        final cost = _presentedHomeCost(day);
+        if (cost.unclassifiedMicros > 0) {
+          throw const FormatException('Unclassified home day presentation');
+        }
         return DemoEnergyBindings(
           List.unmodifiable([
-            DesignTextBinding(
-              'dashboard_text_006',
-              _money(day.homeCost.usefulCents),
-            ),
-            DesignTextBinding(
-              'dashboard_text_009',
-              _money(day.homeCost.wasteCents),
-            ),
+            DesignTextBinding('dashboard_text_006', _money(cost.usefulCents)),
+            DesignTextBinding('dashboard_text_009', _money(cost.wasteCents)),
           ]),
         );
       case 'devices':
@@ -53,7 +51,10 @@ class DemoEnergyBindings {
           throw const FormatException('Devices demo day changed');
         }
         final day = _day(tree, localDate);
-        final cost = day.devicesCost;
+        final cost = _presentedDevicesCost(day);
+        if (cost.unclassifiedMicros > 0) {
+          throw const FormatException('Unclassified devices day presentation');
+        }
         return DemoEnergyBindings(
           List.unmodifiable([
             DesignTextBinding('devices_text_006', _money(cost.wasteCents)),
@@ -96,6 +97,14 @@ class DemoEnergyBindings {
     }
   }
 }
+
+DemoCost _presentedDevicesCost(DemoDayTree day) => day.devices.fold(
+  DemoCost.zero,
+  (sum, branch) => sum + branch.presentationCost,
+);
+
+DemoCost _presentedHomeCost(DemoDayTree day) =>
+    _presentedDevicesCost(day) + day.unattributed.presentationCost;
 
 DemoDayTree _day(DemoMonthTree tree, String localDate) {
   try {

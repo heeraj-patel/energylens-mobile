@@ -168,6 +168,7 @@ class DemoBranch {
     this.wasteProvenance,
     this.kbWasteResultId,
     this.wasteDurationEvidenceId,
+    this.illustrativePresentationCost,
   });
 
   final String deviceId;
@@ -184,6 +185,12 @@ class DemoBranch {
   final String? wasteProvenance;
   final String? kbWasteResultId;
   final String? wasteDurationEvidenceId;
+
+  /// A display-only split of an otherwise unclassified measured total.
+  /// [cost] remains the source allocation and must be used for evidence.
+  final DemoCost? illustrativePresentationCost;
+
+  DemoCost get presentationCost => illustrativePresentationCost ?? cost;
 }
 
 class DemoDayTree {
@@ -336,10 +343,28 @@ class DemoDayTree {
       if (index < 0) {
         throw const FormatException('Verified mock branch is unavailable');
       }
-      rows[index] = reading.toBranch(
+      final mockCost = rows[index].cost;
+      final measured = reading.toBranch(
         name: rows[index].name,
         mappedMockBranchId: verifiedMockBranchId,
         mappingEvidenceId: mappingEvidenceId,
+      );
+      rows[index] = DemoBranch(
+        deviceId: measured.deviceId,
+        name: measured.name,
+        period: measured.period,
+        cost: measured.cost,
+        origin: measured.origin,
+        sourceId: measured.sourceId,
+        energyWh: measured.energyWh,
+        tariffId: measured.tariffId,
+        classificationEvidenceId: measured.classificationEvidenceId,
+        mappedMockBranchId: measured.mappedMockBranchId,
+        mappingEvidenceId: measured.mappingEvidenceId,
+        illustrativePresentationCost: _mockProportionForUnclassified(
+          measured.cost,
+          mockCost,
+        ),
       );
       return DemoDayTree(
         homeId: homeId,
@@ -359,6 +384,25 @@ class DemoDayTree {
       unattributed: unattributed,
     );
   }
+}
+
+DemoCost? _mockProportionForUnclassified(DemoCost measured, DemoCost mock) {
+  if (measured.unclassifiedMicros == 0 ||
+      measured.usefulMicros != 0 ||
+      measured.wasteMicros != 0 ||
+      mock.unclassifiedMicros != 0 ||
+      mock.usefulMicros + mock.wasteMicros == 0) {
+    return null;
+  }
+  final useful =
+      (measured.totalMicros * mock.usefulMicros +
+          (mock.usefulMicros + mock.wasteMicros) ~/ 2) ~/
+      (mock.usefulMicros + mock.wasteMicros);
+  return DemoCost.fromMicros(
+    usefulMicros: useful,
+    wasteMicros: measured.totalMicros - useful,
+    unclassifiedMicros: 0,
+  );
 }
 
 /// A real replacement must have one complete local-day interval, an explicit

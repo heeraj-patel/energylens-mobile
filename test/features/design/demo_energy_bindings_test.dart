@@ -170,4 +170,64 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test(
+    'binds mapped illustrative split and gates unknown distinct real cost',
+    () {
+      final mock = buildSeptember2026DemoTree(homeId: homeId);
+      final day = mock.day('2026-09-30');
+      final mapped = mock.mergeMeasured(
+        RealDeviceDay(
+          homeId: homeId,
+          deviceId: realDeviceId,
+          period: day.period,
+          coveredSeconds: day.period.seconds,
+          usefulWh: 0,
+          wasteWh: 0,
+          unclassifiedWh: 2000,
+          tariffRateUnitsPerKwh: 20000000,
+          tariffId: 'verified-tariff',
+          meterEvidenceId: 'meter-day-30',
+        ),
+        verifiedMockBranchId: day.devices.first.deviceId,
+        mappingEvidenceId: 'verified-device-map',
+      );
+      final shown = DemoEnergyBindings.forPage(
+        tree: mapped,
+        homeId: homeId,
+        page: 'dashboard',
+        period: 'day',
+        localDate: '2026-09-30',
+        referenceLocalDate: '2026-09-30',
+      );
+      expect(shown.bindings, hasLength(2));
+      expect(mapped.day('2026-09-30').devices.first.cost.unclassifiedCents, 40);
+
+      final unknown = mapped.mergeMeasured(
+        RealDeviceDay(
+          homeId: homeId,
+          deviceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          period: day.period,
+          coveredSeconds: day.period.seconds,
+          usefulWh: 0,
+          wasteWh: 0,
+          unclassifiedWh: 1000,
+          tariffRateUnitsPerKwh: 20000000,
+          tariffId: 'verified-tariff',
+          meterEvidenceId: 'meter-unknown',
+        ),
+      );
+      expect(
+        () => DemoEnergyBindings.forPage(
+          tree: unknown,
+          homeId: homeId,
+          page: 'dashboard',
+          period: 'day',
+          localDate: '2026-09-30',
+          referenceLocalDate: '2026-09-30',
+        ),
+        throwsFormatException,
+      );
+    },
+  );
 }
