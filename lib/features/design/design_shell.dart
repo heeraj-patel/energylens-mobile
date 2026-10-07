@@ -401,7 +401,8 @@ class _DesignShellState extends State<DesignShell> {
             else if (label === 'Away') route = 'efficiency_away';
             else if (label === 'Peak Rates') route = 'efficiency_peak_rates';
             else if (label === 'Habits') route = 'efficiency_habits';
-          } else if (page === 'perks_tips' || page.startsWith('tips_')) {
+          } else if ((page === 'perks_tips' || page.startsWith('tips_')) &&
+                     button.closest('[role="tablist"]')) {
             if (label === 'Programs') route = 'perks_tips';
             else if (label === 'Efficiency') route = 'tips_efficiency';
             else if (label === 'Care & Upgrades') route = 'tips_care_upgrades';

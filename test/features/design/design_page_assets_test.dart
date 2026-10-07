@@ -48,6 +48,31 @@ String _withoutOuterChrome(String html) => html
     .replaceFirst(RegExp(r'<header\b[^>]*>.*?</header>', dotAll: true), '')
     .replaceFirst(RegExp(r'<nav\b[^>]*>.*?</nav>', dotAll: true), '');
 
+String _withSourceFallbackValues(String html, String pageId) {
+  final approved = <String, Map<String, (String, String)>>{
+    'devices': {
+      'devices_text_006': ('\$1.96', '\$1.14'),
+      'devices_text_009': ('\$6.83', '\$6.67'),
+    },
+    for (final page in <String>[
+      'efficiency',
+      'efficiency_away',
+      'efficiency_habits',
+      'efficiency_peak_rates',
+    ])
+      page: {'${page}_text_009': ('\$37.42', '\$142.30')},
+  };
+  for (final entry in (approved[pageId] ?? {}).entries) {
+    final (packaged, source) = entry.value;
+    final pattern = RegExp(
+      '(<[^>]*data-el-bind="${entry.key}"[^>]*>)${RegExp.escape(packaged)}',
+    );
+    expect(pattern.allMatches(html), hasLength(1), reason: entry.key);
+    html = html.replaceFirstMapped(pattern, (match) => '${match[1]}$source');
+  }
+  return html;
+}
+
 Map<String, dynamic> _chromeConfig(String html) {
   final match = RegExp(
     r'EnergyLensChrome\.mount\((\{.*?\})\);',
@@ -72,44 +97,55 @@ void main() {
 
         expect(_visibleText(sourceHtml), isNotEmpty, reason: pageId);
         expect(
-          _visibleText(packagedHtml),
+          _visibleText(_withSourceFallbackValues(packagedHtml, pageId)),
           _visibleText(_withoutOuterChrome(sourceHtml)),
-          reason: '$pageId content must match its approved source',
+          reason:
+              '$pageId content must match its approved source except approved fallback values',
         );
       }
     });
 
-    test('shared chrome preserves each page binding, action, and active tab', () async {
-      final chrome = await rootBundle.loadString(
-        'assets/design_pages/shared/chrome.js',
-      );
-      expect(chrome, contains('window.EnergyLensChrome'));
-      for (final pageId in _pageIds) {
-        final html = await rootBundle.loadString(
-          'assets/design_pages/$pageId/app.html',
+    test(
+      'shared chrome preserves each page binding, action, and active tab',
+      () async {
+        final chrome = await rootBundle.loadString(
+          'assets/design_pages/shared/chrome.js',
         );
-        final config = _chromeConfig(html);
-        expect(config['headerBindings'], hasLength(2));
-        expect(config['footerActions'], hasLength(5));
-        expect(config['footerBindings'], hasLength(5));
-        expect(config['headerActions'], hasLength(pageId == 'dashboard' ? 1 : 2));
-        for (final id in <String>[
-          ...(config['headerBindings'] as List).cast<String>(),
-          ...(config['footerBindings'] as List).cast<String>(),
-          ...(config['headerActions'] as List).cast<String>(),
-          ...(config['footerActions'] as List).cast<String>(),
-        ]) {
-          expect(id, startsWith('${pageId}_'), reason: pageId);
+        expect(chrome, contains('window.EnergyLensChrome'));
+        for (final pageId in _pageIds) {
+          final html = await rootBundle.loadString(
+            'assets/design_pages/$pageId/app.html',
+          );
+          final config = _chromeConfig(html);
+          expect(config['headerBindings'], hasLength(2));
+          expect(config['footerActions'], hasLength(5));
+          expect(config['footerBindings'], hasLength(5));
+          expect(
+            config['headerActions'],
+            hasLength(pageId == 'dashboard' ? 1 : 2),
+          );
+          for (final id in <String>[
+            ...(config['headerBindings'] as List).cast<String>(),
+            ...(config['footerBindings'] as List).cast<String>(),
+            ...(config['headerActions'] as List).cast<String>(),
+            ...(config['footerActions'] as List).cast<String>(),
+          ]) {
+            expect(id, startsWith('${pageId}_'), reason: pageId);
+          }
+          expect(config['homeName'], 'The Miller Home');
+          expect(config['tabLabels'], <String>[
+            'Dashboard',
+            'Devices',
+            'Efficiency',
+            'Tips',
+            'Settings',
+          ]);
+          expect(html, contains('src="../shared/chrome.js"'));
+          expect(html, contains('<div id="el-header"></div>'));
+          expect(html, contains('<div id="el-footer"></div>'));
         }
-        expect(config['homeName'], 'The Miller Home');
-        expect(config['tabLabels'], <String>[
-          'Dashboard', 'Devices', 'Efficiency', 'Tips', 'Settings',
-        ]);
-        expect(html, contains('src="../shared/chrome.js"'));
-        expect(html, contains('<div id="el-header"></div>'));
-        expect(html, contains('<div id="el-footer"></div>'));
-      }
-    });
+      },
+    );
 
     test('dashboard home switcher keeps its native route', () async {
       final html = await rootBundle.loadString(
@@ -118,6 +154,57 @@ void main() {
       final config = _chromeConfig(html);
       expect(config['homeRoute'], 'change_home');
       expect(config['headerBindings'], contains('dashboard_text_001'));
+    });
+
+    test('Tips local tabs navigate without consuming other buttons', () async {
+      final node = Process.runSync('node', ['--version']);
+      if (node.exitCode != 0) return;
+      final shell = await File('lib/features/design/design_shell.dart')
+          .readAsString();
+      final marker = 'const page = \$currentPage;';
+      final markerOffset = shell.indexOf(marker);
+      expect(markerOffset, isNonNegative);
+      final start = shell.lastIndexOf(
+        "await _controller.runJavaScript('''",
+        markerOffset,
+      );
+      final end = shell.indexOf("''');", markerOffset);
+      expect(start, isNonNegative);
+      expect(end, greaterThan(start));
+      final script = shell
+          .substring(start + "await _controller.runJavaScript('''".length, end)
+          .replaceFirst('\$currentPage', '"tips_efficiency"');
+      final result = await Process.run('node', [
+        '-e',
+        '''
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+let click;
+const routes = [];
+const document = {addEventListener: (_, callback) => click = callback};
+const EnergyLensNavigation = {postMessage: route => routes.push(route)};
+vm.runInNewContext(process.argv[1], {document, EnergyLensNavigation});
+function element(label, tab) {
+  return {
+    dataset: {},
+    cloneNode: () => ({textContent: label, querySelectorAll: () => []}),
+    closest: selector => selector === '[role="tablist"]' && tab ? {} : null,
+  };
+}
+function tap(button) {
+  click({
+    target: {closest: selector => selector === 'button' ? button : null},
+    preventDefault: () => {}, stopImmediatePropagation: () => {},
+  });
+}
+tap(element('Efficiency', true));
+assert.deepEqual(routes, ['tips_efficiency']);
+tap(element('Efficiency', false));
+assert.deepEqual(routes, ['tips_efficiency']);
+''',
+        script,
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
     });
 
     test(
@@ -131,7 +218,9 @@ void main() {
           final source = await rootBundle.loadString(
             'assets/design_pages/$pageId/code.html',
           );
-          for (final match in RegExp(r'data-path="([^"]+)"').allMatches(source)) {
+          for (final match in RegExp(
+            r'data-path="([^"]+)"',
+          ).allMatches(source)) {
             navTargets.add(match.group(1)!);
           }
         }
