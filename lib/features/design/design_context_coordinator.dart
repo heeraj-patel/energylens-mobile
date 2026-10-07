@@ -14,6 +14,7 @@ import '../discovery/discovery_credentials.dart';
 import 'identification_candidates_domain_adapter.dart';
 import 'devices_runtime_evidence_adapter.dart';
 import 'devices_consistency_snapshot.dart';
+import 'settings_regional_rate_adapter.dart';
 
 /// Supplied only after the native auth layer verifies account ownership of the
 /// selected home. This value contains no bearer token or WebView state.
@@ -161,9 +162,14 @@ class DesignContextRead {
 /// sign-out invalidates outstanding reads, including errors that arrive late.
 /// A null result means the read was invalidated or the adapter had no result.
 class DesignContextCoordinator {
-  DesignContextCoordinator(this.adapters, {this.identificationCandidates});
+  DesignContextCoordinator(
+    this.adapters, {
+    this.identificationCandidates,
+    this.settingsRegionalRate,
+  });
 
   final IdentificationCandidatesDomainAdapter? identificationCandidates;
+  final SettingsRegionalRateAdapter? settingsRegionalRate;
 
   /// Uses the same authenticated native client as CloudEntryGate. Nothing in
   /// this assembly is exposed to the WebView or visible shell.
@@ -209,6 +215,9 @@ class DesignContextCoordinator {
       identificationCandidates: IdentificationCandidatesDomainAdapter(
         DiscoveryIdentificationCandidatesSource(credentials: credentials),
       ),
+      settingsRegionalRate: SettingsRegionalRateAdapter(
+        CloudSettingsRegionalRateSource(api),
+      ),
     );
   }
 
@@ -228,6 +237,7 @@ class DesignContextCoordinator {
     _generation++;
     adapters.clear();
     identificationCandidates?.useVerifiedContext(context);
+    settingsRegionalRate?.clear();
     _context = context;
   }
 
@@ -236,6 +246,38 @@ class DesignContextCoordinator {
     _context = null;
     adapters.clear();
     identificationCandidates?.clear();
+    settingsRegionalRate?.clear();
+  }
+
+  /// Native-only regional estimate read for a verified household. Public rate
+  /// data is scoped by the home's owned location before it reaches Settings.
+  Future<DesignContextRead?> readSettingsRegionalRate() async {
+    final context = _context;
+    if (context == null) throw StateError('No verified design context');
+    if (context.mode != DesignContextMode.household) {
+      throw StateError('Regional rate is unavailable in sample context');
+    }
+    final adapter = settingsRegionalRate;
+    if (adapter == null) throw StateError('Regional rate read unavailable');
+    final generation = _generation;
+    bool stale() => generation != _generation || !identical(context, _context);
+    try {
+      final value = await adapter.fetch(context.homeId);
+      if (stale() || value == null || !value.isCurrent()) return null;
+      if (value.homeId.toLowerCase() != context.homeId.toLowerCase()) {
+        throw const FormatException('Settings regional rate context changed');
+      }
+      return DesignContextRead(
+        accountId: context.accountId,
+        homeId: context.homeId,
+        mode: context.mode,
+        page: 'settings_regional_rate',
+        value: value,
+      );
+    } catch (_) {
+      if (stale()) return null;
+      rethrow;
+    }
   }
 
   Future<DesignContextRead?> read(String page) async {

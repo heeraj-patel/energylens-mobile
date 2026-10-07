@@ -26,6 +26,7 @@ import 'cloud_tariff.dart';
 import 'cloud_cycle_comparison.dart';
 import 'cloud_sensor.dart';
 import 'cloud_household_energy.dart';
+import 'cloud_regional_rate.dart';
 import 'cloud_usage_facts.dart';
 
 class CloudApiException implements Exception {
@@ -1301,6 +1302,39 @@ class CloudApiClient {
   }
 
   Future<http.Response> get(String path) => _request('GET', path);
+
+  /// Public lookup. No bearer token is sent or refreshed for this route.
+  Future<CloudRegionalRate> regionalElectricityRate({
+    required String country,
+    required String postalCode,
+  }) async {
+    if (!RegExp(r'^[A-Z]{2}$').hasMatch(country) || postalCode.trim().isEmpty) {
+      throw ArgumentError('Invalid regional rate location');
+    }
+    final base = Uri.parse(session.config.apiUrl);
+    if (!base.hasScheme ||
+        base.host.isEmpty ||
+        base.path != '' && base.path != '/') {
+      throw StateError('Cloud API URL must be an origin without a path');
+    }
+    final query = Uri(
+      queryParameters: {'country': country, 'postal_code': postalCode},
+    ).query;
+    final response = await _client.get(base.resolve('/v1/energy/rates?$query'));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      String code = 'http_${response.statusCode}';
+      try {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        code = body['code'] as String? ?? code;
+      } catch (_) {}
+      throw CloudApiException(response.statusCode, code);
+    }
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Invalid regional rate response');
+    }
+    return CloudRegionalRate.fromJson(decoded);
+  }
 
   static String _requiredEtag(http.Response response) {
     final value = response.headers['etag'];
