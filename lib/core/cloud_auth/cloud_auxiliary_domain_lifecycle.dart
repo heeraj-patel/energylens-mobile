@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter/foundation.dart';
 
 import '../cloud_api/cloud_api_client.dart';
@@ -38,6 +40,8 @@ class CloudAuxiliaryDomainLifecycle {
   String? _accountId;
   String? _homeId;
   int _generation = 0;
+  final Map<ReportPreviewDomainSnapshot, int> _reportReadScopes =
+      HashMap.identity();
   final ValueNotifier<int> _scopeVersion = ValueNotifier<int>(0);
 
   ValueListenable<int> get scopeChanges => _scopeVersion;
@@ -111,6 +115,7 @@ class CloudAuxiliaryDomainLifecycle {
     drafts.invalidatePendingWork();
     _reports.clear();
     _deliveries.clear();
+    _reportReadScopes.clear();
     return drafts.selectScope(null, null);
   }
 
@@ -127,6 +132,7 @@ class CloudAuxiliaryDomainLifecycle {
     drafts.invalidatePendingWork();
     _reports.clear();
     _deliveries.clear();
+    _reportReadScopes.clear();
     await drafts.selectScope(accountId, homeId);
     if (generation != _generation) return false;
     _accountId = accountId;
@@ -148,7 +154,9 @@ class CloudAuxiliaryDomainLifecycle {
       ownedApplianceIds: ownedApplianceIds,
       idempotencyKey: idempotencyKey,
     );
-    return generation == _generation ? result : null;
+    if (generation != _generation || result == null) return null;
+    _reportReadScopes[result] = generation;
+    return result;
   }
 
   Future<ReportPreviewDomainSnapshot?> reportPreview({
@@ -163,7 +171,9 @@ class CloudAuxiliaryDomainLifecycle {
       previewId: previewId,
       ownedApplianceIds: ownedApplianceIds,
     );
-    return generation == _generation ? result : null;
+    if (generation != _generation || result == null) return null;
+    _reportReadScopes[result] = generation;
+    return result;
   }
 
   /// Queues a delivery request only after the caller explicitly approves it.
@@ -189,6 +199,32 @@ class CloudAuxiliaryDomainLifecycle {
     return generation == _generation
         ? result
         : const ReportDeliveryDomainResult(ReportDeliveryStatus.contextChanged);
+  }
+
+  /// Rechecks the current preview before exposing its latest request state.
+  /// The optional ID distinguishes a known queued request from a later one.
+  Future<ReportDeliveryReadbackResult> readReportDelivery({
+    required ReportPreviewDomainSnapshot preview,
+    required Set<String> ownedApplianceIds,
+    String? expectedDeliveryId,
+  }) async {
+    _requireVerifiedHome(preview.homeId);
+    final generation = _generation;
+    if (_reportReadScopes[preview] != generation) {
+      return const ReportDeliveryReadbackResult(
+        ReportDeliveryReadbackStatus.contextChanged,
+      );
+    }
+    final result = await _deliveries.readback(
+      preview: preview,
+      ownedApplianceIds: ownedApplianceIds,
+      expectedDeliveryId: expectedDeliveryId,
+    );
+    return generation == _generation
+        ? result
+        : const ReportDeliveryReadbackResult(
+            ReportDeliveryReadbackStatus.contextChanged,
+          );
   }
 
   void _requireVerifiedHome(String homeId) {

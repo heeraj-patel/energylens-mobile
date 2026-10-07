@@ -22,6 +22,20 @@ abstract interface class ReportDeliveryDomainSource {
 
 enum ReportDeliveryStatus { queued, rejected, contextChanged }
 
+enum ReportDeliveryReadbackStatus {
+  available,
+  noRequest,
+  previewChanged,
+  contextChanged,
+}
+
+class ReportDeliveryReadbackResult {
+  const ReportDeliveryReadbackResult(this.status, {this.delivery});
+
+  final ReportDeliveryReadbackStatus status;
+  final CloudReportDeliveryStatus? delivery;
+}
+
 class ReportDeliveryDomainResult {
   const ReportDeliveryDomainResult(this.status, {this.delivery});
 
@@ -44,6 +58,75 @@ class ReportDeliveryDomainAdapter {
     _homeId = null;
     _generation++;
     _operations.clear();
+  }
+
+  /// Reads the latest recipient-free request state for this exact preview.
+  /// An optional ID binds the read to a request previously returned by queue.
+  /// Without one, the result represents only the latest request on the preview.
+  Future<ReportDeliveryReadbackResult> readback({
+    required ReportPreviewDomainSnapshot preview,
+    required Set<String> ownedApplianceIds,
+    String? expectedDeliveryId,
+  }) async {
+    final homeId = preview.homeId;
+    if (_homeId != homeId) {
+      _homeId = homeId;
+      _generation++;
+      _operations.clear();
+    }
+    final generation = _generation;
+    bool contextChanged() => generation != _generation || _homeId != homeId;
+    if (preview.status != ReportPreviewStatus.current ||
+        !_now().toUtc().isBefore(preview.preview.expiresAt.toUtc()) ||
+        preview.preview.homeId.toLowerCase() != homeId.toLowerCase()) {
+      return const ReportDeliveryReadbackResult(
+        ReportDeliveryReadbackStatus.previewChanged,
+      );
+    }
+
+    try {
+      final current = await source.reportPreview(
+        homeId,
+        preview.preview.id,
+        Set.unmodifiable(ownedApplianceIds.map((id) => id.toLowerCase())),
+      );
+      if (contextChanged()) {
+        return const ReportDeliveryReadbackResult(
+          ReportDeliveryReadbackStatus.contextChanged,
+        );
+      }
+      if (current.homeId.toLowerCase() != homeId.toLowerCase() ||
+          current.id != preview.preview.id ||
+          current.snapshotSha256 != preview.snapshotSha256 ||
+          current.stale ||
+          !_now().toUtc().isBefore(current.expiresAt.toUtc())) {
+        return const ReportDeliveryReadbackResult(
+          ReportDeliveryReadbackStatus.previewChanged,
+        );
+      }
+      final delivery = current.latestDelivery;
+      if (delivery == null) {
+        return const ReportDeliveryReadbackResult(
+          ReportDeliveryReadbackStatus.noRequest,
+        );
+      }
+      if (expectedDeliveryId != null && delivery.id != expectedDeliveryId) {
+        return const ReportDeliveryReadbackResult(
+          ReportDeliveryReadbackStatus.previewChanged,
+        );
+      }
+      return ReportDeliveryReadbackResult(
+        ReportDeliveryReadbackStatus.available,
+        delivery: delivery,
+      );
+    } catch (_) {
+      if (contextChanged()) {
+        return const ReportDeliveryReadbackResult(
+          ReportDeliveryReadbackStatus.contextChanged,
+        );
+      }
+      rethrow;
+    }
   }
 
   Future<ReportDeliveryDomainResult> queue({

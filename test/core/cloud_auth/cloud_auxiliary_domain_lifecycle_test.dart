@@ -73,6 +73,7 @@ class _ReportSource implements ReportPreviewDomainSource {
 
 class _DeliverySource implements ReportDeliveryDomainSource {
   Completer<CloudReportPreview>? pendingRead;
+  CloudReportPreview? readResult;
   int reads = 0;
   int queues = 0;
   String? lastKey;
@@ -84,7 +85,7 @@ class _DeliverySource implements ReportDeliveryDomainSource {
   ) {
     reads++;
     return pendingRead?.future ??
-        Future.value(_ReportSource().preview(homeId, id));
+        Future.value(readResult ?? _ReportSource().preview(homeId, id));
   }
 
   @override
@@ -238,5 +239,85 @@ void main() {
     deliveries.pendingRead!.complete(_ReportSource().preview(homeA, previewId));
     expect((await pending).status, ReportDeliveryStatus.contextChanged);
     expect(deliveries.queues, 0);
+  });
+
+  test('reopened scope reads latest request only for the verified preview', () async {
+    final deliveries = _DeliverySource();
+    final service = _lifecycle(_Storage(), _ReportSource(), deliveries);
+    await service.selectVerifiedHome(accountA, homeA);
+    final preview = (await service.reportPreview(
+      homeId: homeA,
+      previewId: previewId,
+      ownedApplianceIds: const {},
+    ))!;
+    deliveries.readResult = CloudReportPreview(
+      previewId,
+      digest,
+      homeA,
+      DateTime.utc(2026, 10, 6),
+      DateTime.utc(2027, 10, 6),
+      false,
+      const [],
+      const [],
+      latestDelivery: CloudReportDeliveryStatus(
+        id: deliveryId,
+        state: 'pending',
+        createdAt: DateTime.utc(2026, 10, 6),
+        sentAt: null,
+      ),
+    );
+    final result = await service.readReportDelivery(
+      preview: preview,
+      ownedApplianceIds: const {},
+      expectedDeliveryId: deliveryId,
+    );
+    expect(result.status, ReportDeliveryReadbackStatus.available);
+    expect(result.delivery!.state, 'pending');
+    expect(deliveries.queues, 0);
+    await service.selectVerifiedHome(accountB, homeA);
+    expect(
+      (await service.readReportDelivery(
+        preview: preview,
+        ownedApplianceIds: const {},
+        expectedDeliveryId: deliveryId,
+      )).status,
+      ReportDeliveryReadbackStatus.contextChanged,
+    );
+    final reopenedPreview = (await service.reportPreview(
+      homeId: homeA,
+      previewId: previewId,
+      ownedApplianceIds: const {},
+    ))!;
+    expect(
+      (await service.readReportDelivery(
+        preview: reopenedPreview,
+        ownedApplianceIds: const {},
+        expectedDeliveryId: deliveryId,
+      )).status,
+      ReportDeliveryReadbackStatus.available,
+    );
+  });
+
+  test('account change on the same home drops pending readback', () async {
+    final deliveries = _DeliverySource()
+      ..pendingRead = Completer<CloudReportPreview>();
+    final service = _lifecycle(_Storage(), _ReportSource(), deliveries);
+    await service.selectVerifiedHome(accountA, homeA);
+    final preview = (await service.reportPreview(
+      homeId: homeA,
+      previewId: previewId,
+      ownedApplianceIds: const {},
+    ))!;
+    final pending = service.readReportDelivery(
+      preview: preview,
+      ownedApplianceIds: const {},
+      expectedDeliveryId: deliveryId,
+    );
+    await service.selectVerifiedHome(accountB, homeA);
+    deliveries.pendingRead!.complete(_ReportSource().preview(homeA, previewId));
+    expect(
+      (await pending).status,
+      ReportDeliveryReadbackStatus.contextChanged,
+    );
   });
 }
