@@ -7,12 +7,12 @@
     "label_validation": "macOS Vision OCR",
     "status_time": "9:41"
   },
-  "app_executable_sha256": "e93ae15747e00c546733f769d757aa01c7d9845f5ca1b609de906f44c4314bff",
+  "app_executable_sha256": "b1f37a1c3c7732baad33610bae88a53b1988ecf780a47a70949c4ac0224b3971",
   "pages": {
     "dashboard": {
       "screenshot": "01-dashboard.png",
-      "png_sha256": "3e270b99e5a50945edcbfb2137b3ef27793e49a78a30a39cf9d3c861f93af784",
-      "app_html_sha256": "bdd38e7f8deb75448465ec1a2f0ccd83d8fdbb98631a0e3423bc697741c2bbe3"
+      "png_sha256": "a18384277a92fa36591bf5f12edf39807875114cf64f46570bd4fecdfffe069b",
+      "app_html_sha256": "e0210529bd054624ca3fbe7f61c728a7c5a56a87ab07ea2734e91895e59daa7b"
     },
     "devices": {
       "screenshot": "02-devices.png",

@@ -66,6 +66,29 @@ void main() {
     });
 
     test(
+      'dashboard home switcher uses its route and keeps the name binding',
+      () async {
+        final html = await rootBundle.loadString(
+          'assets/design_pages/dashboard/app.html',
+        );
+        final switcher = RegExp(
+          r'<button[^>]*data-el-route="change_home"[^>]*>(.*?)</button>',
+          dotAll: true,
+        ).firstMatch(html);
+        expect(switcher, isNotNull);
+        expect(
+          switcher!.group(1),
+          contains('data-el-bind="dashboard_text_001"'),
+        );
+        expect(switcher.group(1), contains('expand_more'));
+        expect(
+          html,
+          contains('data-el-bind="dashboard_text_002">Dashboard</span>'),
+        );
+      },
+    );
+
+    test(
       'all approved pages are packaged and top-level nav targets resolve',
       () async {
         final assetPaths = <String>{};

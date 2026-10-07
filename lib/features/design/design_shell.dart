@@ -394,10 +394,9 @@ class _DesignShellState extends State<DesignShell> {
           const button = event.target.closest('button');
           if (!button) return;
           const label = textOf(button);
-          let route;
+          let route = button.dataset.elRoute;
           if (button.id === 'email-btn') route = 'report_preview';
-          if (label.startsWith('The Miller Home')) route = 'change_home';
-          else if (page.startsWith('efficiency')) {
+          else if (route !== 'change_home' && page.startsWith('efficiency')) {
             if (label === 'Night') route = 'efficiency';
             else if (label === 'Away') route = 'efficiency_away';
             else if (label === 'Peak Rates') route = 'efficiency_peak_rates';
