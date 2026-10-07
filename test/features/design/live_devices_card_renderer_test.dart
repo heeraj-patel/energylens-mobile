@@ -43,6 +43,36 @@ void main() {
     );
   });
 
+  test('measured energy does not replace unsupported card cost or state', () {
+    const renderer = LiveDevicesCardRenderer();
+    final script = renderer.appendScript(
+      projection: _projection(homeA, [
+        LiveDeviceRow(
+          applianceId: 'metered-device',
+          name: 'Saved Device',
+          measuredBucket: LiveDeviceMeasuredBucket(
+            energyWh: 1250,
+            bucketStart: DateTime.utc(2026, 10, 6),
+            computedAt: DateTime.utc(2026, 10, 6, 4),
+            coveredSeconds: 3600,
+          ),
+        ),
+      ]),
+      generation: 1,
+    );
+    final encodedPayload = RegExp("atob\\('([^']+)'\\)")
+        .firstMatch(script)!
+        .group(1)!;
+    final payload = jsonDecode(
+      utf8.decode(base64Decode(encodedPayload)),
+    ) as Map<String, dynamic>;
+    expect(payload['rows'], [
+      {'id': 'metered-device', 'name': 'Saved Device'},
+    ]);
+    expect(script, isNot(contains('energyWh')));
+    expect(script, isNot(contains('coveredSeconds')));
+  });
+
   test('DOM append preserves mock cards, refreshes, and rejects stale scope', () async {
     final available = Process.runSync('node', [
       '-e',

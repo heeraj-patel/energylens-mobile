@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import '../../core/cloud_api/cloud_appliance_list.dart';
 import '../../core/cloud_api/cloud_api_client.dart';
+import '../identify/cloud_device_reference_resolver.dart';
+import '../identify/device_reference_inventory_observer.dart';
 import 'dashboard_domain_repository.dart';
 import 'devices_domain_repository.dart';
 import 'efficiency_away_domain_adapter.dart';
@@ -166,10 +170,12 @@ class DesignContextCoordinator {
     this.adapters, {
     this.identificationCandidates,
     this.settingsRegionalRate,
+    this.deviceReferenceObserver,
   });
 
   final IdentificationCandidatesDomainAdapter? identificationCandidates;
   final SettingsRegionalRateAdapter? settingsRegionalRate;
+  final DeviceReferenceInventoryObserver? deviceReferenceObserver;
 
   /// Uses the same authenticated native client as CloudEntryGate. Nothing in
   /// this assembly is exposed to the WebView or visible shell.
@@ -218,6 +224,9 @@ class DesignContextCoordinator {
       settingsRegionalRate: SettingsRegionalRateAdapter(
         CloudSettingsRegionalRateSource(api),
       ),
+      deviceReferenceObserver: DeviceReferenceInventoryObserver(
+        CloudDeviceReferenceResolver(api),
+      ),
     );
   }
 
@@ -247,6 +256,7 @@ class DesignContextCoordinator {
     adapters.clear();
     identificationCandidates?.useVerifiedContext(context);
     settingsRegionalRate?.clear();
+    deviceReferenceObserver?.clear();
     _context = context;
   }
 
@@ -256,6 +266,7 @@ class DesignContextCoordinator {
     adapters.clear();
     identificationCandidates?.clear();
     settingsRegionalRate?.clear();
+    deviceReferenceObserver?.clear();
   }
 
   /// Native-only regional estimate read for a verified household. Public rate
@@ -333,6 +344,12 @@ class DesignContextCoordinator {
       };
       if (stale() || value == null) return null;
       _validateValue(context, value);
+      if (page == 'devices' &&
+          context.mode == DesignContextMode.household &&
+          value is DevicesDomainSnapshot) {
+        final observer = deviceReferenceObserver;
+        if (observer != null) unawaited(observer.observe(value));
+      }
       return DesignContextRead(
         accountId: context.accountId,
         homeId: context.homeId,

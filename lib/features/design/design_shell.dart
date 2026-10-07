@@ -6,7 +6,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'design_context_coordinator.dart';
+import 'design_numeric_bindings.dart';
 import 'design_page_read_dispatcher.dart';
+import 'design_page_bridge.dart';
 import 'live_devices_card_renderer.dart';
 import 'live_devices_projection.dart';
 
@@ -71,9 +73,14 @@ class _DesignShellState extends State<DesignShell> {
   late final WebViewController _controller;
   late final DesignPageReadDispatcher _pageReads;
   static const _liveDevicesRenderer = LiveDevicesCardRenderer();
+  final DesignPageRequestGate _bindingGate = DesignPageRequestGate();
+  late final DesignTextBindingRenderer _bindingRenderer =
+      DesignTextBindingRenderer(_bindingGate);
   int _pageLoadGeneration = 0;
   bool _pageReady = false;
   LiveDevicesProjection? _devicesProjection;
+  DesignNumericBindings? _dashboardBindings;
+  DesignPageTicket? _dashboardTicket;
   Timer? _tourTimer;
   int _tourIndex = 0;
   final List<String> _history = [];
@@ -159,6 +166,9 @@ class _DesignShellState extends State<DesignShell> {
     _pageLoadGeneration++;
     _pageReady = false;
     _devicesProjection = null;
+    _dashboardBindings = null;
+    _dashboardTicket = null;
+    _bindingGate.clear();
   }
 
   bool _isCurrentPageLoad(String page, int generation) =>
@@ -166,8 +176,24 @@ class _DesignShellState extends State<DesignShell> {
 
   Future<void> _readPage(String page, int generation) async {
     await _pageReads.load(page);
-    if (!_isCurrentPageLoad(page, generation) || page != 'devices') return;
+    if (!_isCurrentPageLoad(page, generation)) return;
     final read = _pageReads.latestRead;
+    if (page == 'dashboard') {
+      if (read == null || read.page != 'dashboard') return;
+      try {
+        final projection = prepareDesignNumericBindings(read);
+        if (!_isCurrentPageLoad(page, generation) ||
+            !identical(_pageReads.latestRead, read)) {
+          return;
+        }
+        _dashboardBindings = projection;
+        await _applyDashboardBindings(generation);
+      } catch (_) {
+        // Packaged numeric values remain visible when live values are invalid.
+      }
+      return;
+    }
+    if (page != 'devices') return;
     if (read == null || read.mode != DesignContextMode.household) return;
     try {
       final projection = prepareLiveDevicesProjection(read);
@@ -192,6 +218,27 @@ class _DesignShellState extends State<DesignShell> {
       return;
     }
     _pageReady = true;
+    if (page == 'dashboard') {
+      final context = widget.designContextCoordinator?.context;
+      if (context == null) return;
+      final ticket = _bindingGate.select(context.homeId, page);
+      _dashboardTicket = ticket;
+      try {
+        final installed = await _controller.runJavaScriptReturningResult(
+          _bindingRenderer.installationScript(ticket)!,
+        );
+        if (installed != true ||
+            !_isCurrentPageLoad(page, generation) ||
+            !identical(widget.designContextCoordinator?.context, context) ||
+            !identical(_dashboardTicket, ticket)) {
+          return;
+        }
+        await _applyDashboardBindings(generation);
+      } catch (_) {
+        // A WebView failure leaves the packaged values intact.
+      }
+      return;
+    }
     if (page != 'devices') return;
     final context = widget.designContextCoordinator?.context;
     if (context == null || context.mode != DesignContextMode.household) return;
@@ -210,6 +257,31 @@ class _DesignShellState extends State<DesignShell> {
       await _applyDevicesProjection(generation);
     } catch (_) {
       // A WebView failure leaves the static asset intact.
+    }
+  }
+
+  Future<void> _applyDashboardBindings(int generation) async {
+    final projection = _dashboardBindings;
+    final read = _pageReads.latestRead;
+    final context = widget.designContextCoordinator?.context;
+    final ticket = _dashboardTicket;
+    if (!_pageReady ||
+        !_isCurrentPageLoad('dashboard', generation) ||
+        projection == null ||
+        read?.page != 'dashboard' ||
+        context == null ||
+        ticket == null ||
+        read?.accountId != context.accountId ||
+        read?.homeId != context.homeId ||
+        read?.mode != context.mode) {
+      return;
+    }
+    final script = _bindingRenderer.updateScript(ticket, projection.bindings);
+    if (script == null) return;
+    try {
+      await _controller.runJavaScriptReturningResult(script);
+    } catch (_) {
+      // The packaged values remain visible on script failure.
     }
   }
 

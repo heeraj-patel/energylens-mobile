@@ -1,5 +1,9 @@
 class CloudTariff {
   const CloudTariff({
+    this.id,
+    this.fuel,
+    this.rateUnit,
+    this.currency,
     required this.homeId,
     required this.rate,
     required this.sourceAsOf,
@@ -7,6 +11,13 @@ class CloudTariff {
     this.effectiveTo,
   });
 
+  /// These fields are retained from a validated server response. Callers that
+  /// need priced evidence must require them; older display-only fixtures may
+  /// omit them.
+  final String? id;
+  final String? fuel;
+  final String? rateUnit;
+  final String? currency;
   final String homeId;
   final String rate;
   final DateTime sourceAsOf;
@@ -57,6 +68,10 @@ class CloudTariff {
       throw const FormatException('Invalid cloud tariff');
     }
     return CloudTariff(
+      id: json['id'] as String,
+      fuel: fuel,
+      rateUnit: rateUnit,
+      currency: 'USD',
       homeId: homeId,
       rate: json['rate'] as String,
       sourceAsOf: sourceAsOf,

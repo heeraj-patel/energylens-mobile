@@ -16,6 +16,7 @@ class CloudAppliance {
     this.createdAt,
     this.updatedAt,
     this.archivedAt,
+    this.kbWasteResult,
   });
 
   final String id;
@@ -34,6 +35,7 @@ class CloudAppliance {
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? archivedAt;
+  final CloudKbWasteResult? kbWasteResult;
 
   factory CloudAppliance.fromJson(Map<String, dynamic> json) {
     final identity = json['identity'];
@@ -65,11 +67,34 @@ class CloudAppliance {
       createdAt: _optionalInstant(json['created_at']),
       updatedAt: _optionalInstant(json['updated_at']),
       archivedAt: _optionalInstant(json['archived_at']),
+      kbWasteResult: json['kb_waste_result'] == null
+          ? null
+          : CloudKbWasteResult.fromJson(json['kb_waste_result']),
     );
   }
 
   static DateTime? _optionalInstant(Object? value) =>
       value == null ? null : DateTime.parse(value as String);
+}
+
+class CloudKbWasteResult {
+  const CloudKbWasteResult({required this.id, required this.status});
+
+  final String id;
+  final String status;
+
+  factory CloudKbWasteResult.fromJson(Object? value) {
+    if (value is! Map<String, dynamic> ||
+        value['id'] is! String ||
+        (value['id'] as String).isEmpty ||
+        value['status'] != 'waste_evidence_unavailable_after_kb') {
+      throw const FormatException('Invalid KB waste result');
+    }
+    return CloudKbWasteResult(
+      id: value['id'] as String,
+      status: value['status'] as String,
+    );
+  }
 }
 
 class CloudApplianceCreate {

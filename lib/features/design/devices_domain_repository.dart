@@ -47,12 +47,14 @@ class DeviceMeasuredBucket {
     required this.energyWh,
     required this.coveredSeconds,
     required this.attachmentId,
+    this.ownershipCoversBucket = false,
   });
   final DateTime bucketStart;
   final DateTime computedAt;
   final double energyWh;
   final double coveredSeconds;
   final String attachmentId;
+  final bool ownershipCoversBucket;
 }
 
 class DeviceInventoryItem {
@@ -511,6 +513,14 @@ DevicesDomainSnapshot _compose(
           energyWh: summary.energyWh!,
           coveredSeconds: summary.coveredSeconds!,
           attachmentId: attachment.id,
+          ownershipCoversBucket:
+              !attachment.startedAt.isAfter(summary.bucketStart) &&
+              (attachment.endedAt == null ||
+                  !attachment.endedAt!.isBefore(
+                    summary.bucketStart.add(
+                      Duration(seconds: summary.coveredSeconds!.round()),
+                    ),
+                  )),
         ),
       );
     }

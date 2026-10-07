@@ -119,6 +119,12 @@ const element = {
   childNodes: [value, suffix],
   getAttribute: name => name === 'data-el-bind' ? 'dashboard_text_006' : null,
 };
+const fallbackValue = {nodeType: 3, textContent: '\$2.88'};
+const fallbackSuffix = {nodeType: 1, textContent: '/day'};
+const fallbackElement = {
+  childNodes: [fallbackValue, fallbackSuffix],
+  getAttribute: name => name === 'data-el-bind' ? 'dashboard_text_009' : null,
+};
 let allElements = [];
 const document = {
   querySelector: () => element,
@@ -128,12 +134,12 @@ const window = {};
 const Node = {TEXT_NODE: 3};
 const installed = eval(${jsonEncode(install)});
 const missingRejected = eval(${jsonEncode(update)});
-allElements = [element];
+allElements = [element, fallbackElement];
 const applied = eval(${jsonEncode(update)});
 const newerInstalled = eval(${jsonEncode(newerInstall)});
 const oldInstallRejected = eval(${jsonEncode(install)});
 const stale = eval(${jsonEncode(update)});
-console.log(JSON.stringify({installed, missingRejected, applied, newerInstalled, oldInstallRejected, stale, value: value.textContent, suffix: suffix.textContent}));
+console.log(JSON.stringify({installed, missingRejected, applied, newerInstalled, oldInstallRejected, stale, value: value.textContent, suffix: suffix.textContent, fallbackValue: fallbackValue.textContent, fallbackSuffix: fallbackSuffix.textContent}));
 ''';
     final result = Process.runSync('node', ['-e', testScript]);
     expect(result.exitCode, 0, reason: result.stderr.toString());
@@ -146,6 +152,8 @@ console.log(JSON.stringify({installed, missingRejected, applied, newerInstalled,
       'stale': false,
       'value': r'$7.25',
       'suffix': '/day',
+      'fallbackValue': r'$2.88',
+      'fallbackSuffix': '/day',
     });
   });
 }
