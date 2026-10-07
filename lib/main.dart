@@ -106,6 +106,7 @@ class EnergyLensApp extends StatelessWidget {
           : CloudEntryGate(
               homeBuilder: (cloudHome, signOut, changeHome, cloudApi) =>
                   DesignShell(
+                    homeName: cloudHome?.name ?? 'The Miller Home',
                     onSignOut: signOut,
                     onChangeHome: changeHome,
                     onReportPreview: cloudHome == null
@@ -128,6 +129,7 @@ class EnergyLensApp extends StatelessWidget {
                     lifecycle,
                     designContextCoordinator,
                   ) => DesignShell(
+                    homeName: cloudHome.name,
                     onSignOut: signOut,
                     onChangeHome: changeHome,
                     designContextCoordinator: designContextCoordinator,

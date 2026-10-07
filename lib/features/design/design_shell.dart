@@ -22,6 +22,7 @@ class DesignShell extends StatefulWidget {
     this.onReportPreview,
     this.designContextCoordinator,
     this.designTour = false,
+    this.homeName = 'The Miller Home',
   });
 
   final VoidCallback? onSignOut;
@@ -31,6 +32,7 @@ class DesignShell extends StatefulWidget {
   /// Native-only verified scope. It is never passed into the WebView.
   final DesignContextCoordinator? designContextCoordinator;
   final bool designTour;
+  final String homeName;
 
   @override
   State<DesignShell> createState() => _DesignShellState();
@@ -233,6 +235,7 @@ class _DesignShellState extends State<DesignShell> {
             !identical(_dashboardTicket, ticket)) {
           return;
         }
+        await _applyDashboardHomeName(generation, ticket);
         await _applyDashboardBindings(generation);
       } catch (_) {
         // A WebView failure leaves the packaged values intact.
@@ -257,6 +260,27 @@ class _DesignShellState extends State<DesignShell> {
       await _applyDevicesProjection(generation);
     } catch (_) {
       // A WebView failure leaves the static asset intact.
+    }
+  }
+
+  Future<void> _applyDashboardHomeName(
+    int generation,
+    DesignPageTicket ticket,
+  ) async {
+    final context = widget.designContextCoordinator?.context;
+    if (!_isCurrentPageLoad('dashboard', generation) ||
+        !identical(_dashboardTicket, ticket) ||
+        context?.homeId != ticket.homeId) {
+      return;
+    }
+    final script = _bindingRenderer.updateScript(ticket, [
+      DesignTextBinding('dashboard_text_001', widget.homeName),
+    ]);
+    if (script == null) return;
+    try {
+      await _controller.runJavaScriptReturningResult(script);
+    } catch (_) {
+      // The packaged home name remains visible on script failure.
     }
   }
 

@@ -82,6 +82,43 @@ void main() {
     expect(renderer.updateScript(second, const []), isNull);
   });
 
+  test('dashboard home name is bound to the current selected home', () {
+    final gate = DesignPageRequestGate();
+    final renderer = DesignTextBindingRenderer(gate);
+    final firstHome = gate.select('home_1', 'dashboard');
+    const firstName = 'The Miller Home';
+    final firstScript = renderer.updateScript(firstHome, const [
+      DesignTextBinding('dashboard_text_001', firstName),
+    ])!;
+    final encoded = RegExp("atob\\('([^']+)'\\)")
+        .firstMatch(firstScript)!
+        .group(1)!;
+    final payload = jsonDecode(utf8.decode(base64Decode(encoded))) as Map;
+    expect(payload['context']['homeId'], 'home_1');
+    expect((payload['bindings'] as List).single, {
+      'id': 'dashboard_text_001',
+      'text': firstName,
+    });
+
+    final secondHome = gate.select('home_2', 'dashboard');
+    expect(
+      renderer.updateScript(firstHome, const [
+        DesignTextBinding('dashboard_text_001', firstName),
+      ]),
+      isNull,
+    );
+    final secondScript = renderer.updateScript(secondHome, const [
+      DesignTextBinding('dashboard_text_001', 'Lake House'),
+    ])!;
+    final secondEncoded = RegExp("atob\\('([^']+)'\\)")
+        .firstMatch(secondScript)!
+        .group(1)!;
+    final secondPayload =
+        jsonDecode(utf8.decode(base64Decode(secondEncoded))) as Map;
+    expect(secondPayload['context']['homeId'], 'home_2');
+    expect((secondPayload['bindings'] as List).single['text'], 'Lake House');
+  });
+
   test('encoded payload cannot become executable JavaScript', () {
     final gate = DesignPageRequestGate();
     final renderer = DesignTextBindingRenderer(gate);

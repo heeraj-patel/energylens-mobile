@@ -135,7 +135,10 @@ def capture(device: str, output: Path, app: Path) -> None:
     run("xcrun", "simctl", "launch", device, BUNDLE_ID)
     for index, page in enumerate(PAGES, 1):
         path = staging / filename(index, page)
-        deadline = time.monotonic() + 30
+        # A cold simulator launch can spend several seconds showing a blank
+        # WebView before the first local HTML page is ready. Keep later page
+        # transitions bounded while allowing that initial startup to finish.
+        deadline = time.monotonic() + (90 if index == 1 else 30)
         while True:
             run("xcrun", "simctl", "io", device, "screenshot", str(path))
             try:
