@@ -57,6 +57,13 @@ class DurableOnboardingDrafts {
     return result;
   }
 
+  /// Stop in-flight readback as soon as verified ownership changes, even when
+  /// the ordered storage transition must wait for an outstanding POST.
+  void invalidatePendingWork() {
+    _scopeGeneration++;
+    repository.selectHome(null);
+  }
+
   /// Passing null signs out. A home or account change discards the old slot.
   Future<void> selectScope(String? userId, String? homeId) =>
       _ordered(() async {
@@ -122,8 +129,15 @@ class DurableOnboardingDrafts {
         current.userId != _userId ||
         current.homeId != _homeId ||
         current.key != pending.operationKey ||
-        jsonEncode(current.draft.validated().toJson()) !=
-            jsonEncode(pending.draft.validated().toJson())) {
+        jsonEncode(current.toJson()['draft']) !=
+            jsonEncode(
+              _Record(
+                current.userId,
+                current.homeId,
+                current.key,
+                pending.draft,
+              ).toJson()['draft'],
+            )) {
       throw StateError('Onboarding draft changed before commit');
     }
     final generation = _scopeGeneration;
@@ -169,15 +183,17 @@ class DurableOnboardingDrafts {
       throw StateError('Onboarding scope changed before save');
     }
     _requireScope();
-    final input = draft.validated();
+    draft.validated();
     final oldRaw = await storage.read();
     final old = oldRaw == null ? null : _parse(oldRaw);
     final key =
         old != null &&
             old.userId == _userId &&
             old.homeId == _homeId &&
-            jsonEncode(old.draft.validated().toJson()) ==
-                jsonEncode(input.toJson())
+            jsonEncode(old.toJson()['draft']) ==
+                jsonEncode(
+                  _Record(_userId!, _homeId!, old.key, draft).toJson()['draft'],
+                )
         ? old.key
         : _newKey();
     final record = _Record(_userId!, _homeId!, key, draft);

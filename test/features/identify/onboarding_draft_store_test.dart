@@ -114,6 +114,27 @@ void main() {
     await Future.wait([store.save(draft), store.save(draft)]);
     expect(source.creates, 1);
   });
+  test('exact draft identity controls key reuse and explicit commit', () async {
+    final source = Source();
+    final store = manager(MemoryStorage(), source);
+    await store.selectScope(userA, homeA);
+    final first = await store.stage(draft);
+    final whitespaceEdit = const OnboardingDraft(
+      name: ' Fridge ',
+      category: 'refrigerator',
+      brand: 'Acme',
+      fullModel: 'A123',
+      fuel: 'electricity',
+    );
+    final second = await store.stage(whitespaceEdit);
+    expect(second.operationKey, isNot(first.operationKey));
+    await expectLater(
+      store.commit(first, explicitlyApproved: true),
+      throwsStateError,
+    );
+    expect(source.creates, 0);
+    expect((await store.restore())!.operationKey, second.operationKey);
+  });
   test('corrupt, unknown version and invalid key are discarded', () async {
     final storage = MemoryStorage();
     final store = manager(storage, Source());

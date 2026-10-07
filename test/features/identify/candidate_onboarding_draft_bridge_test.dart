@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
@@ -42,6 +44,9 @@ class _Source implements OnboardingPersistenceSource {
   int inventories = 0;
   bool allowCreate = false;
   bool uncertainCreate = false;
+  bool failDetailOnce = false;
+  Completer<void>? createGate;
+  Completer<void>? createEntered;
   final keys = <String>[];
   CloudApplianceCreate? input;
   CloudAppliance row(String homeId) => CloudAppliance(
@@ -65,6 +70,8 @@ class _Source implements OnboardingPersistenceSource {
     keys.add(key);
     if (!allowCreate) throw StateError('unexpected POST');
     input = value;
+    createEntered?.complete();
+    if (createGate case final gate?) await gate.future;
     if (uncertainCreate) {
       uncertainCreate = false;
       throw StateError('response lost');
@@ -75,6 +82,10 @@ class _Source implements OnboardingPersistenceSource {
   @override
   Future<CloudAppliance> detail(String homeId, String applianceId) async {
     reads++;
+    if (failDetailOnce) {
+      failDetailOnce = false;
+      throw StateError('readback unavailable');
+    }
     return row(homeId);
   }
 
@@ -210,6 +221,14 @@ void main() {
         (await restarted.restore(context))!.operationKey,
         pending.operationKey,
       );
+      final restored = (await restarted.restore(context))!;
+      expect(restored.draft.name, pending.draft.name);
+      expect(restored.draft.category, pending.draft.category);
+      expect(restored.draft.brand, pending.draft.brand);
+      expect(restored.draft.fullModel, pending.draft.fullModel);
+      expect(restored.draft.fuel, pending.draft.fuel);
+      expect(restored.draft.validated().matchQuality, 'unresolved');
+      expect(restored.draft.validated().catalogProductId, isNull);
       expect(source.posts, 0);
     },
   );
@@ -436,4 +455,119 @@ void main() {
     );
     expect(source.posts, 0);
   });
+
+  test(
+    'failed readback retains exact draft and key for explicit retry',
+    () async {
+      final candidates = IdentificationCandidatesDomainAdapter(_Candidates())
+        ..useVerifiedContext(context);
+      final snapshot = (await candidates.lookup(targetKind: 'appliance'))!;
+      final review = CandidateOnboardingReviewAdapter(candidates).review(
+        snapshot: snapshot,
+        activeContext: context,
+        values: const CandidateOnboardingReview(
+          name: 'Kitchen fridge',
+          fuel: 'electricity',
+        ),
+        confirmed: true,
+      );
+      final source = _Source()
+        ..allowCreate = true
+        ..failDetailOnce = true;
+      final lifecycle = _lifecycle(_Storage(), source);
+      await lifecycle.selectVerifiedHome(owner, home);
+      final bridge = CandidateOnboardingDraftBridge(
+        candidates: candidates,
+        lifecycle: lifecycle,
+      );
+      final pending = await bridge.stage(
+        snapshot: snapshot,
+        activeContext: context,
+        review: review,
+      );
+      await expectLater(
+        bridge.commit(
+          activeContext: context,
+          pending: pending,
+          explicitlyApproved: true,
+        ),
+        throwsStateError,
+      );
+      final restored = (await bridge.restore(context))!;
+      expect(restored.operationKey, pending.operationKey);
+      expect(restored.draft.validated().matchQuality, 'unresolved');
+      expect(source.posts, 1);
+      expect(source.inventories, 0);
+      expect(
+        (await bridge.commit(
+          activeContext: context,
+          pending: restored,
+          explicitlyApproved: true,
+        ))?.homeId,
+        home,
+      );
+      expect(source.posts, 1);
+      expect(source.reads, 2);
+      expect(source.inventories, 1);
+      expect(await bridge.restore(context), isNull);
+    },
+  );
+
+  test(
+    'late create after verified scope change stops old-home readback',
+    () async {
+      final candidates = IdentificationCandidatesDomainAdapter(_Candidates())
+        ..useVerifiedContext(context);
+      final snapshot = (await candidates.lookup(targetKind: 'appliance'))!;
+      final review = CandidateOnboardingReviewAdapter(candidates).review(
+        snapshot: snapshot,
+        activeContext: context,
+        values: const CandidateOnboardingReview(
+          name: 'Kitchen fridge',
+          fuel: 'electricity',
+        ),
+        confirmed: true,
+      );
+      final storage = _Storage();
+      final source = _Source()
+        ..allowCreate = true
+        ..createGate = Completer<void>()
+        ..createEntered = Completer<void>();
+      final lifecycle = _lifecycle(storage, source);
+      await lifecycle.selectVerifiedHome(owner, home);
+      final bridge = CandidateOnboardingDraftBridge(
+        candidates: candidates,
+        lifecycle: lifecycle,
+      );
+      final pending = await bridge.stage(
+        snapshot: snapshot,
+        activeContext: context,
+        review: review,
+      );
+      final committing = bridge.commit(
+        activeContext: context,
+        pending: pending,
+        explicitlyApproved: true,
+      );
+      await source.createEntered!.future;
+      final switching = lifecycle.selectVerifiedHome(otherOwner, otherHome);
+      source.createGate!.complete();
+      expect(await committing, isNull);
+      await switching;
+      expect(source.posts, 1);
+      expect(source.reads, 0);
+      expect(source.inventories, 0);
+      expect(await bridge.restore(context), isNull);
+      expect(storage.value, isNull);
+      expect(
+        () => bridge.commit(
+          activeContext: context,
+          pending: pending,
+          explicitlyApproved: true,
+        ),
+        throwsStateError,
+      );
+      expect(source.posts, 1);
+    },
+  );
 }

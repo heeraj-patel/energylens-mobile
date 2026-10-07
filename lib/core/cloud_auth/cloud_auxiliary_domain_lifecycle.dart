@@ -108,6 +108,7 @@ class CloudAuxiliaryDomainLifecycle {
     _scopeVersion.value = _generation;
     _accountId = null;
     _homeId = null;
+    drafts.invalidatePendingWork();
     _reports.clear();
     _deliveries.clear();
     return drafts.selectScope(null, null);
@@ -123,6 +124,7 @@ class CloudAuxiliaryDomainLifecycle {
     _scopeVersion.value = _generation;
     _accountId = null;
     _homeId = null;
+    drafts.invalidatePendingWork();
     _reports.clear();
     _deliveries.clear();
     await drafts.selectScope(accountId, homeId);
