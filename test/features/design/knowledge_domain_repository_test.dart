@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_faq.dart';
 import 'package:energylens_mobile/features/design/knowledge_domain_repository.dart';
+import 'package:energylens_mobile/features/design/knowledge_question_catalog.dart';
 
 const _homeId = '123e4567-e89b-12d3-a456-426614174000';
 
@@ -152,6 +153,82 @@ void main() {
       pending.complete(_answer('high_bill_possible_contributors'));
 
       expect(await request, isNull);
+    },
+  );
+
+  test(
+    'catalog provides general answers without home or backend data',
+    () async {
+      final source = _Source();
+      final repository = KnowledgeDomainRepository(
+        source,
+        catalog: KnowledgeQuestionCatalog([
+          KnowledgeCatalogEntry(
+            id: 'energy_unit',
+            question: 'What is a kilowatt-hour?',
+            availability: KnowledgeCatalogAvailability.published,
+            preparedAnswer: 'A kilowatt-hour is 1,000 watts used for one hour.',
+          ),
+          KnowledgeCatalogEntry(
+            id: 'demo_ac',
+            question: 'Why did my AC power jump this afternoon?',
+            availability: KnowledgeCatalogAvailability.localPilot,
+            preparedAnswer: 'Illustrative demo answer.',
+          ),
+        ]),
+      );
+
+      expect(repository.search('kilowatt'), hasLength(1));
+      expect(repository.search('AC power'), isEmpty);
+      expect(
+        repository.search('AC power', localPilot: true).single.id,
+        'demo_ac',
+      );
+      final result = await repository.answerEntry(null, 'energy_unit');
+      expect(result, isA<KnowledgePreparedAnswerAvailable>());
+      expect(
+        (result! as KnowledgePreparedAnswerAvailable).text,
+        contains('1,000 watts'),
+      );
+      expect(
+        await repository.answerEntry(null, 'demo_ac'),
+        isA<KnowledgeAnswerUnavailable>(),
+      );
+      expect(source.calls, isEmpty);
+    },
+  );
+
+  test(
+    'catalog label routes only to its existing typed Cloud operation',
+    () async {
+      final source = _Source();
+      final repository = KnowledgeDomainRepository(
+        source,
+        catalog: KnowledgeQuestionCatalog([
+          KnowledgeCatalogEntry(
+            id: 'running_fridge',
+            question: 'What does my refrigerator cost to run?',
+            availability: KnowledgeCatalogAvailability.published,
+            cloudIntent: 'device_operating_cost',
+          ),
+        ]),
+      );
+      expect(
+        await repository.answerEntry(_homeId, 'running_fridge'),
+        isA<KnowledgeAnswerUnavailable>(),
+      );
+      expect(source.calls, isEmpty);
+      const applianceId = '123e4567-e89b-12d3-a456-426614174001';
+      expect(
+        await repository.answerEntry(
+          _homeId,
+          'running_fridge',
+          applianceId: applianceId,
+        ),
+        isA<KnowledgeAnswerAvailable>(),
+      );
+      expect(source.calls.single.questionId, 'device_operating_cost');
+      expect(source.calls.single.applianceId, applianceId);
     },
   );
 }
