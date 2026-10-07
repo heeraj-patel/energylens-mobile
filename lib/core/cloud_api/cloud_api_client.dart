@@ -1045,7 +1045,31 @@ class CloudApiClient {
     if (page.granularity != granularity) {
       throw const FormatException('Metered summary granularity changed');
     }
-    return page;
+    final modeHeader = _caseInsensitiveHeader(
+      response.headers,
+      'x-energylens-data-mode',
+    );
+    final revisionHeader = _caseInsensitiveHeader(
+      response.headers,
+      'x-energylens-fixture-revision',
+    );
+    if (modeHeader == null && revisionHeader == null ||
+        modeHeader == 'household' && revisionHeader == null) {
+      return page;
+    }
+    if (modeHeader == 'sample' &&
+        revisionHeader != null &&
+        RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+            .hasMatch(revisionHeader)) {
+      return CloudMeteredSummaryPage(
+        granularity: page.granularity,
+        summaries: page.summaries,
+        nextCursor: page.nextCursor,
+        dataMode: CloudApplianceDataMode.sample,
+        fixtureRevision: revisionHeader,
+      );
+    }
+    throw const FormatException('Invalid metered summary provenance');
   }
 
   Future<List<CloudQuestion>> onboardingQuestions(

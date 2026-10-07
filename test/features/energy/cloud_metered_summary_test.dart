@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_appliance_list.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_metered_summary.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
@@ -89,6 +90,85 @@ http.Response _conflict() =>
     http.Response(jsonEncode({'code': 'evidence_changed'}), 409);
 
 void main() {
+  test('metered page retains paired sample response provenance', () async {
+    final api = _api(
+      MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'granularity': 'day',
+            'summaries': [],
+            'next_cursor': null,
+          }),
+          200,
+          headers: {
+            'X-EnergyLens-Data-Mode': 'sample',
+            'X-EnergyLens-Fixture-Revision': 'synthetic-household-v1',
+          },
+        ),
+      ),
+    );
+    final page = await api.meteredSummaries(home.id, granularity: 'day');
+    expect(page.dataMode, CloudApplianceDataMode.sample);
+    expect(page.fixtureRevision, 'synthetic-household-v1');
+    api.close();
+  });
+
+  test('metered page rejects malformed provenance pairs', () async {
+    for (final headers in <Map<String, String>>[
+      {'x-energylens-data-mode': 'sample'},
+      {'x-energylens-fixture-revision': 'synthetic-household-v1'},
+      {
+        'x-energylens-data-mode': 'household',
+        'x-energylens-fixture-revision': 'synthetic-household-v1',
+      },
+      {
+        'x-energylens-data-mode': 'sample',
+        'x-energylens-fixture-revision': 'bad revision',
+      },
+    ]) {
+      final api = _api(
+        MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'granularity': 'day',
+              'summaries': [],
+              'next_cursor': null,
+            }),
+            200,
+            headers: headers,
+          ),
+        ),
+      );
+      await expectLater(
+        api.meteredSummaries(home.id, granularity: 'day'),
+        throwsFormatException,
+      );
+      api.close();
+    }
+  });
+
+  test('authorization failure never becomes a sample page', () async {
+    final api = _api(
+      MockClient(
+        (_) async => http.Response(
+          jsonEncode({'code': 'forbidden'}),
+          403,
+          headers: {
+            'x-energylens-data-mode': 'sample',
+            'x-energylens-fixture-revision': 'synthetic-household-v1',
+          },
+        ),
+      ),
+    );
+    await expectLater(
+      api.meteredSummaries(home.id, granularity: 'day'),
+      throwsA(
+        isA<CloudApiException>().having((e) => e.statusCode, 'statusCode', 403),
+      ),
+    );
+    api.close();
+  });
+
   testWidgets(
     'daily and hourly rows retain distinct meanings and cursor scope',
     (tester) async {

@@ -95,6 +95,7 @@ class DevicesDomainSnapshot {
     required this.hasMoreMeteredPages,
     required this.dataMode,
     required this.fixtureRevision,
+    this.sampleMeteredSummaries = const [],
     this.isCurrent,
   });
 
@@ -107,6 +108,10 @@ class DevicesDomainSnapshot {
   final bool hasMoreMeteredPages;
   final CloudApplianceDataMode dataMode;
   final String? fixtureRevision;
+
+  /// Fixture evidence only. These rows do not establish installed sensors,
+  /// attachments, measured usage, or household totals.
+  final List<CloudMeteredSummary> sampleMeteredSummaries;
   final bool Function()? isCurrent;
   bool get isSample => dataMode == CloudApplianceDataMode.sample;
 
@@ -201,13 +206,7 @@ class DevicesDomainRepository {
       ]);
       if (stale()) return null;
       final inventory = results[0] as CloudApplianceList;
-      final metered = inventory.isSample
-          ? const CloudMeteredSummaryPage(
-              granularity: 'day',
-              summaries: [],
-              nextCursor: null,
-            )
-          : await _readMetered(homeId, stale);
+      final metered = await _readMetered(homeId, stale, inventory);
       if (stale() || metered == null) return null;
       return _compose(
         homeId,
@@ -226,6 +225,7 @@ class DevicesDomainRepository {
   Future<CloudMeteredSummaryPage?> _readMetered(
     String homeId,
     bool Function() stale,
+    CloudApplianceList inventory,
   ) async {
     var restarted = false;
     while (true) {
@@ -241,6 +241,10 @@ class DevicesDomainRepository {
           if (stale()) return null;
           if (page.granularity != 'day' || page.summaries.length > 100) {
             throw const FormatException('Invalid Devices metered page');
+          }
+          if (page.dataMode != inventory.dataMode ||
+              page.fixtureRevision != inventory.fixtureRevision) {
+            throw const FormatException('Devices metered provenance changed');
           }
           pages++;
           for (final row in page.summaries) {
@@ -260,6 +264,8 @@ class DevicesDomainRepository {
                 granularity: 'day',
                 summaries: rows,
                 nextCursor: page.nextCursor ?? cursor ?? 'bounded',
+                dataMode: page.dataMode,
+                fixtureRevision: page.fixtureRevision,
               );
             }
             rows.add(row);
@@ -270,6 +276,8 @@ class DevicesDomainRepository {
               granularity: 'day',
               summaries: rows,
               nextCursor: null,
+              dataMode: page.dataMode,
+              fixtureRevision: page.fixtureRevision,
             );
           }
           if (next.isEmpty || !cursors.add(next)) {
@@ -280,6 +288,8 @@ class DevicesDomainRepository {
               granularity: 'day',
               summaries: rows,
               nextCursor: next,
+              dataMode: page.dataMode,
+              fixtureRevision: page.fixtureRevision,
             );
           }
           cursor = next;
@@ -323,6 +333,8 @@ DevicesDomainSnapshot _compose(
     throw const FormatException('Invalid appliance provenance');
   }
   if (page.granularity != 'day' ||
+      page.dataMode != applianceList.dataMode ||
+      page.fixtureRevision != applianceList.fixtureRevision ||
       appliances.any((a) => a.homeId != homeId) ||
       attachments.any((a) => a.homeId != homeId) ||
       sensors.any((s) => s.homeId != homeId)) {
@@ -410,9 +422,12 @@ DevicesDomainSnapshot _compose(
   return DevicesDomainSnapshot(
     homeId: homeId,
     items: List.unmodifiable(items),
-    hasMoreMeteredPages: !applianceList.isSample && page.nextCursor != null,
+    hasMoreMeteredPages: page.nextCursor != null,
     dataMode: applianceList.dataMode,
     fixtureRevision: applianceList.fixtureRevision,
+    sampleMeteredSummaries: applianceList.isSample
+        ? List.unmodifiable(page.summaries)
+        : const [],
     isCurrent: isCurrent,
   );
 }

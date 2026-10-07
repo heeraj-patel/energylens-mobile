@@ -1,3 +1,5 @@
+import 'cloud_appliance_list.dart';
+
 class CloudMeteredSummary {
   const CloudMeteredSummary({
     required this.kind,
@@ -164,11 +166,16 @@ class CloudMeteredSummaryPage {
     required this.granularity,
     required this.summaries,
     required this.nextCursor,
+    this.dataMode = CloudApplianceDataMode.household,
+    this.fixtureRevision,
   });
 
   final String granularity;
   final List<CloudMeteredSummary> summaries;
   final String? nextCursor;
+  final CloudApplianceDataMode dataMode;
+  final String? fixtureRevision;
+  bool get isSample => dataMode == CloudApplianceDataMode.sample;
 
   factory CloudMeteredSummaryPage.fromJson(Map<String, dynamic> json) {
     final granularity = json['granularity'];

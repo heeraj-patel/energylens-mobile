@@ -151,6 +151,8 @@ FakeSource fixed({
     granularity: 'day',
     summaries: cursor == null ? (summaries ?? [measured()]) : const [],
     nextCursor: cursor == null ? nextCursor : null,
+    dataMode: dataMode,
+    fixtureRevision: fixtureRevision,
   ),
 );
 
@@ -319,16 +321,122 @@ void main() {
     );
   });
 
-  test('sample inventory does not request household metering', () async {
+  test('sample inventory reads only matching sample metering', () async {
     final source = paged(
-      (_, _) async => throw StateError('metering called'),
+      (_, _) async => CloudMeteredSummaryPage(
+        granularity: 'day',
+        summaries: [measured(status: 'no_intervals', method: 'none')],
+        nextCursor: null,
+        dataMode: CloudApplianceDataMode.sample,
+        fixtureRevision: 'synthetic-household-v1',
+      ),
       dataMode: CloudApplianceDataMode.sample,
       fixtureRevision: 'synthetic-household-v1',
     );
     final result = (await DevicesDomainRepository(source).fetch(homeA))!;
-    expect(source.calls, 3);
+    expect(source.calls, 4);
+    expect(result.sampleMeteredSummaries.single.status, 'no_intervals');
+    expect(result.sampleMeteredSummaries.single.energyWh, isNull);
     expect(result.items.single.measuredBuckets, isEmpty);
+    expect(result.items.single.activeAttachmentIds, isEmpty);
     expect(result.hasMoreMeteredPages, isFalse);
+    expect(result.householdEnergyWh, isNull);
+    expect(result.householdCost, isNull);
+  });
+
+  test('rejects sample and household metering provenance mismatch', () async {
+    for (final page in [
+      const CloudMeteredSummaryPage(
+        granularity: 'day',
+        summaries: [],
+        nextCursor: null,
+      ),
+      const CloudMeteredSummaryPage(
+        granularity: 'day',
+        summaries: [],
+        nextCursor: null,
+        dataMode: CloudApplianceDataMode.sample,
+        fixtureRevision: 'another-fixture',
+      ),
+    ]) {
+      await expectLater(
+        DevicesDomainRepository(
+          paged(
+            (_, _) async => page,
+            dataMode: CloudApplianceDataMode.sample,
+            fixtureRevision: 'synthetic-household-v1',
+          ),
+        ).fetch(homeA),
+        throwsFormatException,
+      );
+    }
+    await expectLater(
+      DevicesDomainRepository(
+        paged(
+          (_, _) async => const CloudMeteredSummaryPage(
+            granularity: 'day',
+            summaries: [],
+            nextCursor: null,
+            dataMode: CloudApplianceDataMode.sample,
+            fixtureRevision: 'synthetic-household-v1',
+          ),
+        ),
+      ).fetch(homeA),
+      throwsFormatException,
+    );
+  });
+
+  test('rejects changed fixture revision on a later metered page', () async {
+    final source = paged(
+      (_, cursor) async => CloudMeteredSummaryPage(
+        granularity: 'day',
+        summaries: const [],
+        nextCursor: cursor == null ? 'next' : null,
+        dataMode: CloudApplianceDataMode.sample,
+        fixtureRevision: cursor == null
+            ? 'synthetic-household-v1'
+            : 'synthetic-household-v2',
+      ),
+      dataMode: CloudApplianceDataMode.sample,
+      fixtureRevision: 'synthetic-household-v1',
+    );
+    await expectLater(
+      DevicesDomainRepository(source).fetch(homeA),
+      throwsFormatException,
+    );
+  });
+
+  test('home switch discards pending sample metering', () async {
+    final pendingPage = Completer<CloudMeteredSummaryPage>();
+    final source = paged(
+      (home, _) => home == homeA
+          ? pendingPage.future
+          : Future.value(
+              const CloudMeteredSummaryPage(
+                granularity: 'day',
+                summaries: [],
+                nextCursor: null,
+                dataMode: CloudApplianceDataMode.sample,
+                fixtureRevision: 'synthetic-household-v1',
+              ),
+            ),
+      dataMode: CloudApplianceDataMode.sample,
+      fixtureRevision: 'synthetic-household-v1',
+    );
+    final repository = DevicesDomainRepository(source);
+    final old = repository.fetch(homeA);
+    await Future<void>.delayed(Duration.zero);
+    expect((await repository.fetch(homeB))?.homeId, homeB);
+    pendingPage.complete(
+      const CloudMeteredSummaryPage(
+        granularity: 'day',
+        summaries: [],
+        nextCursor: null,
+        dataMode: CloudApplianceDataMode.sample,
+        fixtureRevision: 'synthetic-household-v1',
+      ),
+    );
+    expect(await old, isNull);
   });
 
   test('home switch discards pending cursor response', () async {
@@ -394,7 +502,6 @@ void main() {
         fixed(
           dataMode: CloudApplianceDataMode.sample,
           fixtureRevision: 'synthetic-household-v1',
-          nextCursor: 'more',
         ),
       ).fetch(homeA);
       expect(result?.isSample, isTrue);
