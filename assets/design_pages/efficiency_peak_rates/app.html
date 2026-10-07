@@ -121,32 +121,10 @@
       min-height: max(884px, 100dvh);
     }
   </style>
-<link rel="stylesheet" href="../shared/fonts.css"></head>
+<link rel="stylesheet" href="../shared/fonts.css"><script src="../shared/chrome.js"></script></head>
 <body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen">
 <!-- Fixed Header -->
-<header class="fixed top-0 w-full z-50 bg-surface/85 backdrop-blur-xl border-b border-surface-variant/40 shadow-sm">
-<div class="pt-safe">
-<div class="h-16 px-gutter flex items-center justify-between">
-<div class="flex items-center gap-space-sm">
-<div class="w-11 h-11 flex items-center justify-center rounded-xl bg-surface-container-high text-primary shadow-xs">
-<span class="material-symbols-outlined text-[22px]">bolt</span>
-</div>
-<div class="flex flex-col">
-<button class="flex items-center gap-space-xs text-left group" type="button" data-el-action="efficiency_peak_rates_action_001">
-<span class="font-label-md text-label-md text-on-surface tracking-tight font-semibold" data-el-bind="efficiency_peak_rates_text_001">The Miller Home</span>
-<span class="material-symbols-outlined text-on-surface-variant text-[18px] transition-transform group-hover:translate-y-0.5">expand_more</span>
-</button>
-<span class="text-[11px] leading-tight text-on-surface-variant font-label-md tracking-wider uppercase" data-el-bind="efficiency_peak_rates_text_002">Efficiency</span>
-</div>
-</div>
-<div class="flex items-center gap-space-sm">
-<a class="w-11 h-11 flex items-center justify-center" data-path="settings" href="#" data-el-action="efficiency_peak_rates_action_002">
-<img alt="Profile" class="w-8 h-8 rounded-full object-cover ring-1 ring-primary/40" src="../shared/images/image-3.jpg">
-</a>
-</div>
-</div>
-</div>
-</header>
+<div id="el-header"></div>
 <!-- Main Content -->
 <main class="flex-1 flex flex-col relative w-full pt-16 pb-20 bg-surface">
 <div class="flex flex-col w-full px-gutter space-y-space-md pb-space-xl">
@@ -263,7 +241,7 @@
     </script>
 </main>
 <!-- Bottom Navigation Bar (5 tabs) -->
-<nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface/90 backdrop-blur-xl border-t border-surface-variant/40 shadow-md" data-active-classes="text-primary font-semibold"><div class="flex justify-around items-center h-16 px-space-xs"><a class="flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors font-semibold" data-path="dashboard" href="#" data-el-action="efficiency_peak_rates_action_007"><span class="material-symbols-outlined text-[22px]">space_dashboard</span><span class="font-label-md text-[11px] leading-none tracking-tight" data-el-bind="efficiency_peak_rates_text_051">Dashboard</span></a><a class="flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors font-semibold" data-path="devices" href="#" data-el-action="efficiency_peak_rates_action_008"><span class="material-symbols-outlined text-[22px]">devices</span><span class="font-label-md text-[11px] leading-none tracking-tight" data-el-bind="efficiency_peak_rates_text_052">Devices</span></a><a aria-current="page" class="flex flex-col items-center justify-center w-14 h-12 gap-0.5 transition-colors text-primary font-semibold" data-path="efficiency" href="#" data-el-action="efficiency_peak_rates_action_009"><span class="material-symbols-outlined text-[22px]" style="font-variation-settings: 'FILL' 1;">energy_savings_leaf</span><span class="font-label-md text-[11px] leading-none tracking-tight font-semibold" data-el-bind="efficiency_peak_rates_text_053">Efficiency</span></a><a class="flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors font-semibold" data-path="perks-and-tips" href="#" data-el-action="efficiency_peak_rates_action_010"><span class="material-symbols-outlined text-[22px]">savings</span><span class="font-label-md text-[11px] leading-none tracking-tight" data-el-bind="efficiency_peak_rates_text_054">Tips</span></a><a class="flex flex-col items-center justify-center w-14 h-12 gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors font-semibold" data-path="settings" href="#" data-el-action="efficiency_peak_rates_action_011"><span class="material-symbols-outlined text-[22px]">settings</span><span class="font-label-md text-[11px] leading-none tracking-tight" data-el-bind="efficiency_peak_rates_text_055">Settings</span></a></div></nav>
+<div id="el-footer"></div><script>EnergyLensChrome.mount({"activeTab":"efficiency","homeName":"The Miller Home","pageLabel":"Efficiency","leadingIcon":"bolt","profileImage":"../shared/images/image-3.jpg","tabIcons":["space_dashboard","devices","energy_savings_leaf","savings","settings"],"tabLabels":["Dashboard","Devices","Efficiency","Tips","Settings"],"headerActions":["efficiency_peak_rates_action_001","efficiency_peak_rates_action_002"],"headerBindings":["efficiency_peak_rates_text_001","efficiency_peak_rates_text_002"],"footerActions":["efficiency_peak_rates_action_007","efficiency_peak_rates_action_008","efficiency_peak_rates_action_009","efficiency_peak_rates_action_010","efficiency_peak_rates_action_011"],"footerBindings":["efficiency_peak_rates_text_051","efficiency_peak_rates_text_052","efficiency_peak_rates_text_053","efficiency_peak_rates_text_054","efficiency_peak_rates_text_055"]});</script>
 
 
 </body></html>

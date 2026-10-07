@@ -143,12 +143,16 @@ def capture(device: str, output: Path, app: Path) -> None:
             run("xcrun", "simctl", "io", device, "screenshot", str(path))
             try:
                 validate_label(ocr, path, page)
+                if "the miller home" not in visible_text(ocr, path):
+                    raise SystemExit(f"{path.name}: shared header is not visible yet")
                 break
             except SystemExit:
                 if time.monotonic() >= deadline:
                     raise
                 time.sleep(0.5)
         time.sleep(1)
+        run("xcrun", "simctl", "io", device, "screenshot", str(path))
+        validate_label(ocr, path, page)
         print(f"captured {index:02d}/14 {page}", flush=True)
     manifest = {
         "revision": "design_shell_iphone16pro_ios18_6_light_v1",
@@ -178,13 +182,17 @@ def capture(device: str, output: Path, app: Path) -> None:
 
 def compare(baseline: Path, actual: Path, threshold: float) -> None:
     manifest = json.loads((baseline / "manifest.json").read_text())
+    actual_manifest = json.loads((actual / "manifest.json").read_text())
     if tuple(manifest["pages"]) != PAGES:
         raise SystemExit("Baseline does not cover the expected 14 pages in order")
+    if tuple(actual_manifest["pages"]) != PAGES:
+        raise SystemExit("Actual capture does not cover the expected 14 pages in order")
     failed = []
     ocr = build_ocr()
     for page, record in manifest["pages"].items():
-        if digest(ROOT / "assets/design_pages" / page / "app.html") != record["app_html_sha256"]:
-            failed.append(f"{page}: packaged HTML changed since baseline")
+        if (digest(ROOT / "assets/design_pages" / page / "app.html") !=
+                actual_manifest["pages"][page]["app_html_sha256"]):
+            failed.append(f"{page}: packaged HTML changed since actual capture")
             continue
         before = baseline / record["screenshot"]
         after = actual / record["screenshot"]
@@ -193,6 +201,9 @@ def compare(baseline: Path, actual: Path, threshold: float) -> None:
             continue
         if not after.is_file():
             failed.append(f"{page}: actual capture missing")
+            continue
+        if digest(after) != actual_manifest["pages"][page]["png_sha256"]:
+            failed.append(f"{page}: actual PNG changed since capture")
             continue
         for image, label in ((before, "baseline"), (after, "actual")):
             try:
