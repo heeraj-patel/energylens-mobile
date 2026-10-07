@@ -1,0 +1,107 @@
+/* Tips content puts the sentence before decoration at phone widths. */
+[aria-label="Savings Categories"] .tab-pill {
+  min-height: 2.75rem;
+  padding-inline: .25rem;
+  line-height: 1.15;
+  white-space: normal;
+}
+[aria-label="Savings Categories"] .tab-pill > .material-symbols-outlined {
+  display: none;
+}
+[aria-label="Savings Categories"] .tab-pill > [data-el-bind] {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+
+/* Relocate each program pictogram above its title and release the body indent. */
+a[data-el-action="perks_tips_action_007"] > div:first-child,
+a[data-el-action="perks_tips_action_008"] > div:first-child {
+  flex-direction: column;
+  align-items: stretch;
+  gap: .5rem;
+}
+a[data-el-action="perks_tips_action_007"] > div:first-child > div:first-child,
+a[data-el-action="perks_tips_action_008"] > div:first-child > div:first-child {
+  flex-direction: column;
+  align-items: stretch;
+  gap: .375rem;
+}
+a[data-el-action="perks_tips_action_007"] > div:first-child > div:first-child > div:first-child,
+a[data-el-action="perks_tips_action_008"] > div:first-child > div:first-child > div:first-child {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+a[data-el-action="perks_tips_action_007"] h3,
+a[data-el-action="perks_tips_action_008"] h3 {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+a[data-el-action="perks_tips_action_007"] > div:first-child > div:last-child,
+a[data-el-action="perks_tips_action_008"] > div:first-child > div:last-child {
+  align-self: flex-end;
+}
+a[data-el-action="perks_tips_action_007"] > p,
+a[data-el-action="perks_tips_action_008"] > p {
+  padding-left: 0;
+}
+
+/* Icon and title share a short first line; the sentence uses the whole card. */
+.el-tip-room {
+  flex-direction: column;
+  align-items: stretch;
+  gap: .375rem;
+}
+.el-tip-room > div:first-child {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  column-gap: .5rem;
+  row-gap: .25rem;
+  width: 100%;
+}
+.el-tip-room > div:first-child > div:first-child {
+  grid-column: 1;
+  grid-row: 1;
+  width: 1.5rem;
+  height: 1.5rem;
+}
+.el-tip-room > div:first-child > div:nth-child(2) {
+  display: contents;
+}
+.el-tip-room > div:first-child > div:nth-child(2) > [data-el-bind]:first-child {
+  grid-column: 2;
+  grid-row: 1;
+}
+.el-tip-room > div:first-child > div:nth-child(2) > [data-el-bind]:nth-child(2) {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  line-height: 1.35;
+}
+.el-tip-room > div:first-child > div:nth-child(2) > [data-el-bind] {
+  min-width: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+.el-tip-room > [data-el-bind]:last-child {
+  align-self: flex-end;
+}
+
+/* The Knowledge heading already identifies the section; retain the + action. */
+button[data-el-action="tips_knowledge_action_007"] > div:first-child > .material-symbols-outlined,
+button[data-el-action="tips_knowledge_action_008"] > div:first-child > .material-symbols-outlined,
+button[data-el-action="tips_knowledge_action_009"] > div:first-child > .material-symbols-outlined {
+  display: none;
+}
+button[data-el-action="tips_knowledge_action_007"] [data-el-bind],
+button[data-el-action="tips_knowledge_action_008"] [data-el-bind],
+button[data-el-action="tips_knowledge_action_009"] [data-el-bind] {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
