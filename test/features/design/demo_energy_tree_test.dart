@@ -280,7 +280,7 @@ void main() {
         month = month.applyDummyWasteAfterKb(
           localDate: day.period.localDate,
           deviceId: realApplianceId,
-          profileCategory: 'router',
+          profileCategory: 'camera',
           durationEvidence: WasteDurationEvidence(
             seconds: day.period.seconds,
             evidenceId: 'duration-verified-1',
@@ -292,19 +292,19 @@ void main() {
       }
       final row = month.day('2026-09-30').devices.last;
       expect(row.origin, DemoValueOrigin.mock);
-      expect(row.wasteProvenance, 'dummy_after_kb_miss');
+      expect(row.wasteProvenance, 'dummy_assumed_8h_after_kb_miss');
       expect(row.kbWasteResultId, 'kb-final-1');
       expect(row.wasteDurationEvidenceId, 'duration-verified-1');
-      expect(row.cost.wasteMicros, 2400);
+      expect(row.cost.wasteMicros, 800);
       expect(row.cost.wasteCents, 0);
       expect(
         month.homeCost.wasteMicros,
-        30 * 2400 +
+        30 * 800 +
             buildSeptember2026DemoTree(homeId: homeId).homeCost.wasteMicros,
       );
       expect(
         month.homeCost.wasteCents,
-        buildSeptember2026DemoTree(homeId: homeId).homeCost.wasteCents + 7,
+        buildSeptember2026DemoTree(homeId: homeId).homeCost.wasteCents + 2,
       );
     },
   );
@@ -346,8 +346,8 @@ void main() {
       expect(row.origin, DemoValueOrigin.measured);
       expect(row.sourceId, 'meter-1');
       expect(row.wasteDurationEvidenceId, 'duration-verified-1');
-      expect(row.cost.wasteMicros, 240000);
-      expect(row.cost.unclassifiedMicros, 760000);
+      expect(row.cost.wasteMicros, 80000);
+      expect(row.cost.unclassifiedMicros, 920000);
       expect(row.cost.totalMicros, 1000000);
       expect(
         result
@@ -360,15 +360,34 @@ void main() {
       expect(result.homeCost.totalMicros, measured.homeCost.totalMicros);
       expect(
         result.homeCost.wasteMicros - measured.homeCost.wasteMicros,
-        240000,
+        80000,
       );
       expect(
         result.homeCost.unclassifiedMicros -
             measured.homeCost.unclassifiedMicros,
-        -240000,
+        -80000,
       );
     },
   );
+
+  test('continuous device profiles receive no assumed idle allocation', () {
+    final month = buildSeptember2026DemoTree(homeId: homeId);
+    final result = month.applyDummyWasteAfterKb(
+      localDate: '2026-09-30',
+      deviceId: realApplianceId,
+      profileCategory: 'refrigerator',
+      kbResult: KbWasteResult.wasteEvidenceUnavailableAfterKb,
+      kbResultId: 'kb-final-continuous',
+    );
+    expect(
+      result
+          .day('2026-09-30')
+          .devices
+          .any((row) => row.deviceId == realApplianceId),
+      isFalse,
+    );
+    expect(result.homeCost.totalMicros, month.homeCost.totalMicros);
+  });
 
   test(
     'caps dummy allocation and requires final KB decision and known profile',
@@ -395,10 +414,10 @@ void main() {
             deviceId: realApplianceId,
             profileCategory: profile,
             durationEvidence: WasteDurationEvidence(
-          seconds: period.seconds,
-          evidenceId: 'duration-verified-1',
-          intervalKind: WasteDurationIntervalKind.verifiedOff,
-        ),
+              seconds: period.seconds,
+              evidenceId: 'duration-verified-1',
+              intervalKind: WasteDurationIntervalKind.verifiedOff,
+            ),
             kbResult: result,
             kbResultId: 'kb-final-3',
           );
@@ -415,7 +434,8 @@ void main() {
         throwsFormatException,
       );
       expect(dummyWasteDrawForProfile('sensor'), isNull);
-      expect(dummyWasteDrawForProfile('freezer'), DummyWasteDraw.high);
+      expect(dummyWasteDrawForProfile('freezer'), isNull);
+      expect(dummyWasteDrawForProfile('modem'), isNull);
       expect(
         () => WasteDurationEvidence(
           seconds: 0,
@@ -445,10 +465,10 @@ void main() {
           deviceId: realApplianceId,
           profileCategory: 'dryer',
           durationEvidence: WasteDurationEvidence(
-          seconds: period.seconds,
-          evidenceId: 'duration-verified-1',
-          intervalKind: WasteDurationIntervalKind.verifiedOff,
-        ),
+            seconds: period.seconds,
+            evidenceId: 'duration-verified-1',
+            intervalKind: WasteDurationIntervalKind.verifiedOff,
+          ),
           kbResult: KbWasteResult.wasteEvidenceUnavailableAfterKb,
           kbResultId: 'kb-final-3',
         ),

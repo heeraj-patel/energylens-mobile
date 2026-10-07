@@ -14,6 +14,10 @@ enum KbWasteResult {
 
 enum DummyWasteDraw { low, high }
 
+/// Internal illustrative schedule after a final KB miss. This is an assumed
+/// duration, not a measured interval.
+const int dummyIdleHoursPerLocalDay = 8;
+
 /// Verified evidence that a device was off or idle for a measured interval.
 /// Callers must not infer a full-day duration from missing data.
 enum WasteDurationIntervalKind { verifiedOff, verifiedIdle }
@@ -41,9 +45,6 @@ DummyWasteDraw? dummyWasteDrawForProfile(String profileCategory) {
     'media_player',
     'media_server',
     'speaker',
-    'router',
-    'access_point',
-    'bridge',
     'camera',
     'smart_plug',
     'printer',
@@ -58,8 +59,6 @@ DummyWasteDraw? dummyWasteDrawForProfile(String profileCategory) {
     'washer',
     'dryer',
     'dishwasher',
-    'refrigerator',
-    'freezer',
     'hvac',
     'water_heater',
     'dehumidifier',
@@ -67,6 +66,16 @@ DummyWasteDraw? dummyWasteDrawForProfile(String profileCategory) {
     'oven',
     'projector',
   };
+  // Continuous equipment has no idle hours and receives no dummy allocation.
+  const continuous = {
+    'refrigerator',
+    'freezer',
+    'router',
+    'access_point',
+    'bridge',
+    'modem',
+  };
+  if (continuous.contains(profileCategory)) return null;
   if (low.contains(profileCategory)) return DummyWasteDraw.low;
   if (high.contains(profileCategory)) return DummyWasteDraw.high;
   return null;
@@ -206,29 +215,40 @@ class DemoDayTree {
 
   /// Applies an internal illustrative waste allocation only after a completed
   /// KB decision establishes that no waste-specific evidence is available.
-  /// An existing priced real leaf keeps its measured total unchanged.
+  /// The eight-hour schedule is an assumption, never interval evidence. An
+  /// optional verified interval is retained as separate provenance only.
   DemoDayTree applyDummyWasteAfterKb({
     required String deviceId,
     required String profileCategory,
-    required WasteDurationEvidence durationEvidence,
+    WasteDurationEvidence? durationEvidence,
     required KbWasteResult kbResult,
     required String kbResultId,
   }) {
     if (kbResult != KbWasteResult.wasteEvidenceUnavailableAfterKb ||
         kbResultId.isEmpty ||
         !_uuid.hasMatch(deviceId) ||
-        durationEvidence.seconds > period.seconds) {
+        (durationEvidence != null &&
+            durationEvidence.seconds > period.seconds)) {
       throw const FormatException('No final KB waste fallback decision');
     }
     final draw = dummyWasteDrawForProfile(profileCategory);
     if (draw == null) {
+      if (const {
+        'refrigerator',
+        'freezer',
+        'router',
+        'access_point',
+        'bridge',
+        'modem',
+      }.contains(profileCategory)) {
+        return this;
+      }
       throw const FormatException('No dummy waste draw class for profile');
     }
     // USD micros/hour: $0.0001 for low draw, $0.01 for high draw.
     // A day or month is summed in micros before any cent display rounding.
     final rateMicrosPerHour = draw == DummyWasteDraw.low ? 100 : 10000;
-    final proposedMicros =
-        (rateMicrosPerHour * durationEvidence.seconds + 1800) ~/ 3600;
+    final proposedMicros = rateMicrosPerHour * dummyIdleHoursPerLocalDay;
     final rows = devices.toList();
     final index = rows.indexWhere((row) => row.deviceId == deviceId);
     if (index >= 0) {
@@ -257,9 +277,9 @@ class DemoDayTree {
         classificationEvidenceId: row.classificationEvidenceId,
         mappedMockBranchId: row.mappedMockBranchId,
         mappingEvidenceId: row.mappingEvidenceId,
-        wasteProvenance: 'dummy_after_kb_miss',
+        wasteProvenance: 'dummy_assumed_8h_after_kb_miss',
         kbWasteResultId: kbResultId,
-        wasteDurationEvidenceId: durationEvidence.evidenceId,
+        wasteDurationEvidenceId: durationEvidence?.evidenceId,
       );
     } else {
       rows.add(
@@ -273,9 +293,9 @@ class DemoDayTree {
           ),
           origin: DemoValueOrigin.mock,
           sourceId: kbResultId,
-          wasteProvenance: 'dummy_after_kb_miss',
+          wasteProvenance: 'dummy_assumed_8h_after_kb_miss',
           kbWasteResultId: kbResultId,
-          wasteDurationEvidenceId: durationEvidence.evidenceId,
+          wasteDurationEvidenceId: durationEvidence?.evidenceId,
         ),
       );
     }
@@ -452,7 +472,7 @@ class DemoMonthTree {
     required String localDate,
     required String deviceId,
     required String profileCategory,
-    required WasteDurationEvidence durationEvidence,
+    WasteDurationEvidence? durationEvidence,
     required KbWasteResult kbResult,
     required String kbResultId,
   }) {
