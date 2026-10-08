@@ -148,8 +148,6 @@ class _DesignShellState extends State<DesignShell> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageFinished: (url) {
-            _installNavigation();
-            _scheduleTourAdvance();
             unawaited(_finishAndRestorePage(url));
           },
           onNavigationRequest: (request) {
@@ -221,6 +219,19 @@ class _DesignShellState extends State<DesignShell> {
   Future<void> _finishAndRestorePage(String url) async {
     final page = _page;
     final generation = _pageLoadGeneration;
+    final path = Uri.tryParse(url)?.path;
+    if (!_isCurrentPageLoad(page, generation) ||
+        path == null ||
+        !path.endsWith('assets/design_pages/$page/app.html')) {
+      return;
+    }
+    try {
+      await _installNavigation();
+    } catch (_) {
+      // The packaged page stays available if navigation setup fails.
+    }
+    if (!_isCurrentPageLoad(page, generation)) return;
+    _scheduleTourAdvance();
     await _onPageFinished(url);
     if (!_isCurrentPageLoad(page, generation)) return;
     final snapshot = _pageStates.forPage(_pageStateHomeId, page);
