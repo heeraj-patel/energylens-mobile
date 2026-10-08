@@ -1,0 +1,7 @@
+.faq-answer-text.faq-answer-collapsed {
+  max-height: 6.5em;
+  overflow: hidden;
+}
+.faq-answer-expand[hidden] {
+  display: none;
+}
