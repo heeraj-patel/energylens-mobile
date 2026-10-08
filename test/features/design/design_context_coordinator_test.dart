@@ -200,6 +200,26 @@ void main() {
     },
   );
 
+  test('sign-out and another account cannot reuse a prior home read', () async {
+    final adapters = FakeAdapters();
+    final coordinator = DesignContextCoordinator(adapters);
+    coordinator.useVerifiedContext(_context(homeA));
+    final pending = Completer<TipsDomainSnapshot?>();
+    adapters.pendingTips = pending;
+    final oldRead = coordinator.read('perks_tips');
+
+    coordinator.signOut();
+    coordinator.useVerifiedContext(_context(homeA, accountId: 'account-b'));
+    pending.complete(_tips(homeA, TipsPage.perksTips));
+    expect(await oldRead, isNull);
+
+    adapters.pendingTips = null;
+    final newRead = await coordinator.read('perks_tips');
+    expect(newRead?.accountId, 'account-b');
+    expect(newRead?.homeId, homeA);
+    expect(adapters.clears, 3);
+  });
+
   test(
     'rejects sample inventory in household context and permits matching sample',
     () async {

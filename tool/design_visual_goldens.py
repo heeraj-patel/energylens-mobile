@@ -34,7 +34,7 @@ PAGE_MARKERS = {
     "settings": "Profile, device setup",
     "settings_manage_devices": "Add New Equipment",
     "settings_manual_device_entry": "Manual Device Entry",
-    "settings_photo_scan_onboarding": "Photo OCR",
+    "settings_photo_scan_onboarding": "Take Photo",
     "tips_care_upgrades": "Care & Maintenance",
     "tips_efficiency": "Efficient Usage",
     "tips_knowledge": "Find Answers",

@@ -97,6 +97,10 @@ class ReportPreviewDomainRepository {
         idempotencyKey: idempotencyKey,
       );
       if (staleRequest()) return null;
+      if (created.homeId.toLowerCase() != homeId.toLowerCase() ||
+          !_sameSelection(created, applianceIds)) {
+        throw const FormatException('Report preview creation changed');
+      }
       final fresh = await source.reportPreview(
         homeId,
         created.id,
@@ -105,7 +109,9 @@ class ReportPreviewDomainRepository {
       if (staleRequest()) return null;
       if (created.homeId.toLowerCase() != homeId.toLowerCase() ||
           fresh.homeId.toLowerCase() != homeId.toLowerCase() ||
-          fresh.id != created.id) {
+          fresh.id != created.id ||
+          fresh.snapshotSha256 != created.snapshotSha256 ||
+          !_sameSelection(fresh, applianceIds)) {
         throw const FormatException('Report preview owner or ID changed');
       }
       return _snapshot(homeId, fresh);
@@ -164,6 +170,18 @@ class ReportPreviewDomainRepository {
       status: status,
     );
   }
+}
+
+bool _sameSelection(CloudReportPreview preview, List<String> selectedIds) {
+  final selected = selectedIds.map((id) => id.toLowerCase()).toSet();
+  final actual = preview.items
+      .map((item) => item.applianceId.toLowerCase())
+      .toSet();
+  return selected.isNotEmpty &&
+      selected.length == selectedIds.length &&
+      actual.length == preview.items.length &&
+      preview.items.length == selectedIds.length &&
+      actual.containsAll(selected);
 }
 
 final _homeUuid = RegExp(

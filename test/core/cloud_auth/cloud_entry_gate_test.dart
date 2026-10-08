@@ -120,7 +120,7 @@ void main() {
         CloudReportDeliveryDomainSource(api),
       ),
     );
-    final seenHomes = <String>[];
+    final seenHomes = <(String, String)>[];
     await tester.pumpWidget(
       MaterialApp(
         home: CloudEntryGate(
@@ -149,7 +149,7 @@ void main() {
                   lifecycle.isVerifiedScope(verifiedAccountId, home.id),
                   isTrue,
                 );
-                seenHomes.add(home.id);
+                seenHomes.add((home.id, home.name));
                 return Scaffold(
                   body: Column(
                     children: [
@@ -171,13 +171,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('First home'));
     await tester.pumpAndSettle();
-    expect(seenHomes, contains(firstHomeId));
+    expect(seenHomes, contains((firstHomeId, 'First home')));
     await tester.tap(find.text('Change selected home'));
     expect(coordinator.context, isNull);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Second home'));
     await tester.pumpAndSettle();
-    expect(seenHomes, contains(secondHomeId));
+    expect(seenHomes, contains((secondHomeId, 'Second home')));
     await tester.tap(find.text('Sign out selected home'));
     expect(coordinator.context, isNull);
     await tester.pumpAndSettle();

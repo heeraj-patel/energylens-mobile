@@ -25,6 +25,20 @@ void main() {
       r'$6.96',
       r'$2.88',
     ]);
+    expect(dashboard.provenanceByBindingId.keys.toSet(), {
+      'dashboard_text_006',
+      'dashboard_text_009',
+    });
+    expect(
+      dashboard.provenanceByBindingId['dashboard_text_006']!.status,
+      DemoCostClaimStatus.illustrative,
+    );
+    expect(
+      dashboard
+          .provenanceByBindingId['dashboard_text_009']!
+          .hasUnclassifiedSourceCost,
+      isFalse,
+    );
 
     final devices = DemoEnergyBindings.forPage(
       tree: tree,
@@ -53,6 +67,12 @@ void main() {
     );
     expect(efficiency.bindings.single.id, 'efficiency_text_009');
     expect(efficiency.bindings.single.text, r'$142.30');
+    expect(
+      efficiency
+          .provenanceByBindingId['efficiency_text_009']!
+          .referenceLocalDate,
+      '2026-09-30',
+    );
   });
 
   test('binds a dynamically built October tree by its own dates and month', () {
@@ -135,6 +155,14 @@ void main() {
       r'$1.71',
       r'$6.35',
     ]);
+    expect(
+      devices.provenanceByBindingId['devices_text_006']!.status,
+      DemoCostClaimStatus.mixed,
+    );
+    expect(
+      devices.provenanceByBindingId['devices_text_009']!.status,
+      DemoCostClaimStatus.mixed,
+    );
     expect(
       merged
           .day('2026-09-30')
@@ -237,6 +265,16 @@ void main() {
       );
       expect(shown.bindings, hasLength(2));
       expect(mapped.day('2026-09-30').devices.first.cost.unclassifiedCents, 40);
+      expect(
+        shown
+            .provenanceByBindingId['dashboard_text_006']!
+            .hasUnclassifiedSourceCost,
+        isTrue,
+      );
+      expect(
+        shown.provenanceByBindingId['dashboard_text_009']!.status,
+        DemoCostClaimStatus.mixed,
+      );
 
       final unknown = mapped.mergeMeasured(
         RealDeviceDay(

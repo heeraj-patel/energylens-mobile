@@ -97,6 +97,36 @@ void main() {
         );
 
         expect(_visibleText(sourceHtml), isNotEmpty, reason: pageId);
+        if (const {
+          'settings_manage_devices',
+          'settings_manual_device_entry',
+          'settings_photo_scan_onboarding',
+        }.contains(pageId)) {
+          for (final duplicate in [
+            'LG Smart Refrigerator',
+            'Ecobee Smart Thermostat',
+            'Sony Bravia TV 4K',
+            '3 Ready',
+          ]) {
+            expect(packagedHtml, isNot(contains(duplicate)), reason: pageId);
+          }
+          if (pageId == 'settings_photo_scan_onboarding') {
+            expect(
+              packagedHtml,
+              contains('Take a photo or choose one to review a device.'),
+            );
+            expect(packagedHtml, isNot(contains('BOSCH SMS4ECW14E')));
+          }
+          const mockListMarker = '<!-- Existing Monitored Devices List -->';
+          expect(
+            _visibleText(packagedHtml.split(mockListMarker).last),
+            _visibleText(
+              _withoutOuterChrome(sourceHtml).split(mockListMarker).last,
+            ),
+            reason: 'Photo Scan keeps the approved mock device list',
+          );
+          continue;
+        }
         expect(
           _visibleText(_withSourceFallbackValues(packagedHtml, pageId)),
           _visibleText(_withoutOuterChrome(sourceHtml)),
@@ -119,6 +149,11 @@ void main() {
           );
           final config = _chromeConfig(html);
           expect(config['headerBindings'], hasLength(2));
+          expect(
+            (config['headerBindings'] as List).first,
+            '${pageId}_text_001',
+            reason: '$pageId selected-home header slot',
+          );
           expect(config['footerActions'], hasLength(5));
           expect(config['footerBindings'], hasLength(5));
           expect(
@@ -147,6 +182,16 @@ void main() {
         }
       },
     );
+
+    test('Settings selected-home row has the approved binding ID', () async {
+      final html = await rootBundle.loadString(
+        'assets/design_pages/settings/app.html',
+      );
+      expect(
+        html,
+        contains('data-el-bind="settings_text_010">The Miller Home</p>'),
+      );
+    });
 
     test('dashboard home switcher keeps its native route', () async {
       final html = await rootBundle.loadString(

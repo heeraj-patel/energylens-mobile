@@ -77,8 +77,8 @@ class PhotoCaptureService {
     }
   }
 
-  /// Rotates the photo clockwise and updates its file so preview, OCR, and
-  /// barcode detection all use the same pixels.
+  /// Rotates into a new JPEG so native OCR reads the new pixels and a failed
+  /// scan leaves the previous photo intact.
   Future<CapturedPhoto> rotateClockwise(CapturedPhoto photo) async {
     final decoded = img.decodeImage(photo.bytes);
     if (decoded == null) {
@@ -90,8 +90,11 @@ class PhotoCaptureService {
     if (rotated.length > 5 * 1024 * 1024) {
       throw const FormatException('Choose a photo smaller than 5 MB.');
     }
-    await File(photo.path).writeAsBytes(rotated, flush: true);
-    return CapturedPhoto(path: photo.path, bytes: rotated);
+    final file = File(
+      '${File(photo.path).parent.path}/energylens-rotated-${DateTime.now().microsecondsSinceEpoch}.jpg',
+    );
+    await file.writeAsBytes(rotated, flush: true);
+    return CapturedPhoto(path: file.path, bytes: rotated);
   }
 
   Future<String?> extractTextHint(String path) async {

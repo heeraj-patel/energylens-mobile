@@ -98,6 +98,7 @@ class ReportDeliveryDomainAdapter {
       if (current.homeId.toLowerCase() != homeId.toLowerCase() ||
           current.id != preview.preview.id ||
           current.snapshotSha256 != preview.snapshotSha256 ||
+          !_sameReportSelection(current, preview.preview) ||
           current.stale ||
           !_now().toUtc().isBefore(current.expiresAt.toUtc())) {
         return const ReportDeliveryReadbackResult(
@@ -149,6 +150,7 @@ class ReportDeliveryDomainAdapter {
     final normalizedRecipients = validatedReportRecipients(recipients);
     if (!explicitlyApproved ||
         preview.status != ReportPreviewStatus.current ||
+        preview.preview.homeId.toLowerCase() != homeId.toLowerCase() ||
         !_now().toUtc().isBefore(preview.preview.expiresAt.toUtc()) ||
         approvedSnapshotSha256 != preview.snapshotSha256 ||
         normalizedRecipients == null ||
@@ -182,6 +184,7 @@ class ReportDeliveryDomainAdapter {
           current.stale ||
           !_now().toUtc().isBefore(current.expiresAt.toUtc()) ||
           current.snapshotSha256 != preview.snapshotSha256 ||
+          !_sameReportSelection(current, preview.preview) ||
           current.snapshotSha256 != approvedSnapshotSha256) {
         return const ReportDeliveryDomainResult(ReportDeliveryStatus.rejected);
       }
@@ -218,6 +221,22 @@ class ReportDeliveryDomainAdapter {
       rethrow;
     }
   }
+}
+
+bool _sameReportSelection(
+  CloudReportPreview current,
+  CloudReportPreview approved,
+) {
+  final currentIds = current.items
+      .map((item) => item.applianceId.toLowerCase())
+      .toSet();
+  final approvedIds = approved.items
+      .map((item) => item.applianceId.toLowerCase())
+      .toSet();
+  return currentIds.length == current.items.length &&
+      approvedIds.length == approved.items.length &&
+      currentIds.length == approvedIds.length &&
+      currentIds.containsAll(approvedIds);
 }
 
 final _uuidV4 = RegExp(

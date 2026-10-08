@@ -152,105 +152,19 @@
 </div>
 <!-- Method 1: Discovered Devices / Scan -->
 <div class="space-y-space-sm hidden" id="section-scan">
-<div class="flex items-center justify-between">
-<div class="flex items-center gap-1.5">
-<span class="material-symbols-outlined text-primary text-[18px]">wifi_find</span>
-<h3 class="font-label-md text-sm font-semibold text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_016">Discovered on Circuit</h3>
-</div>
-<span class="text-[11px] font-label-md px-2 py-0.5 rounded-full bg-primary-container/40 text-primary font-semibold" data-el-bind="settings_photo_scan_onboarding_text_017">3 Ready</span>
-</div>
-<div class="bg-surface-container-lowest p-space-sm rounded-xl space-y-2 shadow-sm border border-outline-variant/30">
-<div class="p-3 rounded-lg bg-surface-container-low/70 border border-outline-variant/20 flex items-center justify-between">
-<div class="flex items-center gap-3">
-<div class="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary">
-<span class="material-symbols-outlined text-[20px]">kitchen</span>
-</div>
-<div>
-<p class="font-label-md text-label-md font-medium text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_018">LG Smart Refrigerator</p>
-<p class="text-[11px] font-body-md text-on-surface-variant" data-el-bind="settings_photo_scan_onboarding_text_019">Circuit #3 • 142W signature match</p>
-</div>
-</div>
-<button class="px-3 py-1.5 rounded-lg bg-primary-container text-on-primary-container font-label-md text-[13px] font-semibold hover:opacity-90 shadow-sm transition-all" onclick="saveDevice(this, 'LG Smart Refrigerator')" type="button" data-el-action="settings_photo_scan_onboarding_action_008" data-el-bind="settings_photo_scan_onboarding_text_020">
-          + Add
-        </button>
-</div>
-<div class="p-3 rounded-lg bg-surface-container-low/70 border border-outline-variant/20 flex items-center justify-between">
-<div class="flex items-center gap-3">
-<div class="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary">
-<span class="material-symbols-outlined text-[20px]">thermostat</span>
-</div>
-<div>
-<p class="font-label-md text-label-md font-medium text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_021">Ecobee Smart Thermostat</p>
-<p class="text-[11px] font-body-md text-on-surface-variant" data-el-bind="settings_photo_scan_onboarding_text_022">Wi-Fi Mesh • Eco-profile synced</p>
-</div>
-</div>
-<button class="px-3 py-1.5 rounded-lg bg-primary-container text-on-primary-container font-label-md text-[13px] font-semibold hover:opacity-90 shadow-sm transition-all" onclick="saveDevice(this, 'Ecobee Smart Thermostat')" type="button" data-el-action="settings_photo_scan_onboarding_action_009" data-el-bind="settings_photo_scan_onboarding_text_023">
-          + Add
-        </button>
-</div>
-<div class="p-3 rounded-lg bg-surface-container-low/70 border border-outline-variant/20 flex items-center justify-between">
-<div class="flex items-center gap-3">
-<div class="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary">
-<span class="material-symbols-outlined text-[20px]">tv</span>
-</div>
-<div>
-<p class="font-label-md text-label-md font-medium text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_024">Sony Bravia TV 4K</p>
-<p class="text-[11px] font-body-md text-on-surface-variant" data-el-bind="settings_photo_scan_onboarding_text_025">Circuit #7 • Standby vampire load</p>
-</div>
-</div>
-<button class="px-3 py-1.5 rounded-lg bg-primary-container text-on-primary-container font-label-md text-[13px] font-semibold hover:opacity-90 shadow-sm transition-all" onclick="saveDevice(this, 'Sony Bravia TV 4K')" type="button" data-el-action="settings_photo_scan_onboarding_action_010" data-el-bind="settings_photo_scan_onboarding_text_026">
-          + Add
-        </button>
-</div>
-</div>
-</div>
-<!-- Method 2: Camera / Photo Scan -->
-<div class="hidden space-y-space-sm" id="section-camera">
-<div class="flex items-center justify-between">
-<div class="flex items-center gap-1.5">
-<span class="material-symbols-outlined text-tertiary text-[18px]">document_scanner</span>
-<h3 class="font-label-md text-sm font-semibold text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_027">Visual Label Extraction</h3>
-</div>
-<span class="text-[11px] font-label-md px-2 py-0.5 rounded-full bg-tertiary-container text-on-tertiary-container font-semibold" data-el-bind="settings_photo_scan_onboarding_text_028">OCR Ready</span>
-</div>
-<div class="bg-surface-container-lowest p-space-md rounded-xl space-y-3 shadow-sm border border-outline-variant/30">
-<div class="flex gap-2">
-<button class="flex-1 py-2 px-3 rounded-lg bg-surface-container-low border border-outline-variant/30 font-label-md text-xs font-semibold text-on-surface flex items-center justify-center gap-1.5 hover:bg-surface-container" type="button" data-el-action="settings_photo_scan_onboarding_action_011" data-el-bind="settings_photo_scan_onboarding_text_029">
-<span class="material-symbols-outlined text-[16px] text-primary">photo_camera</span>
-          Scan with Camera
-        </button>
-<button class="flex-1 py-2 px-3 rounded-lg bg-surface-container-low border border-outline-variant/30 font-label-md text-xs font-semibold text-on-surface flex items-center justify-center gap-1.5 hover:bg-surface-container" type="button" data-el-action="settings_photo_scan_onboarding_action_012" data-el-bind="settings_photo_scan_onboarding_text_030">
-<span class="material-symbols-outlined text-[16px] text-tertiary">upload_file</span>
-          Upload Label
-        </button>
-</div>
-<div class="space-y-2 pt-1 border-t border-outline-variant/20">
-<div class="grid grid-cols-2 gap-2 text-xs">
-<div class="bg-surface-container-low/50 p-2 rounded-lg border border-outline-variant/20">
-<span class="text-[10px] uppercase font-label-md tracking-wider text-on-surface-variant block" data-el-bind="settings_photo_scan_onboarding_text_031">Detected Model</span>
-<span class="font-semibold text-on-surface font-label-md text-xs" data-el-bind="settings_photo_scan_onboarding_text_032">BOSCH SMS4ECW14E</span>
-</div>
-<div class="bg-surface-container-low/50 p-2 rounded-lg border border-outline-variant/20">
-<span class="text-[10px] uppercase font-label-md tracking-wider text-on-surface-variant block" data-el-bind="settings_photo_scan_onboarding_text_033">Category</span>
-<span class="font-semibold text-on-surface font-label-md text-xs" data-el-bind="settings_photo_scan_onboarding_text_034">Dishwasher (Kitchen)</span>
-</div>
-</div>
-<div class="bg-surface-container-low/50 p-2 rounded-lg border border-outline-variant/20 text-xs flex justify-between items-center">
-<div>
-<span class="text-[10px] uppercase font-label-md tracking-wider text-on-surface-variant block" data-el-bind="settings_photo_scan_onboarding_text_035">Rated Power</span>
-<span class="font-semibold text-on-surface font-label-md text-xs" data-el-bind="settings_photo_scan_onboarding_text_036">2100W Max • 10A</span>
-</div>
-<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-semibold" data-el-bind="settings_photo_scan_onboarding_text_037">99% Confidence</span>
-</div>
-</div>
-<button class="w-full py-2.5 px-3 rounded-xl bg-primary-container text-on-primary-container font-label-md text-xs font-semibold shadow-sm hover:opacity-95 transition-all flex items-center justify-center gap-1.5" onclick="saveDevice(this, 'Bosch Smart Dishwasher')" type="button" data-el-action="settings_photo_scan_onboarding_action_013" data-el-bind="settings_photo_scan_onboarding_text_038">
-<span class="material-symbols-outlined text-[18px]">check_circle</span>
-        Save Extracted Device
-      </button>
-</div>
+<div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-primary text-[18px]">wifi_find</span><h3 class="font-label-md text-sm font-semibold text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_016">Discovered on Circuit</h3></div>
 </div>
 <!-- Method 3: Manual Entry -->
-<div class="space-y-space-sm" id="section-camera-form"><div class="flex items-center justify-between"><div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-primary text-[18px]">photo_camera</span><h3 class="font-label-md text-sm font-semibold text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_039">Photo Scan</h3></div><span class="text-[11px] font-label-md px-2 py-0.5 rounded-full bg-primary-container/40 text-primary font-semibold" data-el-bind="settings_photo_scan_onboarding_text_040">Photo OCR</span></div><div class="bg-surface-container-lowest p-space-md rounded-xl space-y-3 shadow-sm border border-outline-variant/30"><div class="flex gap-2"><button class="flex-1 py-2 px-3 rounded-lg bg-surface-container-low border border-outline-variant/30 font-label-md text-xs font-semibold text-on-surface flex items-center justify-center gap-1.5 hover:bg-surface-container transition-colors" type="button" data-el-action="settings_photo_scan_onboarding_action_014" data-el-bind="settings_photo_scan_onboarding_text_041"><span class="material-symbols-outlined text-[18px] text-primary">photo_camera</span>Take Photo</button><button class="flex-1 py-2 px-3 rounded-lg bg-surface-container-low border border-outline-variant/30 font-label-md text-xs font-semibold text-on-surface flex items-center justify-center gap-1.5 hover:bg-surface-container transition-colors" type="button" data-el-action="settings_photo_scan_onboarding_action_015" data-el-bind="settings_photo_scan_onboarding_text_042"><span class="material-symbols-outlined text-[18px] text-secondary">photo_library</span>From Photos</button></div><div class="space-y-2"><div><label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" data-el-bind="settings_photo_scan_onboarding_text_043">Device Name</label><input class="w-full px-3 py-2 text-xs rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary" id="input-device-name" placeholder="e.g. Living Room Air Conditioner" type="text" value="BOSCH SMS4ECW14E" data-el-field="settings_photo_scan_onboarding_field_001"/></div><div class="grid grid-cols-2 gap-2"><div><label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" data-el-bind="settings_photo_scan_onboarding_text_044">Manufacturer</label><input class="w-full px-3 py-2 text-xs rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary" id="input-manufacturer" placeholder="e.g. Samsung, LG, Daikin" type="text" value="Bosch" data-el-field="settings_photo_scan_onboarding_field_002"/></div><div><label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" data-el-bind="settings_photo_scan_onboarding_text_045">Model Number</label><input class="w-full px-3 py-2 text-xs rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary" id="input-model" placeholder="e.g. WM3900HWA / FTXM" type="text" value="SMS4ECW14E" data-el-field="settings_photo_scan_onboarding_field_003"/></div></div><div><label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" data-el-bind="settings_photo_scan_onboarding_text_046">Type of Device</label><div class="grid grid-cols-3 gap-1.5 text-xs font-label-md"><button class="type-pill py-1.5 px-2 rounded-lg bg-surface-container-low text-on-surface-variant hover:text-on-surface text-center" type="button" data-el-action="settings_photo_scan_onboarding_action_016" data-el-bind="settings_photo_scan_onboarding_text_047">Climate / AC</button><button class="type-pill py-1.5 px-2 rounded-lg bg-surface-container-low text-on-surface-variant hover:text-on-surface text-center" type="button" data-el-action="settings_photo_scan_onboarding_action_017" data-el-bind="settings_photo_scan_onboarding_text_048">Refrigeration</button><button class="type-pill py-1.5 px-2 rounded-lg bg-surface-container-low text-on-surface-variant hover:text-on-surface text-center" type="button" data-el-action="settings_photo_scan_onboarding_action_018" data-el-bind="settings_photo_scan_onboarding_text_049">TV / Media</button><button class="type-pill py-1.5 px-2 rounded-lg bg-surface-container-low text-on-surface-variant hover:text-on-surface text-center" type="button" data-el-action="settings_photo_scan_onboarding_action_019" data-el-bind="settings_photo_scan_onboarding_text_050">Computing</button><button class="type-pill py-1.5 px-2 rounded-lg bg-primary-container text-on-primary-container font-semibold text-center" type="button" data-el-action="settings_photo_scan_onboarding_action_020" data-el-bind="settings_photo_scan_onboarding_text_051">Kitchen</button><button class="type-pill py-1.5 px-2 rounded-lg bg-surface-container-low text-on-surface-variant hover:text-on-surface text-center" type="button" data-el-action="settings_photo_scan_onboarding_action_021" data-el-bind="settings_photo_scan_onboarding_text_052">Water Heater</button></div></div></div><button class="w-full py-2.5 px-3 rounded-xl bg-primary text-on-primary font-label-md text-xs font-semibold shadow-sm hover:opacity-95 transition-all flex items-center justify-center gap-1.5" onclick="saveDevice(this, 'Bosch Smart Dishwasher')" type="button" data-el-action="settings_photo_scan_onboarding_action_022" data-el-bind="settings_photo_scan_onboarding_text_053"><span class="material-symbols-outlined text-[18px]">check_circle</span>Save Device</button></div></div>
+<div class="space-y-space-sm" id="section-camera-form">
+<div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-primary text-[18px]">photo_camera</span><h3 class="font-label-md text-sm font-semibold text-on-surface">Photo Scan</h3></div>
+<div class="bg-surface-container-lowest p-space-md rounded-xl space-y-3 shadow-sm border border-outline-variant/30">
+<p class="text-xs text-on-surface-variant">Take a photo or choose one to review a device.</p>
+<div class="flex gap-2">
+<button class="flex-1 py-2 px-3 rounded-lg bg-surface-container-low border border-outline-variant/30 font-label-md text-xs font-semibold text-on-surface flex items-center justify-center gap-1.5" type="button" data-el-action="settings_photo_scan_onboarding_action_014"><span class="material-symbols-outlined text-[18px] text-primary">photo_camera</span>Take Photo</button>
+<button class="flex-1 py-2 px-3 rounded-lg bg-surface-container-low border border-outline-variant/30 font-label-md text-xs font-semibold text-on-surface flex items-center justify-center gap-1.5" type="button" data-el-action="settings_photo_scan_onboarding_action_015"><span class="material-symbols-outlined text-[18px] text-secondary">photo_library</span>From Photos</button>
+</div>
+</div>
+</div>
 <!-- Existing Monitored Devices List -->
 <div class="space-y-space-sm pb-6">
 <div class="flex items-center justify-between">

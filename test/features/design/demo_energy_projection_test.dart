@@ -41,6 +41,38 @@ void main() {
           projection.unattributedDayCost.totalMicros,
       projection.homeDayCost.totalMicros,
     );
+    final mondayThroughReference = projection.costForLocalDateRange(
+      startLocalDate: '2026-10-05',
+      endExclusiveLocalDate: '2026-10-08',
+    );
+    expect(mondayThroughReference.source.usefulCents, 1496);
+    expect(mondayThroughReference.source.wasteCents, 422);
+    expect(mondayThroughReference.source.totalCents, 1918);
+    expect(
+      mondayThroughReference.presentation.totalMicros,
+      mondayThroughReference.source.totalMicros,
+    );
+    final monthThroughReference = projection.costForLocalDateRange(
+      startLocalDate: '2026-10-01',
+      endExclusiveLocalDate: '2026-10-08',
+    );
+    expect(monthThroughReference.source.usefulCents, 3096);
+    expect(monthThroughReference.source.wasteCents, 646);
+    expect(monthThroughReference.source.totalCents, 3742);
+    expect(
+      () => projection.costForLocalDateRange(
+        startLocalDate: '2026-10-05',
+        endExclusiveLocalDate: '2026-10-09',
+      ),
+      throwsFormatException,
+    );
+    expect(
+      () => projection.costForLocalDateRange(
+        startLocalDate: '2026-09-30',
+        endExclusiveLocalDate: '2026-10-08',
+      ),
+      throwsFormatException,
+    );
   });
 
   test(
@@ -97,6 +129,12 @@ void main() {
       expect(projection.homeDayCost.totalCents, 951);
       expect(projection.monthToDateCost.totalCents, 14197);
       expect(projection.hasUnclassifiedMonthToDateCost, isTrue);
+      final range = projection.costForLocalDateRange(
+        startLocalDate: '2026-09-30',
+        endExclusiveLocalDate: '2026-10-01',
+      );
+      expect(range.source.unclassifiedCents, 40);
+      expect(range.presentation.unclassifiedCents, 40);
       expect(
         projection.devicesDayCost.totalMicros +
             projection.unattributedDayCost.totalMicros,
@@ -125,6 +163,49 @@ void main() {
         tree: incomplete,
         homeId: _homeId,
         referenceLocalDate: '2026-09-30',
+      ),
+      throwsFormatException,
+    );
+    final shiftedDays = tree.days.map((day) {
+      final shifted = DemoDayPeriod(
+        localDate: day.period.localDate,
+        timezone: day.period.timezone,
+        startUtc: day.period.startUtc.add(const Duration(hours: 1)),
+        endUtc: day.period.endUtc.add(const Duration(hours: 1)),
+      );
+      return DemoDayTree(
+        homeId: day.homeId,
+        period: shifted,
+        devices: [
+          for (final leaf in day.devices)
+            DemoBranch(
+              deviceId: leaf.deviceId,
+              name: leaf.name,
+              period: shifted,
+              cost: leaf.cost,
+              origin: leaf.origin,
+              sourceId: leaf.sourceId,
+            ),
+        ],
+        unattributed: DemoBranch(
+          deviceId: day.unattributed.deviceId,
+          period: shifted,
+          cost: day.unattributed.cost,
+          origin: day.unattributed.origin,
+          sourceId: day.unattributed.sourceId,
+        ),
+      );
+    }).toList();
+    final shifted = DemoMonthTree(
+      homeId: _homeId,
+      referenceLocalDate: tree.referenceLocalDate,
+      days: shiftedDays,
+    );
+    expect(
+      () => DemoEnergyProjection.fromTree(
+        tree: shifted,
+        homeId: _homeId,
+        referenceLocalDate: tree.referenceLocalDate,
       ),
       throwsFormatException,
     );

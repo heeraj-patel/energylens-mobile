@@ -133,6 +133,7 @@ class EnergyLensApp extends StatelessWidget {
                     onSignOut: signOut,
                     onChangeHome: changeHome,
                     designContextCoordinator: designContextCoordinator,
+                    onboardingLifecycle: lifecycle,
                     onReportPreview: () {
                       final accountId = lifecycle.verifiedAccountId;
                       if (accountId == null ||

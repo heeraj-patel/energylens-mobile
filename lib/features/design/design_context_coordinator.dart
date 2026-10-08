@@ -98,6 +98,7 @@ class RepositoryDesignContextAdapters implements DesignContextAdapters {
     devicesRepository.clear();
     devicesRuntimeEvidenceAdapter.invalidate();
     efficiencyRepository.clear();
+    efficiencyAwayAdapter.clear();
     tipsRepository.clear();
     settingsRepository.clear();
     manageDevicesRepository.clear();

@@ -21,6 +21,7 @@ CloudReportPreview makePreview({
   bool stale = false,
   DateTime? expires,
   CloudReportDeliveryStatus? latestDelivery,
+  List<CloudReportItem> items = const [],
 }) => CloudReportPreview(
   id,
   digest ?? hash,
@@ -29,7 +30,7 @@ CloudReportPreview makePreview({
   expires ?? clockNow.add(const Duration(hours: 1)),
   stale,
   const [],
-  const [],
+  items,
   latestDelivery: latestDelivery,
 );
 
@@ -106,23 +107,23 @@ class FakeSource implements ReportDeliveryDomainSource {
 void main() {
   DateTime now() => clockNow;
 
-  CloudReportDeliveryStatus requestStatus(String state, {String id = deliveryId}) =>
-      CloudReportDeliveryStatus(
-        id: id,
-        state: state,
-        createdAt: clockNow.subtract(const Duration(minutes: 2)),
-        sentAt: state == 'sent'
-            ? clockNow.subtract(const Duration(minutes: 1))
-            : null,
-      );
+  CloudReportDeliveryStatus requestStatus(
+    String state, {
+    String id = deliveryId,
+  }) => CloudReportDeliveryStatus(
+    id: id,
+    state: state,
+    createdAt: clockNow.subtract(const Duration(minutes: 2)),
+    sentAt: state == 'sent'
+        ? clockNow.subtract(const Duration(minutes: 1))
+        : null,
+  );
 
   test('refresh and reopen reconcile the exact queued request', () async {
     final source = FakeSource();
     var state = 'pending';
-    source.read = (_, id, _) async => makePreview(
-      id: id,
-      latestDelivery: requestStatus(state),
-    );
+    source.read = (_, id, _) async =>
+        makePreview(id: id, latestDelivery: requestStatus(state));
     final adapter = ReportDeliveryDomainAdapter(source, now: now);
     final queued = await adapter.queue(
       preview: snapshot(),
@@ -153,60 +154,94 @@ void main() {
     expect(refreshed.delivery!.sentAt, isNotNull);
   });
 
-  test('readback rejects changed preview, other request, and no request', () async {
-    final source = FakeSource();
-    final adapter = ReportDeliveryDomainAdapter(source, now: now);
-    Future<ReportDeliveryReadbackResult> read() => adapter.readback(
-      preview: snapshot(),
-      ownedApplianceIds: {appliance},
-      expectedDeliveryId: deliveryId,
-    );
-    source.read = (_, id, _) async => makePreview(id: id, digest: 'b' * 64);
-    expect((await read()).status, ReportDeliveryReadbackStatus.previewChanged);
-    source.read = (_, id, _) async => makePreview(
-      id: id,
-      latestDelivery: requestStatus('pending', id: requestId),
-    );
-    expect((await read()).status, ReportDeliveryReadbackStatus.previewChanged);
-    source.read = (_, id, _) async => makePreview(id: id);
-    expect((await read()).status, ReportDeliveryReadbackStatus.noRequest);
-    source.read = (_, id, _) async => makePreview(homeId: '22222222-2222-4222-8222-222222222222', id: id);
-    expect((await read()).status, ReportDeliveryReadbackStatus.previewChanged);
-    expect(source.queueCount, 0);
-  });
+  test(
+    'readback returns a canceled request without recipient details',
+    () async {
+      final source = FakeSource();
+      source.read = (_, id, _) async =>
+          makePreview(id: id, latestDelivery: requestStatus('canceled'));
+      final result = await ReportDeliveryDomainAdapter(source, now: now)
+          .readback(
+            preview: snapshot(),
+            ownedApplianceIds: {appliance},
+            expectedDeliveryId: deliveryId,
+          );
+      expect(result.status, ReportDeliveryReadbackStatus.available);
+      expect(result.delivery!.state, 'canceled');
+      expect(result.delivery!.sentAt, isNull);
+    },
+  );
 
-  test('readback rejects stale and expired previews before exposing status', () async {
-    final source = FakeSource();
-    final adapter = ReportDeliveryDomainAdapter(source, now: now);
-    for (final value in [
-      makePreview(stale: true),
-      makePreview(expires: clockNow),
-    ]) {
-      final result = await adapter.readback(
-        preview: snapshot(
-          status: value.stale
-              ? ReportPreviewStatus.stale
-              : ReportPreviewStatus.expired,
-          value: value,
-        ),
-        ownedApplianceIds: {appliance},
-      );
-      expect(result.status, ReportDeliveryReadbackStatus.previewChanged);
-    }
-    expect(source.readCount, 0);
-    source.read = (_, id, _) async => makePreview(
-      id: id,
-      stale: true,
-      latestDelivery: requestStatus('sent'),
-    );
-    expect(
-      (await adapter.readback(
+  test(
+    'readback rejects changed preview, other request, and no request',
+    () async {
+      final source = FakeSource();
+      final adapter = ReportDeliveryDomainAdapter(source, now: now);
+      Future<ReportDeliveryReadbackResult> read() => adapter.readback(
         preview: snapshot(),
         ownedApplianceIds: {appliance},
-      )).status,
-      ReportDeliveryReadbackStatus.previewChanged,
-    );
-  });
+        expectedDeliveryId: deliveryId,
+      );
+      source.read = (_, id, _) async => makePreview(id: id, digest: 'b' * 64);
+      expect(
+        (await read()).status,
+        ReportDeliveryReadbackStatus.previewChanged,
+      );
+      source.read = (_, id, _) async => makePreview(
+        id: id,
+        latestDelivery: requestStatus('pending', id: requestId),
+      );
+      expect(
+        (await read()).status,
+        ReportDeliveryReadbackStatus.previewChanged,
+      );
+      source.read = (_, id, _) async => makePreview(id: id);
+      expect((await read()).status, ReportDeliveryReadbackStatus.noRequest);
+      source.read = (_, id, _) async =>
+          makePreview(homeId: '22222222-2222-4222-8222-222222222222', id: id);
+      expect(
+        (await read()).status,
+        ReportDeliveryReadbackStatus.previewChanged,
+      );
+      expect(source.queueCount, 0);
+    },
+  );
+
+  test(
+    'readback rejects stale and expired previews before exposing status',
+    () async {
+      final source = FakeSource();
+      final adapter = ReportDeliveryDomainAdapter(source, now: now);
+      for (final value in [
+        makePreview(stale: true),
+        makePreview(expires: clockNow),
+      ]) {
+        final result = await adapter.readback(
+          preview: snapshot(
+            status: value.stale
+                ? ReportPreviewStatus.stale
+                : ReportPreviewStatus.expired,
+            value: value,
+          ),
+          ownedApplianceIds: {appliance},
+        );
+        expect(result.status, ReportDeliveryReadbackStatus.previewChanged);
+      }
+      expect(source.readCount, 0);
+      source.read = (_, id, _) async => makePreview(
+        id: id,
+        stale: true,
+        latestDelivery: requestStatus('sent'),
+      );
+      expect(
+        (await adapter.readback(
+          preview: snapshot(),
+          ownedApplianceIds: {appliance},
+        )).status,
+        ReportDeliveryReadbackStatus.previewChanged,
+      );
+    },
+  );
 
   test('sign out discards an in-flight delivery readback', () async {
     final source = FakeSource();
@@ -222,6 +257,59 @@ void main() {
     pending.complete(makePreview(latestDelivery: requestStatus('sent')));
     expect((await read).status, ReportDeliveryReadbackStatus.contextChanged);
   });
+
+  test(
+    'readback and queue reject changed device selection at the same hash',
+    () async {
+      const approvedItem = CloudReportItem(
+        appliance,
+        'computer',
+        'approved',
+        null,
+      );
+      const otherItem = CloudReportItem(
+        '44444444-4444-4444-8444-444444444444',
+        'computer',
+        'different',
+        null,
+      );
+      final source = FakeSource();
+      source.read = (_, id, _) async => makePreview(
+        id: id,
+        items: const [otherItem],
+        latestDelivery: CloudReportDeliveryStatus(
+          id: deliveryId,
+          state: 'sent',
+          createdAt: clockNow.subtract(const Duration(minutes: 2)),
+          sentAt: clockNow.subtract(const Duration(minutes: 1)),
+        ),
+      );
+      final adapter = ReportDeliveryDomainAdapter(source, now: now);
+      final selected = snapshot(
+        value: makePreview(items: const [approvedItem]),
+      );
+
+      expect(
+        (await adapter.readback(
+          preview: selected,
+          ownedApplianceIds: {appliance},
+        )).status,
+        ReportDeliveryReadbackStatus.previewChanged,
+      );
+      expect(
+        (await adapter.queue(
+          preview: selected,
+          explicitlyApproved: true,
+          approvedSnapshotSha256: hash,
+          recipients: 'user@example.com',
+          ownedApplianceIds: {appliance},
+          idempotencyKey: requestId,
+        )).status,
+        ReportDeliveryStatus.rejected,
+      );
+      expect(source.queueCount, 0);
+    },
+  );
 
   test(
     'requires explicit approval of the exact current preview and recipients',
@@ -283,6 +371,31 @@ void main() {
     expect(source.readCount, 0);
     expect(source.queueCount, 0);
   });
+
+  test(
+    'queue rejects an embedded preview from another home before any read',
+    () async {
+      final source = FakeSource();
+      final adapter = ReportDeliveryDomainAdapter(source, now: now);
+      final mismatched = ReportPreviewDomainSnapshot(
+        homeId: home,
+        preview: makePreview(homeId: '22222222-2222-4222-8222-222222222222'),
+        status: ReportPreviewStatus.current,
+      );
+
+      final result = await adapter.queue(
+        preview: mismatched,
+        explicitlyApproved: true,
+        approvedSnapshotSha256: hash,
+        recipients: 'user@example.com',
+        ownedApplianceIds: {appliance},
+        idempotencyKey: requestId,
+      );
+      expect(result.status, ReportDeliveryStatus.rejected);
+      expect(source.readCount, 0);
+      expect(source.queueCount, 0);
+    },
+  );
 
   test(
     'rejects a preview that became stale, expired, or changed before queueing',

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:energylens_mobile/features/design/design_page_bridge.dart';
+import 'package:energylens_mobile/features/design/design_page_api.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -117,6 +118,35 @@ void main() {
         jsonDecode(utf8.decode(base64Decode(secondEncoded))) as Map;
     expect(secondPayload['context']['homeId'], 'home_2');
     expect((secondPayload['bindings'] as List).single['text'], 'Lake House');
+  });
+
+  test('selected home name binds every page header and Settings home row', () {
+    final gate = DesignPageRequestGate();
+    final renderer = DesignTextBindingRenderer(gate);
+    for (final page in designPageIds) {
+      final ticket = gate.select('home_1', page);
+      final script = renderer.updateScript(
+        ticket,
+        selectedHomeNameBindings(page, 'Lake House'),
+      )!;
+      final encoded = RegExp("atob\\('([^']+)'\\)")
+          .firstMatch(script)!
+          .group(1)!;
+      final payload = jsonDecode(utf8.decode(base64Decode(encoded))) as Map;
+      final bindings = (payload['bindings'] as List).cast<Map>();
+      expect(bindings.first, {'id': '${page}_text_001', 'text': 'Lake House'});
+      expect(bindings.length, page == 'settings' ? 2 : 1, reason: page);
+      if (page == 'settings') {
+        expect(bindings.last, {
+          'id': 'settings_text_010',
+          'text': 'Lake House',
+        });
+      }
+    }
+    expect(
+      () => selectedHomeNameBindings('unknown', 'Lake House'),
+      throwsArgumentError,
+    );
   });
 
   test('encoded payload cannot become executable JavaScript', () {

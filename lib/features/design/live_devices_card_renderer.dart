@@ -15,8 +15,9 @@ class LiveDevicesCardRenderer {
 (() => {
   const expected = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob('$context'), c => c.charCodeAt(0))));
   const feed = document.getElementById('devices-feed');
-  const first = feed?.firstElementChild;
-  if (!feed || !first?.querySelector('[data-el-bind="devices_text_022"]')) return false;
+  const marker = feed?.querySelector('[data-el-bind="devices_text_022"]');
+  const template = marker && Array.from(feed.children).find(card => card.contains(marker));
+  if (!feed || !template) return false;
   const current = window.$_contextKey;
   if (current && current.generation >= expected.generation) return false;
   window.$_contextKey = expected;
@@ -43,8 +44,9 @@ class LiveDevicesCardRenderer {
   const current = window.$_contextKey;
   if (!current || current.homeId !== payload.homeId || current.generation !== payload.generation) return false;
   const feed = document.getElementById('devices-feed');
-  const template = feed?.firstElementChild;
-  if (!feed || !template || !template.querySelector('[data-el-bind="devices_text_022"]')) return false;
+  const marker = feed?.querySelector('[data-el-bind="devices_text_022"]');
+  const template = marker && Array.from(feed.children).find(card => card.contains(marker));
+  if (!feed || !template) return false;
   const existing = Array.from(feed.children).filter(node => node.hasAttribute('data-el-live-device-id'));
   const cards = [];
   for (const row of payload.rows) {
@@ -59,10 +61,12 @@ class LiveDevicesCardRenderer {
     }
     name.textContent = row.name;
     clone.setAttribute('data-el-live-device-id', row.id);
+    clone.setAttribute('data-el-device-name', row.name);
     cards.push(clone);
   }
   for (const node of existing) node.remove();
   for (const card of cards) feed.appendChild(card);
+  feed.dispatchEvent(new Event('energylens:devices-changed'));
   return true;
 })()
 ''';

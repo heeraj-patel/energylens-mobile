@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:energylens_mobile/features/discovery/discovery_api.dart';
@@ -436,6 +437,43 @@ class OrientationRetryCapture extends PhotoCaptureService {
 
   @override
   Future<void> discard(CapturedPhoto photo) async {}
+}
+
+class RotationCandidatesCapture extends OrientationRetryCapture {
+  @override
+  Future<String?> extractTextHint(String path) async {
+    readPaths.add(path);
+    return path.endsWith('label-upright.jpg')
+        ? 'Manufacturer: Samsung\nMODEL NO: WM3070HWA'
+        : 'Manufacturer: LG\nMODEL NO: ABC1234';
+  }
+}
+
+class RotationCandidatesApi extends FakeApi {
+  final requestedOcr = <String?>[];
+  final rotatedLookup = Completer<List<IdentificationCandidate>>();
+
+  @override
+  Future<List<IdentificationCandidate>> identifyCandidates(
+    String baseUrl,
+    String token, {
+    required String targetKind,
+    String? ocrText,
+    String? upc,
+  }) {
+    requestedOcr.add(ocrText);
+    if (requestedOcr.length > 1) return rotatedLookup.future;
+    return Future.value(const [
+      IdentificationCandidate(
+        manufacturer: 'LG',
+        model: 'ABC1234',
+        category: 'appliance',
+        confidence: 0.8,
+        source: 'ocr_text',
+        matchedKinds: ['ocr'],
+      ),
+    ]);
+  }
 }
 
 class NoCandidatesApi extends FakeApi {
@@ -1230,6 +1268,65 @@ void main() {
       'WM3070HWA',
     );
   });
+
+  testWidgets(
+    'rotation replaces old hints before new candidate lookup returns',
+    (tester) async {
+      final capture = RotationCandidatesCapture();
+      final api = RotationCandidatesApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ApplianceOnboardingScreen(
+            method: 'photo',
+            api: api,
+            credentials: FakeCredentials(),
+            capture: capture,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Take photo'));
+      await tester.pumpAndSettle();
+      await scrollTo(tester, find.byKey(const Key('photoCandidate-ABC1234')));
+      expect(find.byKey(const Key('photoCandidate-ABC1234')), findsOneWidget);
+
+      await scrollTo(tester, find.byTooltip('Rotate photo'), delta: -300);
+      await tester.tap(find.byTooltip('Rotate photo'));
+      await tester.pumpAndSettle();
+      expect(api.requestedOcr, ['MODEL NO: ABC1234', 'MODEL NO: WM3070HWA']);
+      expect(find.byKey(const Key('photoCandidate-ABC1234')), findsNothing);
+      await scrollTo(tester, find.byKey(const Key('applianceManufacturer')));
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('applianceManufacturer')))
+            .controller!
+            .text,
+        'Samsung',
+      );
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('applianceModel')))
+            .controller!
+            .text,
+        'WM3070HWA',
+      );
+
+      api.rotatedLookup.complete(const [
+        IdentificationCandidate(
+          manufacturer: 'Samsung',
+          model: 'WM3070HWA',
+          category: 'appliance',
+          confidence: 0.9,
+          source: 'ocr_text',
+          matchedKinds: ['ocr'],
+        ),
+      ]);
+      await tester.pumpAndSettle();
+      await scrollTo(tester, find.byTooltip('Rotate photo'), delta: -300);
+      await scrollTo(tester, find.byKey(const Key('photoCandidate-WM3070HWA')));
+      expect(find.byKey(const Key('photoCandidate-WM3070HWA')), findsOneWidget);
+    },
+  );
 
   testWidgets('retaking a photo clears only the prior maker suggestion', (
     tester,

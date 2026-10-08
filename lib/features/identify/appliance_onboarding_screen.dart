@@ -637,13 +637,24 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     }
   }
 
-  Future<_PhotoRecognition> _recognizePhoto(CapturedPhoto photo) async {
+  Future<_PhotoRecognition> _recognizePhoto(
+    CapturedPhoto photo, {
+    void Function(_PhotoRecognition)? onTextRecognized,
+  }) async {
     final details = await Future.wait<String?>([
       widget.capture.extractTextHint(photo.path),
       widget.capture.detectUpc(photo.path),
     ]);
     final hint = modelHintFromOcr(details[0]);
     final modelOnlyOcr = hint == null ? null : 'MODEL NO: $hint';
+    onTextRecognized?.call(
+      _PhotoRecognition(
+        text: details[0],
+        upc: details[1],
+        candidates: const [],
+        lookupFailed: false,
+      ),
+    );
     List<IdentificationCandidate> candidates = const [];
     var lookupFailed = false;
     if (modelOnlyOcr != null || details[1] != null) {
@@ -667,10 +678,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     );
   }
 
-  void _setRecognizedPhoto(
-    CapturedPhoto photo,
-    _PhotoRecognition recognition,
-  ) {
+  void _setRecognizedPhoto(CapturedPhoto photo, _PhotoRecognition recognition) {
     final hint = recognition.modelHint;
     final manufacturerHint = recognition.manufacturerHint;
     final replaceSuggestedMaker =
@@ -678,7 +686,9 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
         _manufacturer.text.trim() == _photoManufacturerHint;
     _photo = photo;
     _photoBytes = photo.bytes;
-    _ocrText = recognition.text?.trim().isNotEmpty == true ? (hint ?? '') : null;
+    _ocrText = recognition.text?.trim().isNotEmpty == true
+        ? (hint ?? '')
+        : null;
     _photoManufacturerHint = manufacturerHint;
     _upc = recognition.upc;
     _photoCandidates = recognition.candidates;
@@ -691,18 +701,31 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   Future<void> _rotatePhoto() async {
     final photo = _photo;
     if (_busy || photo == null) return;
+    CapturedPhoto? rotated;
+    var adopted = false;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final rotated = await widget.capture.rotateClockwise(photo);
-      final recognition = await _recognizePhoto(rotated);
+      final newPhoto = await widget.capture.rotateClockwise(photo);
+      rotated = newPhoto;
+      final recognition = await _recognizePhoto(
+        newPhoto,
+        onTextRecognized: (partial) {
+          if (!mounted) return;
+          setState(() => _setRecognizedPhoto(newPhoto, partial));
+          adopted = true;
+          if (photo.path != newPhoto.path) {
+            unawaited(widget.capture.discard(photo));
+          }
+        },
+      );
       if (!mounted) return;
-      setState(() => _setRecognizedPhoto(rotated, recognition));
-      if (photo.path != rotated.path) {
-        unawaited(widget.capture.discard(photo));
-      }
+      setState(() {
+        _photoCandidates = recognition.candidates;
+        _candidateLookupFailed = recognition.lookupFailed;
+      });
     } on FormatException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } catch (_) {
@@ -712,6 +735,9 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
         );
       }
     } finally {
+      if (!adopted && rotated != null) {
+        unawaited(widget.capture.discard(rotated));
+      }
       if (mounted) setState(() => _busy = false);
     }
   }

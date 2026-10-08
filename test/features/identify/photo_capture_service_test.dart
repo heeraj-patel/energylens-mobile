@@ -24,24 +24,31 @@ void main() {
     expect(result.getPixel(27, 8).r, greaterThan(result.getPixel(4, 8).r));
   });
 
-  test('clockwise rotation updates the OCR file and pixel dimensions', () async {
-    final directory = await Directory.systemTemp.createTemp('energylens-photo-');
-    addTearDown(() => directory.delete(recursive: true));
-    final file = File('${directory.path}/label.jpg');
-    final source = img.Image(width: 32, height: 16);
-    source.setPixelRgb(4, 8, 255, 0, 0);
-    final bytes = Uint8List.fromList(img.encodeJpg(source, quality: 100));
-    await file.writeAsBytes(bytes);
+  test(
+    'clockwise rotation creates a distinct OCR file with rotated pixels',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'energylens-photo-',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final file = File('${directory.path}/label.jpg');
+      final source = img.Image(width: 32, height: 16);
+      source.setPixelRgb(4, 8, 255, 0, 0);
+      final bytes = Uint8List.fromList(img.encodeJpg(source, quality: 100));
+      await file.writeAsBytes(bytes);
 
-    final rotated = await const PhotoCaptureService().rotateClockwise(
-      CapturedPhoto(path: file.path, bytes: bytes),
-    );
-    final result = img.decodeImage(await file.readAsBytes())!;
+      final rotated = await const PhotoCaptureService().rotateClockwise(
+        CapturedPhoto(path: file.path, bytes: bytes),
+      );
+      final result = img.decodeImage(await File(rotated.path).readAsBytes())!;
 
-    expect(rotated.path, file.path);
-    expect(rotated.bytes, await file.readAsBytes());
-    expect(result.width, 16);
-    expect(result.height, 32);
-    expect(result.exif.imageIfd.hasOrientation, isFalse);
-  });
+      expect(rotated.path, isNot(file.path));
+      expect(rotated.path, endsWith('.jpg'));
+      expect(await file.readAsBytes(), bytes);
+      expect(rotated.bytes, await File(rotated.path).readAsBytes());
+      expect(result.width, 16);
+      expect(result.height, 32);
+      expect(result.exif.imageIfd.hasOrientation, isFalse);
+    },
+  );
 }

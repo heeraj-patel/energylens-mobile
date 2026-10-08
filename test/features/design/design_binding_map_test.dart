@@ -3,6 +3,41 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+Set<String> _approvedRemovedIds(String page, String category) {
+  if (!const {
+    'settings_manage_devices',
+    'settings_manual_device_entry',
+    'settings_photo_scan_onboarding',
+  }.contains(page)) {
+    return const {};
+  }
+  if (category == 'bindings') {
+    return {
+      for (var n = 17; n <= 26; n++)
+        '${page}_text_${n.toString().padLeft(3, '0')}',
+      if (page == 'settings_photo_scan_onboarding')
+        for (var n = 27; n <= 53; n++)
+          '${page}_text_${n.toString().padLeft(3, '0')}',
+    };
+  }
+  if (category == 'actions') {
+    return {
+      for (var n = 8; n <= 10; n++)
+        '${page}_action_${n.toString().padLeft(3, '0')}',
+      if (page == 'settings_photo_scan_onboarding')
+        for (var n = 11; n <= 22; n++)
+          if (n != 14 && n != 15)
+            '${page}_action_${n.toString().padLeft(3, '0')}',
+    };
+  }
+  return page == 'settings_photo_scan_onboarding'
+      ? {
+          for (var n = 1; n <= 3; n++)
+            '${page}_field_${n.toString().padLeft(3, '0')}',
+        }
+      : const {};
+}
+
 void main() {
   test('all 14 packaged pages carry their frozen unique binding IDs', () {
     final manifest = jsonDecode(
@@ -56,7 +91,17 @@ void main() {
                       ]
                     : const <dynamic>[])
                 .cast<String>();
-        expect({...raw, ...shared}, declared, reason: '$page ${category.key}');
+        final removed = _approvedRemovedIds(page, category.key);
+        expect(
+          declared.containsAll(removed),
+          isTrue,
+          reason: '$page removed IDs',
+        );
+        expect(
+          {...raw, ...shared},
+          declared.difference(removed),
+          reason: '$page ${category.key}',
+        );
         for (final id in declared) {
           expect(allIds.add(id), isTrue, reason: '$page duplicate ID');
           expect(id, startsWith('${page}_'));

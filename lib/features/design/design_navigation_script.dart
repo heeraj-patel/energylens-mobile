@@ -28,6 +28,36 @@ String buildDesignNavigationScript(String page) {
         }
         const button = event.target.closest('button');
         if (!button) return;
+        const action = button.dataset.elAction;
+        if ((page === 'settings_manage_devices' || page === 'settings_manual_device_entry') &&
+            action === page + '_action_020') {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          EnergyLensDeviceReview.postMessage(JSON.stringify({
+            name: document.getElementById('input-device-name')?.value || '',
+            manufacturer: document.getElementById('input-manufacturer')?.value || '',
+            model: document.getElementById('input-model')?.value || ''
+          }));
+          return;
+        }
+        if (page === 'settings_photo_scan_onboarding' &&
+            (action === page + '_action_014' || action === page + '_action_015')) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          EnergyLensPhotoCapture.postMessage(action.endsWith('014') ? 'camera' : 'gallery');
+          return;
+        }
+        if (page === 'settings_photo_scan_onboarding' &&
+            (action === page + '_action_013' || action === page + '_action_022')) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
+        if (page === 'settings_manage_devices' && action === page + '_action_013') {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
         const label = textOf(button);
         let route = button.dataset.elRoute;
         if (button.id === 'email-btn') route = 'report_preview';

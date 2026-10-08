@@ -1,9 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
+import '../identify/appliance_onboarding_screen.dart'
+    show manufacturerHintFromOcr, modelHintFromOcr;
+import '../identify/photo_capture_service.dart';
+import 'device_review_sheet.dart';
 import 'design_context_coordinator.dart';
 import 'design_numeric_bindings.dart';
 import 'design_navigation_script.dart';
@@ -21,6 +27,8 @@ class DesignShell extends StatefulWidget {
     this.onSignOut,
     this.onChangeHome,
     this.onReportPreview,
+    this.onboardingLifecycle,
+    this.photoCapture = const PhotoCaptureService(),
     this.designContextCoordinator,
     this.designTour = false,
     this.homeName = 'The Miller Home',
@@ -29,6 +37,8 @@ class DesignShell extends StatefulWidget {
   final VoidCallback? onSignOut;
   final VoidCallback? onChangeHome;
   final VoidCallback? onReportPreview;
+  final CloudAuxiliaryDomainLifecycle? onboardingLifecycle;
+  final PhotoCaptureService photoCapture;
 
   /// Native-only verified scope. It is never passed into the WebView.
   final DesignContextCoordinator? designContextCoordinator;
@@ -83,11 +93,13 @@ class _DesignShellState extends State<DesignShell> {
   bool _pageReady = false;
   LiveDevicesProjection? _devicesProjection;
   DesignNumericBindings? _dashboardBindings;
-  DesignPageTicket? _dashboardTicket;
+  DesignPageTicket? _pageTicket;
   Timer? _tourTimer;
   int _tourIndex = 0;
   final List<String> _history = [];
   String _page = 'dashboard';
+  bool _reviewOpen = false;
+  bool _capturingPhoto = false;
 
   @override
   void initState() {
@@ -99,6 +111,16 @@ class _DesignShellState extends State<DesignShell> {
       ..addJavaScriptChannel(
         'EnergyLensNavigation',
         onMessageReceived: (message) => _open(message.message),
+      )
+      ..addJavaScriptChannel(
+        'EnergyLensDeviceReview',
+        onMessageReceived: (message) =>
+            unawaited(_reviewDevice(message.message)),
+      )
+      ..addJavaScriptChannel(
+        'EnergyLensPhotoCapture',
+        onMessageReceived: (message) =>
+            unawaited(_capturePhoto(message.message)),
       )
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -127,9 +149,10 @@ class _DesignShellState extends State<DesignShell> {
   void didUpdateWidget(covariant DesignShell oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(
-      oldWidget.designContextCoordinator,
-      widget.designContextCoordinator,
-    )) {
+          oldWidget.designContextCoordinator,
+          widget.designContextCoordinator,
+        ) ||
+        oldWidget.homeName != widget.homeName) {
       _pageReads.useCoordinator(widget.designContextCoordinator);
       unawaited(_loadPage());
     }
@@ -170,7 +193,7 @@ class _DesignShellState extends State<DesignShell> {
     _pageReady = false;
     _devicesProjection = null;
     _dashboardBindings = null;
-    _dashboardTicket = null;
+    _pageTicket = null;
     _bindingGate.clear();
   }
 
@@ -221,6 +244,30 @@ class _DesignShellState extends State<DesignShell> {
       return;
     }
     _pageReady = true;
+    final context = widget.designContextCoordinator?.context;
+    if (context != null) {
+      final ticket = _bindingGate.select(context.homeId, page);
+      _pageTicket = ticket;
+      try {
+        final installed = await _controller.runJavaScriptReturningResult(
+          _bindingRenderer.installationScript(ticket)!,
+        );
+        if (installed != true ||
+            !_isCurrentPageLoad(page, generation) ||
+            !identical(widget.designContextCoordinator?.context, context) ||
+            !identical(_pageTicket, ticket)) {
+          return;
+        }
+        await _applySelectedHomeName(page, generation, ticket);
+        if (!_isCurrentPageLoad(page, generation) ||
+            !identical(widget.designContextCoordinator?.context, context) ||
+            !identical(_pageTicket, ticket)) {
+          return;
+        }
+      } catch (_) {
+        // The packaged home name remains visible on script failure.
+      }
+    }
     if (page == 'tips_knowledge') {
       try {
         await _controller.runJavaScriptReturningResult(
@@ -234,29 +281,11 @@ class _DesignShellState extends State<DesignShell> {
       return;
     }
     if (page == 'dashboard') {
-      final context = widget.designContextCoordinator?.context;
       if (context == null) return;
-      final ticket = _bindingGate.select(context.homeId, page);
-      _dashboardTicket = ticket;
-      try {
-        final installed = await _controller.runJavaScriptReturningResult(
-          _bindingRenderer.installationScript(ticket)!,
-        );
-        if (installed != true ||
-            !_isCurrentPageLoad(page, generation) ||
-            !identical(widget.designContextCoordinator?.context, context) ||
-            !identical(_dashboardTicket, ticket)) {
-          return;
-        }
-        await _applyDashboardHomeName(generation, ticket);
-        await _applyDashboardBindings(generation);
-      } catch (_) {
-        // A WebView failure leaves the packaged values intact.
-      }
+      await _applyDashboardBindings(generation);
       return;
     }
     if (page != 'devices') return;
-    final context = widget.designContextCoordinator?.context;
     if (context == null || context.mode != DesignContextMode.household) return;
     try {
       final installed = await _controller.runJavaScriptReturningResult(
@@ -276,19 +305,21 @@ class _DesignShellState extends State<DesignShell> {
     }
   }
 
-  Future<void> _applyDashboardHomeName(
+  Future<void> _applySelectedHomeName(
+    String page,
     int generation,
     DesignPageTicket ticket,
   ) async {
     final context = widget.designContextCoordinator?.context;
-    if (!_isCurrentPageLoad('dashboard', generation) ||
-        !identical(_dashboardTicket, ticket) ||
+    if (!_isCurrentPageLoad(page, generation) ||
+        !identical(_pageTicket, ticket) ||
         context?.homeId != ticket.homeId) {
       return;
     }
-    final script = _bindingRenderer.updateScript(ticket, [
-      DesignTextBinding('dashboard_text_001', widget.homeName),
-    ]);
+    final script = _bindingRenderer.updateScript(
+      ticket,
+      selectedHomeNameBindings(page, widget.homeName),
+    );
     if (script == null) return;
     try {
       await _controller.runJavaScriptReturningResult(script);
@@ -301,7 +332,7 @@ class _DesignShellState extends State<DesignShell> {
     final projection = _dashboardBindings;
     final read = _pageReads.latestRead;
     final context = widget.designContextCoordinator?.context;
-    final ticket = _dashboardTicket;
+    final ticket = _pageTicket;
     if (!_pageReady ||
         !_isCurrentPageLoad('dashboard', generation) ||
         projection == null ||
@@ -347,6 +378,107 @@ class _DesignShellState extends State<DesignShell> {
       );
     } catch (_) {
       // The renderer is additive; static cards remain on script failure.
+    }
+  }
+
+  Future<void> _reviewDevice(String raw, {bool fromPhoto = false}) async {
+    if (_reviewOpen ||
+        (!fromPhoto &&
+            _page != 'settings_manage_devices' &&
+            _page != 'settings_manual_device_entry') ||
+        (fromPhoto && _page != 'settings_photo_scan_onboarding')) {
+      return;
+    }
+    final context = widget.designContextCoordinator?.context;
+    final lifecycle = widget.onboardingLifecycle;
+    if (context == null ||
+        context.mode != DesignContextMode.household ||
+        lifecycle == null ||
+        !lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+      return;
+    }
+    final Map<String, dynamic> fields;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic> ||
+          decoded['name'] is! String ||
+          decoded['manufacturer'] is! String ||
+          decoded['model'] is! String) {
+        return;
+      }
+      fields = decoded;
+    } catch (_) {
+      return;
+    }
+    _reviewOpen = true;
+    try {
+      await showDialog<bool>(
+        context: this.context,
+        builder: (_) => DeviceReviewSheet(
+          lifecycle: lifecycle,
+          accountId: context.accountId,
+          homeId: context.homeId,
+          homeName: widget.homeName,
+          name: fields['name'] as String,
+          manufacturer: fields['manufacturer'] as String,
+          model: fields['model'] as String,
+        ),
+      );
+    } finally {
+      _reviewOpen = false;
+    }
+  }
+
+  Future<void> _capturePhoto(String source) async {
+    if (_capturingPhoto ||
+        _page != 'settings_photo_scan_onboarding' ||
+        (source != 'camera' && source != 'gallery')) {
+      return;
+    }
+    final context = widget.designContextCoordinator?.context;
+    final lifecycle = widget.onboardingLifecycle;
+    if (context == null ||
+        context.mode != DesignContextMode.household ||
+        lifecycle == null ||
+        !lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+      return;
+    }
+    final pageGeneration = _pageLoadGeneration;
+    _capturingPhoto = true;
+    CapturedPhoto? photo;
+    try {
+      photo = source == 'camera'
+          ? await widget.photoCapture.capturePhoto()
+          : await widget.photoCapture.pickFromGallery();
+      if (photo == null ||
+          !_isCurrentPageLoad(
+            'settings_photo_scan_onboarding',
+            pageGeneration,
+          ) ||
+          !lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+        return;
+      }
+      final text = await widget.photoCapture.extractTextHint(photo.path);
+      if (!_isCurrentPageLoad(
+            'settings_photo_scan_onboarding',
+            pageGeneration,
+          ) ||
+          !lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+        return;
+      }
+      await _reviewDevice(
+        jsonEncode({
+          'name': '',
+          'manufacturer': manufacturerHintFromOcr(text) ?? '',
+          'model': modelHintFromOcr(text) ?? '',
+        }),
+        fromPhoto: true,
+      );
+    } catch (_) {
+      // Picker cancellation or unavailable native capture leaves the page as is.
+    } finally {
+      if (photo != null) await widget.photoCapture.discard(photo);
+      _capturingPhoto = false;
     }
   }
 

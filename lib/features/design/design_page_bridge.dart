@@ -42,6 +42,17 @@ class DesignPageTicket {
   final int generation;
 }
 
+/// Only the approved home labels are populated from the selected Cloud home.
+List<DesignTextBinding> selectedHomeNameBindings(String page, String homeName) {
+  if (!designPageIds.contains(page)) {
+    throw ArgumentError.value(page, 'page', 'Unknown design page');
+  }
+  return [
+    DesignTextBinding('${page}_text_001', homeName),
+    if (page == 'settings') DesignTextBinding('settings_text_010', homeName),
+  ];
+}
+
 /// Narrow native message format. Action semantics remain disabled until each
 /// control has an approved behavior; only navigation/report callbacks are known.
 class DesignBridgeMessage {

@@ -7,6 +7,7 @@ import 'package:energylens_mobile/features/design/report_preview_domain_reposito
 const homeA = '11111111-1111-4111-8111-111111111111';
 const homeB = '22222222-2222-4222-8222-222222222222';
 const applianceId = '33333333-3333-4333-8333-333333333333';
+const otherApplianceId = '44444444-4444-4444-8444-444444444444';
 const previewId = '55555555-5555-4555-8555-555555555555';
 final hashA = 'a' * 64;
 final hashB = 'b' * 64;
@@ -18,6 +19,7 @@ CloudReportPreview preview({
   bool stale = false,
   DateTime? expires,
   String id = previewId,
+  List<String> itemIds = const [applianceId],
   CloudReportDeliveryStatus? latestDelivery,
 }) => CloudReportPreview(
   id,
@@ -27,7 +29,10 @@ CloudReportPreview preview({
   expires ?? now.add(const Duration(hours: 1)),
   stale,
   const [],
-  const [],
+  [
+    for (final itemId in itemIds)
+      CloudReportItem(itemId, 'refrigerator', 'Selected appliance', null),
+  ],
   latestDelivery: latestDelivery,
 );
 
@@ -79,6 +84,26 @@ void main() {
       expect(result.status, ReportPreviewStatus.current);
     },
   );
+
+  test('create rejects changed hash or selection on owner readback', () async {
+    final source = Source()..createResult = preview();
+    final repo = repository(source);
+    Future<ReportPreviewDomainSnapshot?> create() => repo.create(
+      homeId: homeA,
+      applianceIds: const [applianceId],
+      ownedApplianceIds: {applianceId, otherApplianceId},
+      idempotencyKey: 'request-key',
+    );
+
+    source.fetchResult = (_, id, _) async => preview(id: id, hash: hashB);
+    await expectLater(create(), throwsFormatException);
+    source.fetchResult = (_, id, _) async =>
+        preview(id: id, itemIds: const [otherApplianceId]);
+    await expectLater(create(), throwsFormatException);
+    source.createResult = preview(itemIds: const [otherApplianceId]);
+    source.fetchResult = (_, id, _) async => preview(id: id);
+    await expectLater(create(), throwsFormatException);
+  });
 
   test(
     'reports server stale and local expiry as requiring new approval',
