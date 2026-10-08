@@ -248,6 +248,113 @@ void main() {
     api.close();
   });
 
+  testWidgets('verified scope queues through lifecycle revalidation', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var previewReads = 0;
+    var deliveries = 0;
+    final api = _api(
+      MockClient((request) async {
+        if (request.url.path == '/v1/homes') {
+          return http.Response(
+            jsonEncode({
+              'homes': [
+                {
+                  'id': home.id,
+                  'name': home.name,
+                  'timezone': home.timezone,
+                  'location': {
+                    'country_code': home.countryCode,
+                    'postal_code': home.postalCode,
+                  },
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path.endsWith('/appliances')) {
+          return http.Response(
+            jsonEncode({
+              'appliances': [
+                {
+                  'id': applianceId,
+                  'home_id': home.id,
+                  'name': 'Washer',
+                  'category': 'washer',
+                  'identity': {
+                    'brand': 'LG',
+                    'full_model': 'WM3070HWA',
+                    'fuel': 'electricity',
+                    'match_quality': 'confirmed_exact',
+                  },
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path.endsWith('/reports/preview')) {
+          return http.Response(jsonEncode(_preview()), 201);
+        }
+        if (request.url.path.endsWith('/reports/previews/$previewId')) {
+          previewReads++;
+          return http.Response(jsonEncode(_preview()), 200);
+        }
+        if (request.url.path.endsWith('/deliveries')) {
+          deliveries++;
+          expect(previewReads, 3);
+          return http.Response(
+            jsonEncode({
+              'id': deliveryId,
+              'preview_id': previewId,
+              'recipients': ['a@example.com'],
+              'state': 'pending',
+              'created_at': DateTime.now().toUtc().toIso8601String(),
+            }),
+            201,
+          );
+        }
+        fail('Unexpected request: ${request.url.path}');
+      }),
+    );
+    final lifecycle = _lifecycle(api);
+    await lifecycle.selectVerifiedHome(accountA, home.id);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudReportPreviewScreen(
+          api: api,
+          home: home,
+          lifecycle: lifecycle,
+          accountId: accountA,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('reportAppliance-$applianceId')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create private preview'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('reportRecipients')));
+    await tester.enterText(
+      find.byKey(const Key('reportRecipients')),
+      'a@example.com',
+    );
+    await tester.ensureVisible(find.byKey(const Key('reportApproval')));
+    await tester.tap(find.byKey(const Key('reportApproval')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('requestReportDelivery')));
+    await tester.tap(find.byKey(const Key('requestReportDelivery')));
+    await tester.pumpAndSettle();
+    expect(deliveries, 1);
+    expect(find.byKey(const Key('reportDeliveryStatus')), findsOneWidget);
+    api.close();
+  });
+
   testWidgets(
     'late recipient-free preview read is hidden after account switch',
     (tester) async {

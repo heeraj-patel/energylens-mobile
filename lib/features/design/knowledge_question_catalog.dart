@@ -18,7 +18,11 @@ class KnowledgeCatalogEntry {
         question.trim().isEmpty ||
         question.length > 180 ||
         aliases.any((alias) => alias.trim().isEmpty || alias.length > 180) ||
-        (preparedAnswer != null) == (cloudIntent != null) ||
+        (availability != KnowledgeCatalogAvailability.draft &&
+            (preparedAnswer != null) == (cloudIntent != null)) ||
+        (availability == KnowledgeCatalogAvailability.draft &&
+            preparedAnswer != null &&
+            cloudIntent != null) ||
         (preparedAnswer != null && preparedAnswer!.trim().isEmpty) ||
         (cloudIntent != null && !faqIntents.containsKey(cloudIntent))) {
       throw const FormatException('Invalid FAQ catalog entry');

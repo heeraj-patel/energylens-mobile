@@ -88,6 +88,20 @@ void main() {
   test('rejects ambiguous or unsupported answer bindings', () {
     expect(
       () => KnowledgeCatalogEntry(
+        id: 'unanswered',
+        question: 'Unanswered?',
+        availability: KnowledgeCatalogAvailability.published,
+      ),
+      throwsFormatException,
+    );
+    final staged = KnowledgeCatalogEntry(
+      id: 'staged',
+      question: 'Staged?',
+      availability: KnowledgeCatalogAvailability.draft,
+    );
+    expect(KnowledgeQuestionCatalog([staged]).search('staged'), isEmpty);
+    expect(
+      () => KnowledgeCatalogEntry(
         id: 'invalid',
         question: 'Question?',
         availability: KnowledgeCatalogAvailability.published,

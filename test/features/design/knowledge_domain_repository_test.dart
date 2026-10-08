@@ -42,49 +42,101 @@ class _Source implements KnowledgeDomainSource {
 }
 
 void main() {
-  test(
-    'catalog and local search expose only the existing FAQ IDs and labels',
-    () {
-      final repository = KnowledgeDomainRepository(_Source());
+  test('bundled catalog stages all approved labels while exposing answerable entries', () {
+    final repository = KnowledgeDomainRepository(_Source());
 
-      expect(
-        KnowledgeDomainRepository.questions.map((question) => question.id),
-        faqIntents.keys,
-      );
-      expect(repository.search('operating').map((question) => question.id), [
-        'device_operating_cost',
-      ]);
-      expect(repository.search('TOP_WASTE').map((question) => question.id), [
-        'top_waste_opportunities',
-      ]);
-      expect(repository.search('no matching approved question'), isEmpty);
-    },
-  );
+    expect(repository.catalog.entries, hasLength(34));
+    expect(
+      repository.catalog.entries.where(
+        (entry) => entry.availability == KnowledgeCatalogAvailability.draft,
+      ),
+      hasLength(17),
+    );
+    expect(
+      KnowledgeDomainRepository.questions.map((question) => question.id),
+      faqIntents.keys,
+    );
+    expect(repository.search('operating').map((question) => question.id), [
+      'device_cost',
+    ]);
+    expect(repository.search('TOP_WASTE').first.id, 'reduce_waste');
+    expect(repository.search('no matching approved question'), isEmpty);
+    expect(repository.search('kilowatt').first.id, 'kilowatt_hour');
+    expect(
+      repository
+          .search('AC power')
+          .any((question) => question.id == 'ac_afternoon'),
+      isFalse,
+    );
+    expect(
+      repository.search('AC power', localPilot: true).first.id,
+      'ac_afternoon',
+    );
+  });
 
   test('related phrases and spelling variants rank supported questions', () {
     final repository = KnowledgeDomainRepository(_Source());
     String? first(String query) => repository.search(query).firstOrNull?.id;
 
-    expect(
-      first('why is my power bill high'),
-      'high_bill_possible_contributors',
-    );
-    expect(first('standby waste'), 'top_waste_opportunities');
-    expect(
-      first('how much does my fridge cost to run'),
-      'device_operating_cost',
-    );
+    expect(first('why is my power bill high'), 'high_use');
+    expect(first('standby waste'), 'reduce_waste');
+    expect(first('how much does my fridge cost to run'), 'device_cost');
     expect(first('lower my bill'), 'reduce_cost');
-    expect(first('utility rebates'), 'programs_for_device');
-    expect(first('rebtaes'), 'programs_for_device');
+    expect(first('utility rebates'), 'device_programs');
+    expect(first('rebtaes'), 'device_programs');
     expect(repository.search('zzzz qqqq'), isEmpty);
     expect(
       repository
           .search('rebates')
-          .every((question) => faqIntents.containsKey(question.id)),
+          .every((question) => repository.catalog.find(question.id) != null),
       isTrue,
     );
+    expect(
+      repository.search('phantom standby', localPilot: true).first.id,
+      'standby_cost',
+    );
+    expect(
+      repository.search('cheap washing', localPilot: true).first.id,
+      'laundry_now',
+    );
   });
+
+  test('approved general answer works without a selected home', () async {
+    final source = _Source();
+    final result = await KnowledgeDomainRepository(source)
+        .answerEntry(null, 'kilowatt_hour');
+    expect(
+      (result as KnowledgePreparedAnswerAvailable).text,
+      'One kilowatt-hour is the energy used by a 1,000-watt device running for one hour.',
+    );
+    expect(source.calls, isEmpty);
+  });
+
+  test(
+    'bundled pilot answers are exact existing demo text and never live',
+    () async {
+      final source = _Source();
+      final repository = KnowledgeDomainRepository(source);
+      const expected = <String, String>{
+        'ac_afternoon': 'Outdoor heat peaked at 91°F. Your heat pump cycled more frequently between 2 PM and 5 PM.',
+        'standby_cost': r'Around $0.11/day (~$3.30/mo), mostly from your study workstation and living room AV dock.',
+        'laundry_now': 'Yes! Tier 1 off-peak pricing is active until 4:00 PM.',
+      };
+      for (final entry in expected.entries) {
+        expect(
+          await repository.answerEntry(_homeId, entry.key),
+          isA<KnowledgeAnswerUnavailable>(),
+        );
+        final result = await repository.answerEntry(
+          null,
+          entry.key,
+          localPilot: true,
+        );
+        expect((result as KnowledgePreparedAnswerAvailable).text, entry.value);
+      }
+      expect(source.calls, isEmpty);
+    },
+  );
 
   test(
     'unsupported intent is unavailable and makes no backend request',

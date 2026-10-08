@@ -1,3 +1,4 @@
+import 'demo_energy_projection.dart';
 import 'demo_energy_tree.dart';
 import 'design_page_bridge.dart';
 
@@ -22,9 +23,11 @@ class DemoEnergyBindings {
     required String localDate,
     required String referenceLocalDate,
   }) {
-    if (homeId.toLowerCase() != tree.homeId.toLowerCase()) {
-      throw const FormatException('Demo energy binding home changed');
-    }
+    final projection = DemoEnergyProjection.fromTree(
+      tree: tree,
+      homeId: homeId,
+      referenceLocalDate: referenceLocalDate,
+    );
 
     switch (page) {
       case 'dashboard':
@@ -33,8 +36,7 @@ class DemoEnergyBindings {
             referenceLocalDate != localDate) {
           throw const FormatException('Dashboard demo day changed');
         }
-        final day = _day(tree, localDate);
-        final cost = _presentedHomeCost(day);
+        final cost = projection.presentedHomeDayCost;
         if (cost.unclassifiedMicros > 0) {
           throw const FormatException('Unclassified home day presentation');
         }
@@ -50,8 +52,7 @@ class DemoEnergyBindings {
             referenceLocalDate != localDate) {
           throw const FormatException('Devices demo day changed');
         }
-        final day = _day(tree, localDate);
-        final cost = _presentedDevicesCost(day);
+        final cost = projection.presentedDevicesDayCost;
         if (cost.unclassifiedMicros > 0) {
           throw const FormatException('Unclassified devices day presentation');
         }
@@ -66,25 +67,14 @@ class DemoEnergyBindings {
             !_isLocalMonth(localDate) ||
             !_isLocalDate(referenceLocalDate) ||
             !referenceLocalDate.startsWith('$localDate-') ||
-            tree.days.any(
-              (day) => !day.period.localDate.startsWith('$localDate-'),
-            )) {
+            projection.localMonth != localDate) {
           throw const FormatException('Efficiency demo month changed');
         }
-        final dayIndex = tree.days.indexWhere(
-          (day) => day.period.localDate == referenceLocalDate,
-        );
-        if (dayIndex < 0) {
-          throw const FormatException('Efficiency reference date unavailable');
-        }
-        final monthToDate = tree.days
-            .take(dayIndex + 1)
-            .fold(DemoCost.zero, (sum, day) => sum + day.homeCost);
         return DemoEnergyBindings(
           List.unmodifiable([
             DesignTextBinding(
               'efficiency_text_009',
-              _money(monthToDate.totalCents),
+              _money(projection.presentedMonthToDateCost.totalCents),
             ),
           ]),
         );
@@ -95,22 +85,6 @@ class DemoEnergyBindings {
           'Unsupported demo binding page',
         );
     }
-  }
-}
-
-DemoCost _presentedDevicesCost(DemoDayTree day) => day.devices.fold(
-  DemoCost.zero,
-  (sum, branch) => sum + branch.presentationCost,
-);
-
-DemoCost _presentedHomeCost(DemoDayTree day) =>
-    _presentedDevicesCost(day) + day.unattributed.presentationCost;
-
-DemoDayTree _day(DemoMonthTree tree, String localDate) {
-  try {
-    return tree.day(localDate);
-  } on StateError {
-    throw const FormatException('Demo energy day is unavailable');
   }
 }
 

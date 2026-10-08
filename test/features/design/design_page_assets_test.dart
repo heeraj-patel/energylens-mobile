@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:energylens_mobile/features/design/design_navigation_script.dart';
 
 const _pageIds = <String>{
   'dashboard',
@@ -159,21 +160,7 @@ void main() {
     test('Tips local tabs navigate without consuming other buttons', () async {
       final node = Process.runSync('node', ['--version']);
       if (node.exitCode != 0) return;
-      final shell = await File('lib/features/design/design_shell.dart')
-          .readAsString();
-      final marker = 'const page = \$currentPage;';
-      final markerOffset = shell.indexOf(marker);
-      expect(markerOffset, isNonNegative);
-      final start = shell.lastIndexOf(
-        "await _controller.runJavaScript('''",
-        markerOffset,
-      );
-      final end = shell.indexOf("''');", markerOffset);
-      expect(start, isNonNegative);
-      expect(end, greaterThan(start));
-      final script = shell
-          .substring(start + "await _controller.runJavaScript('''".length, end)
-          .replaceFirst('\$currentPage', '"tips_efficiency"');
+      final script = buildDesignNavigationScript('tips_efficiency');
       final result = await Process.run('node', [
         '-e',
         '''

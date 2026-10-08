@@ -6,6 +6,8 @@ import '../../core/cloud_api/cloud_home.dart';
 import '../../core/cloud_api/cloud_report_preview.dart';
 import '../../core/cloud_api/cloud_report_delivery.dart';
 import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
+import '../design/report_delivery_domain_adapter.dart';
+import '../design/report_preview_domain_repository.dart';
 
 class CloudReportPreviewScreen extends StatefulWidget {
   const CloudReportPreviewScreen({
@@ -29,6 +31,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
   List<CloudAppliance>? _appliances;
   final Set<String> _selected = {};
   CloudReportPreview? _preview;
+  ReportPreviewDomainSnapshot? _scopedPreview;
   String? _error;
   bool _busy = false;
   String _key = newCloudIdempotencyKey();
@@ -54,11 +57,14 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
       return widget.api.reportPreview(widget.home.id, previewId, owned);
     }
     if (!_hasVerifiedScope) return null;
-    return (await lifecycle.reportPreview(
+    final snapshot = await lifecycle.reportPreview(
       homeId: widget.home.id,
       previewId: previewId,
       ownedApplianceIds: owned,
-    ))?.preview;
+    );
+    if (!_hasVerifiedScope) return null;
+    _scopedPreview = snapshot;
+    return snapshot?.preview;
   }
 
   @override
@@ -88,6 +94,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
         _appliances = null;
         _selected.clear();
         _preview = null;
+        _scopedPreview = null;
         _resetApproval();
         _busy = false;
         _error = null;
@@ -130,6 +137,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
       _busy = true;
       _error = null;
       _preview = null;
+      _scopedPreview = null;
       _resetApproval();
     });
     try {
@@ -146,12 +154,14 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
         );
         preview = await _readPreview(created.id, owned);
       } else {
-        preview = (await lifecycle.createReportPreview(
+        final snapshot = await lifecycle.createReportPreview(
           homeId: widget.home.id,
           applianceIds: selected,
           ownedApplianceIds: owned,
           idempotencyKey: _key,
-        ))?.preview;
+        );
+        _scopedPreview = snapshot;
+        preview = snapshot?.preview;
       }
       if (preview == null || !mounted || !_hasVerifiedScope) return;
       if (mounted) {
@@ -206,6 +216,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
       if (mounted && _hasVerifiedScope) {
         setState(() {
           _preview = null;
+          _scopedPreview = null;
           _resetApproval();
           _error = 'Could not confirm the latest preview status. Create a new preview.';
         });
@@ -264,13 +275,43 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
         _attempt = attempt;
       }
       if (!_hasVerifiedScope) return;
-      final delivery = await widget.api.queueReportDelivery(
-        widget.home.id,
-        attempt.previewId,
-        attempt.digest,
-        attempt.recipients,
-        idempotencyKey: attempt.key,
-      );
+      final lifecycle = widget.lifecycle;
+      final CloudReportDelivery delivery;
+      if (lifecycle == null) {
+        delivery = await widget.api.queueReportDelivery(
+          widget.home.id,
+          attempt.previewId,
+          attempt.digest,
+          attempt.recipients,
+          idempotencyKey: attempt.key,
+        );
+      } else {
+        final snapshot = _scopedPreview;
+        if (snapshot == null) return;
+        final result = await lifecycle.queueReportDelivery(
+          preview: snapshot,
+          explicitlyApproved: _approved,
+          approvedSnapshotSha256: attempt.digest,
+          recipients: attempt.recipients.join(','),
+          ownedApplianceIds: _appliances!
+              .map((a) => a.id.toLowerCase())
+              .toSet(),
+          idempotencyKey: attempt.key,
+        );
+        if (result.status == ReportDeliveryStatus.contextChanged ||
+            !_hasVerifiedScope) {
+          return;
+        }
+        if (result.status != ReportDeliveryStatus.queued ||
+            result.delivery == null) {
+          setState(() {
+            _resetApproval();
+            _error = 'This preview changed or expired. Create a new preview and approve it again.';
+          });
+          return;
+        }
+        delivery = result.delivery!;
+      }
       if (mounted && _hasVerifiedScope) {
         setState(() {
           _delivery = delivery;
@@ -360,6 +401,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
                                   }
                                   _key = newCloudIdempotencyKey();
                                   _preview = null;
+                                  _scopedPreview = null;
                                   _resetApproval();
                                   _error = null;
                                 }),

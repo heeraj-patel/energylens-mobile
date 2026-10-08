@@ -123,6 +123,30 @@ void main() {
       r'$6.48',
       r'$2.63',
     ]);
+    final devices = DemoEnergyBindings.forPage(
+      tree: merged,
+      homeId: homeId,
+      page: 'devices',
+      period: 'day',
+      localDate: '2026-09-30',
+      referenceLocalDate: '2026-09-30',
+    );
+    expect(devices.bindings.map((binding) => binding.text), [
+      r'$1.71',
+      r'$6.35',
+    ]);
+    expect(
+      merged
+          .day('2026-09-30')
+          .devices
+          .fold(0, (sum, leaf) => sum + leaf.presentationCost.totalMicros),
+      merged.day('2026-09-30').devicesCost.totalMicros,
+    );
+    expect(
+      merged.day('2026-09-30').devicesCost.totalMicros +
+          merged.day('2026-09-30').unattributed.cost.totalMicros,
+      merged.day('2026-09-30').homeCost.totalMicros,
+    );
     final efficiency = DemoEnergyBindings.forPage(
       tree: merged,
       homeId: homeId,
@@ -166,6 +190,17 @@ void main() {
         period: 'day',
         localDate: '2026-10-01',
         referenceLocalDate: '2026-10-01',
+      ),
+      throwsFormatException,
+    );
+    expect(
+      () => DemoEnergyBindings.forPage(
+        tree: tree,
+        homeId: homeId,
+        page: 'efficiency',
+        period: 'month',
+        localDate: '2026-09',
+        referenceLocalDate: '2026-09-29',
       ),
       throwsFormatException,
     );
