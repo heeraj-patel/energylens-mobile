@@ -127,6 +127,7 @@ void main() {
     final deliveryPosts = <http.Request>[];
     String? deliveryReadbackState;
     var staleReadback = false;
+    var previewReads = 0;
     final api = _api(
       MockClient((request) async {
         expect(request.headers['authorization'], 'Bearer owner-token');
@@ -171,6 +172,7 @@ void main() {
         }
         if (request.url.path.endsWith('/reports/preview') ||
             request.url.path.endsWith('/reports/previews/$previewId')) {
+          if (request.method == 'GET') previewReads++;
           final body = _preview();
           body['stale'] = staleReadback;
           if (request.method == 'GET' && deliveryReadbackState != null) {
@@ -241,7 +243,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Email failed, try again later.'), findsNothing);
+    expect(find.text('Email failed to send, try again later.'), findsNothing);
     expect(deliveryPosts, hasLength(1));
     expect(jsonDecode(deliveryPosts.single.body), {
       'approved_snapshot_sha256': 'a' * 64,
@@ -259,16 +261,18 @@ void main() {
     expect(find.byKey(const Key('reportDeliveryStatus')), findsNothing);
     expect(find.text('Email sent'), findsNothing);
     expect(find.byKey(const Key('requestReportDelivery')), findsNothing);
+    final readsAfterQueue = previewReads;
     deliveryReadbackState = 'sent';
-    await tester.tap(find.text('Check preview status'));
+    await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
+    expect(previewReads, greaterThan(readsAfterQueue));
     expect(find.text('Email sent'), findsOneWidget);
     expect(find.textContaining('pending'), findsNothing);
     staleReadback = true;
     deliveryReadbackState = 'canceled';
     await tester.tap(find.text('Check preview status'));
     await tester.pumpAndSettle();
-    expect(find.text('Email failed, try again later.'), findsOneWidget);
+    expect(find.text('Email failed to send, try again later.'), findsOneWidget);
     api.close();
   });
 

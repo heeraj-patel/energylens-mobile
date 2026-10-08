@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/cloud_api/cloud_api_client.dart';
@@ -40,6 +42,8 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
   String? _currentDeliveryId;
   String? _deliveryStatus;
   _DeliveryAttempt? _attempt;
+  Timer? _deliveryPollTimer;
+  int _deliveryPollEpoch = 0;
 
   bool get _hasVerifiedScope {
     final lifecycle = widget.lifecycle;
@@ -70,6 +74,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
 
   @override
   void dispose() {
+    _stopDeliveryPolling();
     widget.lifecycle?.scopeChanges.removeListener(_onScopeChanged);
     _recipients.dispose();
     super.dispose();
@@ -79,9 +84,67 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
     _approved = false;
     _attempt = null;
     if (clearCurrentDelivery) {
+      _stopDeliveryPolling();
       _currentDeliveryId = null;
       _deliveryStatus = null;
     }
+  }
+
+  void _stopDeliveryPolling() {
+    _deliveryPollEpoch++;
+    _deliveryPollTimer?.cancel();
+    _deliveryPollTimer = null;
+  }
+
+  void _scheduleDeliveryPoll(int epoch) {
+    if (!mounted || epoch != _deliveryPollEpoch) return;
+    _deliveryPollTimer?.cancel();
+    _deliveryPollTimer = Timer(const Duration(seconds: 10), () {
+      _deliveryPollTimer = null;
+      _readCurrentDeliveryStatus(epoch);
+    });
+  }
+
+  Future<void> _readCurrentDeliveryStatus(int epoch) async {
+    final current = _preview;
+    final deliveryId = _currentDeliveryId;
+    final appliances = _appliances;
+    if (!mounted ||
+        !_hasVerifiedScope ||
+        epoch != _deliveryPollEpoch ||
+        current == null ||
+        deliveryId == null ||
+        appliances == null) {
+      return;
+    }
+    try {
+      final owned = appliances.map((a) => a.id.toLowerCase()).toSet();
+      final readback = await _readPreview(current.id, owned);
+      if (!mounted ||
+          !_hasVerifiedScope ||
+          epoch != _deliveryPollEpoch ||
+          _preview?.id != current.id ||
+          _preview?.snapshotSha256 != current.snapshotSha256 ||
+          _currentDeliveryId != deliveryId) {
+        return;
+      }
+      final delivery = readback?.latestDelivery;
+      if (delivery?.id == deliveryId) {
+        final status = switch (delivery?.state) {
+          'sent' => 'Email sent',
+          'canceled' => 'Email failed to send, try again later.',
+          _ => null,
+        };
+        if (status != null) {
+          setState(() => _deliveryStatus = status);
+          _stopDeliveryPolling();
+          return;
+        }
+      }
+    } catch (_) {
+      // A read error is not evidence that delivery failed.
+    }
+    _scheduleDeliveryPoll(epoch);
   }
 
   @override
@@ -209,8 +272,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
       if (preview == null || !mounted || !_hasVerifiedScope) return;
       if (mounted) {
         setState(() {
-          final sameSnapshot =
-              preview.snapshotSha256 == current.snapshotSha256;
+          final sameSnapshot = preview.snapshotSha256 == current.snapshotSha256;
           if (preview.isStale || !sameSnapshot) {
             _resetApproval(clearCurrentDelivery: !sameSnapshot);
           }
@@ -220,10 +282,11 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
               ? null
               : switch (delivery?.state) {
                   'sent' => 'Email sent',
-                  'canceled' => 'Email failed, try again later.',
+                  'canceled' => 'Email failed to send, try again later.',
                   _ => null,
                 };
         });
+        if (_deliveryStatus != null) _stopDeliveryPolling();
       }
     } catch (_) {
       if (mounted && _hasVerifiedScope) {
@@ -332,6 +395,8 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
           _attempt = null;
           _approved = false;
         });
+        _stopDeliveryPolling();
+        _readCurrentDeliveryStatus(_deliveryPollEpoch);
       }
     } on CloudApiException catch (error) {
       if (!mounted || !_hasVerifiedScope) return;
