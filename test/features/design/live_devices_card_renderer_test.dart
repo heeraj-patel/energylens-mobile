@@ -67,11 +67,65 @@ void main() {
       utf8.decode(base64Decode(encodedPayload)),
     ) as Map<String, dynamic>;
     expect(payload['rows'], [
-      {'id': 'metered-device', 'name': 'Saved Device'},
+      {
+        'id': 'metered-device',
+        'name': 'Saved Device',
+        'identity': '',
+        'demoWaste': null,
+      },
     ]);
     expect(script, isNot(contains('energyWh')));
     expect(script, isNot(contains('coveredSeconds')));
   });
+
+  test(
+    'renders eligible demo rates without rounding away sub-cent amounts',
+    () {
+      const renderer = LiveDevicesCardRenderer();
+      final script = renderer.appendScript(
+        projection: _projection(homeA, [
+          const LiveDeviceRow(
+            applianceId: 'light',
+            name: 'Lamp',
+            manufacturer: 'Acme',
+            model: 'L1',
+            measuredBucket: null,
+            demoWasteMicrosPerDay: 800,
+          ),
+          const LiveDeviceRow(
+            applianceId: 'tv',
+            name: 'Television',
+            measuredBucket: null,
+            demoWasteMicrosPerDay: 80000,
+          ),
+        ]),
+        generation: 1,
+      );
+      final encodedPayload = RegExp("atob\\('([^']+)'\\)")
+          .firstMatch(script)!
+          .group(1)!;
+      final payload = jsonDecode(
+        utf8.decode(base64Decode(encodedPayload)),
+      ) as Map<String, dynamic>;
+      expect(payload['rows'], [
+        {
+          'id': 'light',
+          'name': 'Lamp',
+          'identity': 'Acme L1',
+          'demoWaste': 'Demo estimate \$0.0008/day',
+        },
+        {
+          'id': 'tv',
+          'name': 'Television',
+          'identity': '',
+          'demoWaste': 'Demo estimate \$0.08/day',
+        },
+      ]);
+      expect(script, contains("status.textContent = 'Status unknown'"));
+      expect(script, contains("useful.textContent = 'N/A'"));
+      expect(script, contains("waste.textContent = row.demoWaste ?? 'N/A'"));
+    },
+  );
 
   test('DOM append preserves mock cards, refreshes, and rejects stale scope', () async {
     final available = Process.runSync('node', [
@@ -95,6 +149,8 @@ void main() {
           const LiveDeviceRow(
             applianceId: 'a2',
             name: 'Saved Fridge',
+            manufacturer: 'Acme',
+            model: 'F100',
             measuredBucket: null,
           ),
         ]),
@@ -146,6 +202,13 @@ assert.deepEqual(originals.map(node => node.outerHTML), originalHtml);
 let appended = Array.from(feed.children).slice(originals.length);
 assert.equal(appended[0].querySelector('.font-semibold.text-on-surface.truncate').textContent, '<img src=x onerror=alert(1)> ${evil}');
 assert.equal(appended[0].querySelector('img'), null);
+assert.equal(appended[0].textContent.includes('Status unknown'), true);
+assert.equal(appended[0].textContent.includes('Useful:N/A'), true);
+assert.equal(appended[0].textContent.includes('Waste:N/A'), true);
+assert.equal(appended[1].textContent.includes('Acme F100'), true);
+assert.equal(appended[0].textContent.includes('Idle (3h)'), false);
+assert.equal(appended[0].textContent.includes('$0.68'), false);
+assert.equal(appended[0].textContent.includes('$0.35'), false);
 for (const card of appended) {
   assert.equal(card.querySelector('[data-el-bind], [data-el-action], [id]'), null);
 }

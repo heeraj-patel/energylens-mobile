@@ -96,12 +96,50 @@ void main() {
           'assets/design_pages/$pageId/app.html',
         );
 
+        if (pageId == 'efficiency') {
+          expect(_visibleText(packagedHtml), contains('Month to date'));
+          expect(_visibleText(packagedHtml), isNot(contains('Monthly Spend')));
+        }
+
         expect(_visibleText(sourceHtml), isNotEmpty, reason: pageId);
         if (const {
           'settings_manage_devices',
           'settings_manual_device_entry',
           'settings_photo_scan_onboarding',
         }.contains(pageId)) {
+          final discoveredBinding = '${pageId}_text_016';
+          final monitoredSubtitleBinding = switch (pageId) {
+            'settings_photo_scan_onboarding' =>
+              'settings_photo_scan_onboarding_text_056',
+            _ => '${pageId}_text_054',
+          };
+          expect(
+            packagedHtml,
+            contains(
+              'data-el-bind="$discoveredBinding">Discovered Devices</h3>',
+            ),
+            reason: '$pageId uses the approved discovered-device label',
+          );
+          expect(
+            sourceHtml,
+            contains('Discovered on Circuit'),
+            reason: '$pageId immutable source keeps its reference wording',
+          );
+          expect(
+            packagedHtml,
+            isNot(contains('Discovered on Circuit')),
+            reason: '$pageId packaged page uses only the approved label',
+          );
+          expect(
+            packagedHtml,
+            isNot(contains('data-el-bind="$monitoredSubtitleBinding"')),
+            reason: '$pageId removes the approved telemetry subtitle',
+          );
+          expect(
+            packagedHtml,
+            contains('Monitored Devices'),
+            reason: '$pageId preserves the monitored-device section label',
+          );
           for (final duplicate in [
             'LG Smart Refrigerator',
             'Ecobee Smart Thermostat',
@@ -121,7 +159,10 @@ void main() {
           expect(
             _visibleText(packagedHtml.split(mockListMarker).last),
             _visibleText(
-              _withoutOuterChrome(sourceHtml).split(mockListMarker).last,
+              _withoutOuterChrome(sourceHtml)
+                  .split(mockListMarker)
+                  .last
+                  .replaceAll('Active continuous energy telemetry', ''),
             ),
             reason: 'Photo Scan keeps the approved mock device list',
           );
@@ -129,7 +170,13 @@ void main() {
         }
         expect(
           _visibleText(_withSourceFallbackValues(packagedHtml, pageId)),
-          _visibleText(_withoutOuterChrome(sourceHtml)),
+          _visibleText(
+            _withoutOuterChrome(
+              pageId == 'efficiency'
+                  ? sourceHtml.replaceFirst('Monthly Spend', 'Month to date')
+                  : sourceHtml,
+            ),
+          ),
           reason:
               '$pageId content must match its approved source except approved fallback values',
         );

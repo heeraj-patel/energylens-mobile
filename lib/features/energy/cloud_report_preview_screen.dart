@@ -37,7 +37,8 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
   String _key = newCloudIdempotencyKey();
   final TextEditingController _recipients = TextEditingController();
   bool _approved = false;
-  CloudReportDelivery? _delivery;
+  String? _currentDeliveryId;
+  String? _deliveryStatus;
   _DeliveryAttempt? _attempt;
 
   bool get _hasVerifiedScope {
@@ -74,10 +75,13 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
     super.dispose();
   }
 
-  void _resetApproval() {
+  void _resetApproval({bool clearCurrentDelivery = true}) {
     _approved = false;
     _attempt = null;
-    _delivery = null;
+    if (clearCurrentDelivery) {
+      _currentDeliveryId = null;
+      _deliveryStatus = null;
+    }
   }
 
   @override
@@ -205,11 +209,20 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
       if (preview == null || !mounted || !_hasVerifiedScope) return;
       if (mounted) {
         setState(() {
-          if (preview.isStale ||
-              preview.snapshotSha256 != current.snapshotSha256) {
-            _resetApproval();
+          final sameSnapshot =
+              preview.snapshotSha256 == current.snapshotSha256;
+          if (preview.isStale || !sameSnapshot) {
+            _resetApproval(clearCurrentDelivery: !sameSnapshot);
           }
           _preview = preview;
+          final delivery = preview.latestDelivery;
+          _deliveryStatus = delivery?.id != _currentDeliveryId
+              ? null
+              : switch (delivery?.state) {
+                  'sent' => 'Email sent',
+                  'canceled' => 'Email failed, try again later.',
+                  _ => null,
+                };
         });
       }
     } catch (_) {
@@ -314,7 +327,8 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
       }
       if (mounted && _hasVerifiedScope) {
         setState(() {
-          _delivery = delivery;
+          _currentDeliveryId = delivery.id;
+          _deliveryStatus = null;
           _attempt = null;
           _approved = false;
         });
@@ -471,7 +485,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
                               ListTile(title: Text(assumption)),
                           ],
                         ),
-                      if (_delivery == null && !preview.isStale) ...[
+                      if (_currentDeliveryId == null && !preview.isStale) ...[
                         const SizedBox(height: 16),
                         const Text(
                           'Request this snapshot by email. You choose the recipients and explicitly approve this exact preview. A request is queued; email delivery availability and completion are not confirmed here.',
@@ -517,17 +531,14 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
                           ),
                         ),
                       ],
-                      if (_delivery case final delivery?) ...[
+                      if (_currentDeliveryId != null) ...[
                         const SizedBox(height: 16),
-                        Text(
-                          'Report request queued · delivery pending',
-                          key: const Key('reportDeliveryStatus'),
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        Text('Recipients: ${delivery.recipients.join(', ')}'),
-                        const Text(
-                          'Delivery availability and completion are unknown. The request may remain pending if email delivery is disabled.',
-                        ),
+                        if (_deliveryStatus case final status?)
+                          Text(
+                            status,
+                            key: const Key('reportDeliveryStatus'),
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
                       ],
                       TextButton(
                         onPressed: _busy ? null : _refreshPreview,

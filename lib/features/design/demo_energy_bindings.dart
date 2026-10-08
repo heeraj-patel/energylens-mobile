@@ -28,6 +28,7 @@ DemoCostClaimProvenance _provenance(
   var measured = false;
   var illustrative = false;
   var unknownSource = false;
+  var hasContributingLeaf = false;
   for (final leaf in leaves) {
     final shown = leaf.presentationCost;
     final shownMicros = switch (component) {
@@ -36,12 +37,25 @@ DemoCostClaimProvenance _provenance(
       _CostComponent.total => shown.totalMicros,
     };
     if (shownMicros == 0) continue;
+    hasContributingLeaf = true;
     unknownSource |= leaf.cost.unclassifiedMicros > 0;
     measured |= leaf.origin == DemoValueOrigin.measured;
     illustrative |=
         leaf.origin == DemoValueOrigin.mock ||
         leaf.illustrativePresentationCost != null ||
         (component != _CostComponent.useful && leaf.wasteProvenance != null);
+  }
+  // A verified zero is still a value. Use the available leaves to describe a
+  // zero claim instead of treating the displayed $0.00 as unavailable.
+  if (!hasContributingLeaf) {
+    for (final leaf in leaves) {
+      measured |= leaf.origin == DemoValueOrigin.measured;
+      illustrative |=
+          leaf.origin == DemoValueOrigin.mock ||
+          leaf.illustrativePresentationCost != null ||
+          (component != _CostComponent.useful && leaf.wasteProvenance != null);
+      unknownSource |= leaf.cost.unclassifiedMicros > 0;
+    }
   }
   return DemoCostClaimProvenance(
     status: measured && illustrative
@@ -164,7 +178,11 @@ class DemoEnergyBindings {
           List.unmodifiable([
             DesignTextBinding(
               'efficiency_text_009',
-              _money(projection.presentedMonthToDateCost.totalCents),
+              _money(
+                _roundMicrosToCents(
+                  projection.presentedMonthToDateCost.totalMicros,
+                ),
+              ),
             ),
           ]),
           Map.unmodifiable({
@@ -187,6 +205,8 @@ class DemoEnergyBindings {
 
 String _money(int cents) =>
     '\$${(cents ~/ 100)}.${(cents % 100).toString().padLeft(2, '0')}';
+
+int _roundMicrosToCents(int micros) => (micros + 5000) ~/ 10000;
 
 bool _isLocalDate(String value) {
   if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) return false;

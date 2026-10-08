@@ -100,6 +100,19 @@ class CloudAuxiliaryDomainLifecycle {
         : null;
   }
 
+  /// Reads saved inventory only while the account and home remain verified.
+  Future<List<CloudAppliance>?> refreshSavedAppliances(
+    String accountId,
+    String homeId,
+  ) async {
+    _requireVerifiedScope(accountId, homeId);
+    final generation = _generation;
+    final rows = await drafts.repository.refresh();
+    return generation == _generation && isVerifiedScope(accountId, homeId)
+        ? rows
+        : null;
+  }
+
   void _requireVerifiedScope(String accountId, String homeId) {
     if (!isVerifiedScope(accountId, homeId)) {
       throw StateError('No verified account and home for onboarding draft');

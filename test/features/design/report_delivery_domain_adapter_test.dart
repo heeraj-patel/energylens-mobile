@@ -208,7 +208,7 @@ void main() {
   );
 
   test(
-    'readback rejects stale and expired previews before exposing status',
+    'readback preserves terminal status after preview becomes stale or expired',
     () async {
       final source = FakeSource();
       final adapter = ReportDeliveryDomainAdapter(source, now: now);
@@ -216,6 +216,12 @@ void main() {
         makePreview(stale: true),
         makePreview(expires: clockNow),
       ]) {
+        source.read = (_, id, _) async => makePreview(
+          id: id,
+          stale: value.stale,
+          expires: value.expiresAt,
+          latestDelivery: requestStatus('canceled'),
+        );
         final result = await adapter.readback(
           preview: snapshot(
             status: value.stale
@@ -224,22 +230,13 @@ void main() {
             value: value,
           ),
           ownedApplianceIds: {appliance},
+          expectedDeliveryId: deliveryId,
         );
-        expect(result.status, ReportDeliveryReadbackStatus.previewChanged);
+        expect(result.status, ReportDeliveryReadbackStatus.available);
+        expect(result.delivery!.state, 'canceled');
       }
-      expect(source.readCount, 0);
-      source.read = (_, id, _) async => makePreview(
-        id: id,
-        stale: true,
-        latestDelivery: requestStatus('sent'),
-      );
-      expect(
-        (await adapter.readback(
-          preview: snapshot(),
-          ownedApplianceIds: {appliance},
-        )).status,
-        ReportDeliveryReadbackStatus.previewChanged,
-      );
+      expect(source.readCount, 2);
+      expect(source.queueCount, 0);
     },
   );
 

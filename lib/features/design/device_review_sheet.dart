@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import '../identify/onboarding_draft_store.dart';
 import '../identify/onboarding_persistence_repository.dart';
@@ -92,7 +93,7 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
       if (mounted &&
           saved != null &&
           widget.lifecycle.isVerifiedScope(widget.accountId, widget.homeId)) {
-        Navigator.of(context).pop(true);
+        Navigator.of(context).pop<CloudAppliance>(saved);
       }
     } catch (_) {
       // Keep the reviewed draft and operation key for an unchanged retry.
@@ -198,7 +199,9 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
     ),
     actions: [
       TextButton(
-        onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+        onPressed: _saving
+            ? null
+            : () => Navigator.of(context).pop<CloudAppliance>(),
         child: const Text('Cancel'),
       ),
       FilledButton(

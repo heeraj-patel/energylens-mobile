@@ -1,6 +1,7 @@
 import '../../core/cloud_api/cloud_appliance_list.dart';
 import 'design_context_coordinator.dart';
 import 'devices_domain_repository.dart';
+import 'demo_energy_tree.dart';
 
 /// Native-only projection. A bucket is an observation with partial coverage,
 /// not a device total, current power, cost, or operating state.
@@ -22,12 +23,20 @@ class LiveDeviceRow {
   const LiveDeviceRow({
     required this.applianceId,
     required this.name,
+    this.manufacturer = '',
+    this.model = '',
     required this.measuredBucket,
+    this.demoWasteMicrosPerDay,
   });
 
   final String applianceId;
   final String name;
+  final String manufacturer;
+  final String model;
   final LiveDeviceMeasuredBucket? measuredBucket;
+
+  /// Display-only rate, available only after a typed final KB waste miss.
+  final int? demoWasteMicrosPerDay;
 }
 
 class LiveDevicesProjection {
@@ -112,7 +121,20 @@ LiveDevicesProjection prepareLiveDevicesProjection(DesignContextRead read) {
       LiveDeviceRow(
         applianceId: appliance.id,
         name: appliance.name,
+        manufacturer: appliance.brand,
+        model: appliance.fullModel,
         measuredBucket: bucket,
+        demoWasteMicrosPerDay:
+            bucket == null &&
+                read.mode == DesignContextMode.household &&
+                appliance.kbWasteResult?.status ==
+                    'waste_evidence_unavailable_after_kb'
+            ? switch (dummyWasteDrawForProfile(appliance.category)) {
+                DummyWasteDraw.low => dummyIdleHoursPerLocalDay * 100,
+                DummyWasteDraw.high => dummyIdleHoursPerLocalDay * 10000,
+                null => null,
+              }
+            : null,
       ),
     );
   }

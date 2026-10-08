@@ -132,25 +132,29 @@ CloudAuxiliaryDomainLifecycle _lifecycle(
 void main() {
   Future<void> open(
     WidgetTester tester,
-    CloudAuxiliaryDomainLifecycle lifecycle,
-  ) async {
+    CloudAuxiliaryDomainLifecycle lifecycle, {
+    void Function(CloudAppliance?)? onResult,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
-              onPressed: () => showDialog<bool>(
-                context: context,
-                builder: (_) => DeviceReviewSheet(
-                  lifecycle: lifecycle,
-                  accountId: account,
-                  homeId: home,
-                  homeName: 'Lake House',
-                  name: 'Fridge',
-                  manufacturer: 'Acme',
-                  model: 'A123',
-                ),
-              ),
+              onPressed: () async {
+                final saved = await showDialog<CloudAppliance>(
+                  context: context,
+                  builder: (_) => DeviceReviewSheet(
+                    lifecycle: lifecycle,
+                    accountId: account,
+                    homeId: home,
+                    homeName: 'Lake House',
+                    name: 'Fridge',
+                    manufacturer: 'Acme',
+                    model: 'A123',
+                  ),
+                );
+                onResult?.call(saved);
+              },
               child: const Text('Open'),
             ),
           ),
@@ -174,7 +178,8 @@ void main() {
       final source = _Appliances();
       final lifecycle = _lifecycle(_Storage(), source);
       await lifecycle.selectVerifiedHome(account, home);
-      await open(tester, lifecycle);
+      CloudAppliance? returned;
+      await open(tester, lifecycle, onResult: (value) => returned = value);
       expect(find.text('Review device'), findsOneWidget);
       expect(find.text('Save to Lake House'), findsOneWidget);
       expect(
@@ -194,6 +199,16 @@ void main() {
       expect(source.input!.category, 'refrigerator');
       expect(source.input!.fuel, 'electricity');
       expect(source.input!.name, 'Fridge');
+      expect(returned?.id, applianceId);
+      expect(returned?.brand, 'Acme');
+      expect(
+        (await lifecycle.refreshSavedAppliances(account, home))?.single.id,
+        applianceId,
+      );
+      await expectLater(
+        lifecycle.refreshSavedAppliances(account, account),
+        throwsStateError,
+      );
       expect(find.text('Review device'), findsNothing);
     },
   );

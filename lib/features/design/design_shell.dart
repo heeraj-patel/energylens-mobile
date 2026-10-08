@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import '../identify/appliance_onboarding_screen.dart'
     show manufacturerHintFromOcr, modelHintFromOcr;
@@ -15,9 +16,12 @@ import 'design_numeric_bindings.dart';
 import 'design_navigation_script.dart';
 import 'design_page_read_dispatcher.dart';
 import 'design_page_bridge.dart';
+import 'design_page_state_script.dart';
+import 'design_page_state_snapshot.dart';
 import 'live_devices_card_renderer.dart';
 import 'live_devices_projection.dart';
 import 'knowledge_page_script.dart';
+import 'settings_saved_devices_renderer.dart';
 
 /// The approved design files are complete mobile pages. Keep their markup and
 /// wording in assets/design_pages; this shell only supplies native navigation.
@@ -86,12 +90,21 @@ class _DesignShellState extends State<DesignShell> {
   late final WebViewController _controller;
   late final DesignPageReadDispatcher _pageReads;
   static const _liveDevicesRenderer = LiveDevicesCardRenderer();
+  static const _settingsSavedRenderer = SettingsSavedDevicesRenderer();
+  static const _settingsDevicePages = <String>{
+    'settings_manage_devices',
+    'settings_manual_device_entry',
+    'settings_photo_scan_onboarding',
+  };
   final DesignPageRequestGate _bindingGate = DesignPageRequestGate();
+  final DesignPageStateSnapshotStore _pageStates =
+      DesignPageStateSnapshotStore();
   late final DesignTextBindingRenderer _bindingRenderer =
       DesignTextBindingRenderer(_bindingGate);
   int _pageLoadGeneration = 0;
   bool _pageReady = false;
   LiveDevicesProjection? _devicesProjection;
+  List<CloudAppliance>? _savedAppliances;
   DesignNumericBindings? _dashboardBindings;
   DesignPageTicket? _pageTicket;
   Timer? _tourTimer;
@@ -100,6 +113,16 @@ class _DesignShellState extends State<DesignShell> {
   String _page = 'dashboard';
   bool _reviewOpen = false;
   bool _capturingPhoto = false;
+  bool _navigating = false;
+  int _navigationEpoch = 0;
+  String? _activePageStateScope;
+
+  String get _pageStateHomeId {
+    final context = widget.designContextCoordinator?.context;
+    return context == null
+        ? '__local_design__'
+        : '${context.accountId}/${context.homeId}';
+  }
 
   @override
   void initState() {
@@ -110,7 +133,7 @@ class _DesignShellState extends State<DesignShell> {
       ..setBackgroundColor(const Color(0xFFF9F9FF))
       ..addJavaScriptChannel(
         'EnergyLensNavigation',
-        onMessageReceived: (message) => _open(message.message),
+        onMessageReceived: (message) => unawaited(_open(message.message)),
       )
       ..addJavaScriptChannel(
         'EnergyLensDeviceReview',
@@ -127,7 +150,7 @@ class _DesignShellState extends State<DesignShell> {
           onPageFinished: (url) {
             _installNavigation();
             _scheduleTourAdvance();
-            unawaited(_onPageFinished(url));
+            unawaited(_finishAndRestorePage(url));
           },
           onNavigationRequest: (request) {
             final uri = Uri.tryParse(request.url);
@@ -179,6 +202,13 @@ class _DesignShellState extends State<DesignShell> {
 
   Future<void> _loadPage() async {
     if (!mounted) return;
+    final scope = _pageStateHomeId;
+    if (_activePageStateScope != scope) {
+      _activePageStateScope = scope;
+      _navigationEpoch++;
+      _history.clear();
+    }
+    _pageStates.selectHome(scope);
     _invalidatePageLoad();
     final page = _page;
     final generation = _pageLoadGeneration;
@@ -188,10 +218,50 @@ class _DesignShellState extends State<DesignShell> {
     await _controller.loadFlutterAsset('assets/design_pages/$page/app.html');
   }
 
+  Future<void> _finishAndRestorePage(String url) async {
+    final page = _page;
+    final generation = _pageLoadGeneration;
+    await _onPageFinished(url);
+    if (!_isCurrentPageLoad(page, generation)) return;
+    final snapshot = _pageStates.forPage(_pageStateHomeId, page);
+    if (snapshot == null) return;
+    try {
+      await _controller.runJavaScript(
+        buildDesignPageStateRestoreScript(snapshot),
+      );
+    } catch (_) {
+      // A failed restoration leaves the page usable with its default state.
+    }
+  }
+
+  Future<void> _capturePageState() async {
+    if (!_pageReady) return;
+    final page = _page;
+    final generation = _pageLoadGeneration;
+    final homeId = _pageStateHomeId;
+    try {
+      final result = await _controller.runJavaScriptReturningResult(
+        buildDesignPageStateCaptureScript(page),
+      );
+      if (!_isCurrentPageLoad(page, generation) || homeId != _pageStateHomeId) {
+        return;
+      }
+      var raw = result is String ? result : jsonEncode(result);
+      final decoded = jsonDecode(raw);
+      if (decoded is String) raw = decoded;
+      _pageStates.save(
+        DesignPageStateSnapshot.fromJson(raw, homeId: homeId, page: page),
+      );
+    } catch (_) {
+      // State capture is best effort; navigation must remain available.
+    }
+  }
+
   void _invalidatePageLoad() {
     _pageLoadGeneration++;
     _pageReady = false;
     _devicesProjection = null;
+    _savedAppliances = null;
     _dashboardBindings = null;
     _pageTicket = null;
     _bindingGate.clear();
@@ -203,6 +273,10 @@ class _DesignShellState extends State<DesignShell> {
   Future<void> _readPage(String page, int generation) async {
     await _pageReads.load(page);
     if (!_isCurrentPageLoad(page, generation)) return;
+    if (_settingsDevicePages.contains(page)) {
+      await _refreshSavedAppliances(page, generation);
+      return;
+    }
     final read = _pageReads.latestRead;
     if (page == 'dashboard') {
       if (read == null || read.page != 'dashboard') return;
@@ -231,6 +305,34 @@ class _DesignShellState extends State<DesignShell> {
       await _applyDevicesProjection(generation);
     } catch (_) {
       // Keep the approved static cards when a native read cannot be projected.
+    }
+  }
+
+  Future<void> _refreshSavedAppliances(String page, int generation) async {
+    final context = widget.designContextCoordinator?.context;
+    final lifecycle = widget.onboardingLifecycle;
+    if (!_settingsDevicePages.contains(page) ||
+        context == null ||
+        context.mode != DesignContextMode.household ||
+        lifecycle == null ||
+        !lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+      return;
+    }
+    try {
+      final rows = await lifecycle.refreshSavedAppliances(
+        context.accountId,
+        context.homeId,
+      );
+      if (rows == null ||
+          !_isCurrentPageLoad(page, generation) ||
+          !identical(widget.designContextCoordinator?.context, context) ||
+          !lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+        return;
+      }
+      _savedAppliances = rows;
+      await _applySavedAppliances(page, generation);
+    } catch (_) {
+      // A failed inventory read never creates a saved row from a draft.
     }
   }
 
@@ -283,6 +385,34 @@ class _DesignShellState extends State<DesignShell> {
     if (page == 'dashboard') {
       if (context == null) return;
       await _applyDashboardBindings(generation);
+      return;
+    }
+    if (_settingsDevicePages.contains(page)) {
+      if (context == null ||
+          context.mode != DesignContextMode.household ||
+          widget.onboardingLifecycle?.isVerifiedScope(
+                context.accountId,
+                context.homeId,
+              ) !=
+              true) {
+        return;
+      }
+      try {
+        final installed = await _controller.runJavaScriptReturningResult(
+          _settingsSavedRenderer.installationScript(
+            homeId: context.homeId,
+            generation: generation,
+          ),
+        );
+        if (installed != true ||
+            !_isCurrentPageLoad(page, generation) ||
+            !identical(widget.designContextCoordinator?.context, context)) {
+          return;
+        }
+        await _applySavedAppliances(page, generation);
+      } catch (_) {
+        // The packaged rows remain usable if the saved inventory cannot bind.
+      }
       return;
     }
     if (page != 'devices') return;
@@ -381,6 +511,32 @@ class _DesignShellState extends State<DesignShell> {
     }
   }
 
+  Future<void> _applySavedAppliances(String page, int generation) async {
+    final rows = _savedAppliances;
+    final context = widget.designContextCoordinator?.context;
+    final lifecycle = widget.onboardingLifecycle;
+    if (!_pageReady ||
+        !_isCurrentPageLoad(page, generation) ||
+        !_settingsDevicePages.contains(page) ||
+        rows == null ||
+        context == null ||
+        context.mode != DesignContextMode.household ||
+        lifecycle?.isVerifiedScope(context.accountId, context.homeId) != true) {
+      return;
+    }
+    try {
+      await _controller.runJavaScriptReturningResult(
+        _settingsSavedRenderer.appendScript(
+          homeId: context.homeId,
+          generation: generation,
+          appliances: rows,
+        ),
+      );
+    } catch (_) {
+      // A stale or invalid saved inventory must not replace packaged rows.
+    }
+  }
+
   Future<void> _reviewDevice(String raw, {bool fromPhoto = false}) async {
     if (_reviewOpen ||
         (!fromPhoto &&
@@ -412,7 +568,7 @@ class _DesignShellState extends State<DesignShell> {
     }
     _reviewOpen = true;
     try {
-      await showDialog<bool>(
+      final saved = await showDialog<CloudAppliance>(
         context: this.context,
         builder: (_) => DeviceReviewSheet(
           lifecycle: lifecycle,
@@ -424,6 +580,11 @@ class _DesignShellState extends State<DesignShell> {
           model: fields['model'] as String,
         ),
       );
+      if (saved != null &&
+          saved.homeId == context.homeId &&
+          lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+        await _refreshSavedAppliances(_page, _pageLoadGeneration);
+      }
     } finally {
       _reviewOpen = false;
     }
@@ -482,14 +643,20 @@ class _DesignShellState extends State<DesignShell> {
     }
   }
 
-  void _open(String route) {
+  Future<void> _open(String route) async {
     if (route == 'sign_out') {
+      _navigationEpoch++;
+      _pageStates.clear();
+      _history.clear();
       _invalidatePageLoad();
       _pageReads.clear();
       widget.onSignOut?.call();
       return;
     }
     if (route == 'change_home') {
+      _navigationEpoch++;
+      _pageStates.clear();
+      _history.clear();
       _invalidatePageLoad();
       _pageReads.clear();
       widget.onChangeHome?.call();
@@ -500,17 +667,34 @@ class _DesignShellState extends State<DesignShell> {
       return;
     }
     if (!_pages.contains(route) || route == _page) return;
-    setState(() {
-      _history.add(_page);
-      _page = route;
-    });
-    _loadPage();
+    await _navigate(route);
   }
 
   void _back() {
     if (_history.isEmpty) return;
-    setState(() => _page = _history.removeLast());
-    _loadPage();
+    unawaited(_navigate(null));
+  }
+
+  Future<void> _navigate(String? route) async {
+    if (_navigating) return;
+    _navigating = true;
+    final epoch = _navigationEpoch;
+    try {
+      await _capturePageState();
+      if (!mounted || epoch != _navigationEpoch) return;
+      if (route == null) {
+        if (_history.isEmpty) return;
+        setState(() => _page = _history.removeLast());
+      } else {
+        setState(() {
+          _history.add(_page);
+          _page = route;
+        });
+      }
+      await _loadPage();
+    } finally {
+      _navigating = false;
+    }
   }
 
   Future<void> _installNavigation() async {

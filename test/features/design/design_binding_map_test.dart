@@ -16,6 +16,10 @@ Set<String> _approvedRemovedIds(String page, String category) {
       for (var n = 17; n <= 26; n++)
         '${page}_text_${n.toString().padLeft(3, '0')}',
       if (page == 'settings_photo_scan_onboarding')
+        '${page}_text_056'
+      else
+        '${page}_text_054',
+      if (page == 'settings_photo_scan_onboarding')
         for (var n = 27; n <= 53; n++)
           '${page}_text_${n.toString().padLeft(3, '0')}',
     };

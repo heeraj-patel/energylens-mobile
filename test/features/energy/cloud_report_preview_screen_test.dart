@@ -117,7 +117,7 @@ Map<String, Object?> _preview() {
 }
 
 void main() {
-  testWidgets('explicit approval safely retries a pending report request', (
+  testWidgets('only current delivery readback reports sent status', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(900, 1800);
@@ -125,6 +125,8 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final deliveryPosts = <http.Request>[];
+    String? deliveryReadbackState;
+    var staleReadback = false;
     final api = _api(
       MockClient((request) async {
         expect(request.headers['authorization'], 'Bearer owner-token');
@@ -169,8 +171,20 @@ void main() {
         }
         if (request.url.path.endsWith('/reports/preview') ||
             request.url.path.endsWith('/reports/previews/$previewId')) {
+          final body = _preview();
+          body['stale'] = staleReadback;
+          if (request.method == 'GET' && deliveryReadbackState != null) {
+            body['latest_delivery'] = {
+              'id': deliveryId,
+              'state': deliveryReadbackState,
+              'created_at': DateTime.now().toUtc().toIso8601String(),
+              'sent_at': deliveryReadbackState == 'sent'
+                  ? DateTime.now().toUtc().toIso8601String()
+                  : null,
+            };
+          }
           return http.Response(
-            jsonEncode(_preview()),
+            jsonEncode(body),
             request.method == 'POST' ? 201 : 200,
           );
         }
@@ -221,7 +235,13 @@ void main() {
     await tester.ensureVisible(find.byKey(const Key('requestReportDelivery')));
     await tester.tap(find.byKey(const Key('requestReportDelivery')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Retry unchanged'), findsOneWidget);
+    expect(
+      find.text(
+        'Could not confirm the request. Retry unchanged to safely check the same request.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Email failed, try again later.'), findsNothing);
     expect(deliveryPosts, hasLength(1));
     expect(jsonDecode(deliveryPosts.single.body), {
       'approved_snapshot_sha256': 'a' * 64,
@@ -236,15 +256,19 @@ void main() {
       deliveryPosts[1].headers['idempotency-key'],
       deliveryPosts[0].headers['idempotency-key'],
     );
-    expect(
-      find.text('Report request queued · delivery pending'),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining('availability and completion are unknown'),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('reportDeliveryStatus')), findsNothing);
+    expect(find.text('Email sent'), findsNothing);
     expect(find.byKey(const Key('requestReportDelivery')), findsNothing);
+    deliveryReadbackState = 'sent';
+    await tester.tap(find.text('Check preview status'));
+    await tester.pumpAndSettle();
+    expect(find.text('Email sent'), findsOneWidget);
+    expect(find.textContaining('pending'), findsNothing);
+    staleReadback = true;
+    deliveryReadbackState = 'canceled';
+    await tester.tap(find.text('Check preview status'));
+    await tester.pumpAndSettle();
+    expect(find.text('Email failed, try again later.'), findsOneWidget);
     api.close();
   });
 
@@ -351,7 +375,7 @@ void main() {
     await tester.tap(find.byKey(const Key('requestReportDelivery')));
     await tester.pumpAndSettle();
     expect(deliveries, 1);
-    expect(find.byKey(const Key('reportDeliveryStatus')), findsOneWidget);
+    expect(find.byKey(const Key('reportDeliveryStatus')), findsNothing);
     api.close();
   });
 

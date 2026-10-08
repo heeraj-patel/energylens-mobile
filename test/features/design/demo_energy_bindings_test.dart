@@ -109,6 +109,96 @@ void main() {
     expect(efficiency.bindings.single.text, isNot(r'$146.86'));
   });
 
+  test('rounds month total once after summing sub-cent components', () {
+    final original = buildSeptember2026DemoTree(homeId: homeId);
+    final day = original.day('2026-09-30');
+    final first = day.devices.first;
+    final changed = DemoBranch(
+      deviceId: first.deviceId,
+      name: first.name,
+      period: first.period,
+      cost: DemoCost.fromMicros(
+        usefulMicros: first.cost.usefulMicros + 1,
+        wasteMicros: first.cost.wasteMicros + 4999,
+        unclassifiedMicros: first.cost.unclassifiedMicros,
+      ),
+      origin: first.origin,
+      sourceId: first.sourceId,
+    );
+    final adjusted = DemoMonthTree(
+      homeId: homeId,
+      referenceLocalDate: original.referenceLocalDate,
+      days: [
+        for (final row in original.days)
+          if (row == day)
+            DemoDayTree(
+              homeId: homeId,
+              period: day.period,
+              devices: [changed, ...day.devices.skip(1)],
+              unattributed: day.unattributed,
+            )
+          else
+            row,
+      ],
+    );
+    final result = DemoEnergyBindings.forPage(
+      tree: adjusted,
+      homeId: homeId,
+      page: 'efficiency',
+      period: 'month',
+      localDate: '2026-09',
+      referenceLocalDate: '2026-09-30',
+    );
+
+    expect(result.bindings.single.text, r'$142.31');
+  });
+
+  test('zero cost retains illustrative provenance instead of no value', () {
+    final original = buildSeptember2026DemoTree(homeId: homeId);
+    final day = original.day('2026-09-30');
+    DemoBranch zero(DemoBranch branch) => DemoBranch(
+      deviceId: branch.deviceId,
+      name: branch.name,
+      period: branch.period,
+      cost: DemoCost.zero,
+      origin: branch.origin,
+      sourceId: branch.sourceId,
+    );
+    final adjusted = DemoMonthTree(
+      homeId: homeId,
+      referenceLocalDate: original.referenceLocalDate,
+      days: [
+        for (final row in original.days)
+          if (row == day)
+            DemoDayTree(
+              homeId: homeId,
+              period: day.period,
+              devices: day.devices.map(zero).toList(),
+              unattributed: zero(day.unattributed),
+            )
+          else
+            row,
+      ],
+    );
+    final dashboard = DemoEnergyBindings.forPage(
+      tree: adjusted,
+      homeId: homeId,
+      page: 'dashboard',
+      period: 'day',
+      localDate: '2026-09-30',
+      referenceLocalDate: '2026-09-30',
+    );
+
+    expect(dashboard.bindings.map((binding) => binding.text), [
+      r'$0.00',
+      r'$0.00',
+    ]);
+    expect(
+      dashboard.provenanceByBindingId.values.map((value) => value.status),
+      everyElement(DemoCostClaimStatus.illustrative),
+    );
+  });
+
   test('real mapped leaf changes day and month aggregates', () {
     final tree = buildSeptember2026DemoTree(homeId: homeId);
     final day = tree.day('2026-09-30');

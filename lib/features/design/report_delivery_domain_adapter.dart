@@ -63,6 +63,7 @@ class ReportDeliveryDomainAdapter {
   /// Reads the latest recipient-free request state for this exact preview.
   /// An optional ID binds the read to a request previously returned by queue.
   /// Without one, the result represents only the latest request on the preview.
+  /// A stale or expired preview can still carry a terminal delivery state.
   Future<ReportDeliveryReadbackResult> readback({
     required ReportPreviewDomainSnapshot preview,
     required Set<String> ownedApplianceIds,
@@ -76,9 +77,7 @@ class ReportDeliveryDomainAdapter {
     }
     final generation = _generation;
     bool contextChanged() => generation != _generation || _homeId != homeId;
-    if (preview.status != ReportPreviewStatus.current ||
-        !_now().toUtc().isBefore(preview.preview.expiresAt.toUtc()) ||
-        preview.preview.homeId.toLowerCase() != homeId.toLowerCase()) {
+    if (preview.preview.homeId.toLowerCase() != homeId.toLowerCase()) {
       return const ReportDeliveryReadbackResult(
         ReportDeliveryReadbackStatus.previewChanged,
       );
@@ -98,9 +97,7 @@ class ReportDeliveryDomainAdapter {
       if (current.homeId.toLowerCase() != homeId.toLowerCase() ||
           current.id != preview.preview.id ||
           current.snapshotSha256 != preview.snapshotSha256 ||
-          !_sameReportSelection(current, preview.preview) ||
-          current.stale ||
-          !_now().toUtc().isBefore(current.expiresAt.toUtc())) {
+          !_sameReportSelection(current, preview.preview)) {
         return const ReportDeliveryReadbackResult(
           ReportDeliveryReadbackStatus.previewChanged,
         );
