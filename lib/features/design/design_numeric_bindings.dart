@@ -118,8 +118,17 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
 
   final bindings = <DesignTextBinding>[];
   final unknown = <String>{};
+  const supportedHouseholdEvidence = <String>{'measured', 'estimated', 'mixed'};
+  final supportedEvidence = read.mode == DesignContextMode.sample
+      ? dashboard.evidenceBasis == 'synthetic' &&
+            dashboard.totals.evidenceBasis == 'synthetic'
+      : supportedHouseholdEvidence.contains(dashboard.evidenceBasis) &&
+            supportedHouseholdEvidence.contains(dashboard.totals.evidenceBasis);
   void add(String id, CloudEnergyMoney? money) {
-    if (money == null || dashboard.totals.availability == 'unavailable') {
+    if (money == null ||
+        !supportedEvidence ||
+        dashboard.availability == 'unavailable' ||
+        dashboard.totals.availability == 'unavailable') {
       unknown.add(id);
       return;
     }

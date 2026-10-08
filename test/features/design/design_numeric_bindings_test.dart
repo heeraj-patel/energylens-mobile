@@ -152,6 +152,100 @@ void main() {
     expect(result.encode(), isNot(contains('dashboard_text_014')));
   });
 
+  test('withholds household cost claims without supported typed evidence', () {
+    for (final basis in [
+      'unavailable',
+      'synthetic',
+      'inferred',
+      'user_supplied',
+    ]) {
+      for (final field in ['evidence_basis', 'totals']) {
+        final result = prepareDesignNumericBindings(
+          _dashboardRead(
+            useful: '1.00',
+            waste: '0.50',
+            alterDashboard: (json) {
+              if (field == 'totals') {
+                json['totals']['evidence_basis'] = basis;
+              } else {
+                json['evidence_basis'] = basis;
+              }
+            },
+            alterTrends: (json) {
+              if (field == 'totals') {
+                json['totals']['evidence_basis'] = basis;
+              } else {
+                json['evidence_basis'] = basis;
+              }
+            },
+          ),
+        );
+        expect(result.bindings, isEmpty, reason: '$field: $basis');
+        expect(result.unknownBindingIds, {
+          'dashboard_text_006',
+          'dashboard_text_009',
+        });
+      }
+    }
+    for (final field in ['availability', 'totals']) {
+      final result = prepareDesignNumericBindings(
+        _dashboardRead(
+          useful: '1.00',
+          waste: '0.50',
+          alterDashboard: (json) {
+            if (field == 'totals') {
+              json['totals']['availability'] = 'unavailable';
+            } else {
+              json['availability'] = 'unavailable';
+            }
+          },
+          alterTrends: (json) {
+            if (field == 'totals') {
+              json['totals']['availability'] = 'unavailable';
+            } else {
+              json['availability'] = 'unavailable';
+            }
+          },
+        ),
+      );
+      expect(result.bindings, isEmpty, reason: field);
+      expect(result.unknownBindingIds, {
+        'dashboard_text_006',
+        'dashboard_text_009',
+      });
+    }
+  });
+
+  test('keeps isolated sample values without adding visible source labels', () {
+    final dashboardJson = _body('dashboard', useful: '6.96', waste: '2.88');
+    final trendsJson = _body('energy_trends', useful: '6.96', waste: '2.88');
+    for (final json in [dashboardJson, trendsJson]) {
+      json['data_mode'] = 'sample';
+      json['fixture_revision'] = 'sample-v1';
+      json['evidence_basis'] = 'synthetic';
+      json['totals']['evidence_basis'] = 'synthetic';
+    }
+    final read = DesignContextRead(
+      accountId: 'sample',
+      homeId: homeA,
+      mode: DesignContextMode.sample,
+      page: 'dashboard',
+      value: DashboardDomainSnapshot(
+        CloudHouseholdDashboard.fromJson(dashboardJson, expectedHomeId: homeA),
+        CloudHouseholdEnergyTrends.fromJson(trendsJson, expectedHomeId: homeA),
+        isCurrent: () => true,
+      ),
+    );
+
+    final result = prepareDesignNumericBindings(read);
+
+    expect(result.bindings.map((binding) => binding.text), [
+      '\$6.96',
+      '\$2.88',
+    ]);
+    expect(result.encode(), isNot(contains('synthetic')));
+  });
+
   test('unclassified cost alone leaves useful and waste slots unknown', () {
     final read = _dashboardRead(
       alterDashboard: (json) {
