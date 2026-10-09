@@ -130,6 +130,7 @@ class DevicesDomainSnapshot {
   final CloudHouseholdEnergyTrends? sampleDayCosts;
   final bool Function()? isCurrent;
   bool get isSample => dataMode == CloudApplianceDataMode.sample;
+  bool get hasSeededRows => dataMode != CloudApplianceDataMode.household;
 
   /// Pages are frozen within this one read. A later read, mutation, sign-out,
   /// or home switch invalidates the result. The measured sort is explicitly a
@@ -240,7 +241,7 @@ class DevicesDomainRepository {
             metered,
             () => !stale(),
           );
-          if (!snapshot.isSample || source is! DevicesSampleCostSource) {
+          if (source is! DevicesSampleCostSource) {
             return snapshot;
           }
           CloudHouseholdEnergyTrends? sampleCosts;
@@ -253,10 +254,12 @@ class DevicesDomainRepository {
           if (stale()) return null;
           if (sampleCosts == null ||
               sampleCosts.homeId.toLowerCase() != homeId.toLowerCase() ||
-              sampleCosts.dataMode != 'sample' ||
+              sampleCosts.dataMode != snapshot.dataMode.name ||
               sampleCosts.fixtureRevision != snapshot.fixtureRevision ||
               sampleCosts.granularity != 'day' ||
-              sampleCosts.evidenceBasis != 'synthetic') {
+              (sampleCosts.evidenceBasis != 'synthetic' &&
+                  sampleCosts.evidenceBasis != 'mixed' &&
+                  sampleCosts.evidenceBasis != 'measured')) {
             return snapshot;
           }
           return DevicesDomainSnapshot(
@@ -477,7 +480,7 @@ DevicesDomainSnapshot _compose(
   if (appliances.length > DevicesDomainSnapshot.maxLocalInventory) {
     throw const FormatException('Devices inventory exceeds local envelope');
   }
-  if (applianceList.dataMode == CloudApplianceDataMode.sample
+  if (applianceList.dataMode != CloudApplianceDataMode.household
       ? applianceList.fixtureRevision == null ||
             !RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
                 .hasMatch(applianceList.fixtureRevision!)

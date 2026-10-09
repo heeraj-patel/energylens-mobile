@@ -49,6 +49,73 @@ String _withoutOuterChrome(String html) => html
     .replaceFirst(RegExp(r'<header\b[^>]*>.*?</header>', dotAll: true), '')
     .replaceFirst(RegExp(r'<nav\b[^>]*>.*?</nav>', dotAll: true), '');
 
+String _withoutApprovedRevealControls(String html) => html.replaceAll(
+  RegExp(
+    r'<button\b(?=[^>]*(?:id="devices-reveal"|id="efficiency-details-toggle"|aria-controls="program-detail-[^"]+"))[^>]*>.*?</button>',
+    dotAll: true,
+  ),
+  '',
+);
+
+String _withApprovedLabelChanges(String html, String pageId) {
+  if (pageId == 'dashboard') {
+    return html
+        .replaceFirst('>Energy Lens</span>', '>Cost</span>')
+        .replaceFirst('>Energy Trends</span>', '>Trends</span>')
+        .replaceFirst(
+          RegExp(
+            r'<button\b[^>]*>\s*<span class="">Quick Nap</span>\s*<span class="material-symbols-outlined text-\[16px\]">power_settings_new</span>\s*</button>',
+            dotAll: true,
+          ),
+          '',
+        )
+        .replaceFirst('Useful Power', 'Useful cost')
+        .replaceFirst('Wasted Power', 'Waste cost')
+        .replaceFirst('71% Productive load', '71% Useful')
+        .replaceFirst('29% Wasted Energy', '29% Waste')
+        .replaceFirst('Useful energy', 'Useful')
+        .replaceFirst('Wasted Energy', 'Waste');
+  }
+  if (pageId == 'devices') {
+    return html
+        .replaceFirst('Total Waste', 'Waste cost')
+        .replaceFirst('Productive', 'Useful cost')
+        .replaceFirst(
+          'Showing 1–10 of 18 devices',
+          'Showing 1–3 of 10 devices',
+        );
+  }
+  if (const {
+    'efficiency_away',
+    'efficiency_habits',
+    'efficiency_peak_rates',
+  }.contains(pageId)) {
+    const start = r'<!-- Hero Card: Identified Opportunity $18.60 -->';
+    const end = '<!-- Segmented Tabs Navigation -->';
+    final from = html.indexOf(start);
+    final to = html.indexOf(end, from);
+    expect(from, greaterThanOrEqualTo(0), reason: '$pageId hero marker');
+    expect(to, greaterThan(from), reason: '$pageId category marker');
+    return html.replaceRange(from, to, '');
+  }
+  return html;
+}
+
+String _withApprovedDashboardOrder(String html) {
+  const start = '<!-- Top Saving Move Card -->';
+  const next = '<!-- Energy Trends Section -->';
+  final before = html.indexOf(start);
+  final after = html.indexOf(next, before);
+  expect(before, greaterThanOrEqualTo(0));
+  expect(after, greaterThan(before));
+  final card = html.substring(before, after);
+  final withoutCard = html.replaceRange(before, after, '');
+  const end = '</main>';
+  final insertion = withoutCard.indexOf(end);
+  expect(insertion, greaterThan(after - card.length));
+  return withoutCard.replaceRange(insertion, insertion, card);
+}
+
 String _withSourceFallbackValues(String html, String pageId) {
   final approved = <String, Map<String, (String, String)>>{
     'dashboard': {
@@ -59,12 +126,7 @@ String _withSourceFallbackValues(String html, String pageId) {
       'devices_text_006': ('\$1.96', '\$1.14'),
       'devices_text_009': ('\$6.83', '\$6.67'),
     },
-    for (final page in <String>[
-      'efficiency',
-      'efficiency_away',
-      'efficiency_habits',
-      'efficiency_peak_rates',
-    ])
+    for (final page in <String>['efficiency'])
       page: {'${page}_text_009': ('\$37.42', '\$142.30')},
   };
   for (final entry in (approved[pageId] ?? {}).entries) {
@@ -109,7 +171,27 @@ void main() {
             _visibleText(packagedHtml),
             contains('Device cost · week to date'),
           );
+          expect(
+            packagedHtml,
+            contains('data-el-bind="dashboard_text_004">Cost</span>'),
+          );
+          expect(
+            packagedHtml,
+            contains('data-el-bind="dashboard_text_020">Trends</span>'),
+          );
+          expect(packagedHtml, isNot(contains('Quick Nap')));
+          expect(packagedHtml, isNot(contains('dashboard_action_002')));
           expect(packagedHtml, contains('data-el-chart="dashboard-trends"'));
+          final sourceButton = RegExp(
+            r'<button\b[^>]*>.*?Browse energy answers.*?</button>',
+            dotAll: true,
+          );
+          final packagedButton = RegExp(
+            r'<button\b[^>]*data-el-action="dashboard_action_007"[^>]*>.*?data-el-bind="dashboard_text_038">Browse energy answers</span>.*?</button>',
+            dotAll: true,
+          );
+          expect(sourceButton.hasMatch(sourceHtml), isTrue);
+          expect(packagedButton.hasMatch(packagedHtml), isTrue);
         }
 
         expect(_visibleText(sourceHtml), isNotEmpty, reason: pageId);
@@ -180,12 +262,21 @@ void main() {
           continue;
         }
         expect(
-          _visibleText(_withSourceFallbackValues(packagedHtml, pageId)),
+          _visibleText(
+            _withoutApprovedRevealControls(
+              _withSourceFallbackValues(packagedHtml, pageId),
+            ),
+          ),
           _visibleText(
             _withoutOuterChrome(
-              pageId == 'efficiency'
-                  ? sourceHtml.replaceFirst('Monthly Spend', 'Month to date')
-                  : sourceHtml,
+              _withApprovedLabelChanges(
+                pageId == 'efficiency'
+                    ? sourceHtml.replaceFirst('Monthly Spend', 'Month to date')
+                    : pageId == 'dashboard'
+                    ? _withApprovedDashboardOrder(sourceHtml)
+                    : sourceHtml,
+                pageId,
+              ),
             ),
           ),
           reason:
@@ -241,15 +332,26 @@ void main() {
       },
     );
 
-    test('Settings selected-home row has the approved binding ID', () async {
-      final html = await rootBundle.loadString(
-        'assets/design_pages/settings/app.html',
-      );
-      expect(
-        html,
-        contains('data-el-bind="settings_text_010">The Miller Home</p>'),
-      );
-    });
+    test(
+      'Settings profile has identity bindings and no unsupported controls',
+      () async {
+        final html = await rootBundle.loadString(
+          'assets/design_pages/settings/app.html',
+        );
+        expect(html, contains('data-el-bind="settings_text_010"></p>'));
+        expect(html, contains('data-el-bind="settings_text_016"></p>'));
+        expect(html, contains('data-el-bind="settings_text_019"></p>'));
+        expect(html, contains('data-el-settings-email-row hidden'));
+        expect(html, contains('data-el-settings-postal-row hidden'));
+        expect(html, isNot(contains('Alex Miller')));
+        expect(html, isNot(contains('Account Owner')));
+        for (var action = 5; action <= 10; action++) {
+          final actionId =
+              'settings_action_${action.toString().padLeft(3, '0')}';
+          expect(html, isNot(contains('data-el-action="$actionId"')));
+        }
+      },
+    );
 
     test('dashboard home switcher keeps its native route', () async {
       final html = await rootBundle.loadString(

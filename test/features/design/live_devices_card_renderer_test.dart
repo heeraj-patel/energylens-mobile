@@ -71,11 +71,39 @@ void main() {
         'id': 'metered-device',
         'name': 'Saved Device',
         'identity': '',
+        'wasteCost': null,
         'demoWaste': null,
       },
     ]);
     expect(script, isNot(contains('energyWh')));
     expect(script, isNot(contains('coveredSeconds')));
+  });
+
+  test('keeps real Useful unknown while rendering supported Waste cost', () {
+    const renderer = LiveDevicesCardRenderer();
+    final script = renderer.appendScript(
+      projection: _projection(homeA, [
+        const LiveDeviceRow(
+          applianceId: 'appliance-1',
+          name: 'Washer',
+          measuredBucket: null,
+          wasteCost: '\$0.25',
+        ),
+      ]),
+      generation: 1,
+    );
+    final encodedPayload = RegExp("atob\\('([^']+)'\\)")
+        .firstMatch(script)!
+        .group(1)!;
+    final payload = jsonDecode(
+      utf8.decode(base64Decode(encodedPayload)),
+    ) as Map<String, dynamic>;
+    expect(payload['rows'][0]['wasteCost'], '\$0.25');
+    expect(script, contains("useful.textContent = 'N/A'"));
+    expect(
+      script,
+      contains("waste.textContent = wasteText ?? 'N/A'"),
+    );
   });
 
   test(
@@ -98,6 +126,12 @@ void main() {
             measuredBucket: null,
             demoWasteMicrosPerDay: 80000,
           ),
+          const LiveDeviceRow(
+            applianceId: 'capped',
+            name: 'Capped device',
+            measuredBucket: null,
+            demoWasteMicrosPerDay: 1,
+          ),
         ]),
         generation: 1,
       );
@@ -112,18 +146,30 @@ void main() {
           'id': 'light',
           'name': 'Lamp',
           'identity': 'Acme L1',
-          'demoWaste': 'Demo estimate \$0.0008/day',
+          'wasteCost': null,
+          'demoWaste': '\$0.0008',
         },
         {
           'id': 'tv',
           'name': 'Television',
           'identity': '',
-          'demoWaste': 'Demo estimate \$0.08/day',
+          'wasteCost': null,
+          'demoWaste': '\$0.08',
+        },
+        {
+          'id': 'capped',
+          'name': 'Capped device',
+          'identity': '',
+          'wasteCost': null,
+          'demoWaste': '\$0.000001',
         },
       ]);
-      expect(script, contains("status.textContent = 'Status unknown'"));
+      expect(script, contains("status.closest('.flex.flex-col.items-end')?.remove()"));
       expect(script, contains("useful.textContent = 'N/A'"));
-      expect(script, contains("waste.textContent = row.demoWaste ?? 'N/A'"));
+      expect(
+        script,
+        contains("waste.textContent = wasteText ?? 'N/A'"),
+      );
     },
   );
 
@@ -152,6 +198,7 @@ void main() {
             manufacturer: 'Acme',
             model: 'F100',
             measuredBucket: null,
+            wasteCost: '\$0.25',
           ),
         ]),
         generation: 1,
@@ -202,10 +249,13 @@ assert.deepEqual(originals.map(node => node.outerHTML), originalHtml);
 let appended = Array.from(feed.children).slice(originals.length);
 assert.equal(appended[0].querySelector('.font-semibold.text-on-surface.truncate').textContent, '<img src=x onerror=alert(1)> ${evil}');
 assert.equal(appended[0].querySelector('img'), null);
-assert.equal(appended[0].textContent.includes('Status unknown'), true);
+assert.equal(appended[0].querySelector('.flex.flex-col.items-end'), null);
 assert.equal(appended[0].textContent.includes('Useful:N/A'), true);
 assert.equal(appended[0].textContent.includes('Waste:N/A'), true);
 assert.equal(appended[1].textContent.includes('Acme F100'), true);
+assert.equal(appended[1].textContent.includes('Waste:$0.25'), true);
+const supportedWaste = Array.from(appended[1].querySelectorAll('span')).find(node => node.textContent === '$0.25');
+assert.equal(supportedWaste.classList.contains('text-[#d97706]'), true);
 assert.equal(appended[0].textContent.includes('Idle (3h)'), false);
 assert.equal(appended[0].textContent.includes('$0.68'), false);
 assert.equal(appended[0].textContent.includes('$0.35'), false);

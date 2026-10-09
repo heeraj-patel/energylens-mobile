@@ -174,14 +174,15 @@ class CloudHouseholdEnergyMetadata {
     final dataMode = _enumValue(json['data_mode'], const {
       'household',
       'sample',
+      'mixed',
     }, 'data mode');
     final fixture = json['fixture_revision'];
     if (fixture != null && (fixture is! String || fixture.isEmpty)) {
       throw const FormatException('Invalid fixture revision');
     }
-    if (dataMode == 'sample' && fixture == null) {
+    if (dataMode != 'household' && fixture == null) {
       throw const FormatException(
-        'Sample response is missing fixture revision',
+        'Seeded response is missing fixture revision',
       );
     }
     final evidenceBasis = _enumValue(json['evidence_basis'], const {

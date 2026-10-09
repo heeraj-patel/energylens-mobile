@@ -30,12 +30,49 @@ for (const action of ['dashboard_action_004', 'dashboard_action_005', 'dashboard
     preventDefault() { prevented = true; },
     stopImmediatePropagation() { stopped = true; }
   });
+
   assert.equal(prevented, true);
   assert.equal(stopped, true);
 }
 assert.deepEqual(routes, [
   'dashboard_period:day', 'dashboard_period:week', 'dashboard_period:month'
 ]);
+''',
+        file.path,
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    } finally {
+      await file.delete();
+    }
+  });
+
+  test('Dashboard energy answers action opens Knowledge once', () async {
+    final script = buildDesignNavigationScript('dashboard');
+    final file = await File(
+      '${Directory.systemTemp.path}/energylens-dashboard-knowledge-${DateTime.now().microsecondsSinceEpoch}.json',
+    ).writeAsString(jsonEncode({'script': script}));
+    try {
+      final result = await Process.run('node', [
+        '-e',
+        r'''
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const {script} = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+const routes = [];
+let clickHandler;
+globalThis.document = {addEventListener(type, handler) { clickHandler = handler; }};
+globalThis.EnergyLensNavigation = {postMessage(route) { routes.push(route); }};
+eval(script);
+let prevented = false, stopped = false;
+const button = {dataset: {elAction: 'dashboard_action_007'}};
+clickHandler({
+  target: {closest(selector) { return selector === 'button' ? button : null; }},
+  preventDefault() { prevented = true; },
+  stopImmediatePropagation() { stopped = true; }
+});
+assert.equal(prevented, true);
+assert.equal(stopped, true);
+assert.deepEqual(routes, ['tips_knowledge']);
 ''',
         file.path,
       ]);
@@ -127,9 +164,64 @@ for (const [page, script] of Object.entries(scripts)) {
       category: page === 'settings_manual_device_entry' ? 'refrigerator' : 'dishwasher'
     }]);
     assert.deepEqual(photos, []);
+    if (page === 'settings_manage_devices') {
+      click(page + '_action_005');
+    }
   }
-  assert.deepEqual(routes, []);
+  assert.deepEqual(routes, page === 'settings_manage_devices' ? ['discover_devices'] : []);
 }
+''',
+        file.path,
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    } finally {
+      await file.delete();
+    }
+  });
+
+  test('manual category pills update the selected category used by save', () async {
+    final payload = {
+      'script': buildDesignNavigationScript('settings_manual_device_entry'),
+    };
+    final file = await File(
+      '${Directory.systemTemp.path}/energylens-manual-category-${DateTime.now().microsecondsSinceEpoch}.json',
+    ).writeAsString(jsonEncode(payload));
+    try {
+      final result = await Process.run('node', [
+        '-e',
+        r'''
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const script = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')).script;
+let clickHandler;
+const reviews = [];
+const pills = ['014', '015', '016', '017', '018', '019'].map((suffix, index) => ({
+  dataset: {elAction: 'settings_manual_device_entry_action_' + suffix},
+  selected: index === 0,
+  matches(selector) { return selector === 'button.type-pill[data-el-action]'; },
+  classList: {
+    toggle(name, value) { if (name === 'bg-primary-container') pills[index].selected = value; },
+    contains(name) { return name === 'bg-primary-container' && pills[index].selected; },
+  },
+  setAttribute(name, value) { if (name === 'aria-pressed') this.pressed = value; },
+  getAttribute(name) { return name === 'aria-pressed' && this.pressed === 'true' ? 'true' : null; },
+  cloneNode() { return {textContent: '', querySelectorAll() { return []; }}; },
+}));
+globalThis.document = {
+  addEventListener(_, handler) { clickHandler = handler; },
+  querySelectorAll() { return pills; },
+  getElementById(id) { return {value: ({'input-device-name': 'Living Room TV', 'input-manufacturer': 'Acme', 'input-model': 'T1'})[id]}; },
+};
+globalThis.EnergyLensDeviceReview = {postMessage(raw) { reviews.push(JSON.parse(raw)); }};
+globalThis.EnergyLensNavigation = {postMessage() { throw new Error('unexpected route'); }};
+globalThis.EnergyLensPhotoCapture = {postMessage() { throw new Error('unexpected photo'); }};
+eval(script);
+function click(button) { clickHandler({target: {closest(selector) { return selector === 'button' ? button : null; }}, preventDefault() {}, stopImmediatePropagation() {}}); }
+click(pills[2]);
+assert.equal(pills[0].selected, false);
+assert.equal(pills[2].selected, true);
+click({dataset: {elAction: 'settings_manual_device_entry_action_020'}});
+assert.equal(reviews[0].category, 'television');
 ''',
         file.path,
       ]);
@@ -256,7 +348,6 @@ for (const [page, script] of Object.entries(scripts)) {
     assert.deepEqual(routes, ['settings_manage_devices', 'report_preview']);
     assert.equal(click('Edit'), false);
   } else {
-    assert.equal(click('Quick Nap'), false);
     assert.equal(click('Monthly'), false);
     assert.deepEqual(routes, []);
   }

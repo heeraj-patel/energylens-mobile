@@ -19,11 +19,12 @@ class CloudAuxiliaryDomainLifecycle {
     required ReportDeliveryDomainAdapter deliveries,
   }) => CloudAuxiliaryDomainLifecycle._(drafts, reports, deliveries);
 
-  CloudAuxiliaryDomainLifecycle._(this.drafts, this._reports, this._deliveries);
+  CloudAuxiliaryDomainLifecycle._(this.drafts, this._reports, this._deliveries)
+    : archiveAction = null;
 
   factory CloudAuxiliaryDomainLifecycle.forCloudApi(
     CloudApiClient api,
-  ) => CloudAuxiliaryDomainLifecycle(
+  ) => CloudAuxiliaryDomainLifecycle._withArchive(
     drafts: DurableOnboardingDrafts(
       const SecureOnboardingDraftStorage(),
       OnboardingPersistenceRepository(CloudOnboardingPersistenceSource(api)),
@@ -32,11 +33,51 @@ class CloudAuxiliaryDomainLifecycle {
     deliveries: ReportDeliveryDomainAdapter(
       CloudReportDeliveryDomainSource(api),
     ),
+    archiveAction: (homeId, applianceId, idempotencyKey) async {
+      final current = await api.appliance(homeId, applianceId);
+      await api.archiveAppliance(
+        homeId,
+        applianceId,
+        ifMatch: current.etag,
+        idempotencyKey: idempotencyKey,
+      );
+    },
   );
+
+  CloudAuxiliaryDomainLifecycle._withArchive({
+    required this.drafts,
+    required this._reports,
+    required this._deliveries,
+    required this.archiveAction,
+  });
 
   final DurableOnboardingDrafts drafts;
   final ReportPreviewDomainRepository _reports;
   final ReportDeliveryDomainAdapter _deliveries;
+  final Future<void> Function(
+    String homeId,
+    String applianceId,
+    String idempotencyKey,
+  )?
+  archiveAction;
+
+  /// Archives a household appliance after verifying the active native scope.
+  Future<void> archiveAppliance(
+    String accountId,
+    String homeId,
+    String applianceId,
+    String idempotencyKey,
+  ) async {
+    _requireVerifiedScope(accountId, homeId);
+    final archive = archiveAction;
+    if (archive == null) throw StateError('Appliance archive is unavailable');
+    final generation = _generation;
+    await archive(homeId, applianceId, idempotencyKey);
+    if (generation != _generation || !isVerifiedScope(accountId, homeId)) {
+      throw StateError('Verified account or home changed while archiving');
+    }
+  }
+
   String? _accountId;
   String? _homeId;
   int _generation = 0;

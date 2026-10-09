@@ -132,7 +132,7 @@ ManageDevicesDomainSnapshot _compose(
   DateTime now,
 ) {
   final appliances = applianceList.appliances;
-  if (applianceList.dataMode == CloudApplianceDataMode.sample
+  if (applianceList.dataMode != CloudApplianceDataMode.household
       ? applianceList.fixtureRevision == null ||
             !RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
                 .hasMatch(applianceList.fixtureRevision!)

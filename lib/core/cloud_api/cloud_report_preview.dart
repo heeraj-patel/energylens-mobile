@@ -182,14 +182,22 @@ class CloudReportPreview {
     final rawAssumptions = json['assumptions'];
     final rawItems = json['items'];
     final rawLatestDelivery = json['latest_delivery'];
+    final version = json['schema_version'];
+    final measuredStatus = json['measured_status'];
+    final recommendationsStatus = json['recommendations_status'];
+    final validStatuses =
+        (version == 'manual-preview/v1' &&
+            measuredStatus == 'not_included' &&
+            recommendationsStatus == 'not_included') ||
+        (version == 'manual-preview/v2' &&
+            {'unavailable', 'partial'}.contains(measuredStatus) &&
+            {'unavailable', 'available'}.contains(recommendationsStatus));
     if (!_uuid.hasMatch(id) ||
         !_digest.hasMatch(digest) ||
         responseHome.toLowerCase() != homeId.toLowerCase() ||
-        json['schema_version'] != 'manual-preview/v1' ||
+        !validStatuses ||
         json['scope'] != 'selected_appliances' ||
         json['home_total_status'] != 'unavailable_incomplete_scope' ||
-        json['measured_status'] != 'not_included' ||
-        json['recommendations_status'] != 'not_included' ||
         !expires.isAfter(created) ||
         stale is! bool ||
         rawAssumptions is! List ||

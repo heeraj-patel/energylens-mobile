@@ -1,6 +1,6 @@
 import 'cloud_appliance.dart';
 
-enum CloudApplianceDataMode { household, sample }
+enum CloudApplianceDataMode { household, sample, mixed }
 
 /// An appliance inventory response with its same-route source provenance.
 ///
@@ -22,4 +22,6 @@ class CloudApplianceList {
   final String? inventoryRevision;
 
   bool get isSample => dataMode == CloudApplianceDataMode.sample;
+  bool get hasSampleRows => dataMode != CloudApplianceDataMode.household;
+  bool get hasSeededRows => hasSampleRows;
 }

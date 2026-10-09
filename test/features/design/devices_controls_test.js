@@ -61,10 +61,12 @@ function makePage() {
     } else if (number <= 10) sorts.buttons[number] = button;
   }
   const summary = new Element();
+  const reveal = new Element();
   const document = {
     getElementById(id) {
       return id === 'devices-feed' ? feed :
-        id === 'status-filter-group' ? filters : id === 'sort-pill-group' ? sorts : null;
+        id === 'status-filter-group' ? filters :
+        id === 'sort-pill-group' ? sorts : id === 'devices-reveal' ? reveal : null;
     },
     querySelector(selector) {
       if (selector.includes('devices_text_092')) return summary;
@@ -97,23 +99,28 @@ function makePage() {
       {target: {closest: () => buttons[number]}});
     else buttons[number].click();
   };
-  return {feed, buttons, filters, summary, visible, click};
+  return {feed, buttons, filters, reveal, summary, visible, click};
 }
 
-test('filters, sorts, and paginates the cards actually present', () => {
+test('filters, sorts, and reveals the cards actually present', () => {
   const page = makePage();
-  assert.equal(page.summary.textContent, 'Showing 1–5 of 10 devices');
-  assert.deepEqual(page.visible(), ['B', 'C', 'E', 'I', 'F']);
+  assert.equal(page.summary.textContent, 'Showing 1–3 of 10 devices');
+  assert.deepEqual(page.visible(), ['B', 'C', 'E']);
+  assert.equal(page.reveal.textContent, 'Show all 10 devices');
+  assert.equal(page.reveal.attributes['aria-expanded'], 'false');
   assert.equal(page.filters.buttons[4].badge.textContent, '10');
   assert.equal(page.filters.buttons[5].badge.textContent, '(4)');
   assert.equal(page.filters.buttons[6].badge.textContent, '(3)');
   assert.equal(page.filters.buttons[7].badge.textContent, '(3)');
-  page.click(14);
-  assert.equal(page.summary.textContent, 'Showing 6–10 of 10 devices');
-  assert.deepEqual(page.visible(), ['G', 'A', 'H', 'D', 'J']);
+  page.reveal.click();
+  assert.equal(page.summary.textContent, 'Showing 1–10 of 10 devices');
+  assert.deepEqual(page.visible(), ['B', 'C', 'E', 'I', 'F', 'G', 'A', 'H', 'D', 'J']);
+  assert.equal(page.reveal.textContent, 'Show fewer devices');
+  assert.equal(page.reveal.attributes['aria-expanded'], 'true');
   page.click(6);
   assert.equal(page.summary.textContent, 'Showing 1–3 of 3 devices');
   assert.deepEqual(page.visible(), ['B', 'E', 'H']);
+  assert.equal(page.reveal.hidden, true);
   page.click(8);
   assert.deepEqual(page.visible(), ['B', 'E', 'H']);
 });
@@ -128,7 +135,7 @@ test('live cards with unknown values stay in All and sort after known cost', () 
   assert.equal(page.filters.buttons[4].badge.textContent, '11');
   assert.equal(page.filters.buttons[5].badge.textContent, '(4)');
   page.click(8);
-  page.click(14);
-  page.click(14);
-  assert.deepEqual(page.visible(), ['Live Device']);
+  assert.equal(page.reveal.textContent, 'Show all 11 devices');
+  page.reveal.click();
+  assert.equal(page.visible().at(-1), 'Live Device');
 });

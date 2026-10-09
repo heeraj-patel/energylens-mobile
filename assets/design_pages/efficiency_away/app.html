@@ -121,7 +121,7 @@
       min-height: max(884px, 100dvh);
     }
   </style>
-<link rel="stylesheet" href="../shared/fonts.css"><script src="../shared/chrome.js"></script></head>
+<link rel="stylesheet" href="../shared/fonts.css"><script src="../shared/chrome.js"></script><link rel="stylesheet" href="../shared/mobile_refinements.css"></head>
 <body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen">
 <!-- Fixed Header -->
 <div id="el-header"></div>
@@ -133,68 +133,15 @@
 <div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary text-[24px]" style="font-variation-settings: &quot;FILL&quot; 1;">insights</span><h1 class="text-[22px] font-headline-lg font-semibold tracking-tight uppercase text-on-surface" data-el-bind="efficiency_away_text_003">Efficiency Insights</h1></div>
 <span class="px-space-sm py-1 rounded-full bg-surface-container-high text-primary font-label-md text-[11px] tracking-wide uppercase font-semibold border border-surface-container-highest/60" data-el-bind="efficiency_away_text_004">Monthly Overview</span>
 </div>
-<!-- Hero Card: Identified Opportunity $18.60 -->
-<div class="relative overflow-hidden rounded-xl bg-surface-container-lowest border border-surface-container-highest shadow-sm p-space-md space-y-space-sm">
-<div class="absolute -right-6 -bottom-6 w-32 h-32 rounded-full bg-primary-container/30 blur-2xl pointer-events-none"></div>
-<div class="flex items-start justify-between">
-<div class="space-y-1">
-<h3 class="font-label-md text-[16px] font-semibold text-on-surface tracking-tight flex items-center gap-1.5"><span class="" data-el-bind="efficiency_away_text_005">Identified Opportunity</span><span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span></h3>
-<h2 class="font-headline-lg text-[32px] leading-tight text-on-surface font-semibold tracking-tight"><span class="text-amber-700" data-el-bind="efficiency_away_text_006">$18.60</span></h2>
-</div>
-<div class="w-12 h-12 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shadow-xs"><span class="material-symbols-outlined text-[26px]" style="font-variation-settings: 'FILL' 1;">savings</span></div>
-</div>
-<p class="font-body-md text-label-md text-on-surface-variant leading-relaxed" data-el-bind="efficiency_away_text_007">
-          Identified monthly waste across 4 routine patterns. Recoverable with minor adjustments.
-        </p>
-<!-- 2-Column Metrics -->
-<div class="grid grid-cols-2 gap-space-sm pt-space-xs">
-<div class="p-space-sm rounded-lg bg-surface-container-low border border-surface-container-highest/60"><div class="flex items-center gap-1 text-on-surface-variant mb-1"><span class="material-symbols-outlined text-[15px]">home</span><span class="font-label-md text-[11px] uppercase tracking-wider" data-el-bind="efficiency_away_text_008">Monthly Spend</span></div><p class="font-headline-lg text-[20px] text-on-surface font-semibold leading-tight" data-el-bind="efficiency_away_text_009">$37.42</p></div>
-<div class="p-space-sm rounded-lg bg-surface-container-low border border-emerald-500/50"><div class="flex items-center gap-1 text-emerald-700 mb-1"><span class="material-symbols-outlined text-[15px]" style="font-variation-settings: 'FILL' 1;">eco</span><span class="font-label-md text-[11px] uppercase tracking-wider text-emerald-700 font-medium" data-el-bind="efficiency_away_text_010">Optimal Base</span></div><p class="font-headline-lg text-[20px] text-emerald-700 font-semibold leading-tight" data-el-bind="efficiency_away_text_011">$123.70</p></div>
-</div>
-</div>
-<!-- Avoidable Leak Breakdown Section -->
-<div class="rounded-xl bg-surface-container-lowest border border-surface-container-highest shadow-sm p-space-md space-y-space-sm">
-<div class="flex items-center justify-between"><div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-secondary text-[20px]">water_loss</span><h3 class="font-label-md text-[16px] font-semibold tracking-tight text-on-surface" data-el-bind="efficiency_away_text_012">Avoidable Leak Breakdown</h3></div><span class="px-space-xs py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-md text-[11px] font-semibold" data-el-bind="efficiency_away_text_013">13% of Bill</span></div>
-<!-- Segmented Multi-color Bar -->
-<div class="w-full h-3 rounded-full bg-surface-container-high overflow-hidden flex shadow-inner">
-<div class="h-full bg-tertiary-container transition-all duration-300" style="width: 17.7%;" title="Night: $3.30"></div>
-<div class="h-full bg-primary-container transition-all duration-300" style="width: 22.5%;" title="Away: $4.20"></div>
-<div class="h-full bg-amber-400 transition-all duration-300" style="width: 25.3%;" title="Peak: $4.70"></div>
-<div class="h-full bg-emerald-500 transition-all duration-300" style="width: 34.5%;" title="Habits: $6.40"></div>
-</div>
-<!-- Segment Legend -->
-<div class="grid grid-cols-4 gap-1 pt-1 text-center">
-<div class="flex flex-col items-center">
-<span class="inline-block w-2 h-2 rounded-full bg-tertiary-container mb-0.5"></span>
-<span class="font-label-md text-[11px] text-on-surface-variant" data-el-bind="efficiency_away_text_014">Night</span>
-<span class="font-label-md text-[12px] font-semibold text-on-surface" data-el-bind="efficiency_away_text_015">$3.30</span>
-</div>
-<div class="flex flex-col items-center">
-<span class="inline-block w-2 h-2 rounded-full bg-primary-container mb-0.5"></span>
-<span class="font-label-md text-[11px] text-on-surface-variant" data-el-bind="efficiency_away_text_016">Away</span>
-<span class="font-label-md text-[12px] font-semibold text-on-surface" data-el-bind="efficiency_away_text_017">$4.20</span>
-</div>
-<div class="flex flex-col items-center">
-<span class="inline-block w-2 h-2 rounded-full bg-amber-400 mb-0.5"></span>
-<span class="font-label-md text-[11px] text-on-surface-variant" data-el-bind="efficiency_away_text_018">Peak</span>
-<span class="font-label-md text-[12px] font-semibold text-on-surface" data-el-bind="efficiency_away_text_019">$4.70</span>
-</div>
-<div class="flex flex-col items-center">
-<span class="inline-block w-2 h-2 rounded-full bg-emerald-500 mb-0.5"></span>
-<span class="font-label-md text-[11px] text-on-surface-variant" data-el-bind="efficiency_away_text_020">Habits</span>
-<span class="font-label-md text-[12px] font-semibold text-on-surface" data-el-bind="efficiency_away_text_021">$6.40</span>
-</div>
-</div>
-</div>
 <!-- Segmented Tabs Navigation -->
 <div class="space-y-space-xs pt-space-xs">
-<div class="flex items-center justify-between px-0.5"><h3 class="font-label-md text-[13px] text-on-surface font-semibold uppercase tracking-wider" data-el-bind="efficiency_away_text_022">Usage Cost by</h3><span class="font-label-md text-[11px] text-primary flex items-center gap-0.5 font-semibold" data-el-bind="efficiency_away_text_023"><span class="material-symbols-outlined text-[13px]">touch_app</span> Select category</span></div>
+<div class="flex items-center justify-between px-0.5"><h2 class="font-label-md text-[13px] text-on-surface font-semibold uppercase tracking-wider" data-el-bind="efficiency_away_text_022">Usage Cost by</h2><span class="font-label-md text-[11px] text-primary flex items-center gap-0.5 font-semibold" data-el-bind="efficiency_away_text_023"><span class="material-symbols-outlined text-[13px]">touch_app</span> Select category</span></div>
 <div class="grid grid-cols-4 gap-1 p-1 rounded-xl bg-surface-container-high border border-surface-container-highest/60"><button class="tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface-variant hover:text-on-surface font-medium" data-tab-target="night" type="button" data-el-action="efficiency_away_action_003"><span class="material-symbols-outlined text-[16px]">bedtime</span><span class="" data-el-bind="efficiency_away_text_024">Night</span></button><button class="tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface bg-surface-container-lowest shadow-sm font-semibold" data-tab-target="away" type="button" data-el-action="efficiency_away_action_004"><span class="material-symbols-outlined text-[16px] text-primary">flight_takeoff</span><span class="" data-el-bind="efficiency_away_text_025">Away</span></button><button class="tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface-variant hover:text-on-surface font-medium" data-tab-target="peak" type="button" data-el-action="efficiency_away_action_005"><span class="material-symbols-outlined text-[16px]">electric_meter</span><span class="" data-el-bind="efficiency_away_text_026">Peak Rates</span></button><button class="tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface-variant hover:text-on-surface font-medium" data-tab-target="habits" type="button" data-el-action="efficiency_away_action_006"><span class="material-symbols-outlined text-[16px]">tune</span><span class="" data-el-bind="efficiency_away_text_027">Habits</span></button></div>
 </div>
 <!-- Tab Panel 1: Night Hours (Active by default) -->
 <section class="tab-panel space-y-space-sm hidden" id="panel-night"></section>
 <!-- Tab Panel 2: Away (Hidden by default) -->
-<section class="tab-panel space-y-space-sm block" id="panel-away"><div class="flex items-center justify-between"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-lg bg-primary-container/40 text-primary flex items-center justify-center shadow-xs"><span class="material-symbols-outlined text-[18px]">flight_takeoff</span></div><div><h3 class="font-label-md text-[16px] font-semibold text-on-surface tracking-tight leading-tight" data-el-bind="efficiency_away_text_028">While You're Away</h3><p class="font-body-md text-[12px] text-on-surface-variant" data-el-bind="efficiency_away_text_029">Idle draw detected during vacant hours</p></div></div><span class="px-space-sm py-1 rounded-full bg-amber-100 text-amber-700 font-label-md text-label-md font-semibold" data-el-bind="efficiency_away_text_030">$4.20</span></div><div class="grid grid-cols-2 gap-space-sm p-space-sm rounded-xl bg-surface-container-low border border-surface-container-highest/60"><div class="flex flex-col"><span class="font-label-md text-[11px] text-on-surface-variant uppercase tracking-wider" data-el-bind="efficiency_away_text_031">Detected Away Events</span><span class="font-headline-lg text-[18px] font-semibold text-on-surface" data-el-bind="efficiency_away_text_032">3 events (38 hrs)</span></div><div class="flex flex-col"><span class="font-label-md text-[11px] text-amber-700 uppercase tracking-wider font-medium" data-el-bind="efficiency_away_text_033">Avoidable Waste</span><span class="font-headline-lg text-[18px] font-semibold text-amber-700" data-el-bind="efficiency_away_text_034">$4.20 leak</span></div></div><div class="rounded-xl bg-surface-container-lowest border border-surface-container-highest shadow-sm p-space-md space-y-space-xs"><div class="flex items-start justify-between"><div class="flex items-center gap-space-sm"><div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary"><span class="material-symbols-outlined text-[20px]">desktop_windows</span></div><div><h4 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_035">Home Office Setup &amp; Monitors</h4><span class="font-body-md text-[12px] text-amber-700 flex items-center gap-0.5 font-medium" data-el-bind="efficiency_away_text_036"><span class="material-symbols-outlined text-[13px]">electrical_services</span> Standby &amp; Idle Workstation</span></div></div><span class="px-space-xs py-0.5 rounded bg-amber-100 text-amber-700 font-label-md text-[12px] font-semibold" data-el-bind="efficiency_away_text_037">+$1.25</span></div><div class="mt-space-xs p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-xs"><span class="material-symbols-outlined text-primary text-[17px] mt-0.5">tips_and_updates</span><p class="font-body-md text-[12px] leading-relaxed text-on-surface-variant" data-el-bind="efficiency_away_text_038">Smart strip auto-powers dual displays and desk dock after 30 minutes of room stillness.</p></div></div><div class="rounded-xl bg-surface-container-lowest border border-surface-container-highest shadow-sm p-space-md space-y-space-xs"><div class="flex items-start justify-between"><div class="flex items-center gap-space-sm"><div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary"><span class="material-symbols-outlined text-[20px]">water_heater</span></div><div><h4 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_039">Water Heater Standby Re-heat</h4><span class="font-body-md text-[12px] text-amber-700 flex items-center gap-0.5 font-medium" data-el-bind="efficiency_away_text_040"><span class="material-symbols-outlined text-[13px]">thermostat_auto</span> Unattended Temperature Maintenance</span></div></div><span class="px-space-xs py-0.5 rounded bg-amber-100 text-amber-700 font-label-md text-[12px] font-semibold" data-el-bind="efficiency_away_text_041">+$2.15</span></div><div class="mt-space-xs p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-xs"><span class="material-symbols-outlined text-primary text-[17px] mt-0.5">tips_and_updates</span><p class="font-body-md text-[12px] leading-relaxed text-on-surface-variant" data-el-bind="efficiency_away_text_042">Set vacation eco-mode or setback thermostat when leaving for more than 24 hours.</p></div></div><div class="rounded-xl bg-surface-container-lowest border border-surface-container-highest shadow-sm p-space-md space-y-space-xs"><div class="flex items-start justify-between"><div class="flex items-center gap-space-sm"><div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary"><span class="material-symbols-outlined text-[20px]">tv</span></div><div><h4 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_043">Media Console &amp; Living Room</h4><span class="font-body-md text-[12px] text-amber-700 flex items-center gap-0.5 font-medium" data-el-bind="efficiency_away_text_044"><span class="material-symbols-outlined text-[13px]">power_settings_new</span> Continuous Phantom Leak</span></div></div><span class="px-space-xs py-0.5 rounded bg-amber-100 text-amber-700 font-label-md text-[12px] font-semibold" data-el-bind="efficiency_away_text_045">+$0.80</span></div><div class="mt-space-xs p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-xs"><span class="material-symbols-outlined text-primary text-[17px] mt-0.5">tips_and_updates</span><p class="font-body-md text-[12px] leading-relaxed text-on-surface-variant" data-el-bind="efficiency_away_text_046">Audio subwoofer and gaming console idle in warm sleep mode.</p></div></div></section>
+<section class="tab-panel space-y-space-sm block" id="panel-away"><div class="flex items-center justify-between"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-lg bg-primary-container/40 text-primary flex items-center justify-center shadow-xs"><span class="material-symbols-outlined text-[18px]">flight_takeoff</span></div><div><h2 class="font-label-md text-[16px] font-semibold text-on-surface tracking-tight leading-tight" data-el-bind="efficiency_away_text_028">While You're Away</h2></div></div></div><div class="grid grid-cols-1 gap-space-sm p-space-sm rounded-xl bg-surface-container-low border border-surface-container-highest/60"><div class="flex flex-col"><span class="font-label-md text-[11px] text-on-surface-variant uppercase tracking-wider" data-el-bind="efficiency_away_text_031">Detected Away Events</span><span class="font-headline-lg text-[18px] font-semibold text-on-surface" data-el-bind="efficiency_away_text_032">3 events (38 hrs)</span></div></div><div class="rounded-xl bg-surface-container-lowest border border-surface-container-highest shadow-sm p-space-md space-y-space-xs"><div class="flex items-start justify-between"><div class="flex items-center gap-space-sm"><div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary"><span class="material-symbols-outlined text-[20px]">desktop_windows</span></div><div><h3 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_035">Home Office Setup &amp; Monitors</h3></div></div><span class="px-space-xs py-0.5 rounded bg-amber-100 text-amber-700 font-label-md text-[12px] font-semibold" data-el-bind="efficiency_away_text_037">+$1.25</span></div><div class="mt-space-xs p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-xs"><span class="material-symbols-outlined text-primary text-[17px] mt-0.5">tips_and_updates</span><p class="font-body-md text-[12px] leading-relaxed text-on-surface-variant" data-el-bind="efficiency_away_text_038">Smart strip auto-powers dual displays and desk dock after 30 minutes of room stillness.</p></div></div><div class="rounded-xl bg-surface-container-lowest border border-surface-container-highest shadow-sm p-space-md space-y-space-xs"><div class="flex items-start justify-between"><div class="flex items-center gap-space-sm"><div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary"><span class="material-symbols-outlined text-[20px]">water_heater</span></div><div><h3 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_039">Water Heater Standby Re-heat</h3></div></div><span class="px-space-xs py-0.5 rounded bg-amber-100 text-amber-700 font-label-md text-[12px] font-semibold" data-el-bind="efficiency_away_text_041">+$2.15</span></div><div class="mt-space-xs p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-xs"><span class="material-symbols-outlined text-primary text-[17px] mt-0.5">tips_and_updates</span><p class="font-body-md text-[12px] leading-relaxed text-on-surface-variant" data-el-bind="efficiency_away_text_042">Set vacation eco-mode or setback thermostat when leaving for more than 24 hours.</p></div></div><div class="rounded-xl bg-surface-container-lowest border border-surface-container-highest shadow-sm p-space-md space-y-space-xs"><div class="flex items-start justify-between"><div class="flex items-center gap-space-sm"><div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary"><span class="material-symbols-outlined text-[20px]">tv</span></div><div><h3 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_043">Media Console &amp; Living Room</h3></div></div><span class="px-space-xs py-0.5 rounded bg-amber-100 text-amber-700 font-label-md text-[12px] font-semibold" data-el-bind="efficiency_away_text_045">+$0.80</span></div><div class="mt-space-xs p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-xs"><span class="material-symbols-outlined text-primary text-[17px] mt-0.5">tips_and_updates</span><p class="font-body-md text-[12px] leading-relaxed text-on-surface-variant" data-el-bind="efficiency_away_text_046">Audio subwoofer and gaming console idle in warm sleep mode.</p></div></div></section>
 <!-- Tab Panel 3: Peak Rates (Hidden by default) -->
 <section class="tab-panel space-y-space-sm hidden" id="panel-peak">
 <div class="flex items-center justify-between">
@@ -203,7 +150,7 @@
 <span class="material-symbols-outlined text-[18px]">bolt</span>
 </div>
 <div>
-<h3 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_047">Peak Rates &amp; Weather Shifts</h3>
+<h2 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_047">Peak Rates &amp; Weather Shifts</h2>
 <p class="font-body-md text-[12px] text-on-surface-variant" data-el-bind="efficiency_away_text_048">Grid surge pricing windows (4 PM – 8 PM)</p>
 </div>
 </div>
@@ -219,7 +166,7 @@
 <span class="material-symbols-outlined text-[20px]">air</span>
 </div>
 <div>
-<h4 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_050">HVAC High Heat Pre-Cooling</h4>
+<h3 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_050">HVAC High Heat Pre-Cooling</h3>
 <span class="font-body-md text-[12px] text-on-surface-variant flex items-center gap-0.5" data-el-bind="efficiency_away_text_051">
 <span class="material-symbols-outlined text-[13px]">wb_sunny</span>
                   Mid-afternoon thermal surge
@@ -245,7 +192,7 @@
 <span class="material-symbols-outlined text-[20px]">ev_station</span>
 </div>
 <div>
-<h4 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_054">Dishwasher &amp; EV Charger</h4>
+<h3 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_054">Dishwasher &amp; EV Charger</h3>
 <span class="font-body-md text-[12px] text-on-surface-variant flex items-center gap-0.5" data-el-bind="efficiency_away_text_055">
 <span class="material-symbols-outlined text-[13px]">schedule</span>
                   Running during tier-3 rate spikes
@@ -272,7 +219,7 @@
 <span class="material-symbols-outlined text-[18px]">routine</span>
 </div>
 <div>
-<h3 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_058">Everyday Habits</h3>
+<h2 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_058">Everyday Habits</h2>
 <p class="font-body-md text-[12px] text-on-surface-variant" data-el-bind="efficiency_away_text_059">Frequent small cycles adding up</p>
 </div>
 </div>
@@ -288,7 +235,7 @@
 <span class="material-symbols-outlined text-[20px]">local_laundry_service</span>
 </div>
 <div>
-<h4 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_061">Washer &amp; Dryer Half-Loads</h4>
+<h3 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_061">Washer &amp; Dryer Half-Loads</h3>
 <span class="font-body-md text-[12px] text-on-surface-variant flex items-center gap-0.5" data-el-bind="efficiency_away_text_062">
 <span class="material-symbols-outlined text-[13px]">water</span>
                   5 extra cycles logged this week
@@ -314,7 +261,7 @@
 <span class="material-symbols-outlined text-[20px]">kitchen</span>
 </div>
 <div>
-<h4 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_065">Kitchen Refrigerator Temperature</h4>
+<h3 class="font-label-md text-label-md font-semibold text-on-surface leading-tight" data-el-bind="efficiency_away_text_065">Kitchen Refrigerator Temperature</h3>
 <span class="font-body-md text-[12px] text-on-surface-variant flex items-center gap-0.5" data-el-bind="efficiency_away_text_066">
 <span class="material-symbols-outlined text-[13px]">ac_unit</span>
                   Freezer calibrated 4°F below optimal

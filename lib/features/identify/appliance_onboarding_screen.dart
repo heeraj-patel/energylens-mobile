@@ -977,7 +977,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
         ),
       );
       if (mounted && Navigator.of(context).canPop()) {
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(saved);
       }
     } on CloudApiException catch (error) {
       if (mounted) {

@@ -4,6 +4,43 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 Set<String> _approvedRemovedIds(String page, String category) {
+  if (page == 'dashboard' && category == 'bindings') {
+    return {'dashboard_text_017'};
+  }
+  if (page == 'dashboard' && category == 'actions') {
+    return {'dashboard_action_002'};
+  }
+  if (page == 'efficiency' && category == 'bindings') {
+    return {
+      for (final n in [29, 30, 32, 36])
+        'efficiency_text_${n.toString().padLeft(3, '0')}',
+    };
+  }
+  if (category == 'bindings' && page.startsWith('efficiency_')) {
+    final removed = switch (page) {
+      'efficiency_away' => [29, 30, 33, 34, 36, 40, 44],
+      'efficiency_habits' => [29, 30, 33, 34, 37, 38, 40, 44, 48],
+      'efficiency_peak_rates' => [29, 30, 31, 32, 33, 34, 35, 40, 44],
+      _ => const <int>[],
+    };
+    return {
+      for (var n = 5; n <= 21; n++)
+        '${page}_text_${n.toString().padLeft(3, '0')}',
+      for (final n in removed) '${page}_text_${n.toString().padLeft(3, '0')}',
+    };
+  }
+  if (page == 'settings' && category == 'bindings') {
+    return {
+      for (var n in [7, 8, 11, 12, 13, 14, 17, 20, 23])
+        '${page}_text_${n.toString().padLeft(3, '0')}',
+    };
+  }
+  if (page == 'settings' && category == 'actions') {
+    return {
+      for (var n = 5; n <= 10; n++)
+        '${page}_action_${n.toString().padLeft(3, '0')}',
+    };
+  }
   if (!const {
     'settings_manage_devices',
     'settings_manual_device_entry',

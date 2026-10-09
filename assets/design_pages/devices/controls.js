@@ -3,18 +3,18 @@
   const filters = document.getElementById('status-filter-group');
   const sorts = document.getElementById('sort-pill-group');
   const summary = document.querySelector('[data-el-bind="devices_text_092"]');
-  if (!feed || !filters || !sorts || !summary) return;
+  const reveal = document.getElementById('devices-reveal');
+  if (!feed || !filters || !sorts || !summary || !reveal) return;
 
   const action = number => '[data-el-action="devices_action_' + String(number).padStart(3, '0') + '"]';
-  const pageButtons = [11, 12, 13, 14].map(number => document.querySelector(action(number)));
   const filterActions = {devices_action_004: 'all', devices_action_005: 'active',
     devices_action_006: 'idle', devices_action_007: 'standby'};
   const sortActions = {devices_action_008: 'name', devices_action_009: 'usage',
     devices_action_010: 'waste'};
   let filter = 'all';
   let sort = 'waste';
-  let page = 0;
-  const pageSize = 5;
+  let expanded = false;
+  const previewCount = 3;
 
   function money(text) {
     const match = /^\$([0-9]+(?:\.[0-9]+)?)$/.exec(text.trim());
@@ -66,66 +66,45 @@
       }
       return a.name.localeCompare(b.name);
     });
-    const pageCount = Math.max(1, Math.ceil(matches.length / pageSize));
-    page = Math.min(page, pageCount - 1);
     for (const item of rows) {
       item.card.hidden = true;
       item.card.style.display = 'none';
     }
     for (const item of matches) feed.appendChild(item.card);
-    const start = page * pageSize;
-    for (const item of matches.slice(start, start + pageSize)) {
+    const visibleCount = expanded ? matches.length : Math.min(previewCount, matches.length);
+    for (const item of matches.slice(0, visibleCount)) {
       item.card.hidden = false;
       item.card.style.display = '';
     }
-    summary.textContent = 'Showing ' + (matches.length ? start + 1 : 0) + '–' +
-      Math.min(start + pageSize, matches.length) + ' of ' + matches.length + ' devices';
-
-    const firstPage = Math.floor(page / 2) * 2;
-    const [previous, first, second, next] = pageButtons;
-    const disable = (button, value) => {
-      if (!button) return;
-      button.disabled = value;
-      button.classList.toggle('opacity-50', value);
-      button.classList.toggle('cursor-not-allowed', value);
-    };
-    disable(previous, page === 0);
-    disable(next, page >= pageCount - 1);
-    for (const [button, index] of [[first, firstPage], [second, firstPage + 1]]) {
-      if (!button) continue;
-      button.textContent = String(index + 1);
-      disable(button, index >= pageCount);
-      button.setAttribute('aria-current', index === page ? 'page' : 'false');
-      button.classList.toggle('bg-primary', index === page);
-      button.classList.toggle('text-on-primary', index === page);
-      button.classList.toggle('bg-surface-container-lowest', index !== page);
-      button.classList.toggle('text-on-surface', index !== page);
-    }
+    summary.textContent = 'Showing ' + (matches.length ? 1 : 0) + '–' +
+      visibleCount + ' of ' + matches.length + ' devices';
+    reveal.hidden = matches.length <= previewCount;
+    reveal.style.display = reveal.hidden ? 'none' : '';
+    reveal.textContent = expanded ? 'Show fewer devices' :
+      'Show all ' + matches.length + ' devices';
+    reveal.setAttribute('aria-expanded', String(expanded));
   }
 
   filters.addEventListener('click', event => {
     const selected = filterActions[event.target.closest('button')?.dataset.elAction];
     if (!selected) return;
     filter = selected;
-    page = 0;
+    expanded = false;
     render();
   });
   sorts.addEventListener('click', event => {
     const selected = sortActions[event.target.closest('button')?.dataset.elAction];
     if (!selected) return;
     sort = selected;
-    page = 0;
+    expanded = false;
     render();
   });
-  pageButtons.forEach((button, index) => button?.addEventListener('click', () => {
-    if (button.disabled) return;
-    if (index === 0) page--;
-    else if (index === 3) page++;
-    else page = Math.floor(page / 2) * 2 + index - 1;
+  reveal.addEventListener('click', () => {
+    expanded = !expanded;
     render();
-  }));
+  });
   feed.addEventListener('energylens:devices-changed', () => {
-    page = 0;
+    expanded = false;
     render();
   });
   render();

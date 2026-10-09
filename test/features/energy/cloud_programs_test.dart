@@ -324,6 +324,31 @@ void main() {
     );
   });
 
+  test('accepts every availability returned by the owner program route', () {
+    const availability = [
+      'open',
+      'upcoming',
+      'waitlist',
+      'exhausted',
+      'suspended',
+      'closed',
+      'unknown',
+    ];
+    final rows = [
+      for (var index = 0; index < availability.length; index++)
+        {
+          ...program(),
+          'program_id':
+              '44444444-4444-4444-8444-${(index + 1).toString().padLeft(12, '0')}',
+          'availability_status': availability[index],
+          'status': index.isEven ? 'unknown' : 'potentially_eligible',
+        },
+    ];
+    final parsed = CloudProgramPage.fromJson(page(rows));
+    expect(parsed.programs.map((row) => row.availabilityStatus), availability);
+    expect(parsed.programs.length, rows.length);
+  });
+
   test('rejects unsupported claims and malformed candidates', () {
     for (final bad in [
       {...program(), 'status': 'eligible'},

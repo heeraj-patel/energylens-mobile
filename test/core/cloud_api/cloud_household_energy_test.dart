@@ -106,6 +106,53 @@ Map<String, dynamic> _trends({bool sample = false}) => {
 };
 
 void main() {
+  test('parses mixed energy provenance with retained fixture revision', () {
+    final json = _dashboard(sample: false)
+      ..['data_mode'] = 'mixed'
+      ..['fixture_revision'] = 'synthetic-household-v1';
+    final dashboard = CloudHouseholdDashboard.fromJson(
+      json,
+      expectedHomeId: homeId,
+    );
+    expect(dashboard.dataMode, 'mixed');
+    expect(dashboard.fixtureRevision, 'synthetic-household-v1');
+    expect(dashboard.totals.evidenceBasis, 'measured');
+
+    final seededSplit = _allocation(sample: true)
+      ..['useful_cost'] = {'amount': '1.80', 'currency': 'USD'}
+      ..['waste_cost'] = {'amount': '0.40', 'currency': 'USD'};
+    final trendsJson = _trends(sample: false)
+      ..['data_mode'] = 'mixed'
+      ..['fixture_revision'] = 'synthetic-household-v1';
+    (trendsJson['buckets'] as List).single['device_allocations'] = [
+      {
+        'device_id': 'demo-device-01',
+        'name': 'Demo television',
+        'allocation': seededSplit,
+      },
+    ];
+    final trends = CloudHouseholdEnergyTrends.fromJson(
+      trendsJson,
+      expectedHomeId: homeId,
+    );
+    expect(trends.totals.evidenceBasis, 'measured');
+    expect(
+      trends.buckets.single.deviceAllocations.single.deviceId,
+      'demo-device-01',
+    );
+    expect(
+      trends
+          .buckets
+          .single
+          .deviceAllocations
+          .single
+          .allocation
+          .wasteCost!
+          .amount,
+      '0.40',
+    );
+  });
+
   test('parses synthetic split and scoped device rows in both responses', () {
     const applianceId = '10000000-0000-4000-8000-000000000001';
     final split = _allocation(sample: true)
@@ -303,13 +350,10 @@ void main() {
         window: 'last_5_occurrences',
       );
     }
-    expect(
-      seen.map((request) => request.url.queryParameters).toList(),
-      [
-        for (final granularity in const ['day', 'week', 'month'])
-          {'granularity': granularity, 'window': 'last_5_occurrences'},
-      ],
-    );
+    expect(seen.map((request) => request.url.queryParameters).toList(), [
+      for (final granularity in const ['day', 'week', 'month'])
+        {'granularity': granularity, 'window': 'last_5_occurrences'},
+    ]);
     await expectLater(
       client.householdEnergyTrends(
         homeId,

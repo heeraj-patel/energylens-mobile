@@ -42,10 +42,8 @@ class DashboardChartProjection {
         trends.totals.availability == 'unavailable') {
       return null;
     }
-    final synthetic = snapshot.dataMode == 'sample';
-    bool supportedBasis(String basis) => synthetic
-        ? basis == 'synthetic'
-        : const {'measured', 'estimated', 'mixed'}.contains(basis);
+    bool supportedBasis(String basis) =>
+        const {'synthetic', 'measured', 'estimated', 'mixed'}.contains(basis);
     if (!supportedBasis(trends.evidenceBasis) ||
         !supportedBasis(trends.totals.evidenceBasis)) {
       return null;
@@ -71,8 +69,9 @@ class DashboardChartProjection {
         return null;
       }
       previousEnd = bucket.period.endExclusive;
+      final syntheticBucket = bucket.allocation.evidenceBasis == 'synthetic';
       if (bucket.period.start.isAfter(trends.generatedAt) ||
-          (!synthetic &&
+          (!syntheticBucket &&
               !bucket.period.start.isBefore(trends.generatedAt))) {
         continue;
       }

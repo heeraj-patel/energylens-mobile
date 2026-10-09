@@ -46,6 +46,7 @@ DummyWasteDraw? dummyWasteDrawForProfile(String profileCategory) {
     'printer',
     'thermostat',
     'light',
+    'lighting',
     'fan',
     'vacuum',
     'garage_door',

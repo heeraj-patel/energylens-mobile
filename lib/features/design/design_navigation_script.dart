@@ -29,6 +29,35 @@ String buildDesignNavigationScript(String page) {
         const button = event.target.closest('button');
         if (!button) return;
         const action = button.dataset.elAction;
+        if (page === 'settings_manage_devices' &&
+            action === 'settings_manage_devices_action_005') {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          send('discover_devices');
+          return;
+        }
+        const savedApplianceId = button.getAttribute?.('data-el-delete-appliance-id');
+        if (savedApplianceId) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          EnergyLensDeleteDevice.postMessage(savedApplianceId);
+          return;
+        }
+        if (page === 'settings_manual_device_entry' &&
+            button.matches?.('button.type-pill[data-el-action]') == true) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          for (const pill of document.querySelectorAll('button.type-pill[data-el-action]')) {
+            const selected = pill === button;
+            pill.classList.toggle('bg-primary-container', selected);
+            pill.classList.toggle('text-on-primary-container', selected);
+            pill.classList.toggle('font-semibold', selected);
+            pill.classList.toggle('bg-surface-container-low', !selected);
+            pill.classList.toggle('text-on-surface-variant', !selected);
+            pill.setAttribute('aria-pressed', String(selected));
+          }
+          return;
+        }
         if (page === 'dashboard' &&
             ['dashboard_action_004', 'dashboard_action_005', 'dashboard_action_006'].includes(action)) {
           event.preventDefault();
@@ -38,6 +67,12 @@ String buildDesignNavigationScript(String page) {
             dashboard_action_005: 'week',
             dashboard_action_006: 'month'
           })[action]);
+          return;
+        }
+        if (page === 'dashboard' && action === 'dashboard_action_007') {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          send('tips_knowledge');
           return;
         }
         if ((page === 'settings_manage_devices' || page === 'settings_manual_device_entry') &&

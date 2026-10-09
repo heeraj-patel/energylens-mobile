@@ -809,6 +809,50 @@ void main() {
     expect(result.householdCost, isNull);
   });
 
+  test('mixed inventory retains seeded and persisted appliance rows', () async {
+    const seededId = '66666666-6666-4666-8666-666666666666';
+    final seeded = CloudAppliance(
+      id: seededId,
+      homeId: homeA,
+      name: 'Demo television',
+      category: 'tv',
+      room: null,
+      brand: 'Demo',
+      fullModel: 'Television',
+      fuel: 'electricity',
+      matchQuality: 'user_entered',
+      demoDeviceId: 'demo-device-01',
+    );
+    final source = FakeSource(
+      dataMode: CloudApplianceDataMode.mixed,
+      fixtureRevision: 'synthetic-household-v1',
+      applianceRead: (_) async => [appliance(homeA), seeded],
+      attachmentRead: (home) async => [attachment(home)],
+      sensorRead: (home) async => [sensor(home)],
+      summaryRead: (_, _) async => const CloudMeteredSummaryPage(
+        granularity: 'day',
+        summaries: [],
+        nextCursor: null,
+        dataMode: CloudApplianceDataMode.mixed,
+        fixtureRevision: 'synthetic-household-v1',
+      ),
+    );
+    final result = (await DevicesDomainRepository(source).fetch(homeA))!;
+    expect(result.dataMode, CloudApplianceDataMode.mixed);
+    expect(result.hasSeededRows, isTrue);
+    expect(result.items, hasLength(2));
+    expect(
+      result.items.map((item) => item.appliance.demoDeviceId),
+      contains('demo-device-01'),
+    );
+    expect(
+      result.items
+          .singleWhere((item) => item.appliance.id == applianceId)
+          .activeAttachmentIds,
+      [attachmentId],
+    );
+  });
+
   test('rejects sample and household metering provenance mismatch', () async {
     for (final page in [
       const CloudMeteredSummaryPage(

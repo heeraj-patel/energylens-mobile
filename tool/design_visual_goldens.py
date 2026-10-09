@@ -24,13 +24,13 @@ PAGES = (
     "tips_efficiency", "tips_knowledge",
 )
 PAGE_MARKERS = {
-    "dashboard": "Useful Power",
+    "dashboard": "Useful cost",
     "devices": "HOME DEVICES",
     "efficiency": "Monthly Overview",
     "efficiency_away": "While You're Away",
     "efficiency_habits": "Everyday Habits & Routine Diagnoses",
     "efficiency_peak_rates": "Peak Pricing Windows",
-    "perks_tips": "Utility, Solar & Government Programs",
+    "perks_tips": "DISCOVER SAVINGS",
     "settings": "Profile, device setup",
     "settings_manage_devices": "Add New Equipment",
     "settings_manual_device_entry": "Manual Device Entry",
@@ -55,15 +55,18 @@ if CommandLine.arguments.count == 5 && CommandLine.arguments[1] == "--diff" {
   }
   let bytesPerPixel = a.bitsPerPixel / 8
   let aData = a.bitmapData!, bData = b.bitmapData!
+  // Simulator system chrome can render the Dynamic Island differently between
+  // captures. Compare the app viewport while still validating page text below.
+  let appTop = Int(Double(a.pixelsHigh) * 0.07)
   var changed = 0
-  for y in 0..<a.pixelsHigh {
+  for y in appTop..<a.pixelsHigh {
     for x in 0..<a.pixelsWide {
       let ai = y * a.bytesPerRow + x * bytesPerPixel
       let bi = y * b.bytesPerRow + x * bytesPerPixel
       if !((0..<bytesPerPixel).allSatisfy({ aData[ai + $0] == bData[bi + $0] })) { changed += 1 }
     }
   }
-  print(Double(changed) / Double(a.pixelsWide * a.pixelsHigh))
+  print(Double(changed) / Double(a.pixelsWide * (a.pixelsHigh - appTop)))
   exit(0)
 }
 guard CommandLine.arguments.count == 2, let image = NSImage(contentsOfFile: CommandLine.arguments[1]),

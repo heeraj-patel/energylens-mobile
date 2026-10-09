@@ -132,7 +132,7 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
       throw const FormatException('Devices binding context changed');
     }
     final costs = value.sampleDayCosts;
-    if (!value.isSample || costs == null) {
+    if (!value.hasSeededRows || costs == null) {
       return DesignNumericBindings(const [], _devicesCostIds);
     }
     final bindings = _sampleDevicesBindings(value, costs);
@@ -265,7 +265,7 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
 (BigInt, BigInt, BigInt)? _sampleWeekDeviceCosts(
   CloudHouseholdEnergyTrends week,
 ) {
-  if (week.dataMode != 'sample' ||
+  if (week.dataMode != 'sample' && week.dataMode != 'mixed' ||
       week.scope != 'whole_home_including_unattributed_load') {
     return null;
   }
@@ -275,13 +275,20 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
   var observed = 0;
   for (final bucket in week.buckets) {
     if (bucket.period.start.isAfter(week.generatedAt)) continue;
-    if (bucket.deviceAllocations.length != 18 ||
-        bucket.allocation.evidenceBasis != 'synthetic') {
+    final seededRows = bucket.deviceAllocations
+        .where((device) => device.deviceId != null)
+        .toList();
+    if (seededRows.length != 18) {
       return null;
     }
     final ids = <String>{};
-    for (final device in bucket.deviceAllocations) {
-      if (device.deviceId == null || !ids.add(device.deviceId!)) return null;
+    for (final device in seededRows) {
+      if (device.deviceId == null ||
+          !ids.add(device.deviceId!) ||
+          device.applianceId != null ||
+          device.allocation.evidenceBasis != 'synthetic') {
+        return null;
+      }
       final rowTotal = _usdMicros(device.allocation.cost);
       final rowUseful = _usdMicros(device.allocation.usefulCost);
       final rowWaste = _usdMicros(device.allocation.wasteCost);
@@ -305,10 +312,10 @@ List<DesignTextBinding>? _sampleDevicesBindings(
   CloudHouseholdEnergyTrends costs,
 ) {
   if (costs.homeId.toLowerCase() != inventory.homeId.toLowerCase() ||
-      costs.dataMode != 'sample' ||
+      costs.dataMode != inventory.dataMode.name ||
       costs.fixtureRevision != inventory.fixtureRevision ||
       costs.granularity != 'day' ||
-      costs.evidenceBasis != 'synthetic') {
+      !const {'synthetic', 'mixed', 'measured'}.contains(costs.evidenceBasis)) {
     return null;
   }
   tz.Location location;
@@ -324,15 +331,17 @@ List<DesignTextBinding>? _sampleDevicesBindings(
         start.month == now.month &&
         start.day == now.day;
   }).toList();
-  if (today.length != 1 ||
-      today.single.allocation.evidenceBasis != 'synthetic' ||
-      today.single.deviceAllocations.length != 18) {
+  if (today.length != 1) {
     return null;
   }
+  final seededRows = today.single.deviceAllocations
+      .where((row) => row.deviceId != null)
+      .toList();
+  if (seededRows.length != 18) return null;
   final rows = <String, CloudDeviceEnergyAllocation>{};
   var usefulMicros = BigInt.zero;
   var wasteMicros = BigInt.zero;
-  for (final row in today.single.deviceAllocations) {
+  for (final row in seededRows) {
     if (row.deviceId == null ||
         row.applianceId != null ||
         row.allocation.evidenceBasis != 'synthetic' ||
@@ -350,7 +359,7 @@ List<DesignTextBinding>? _sampleDevicesBindings(
     wasteMicros += waste;
     rows[row.deviceId!] = row;
   }
-  if (rows.length != 18 || inventory.items.length != 10) return null;
+  if (rows.length != 18) return null;
   final bindings = <DesignTextBinding>[
     DesignTextBinding('devices_text_006', '${_microsText(wasteMicros)}/day'),
     DesignTextBinding('devices_text_009', '${_microsText(usefulMicros)}/day'),

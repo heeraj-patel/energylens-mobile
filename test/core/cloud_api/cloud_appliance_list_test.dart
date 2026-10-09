@@ -131,6 +131,73 @@ void main() {
   });
 
   test(
+    'preserves mixed provenance and both seeded and persisted rows',
+    () async {
+      final seeded = _appliance()
+        ..['id'] = '33333333-3333-4333-8333-333333333333'
+        ..['demo_device_id'] = 'demo-device-01'
+        ..['name'] = 'Demo television';
+      final api = _api(
+        (_) async => _response(
+          body: {
+            'appliances': [seeded, _appliance()],
+          },
+          headers: {
+            'X-EnergyLens-Data-Mode': 'mixed',
+            'X-EnergyLens-Fixture-Revision': 'synthetic-household-v1',
+          },
+        ),
+      );
+      final result = await api.applianceList(_homeId);
+      expect(result.dataMode, CloudApplianceDataMode.mixed);
+      expect(result.fixtureRevision, 'synthetic-household-v1');
+      expect(result.hasSeededRows, isTrue);
+      expect(result.appliances, hasLength(2));
+      expect(result.appliances.first.demoDeviceId, 'demo-device-01');
+      expect(result.appliances.last.demoDeviceId, isNull);
+      api.close();
+    },
+  );
+
+  test('parses the actual synthetic appliance wire shape', () async {
+    final demo = <String, Object?>{
+      'id': '33333333-3333-4333-8333-333333333333',
+      'demo_device_id': 'demo-device-01',
+      'home_id': _homeId,
+      'name': 'Demo refrigerator',
+      'category': '',
+      'identity': {
+        'brand': '',
+        'full_model': '',
+        'fuel': '',
+        'match_quality': 'unresolved',
+      },
+      'version': 1,
+      'archived_at': null,
+    };
+    final api = _api(
+      (_) async => _response(
+        body: {
+          'appliances': [demo],
+        },
+      ),
+    );
+
+    final appliance = (await api.applianceList(_homeId)).appliances.single;
+    expect(appliance.demoDeviceId, 'demo-device-01');
+    expect(appliance.category, '');
+    expect(appliance.brand, '');
+    expect(appliance.fullModel, '');
+    expect(appliance.fuel, '');
+    expect(appliance.matchQuality, 'unresolved');
+    expect(appliance.version, 1);
+    expect(appliance.archivedAt, isNull);
+    expect(appliance.createdAt, isNull);
+    expect(appliance.updatedAt, isNull);
+    api.close();
+  });
+
+  test(
     'accepts household inventory revision without fixture provenance',
     () async {
       final api = _api(

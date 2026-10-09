@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:crypto/crypto.dart';
+
+import 'dart:convert';
 
 import '../../core/cloud_api/cloud_api_client.dart';
+import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_api/cloud_home.dart';
 import '../../core/cloud_api/cloud_hub_claim_flow.dart';
+import '../../core/cloud_api/cloud_hub_claim.dart';
+import '../../core/cloud_api/cloud_sensor.dart';
 
 import 'discovery_api.dart';
 import 'plug_connection_status.dart';
@@ -39,6 +45,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   String _manualProtocol = 'kasa';
   List<DiscoveredPlug> _candidates = const [];
   List<SavedPlug> _saved = const [];
+  final Map<String, CloudAppliance> _cloudAttached = {};
   final Map<int, EnergyEstimate> _estimates = {};
   bool _busy = false;
   bool _hubConnected = false;
@@ -53,6 +60,26 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   bool _claimBusy = false;
   bool _claimedThisSession = false;
   String? _claimMessage;
+  HubOwnership? _cloudOwnership;
+
+  Future<HubOwnership?> _ownedHub() async {
+    final cloud = widget.cloudApi;
+    final home = widget.cloudHome;
+    final localHubId = _pairedHubId;
+    if (cloud == null || home == null || localHubId == null) return null;
+    if (_cloudOwnership case final current?
+        when current.homeId == home.id && current.localHubId == localHubId) {
+      return current;
+    }
+    final matches = (await cloud.hubs(home.id))
+        .where((hub) => hub.localHubId == localHubId)
+        .toList();
+    if (matches.length > 1) {
+      throw const FormatException('Duplicate cloud hub ownership');
+    }
+    _cloudOwnership = matches.firstOrNull;
+    return _cloudOwnership;
+  }
 
   Future<void> _claimHub() async {
     final home = widget.cloudHome;
@@ -69,13 +96,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         credentials: widget.credentials,
       );
       final ownership = await flow.claim(home);
+      _cloudOwnership = ownership;
       if (mounted) {
         setState(() {
           _claimedThisSession = true;
-          _claimMessage =
-              'Hub linked to ${home.name} (ownership epoch ${ownership.ownershipEpoch}). Local devices are not synced to Cloud yet.';
+          _claimMessage = _notSyncedMessage(ownership);
         });
       }
+      await _syncAdoptedPlugSensors(_saved);
     } on CloudApiException catch (error) {
       if (mounted) {
         setState(
@@ -101,6 +129,149 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
   }
 
+  String _notSyncedMessage(HubOwnership ownership) =>
+      'Hub linked to ${widget.cloudHome?.name ?? 'home'} (ownership epoch ${ownership.ownershipEpoch}). Local devices are not synced to Cloud yet.';
+
+  Future<void> _syncAdoptedPlugSensors(Iterable<SavedPlug> plugs) async {
+    final cloud = widget.cloudApi;
+    final home = widget.cloudHome;
+    final HubOwnership ownership;
+    try {
+      final current = await _ownedHub();
+      if (current == null) return;
+      ownership = current;
+    } catch (_) {
+      return;
+    }
+    if (cloud == null ||
+        home == null ||
+        ownership.homeId != home.id ||
+        ownership.localHubId != _pairedHubId ||
+        ownership.ownershipEpoch < 1) {
+      return;
+    }
+    var complete = true;
+    for (final plug in plugs) {
+      // The Cloud sensor capability contract requires an observed meter.
+      // Unknown or absent meters remain local and are never labeled measured.
+      if (plug.meterStatus != 'verified') {
+        complete = false;
+        continue;
+      }
+      try {
+        final before = await cloud.sensors(home.id);
+        final existing = before.where(
+          (sensor) =>
+              sensor.hubId == ownership.hubId &&
+              sensor.ownershipEpoch == ownership.ownershipEpoch &&
+              sensor.localSensorId == plug.id,
+        );
+        if (existing.isNotEmpty) {
+          if (existing.length != 1 ||
+              !_matchesAdoptedPlugSensor(
+                existing.single,
+                home.id,
+                ownership,
+                plug,
+              )) {
+            complete = false;
+            continue;
+          }
+          continue;
+        }
+        final capabilities = const ['power', 'energy'];
+        await cloud.createSensor(
+          home.id,
+          CloudSensorCreate(
+            kind: 'plug',
+            capabilities: capabilities,
+            hubId: ownership.hubId,
+            ownershipEpoch: ownership.ownershipEpoch,
+            // The hub uses this same stable ID for its adopted plug and
+            // telemetry outbox, so its cloud-issued sensor ID maps back to it.
+            localSensorId: plug.id,
+          ),
+          idempotencyKey: _sensorRegistrationKey(
+            home.id,
+            ownership.hubId,
+            ownership.ownershipEpoch,
+            plug.id,
+            capabilities,
+          ),
+        );
+        final after = await cloud.sensors(home.id);
+        final readback = after.where(
+          (sensor) =>
+              sensor.hubId == ownership.hubId &&
+              sensor.ownershipEpoch == ownership.ownershipEpoch &&
+              sensor.localSensorId == plug.id,
+        );
+        if (readback.length != 1 ||
+            !_matchesAdoptedPlugSensor(
+              readback.single,
+              home.id,
+              ownership,
+              plug,
+            )) {
+          complete = false;
+        }
+      } catch (_) {
+        // Local adoption remains successful; a later scan or link can retry.
+        complete = false;
+      }
+    }
+    if (mounted) {
+      setState(
+        () => _claimMessage = complete ? null : _notSyncedMessage(ownership),
+      );
+    }
+  }
+
+  bool _matchesAdoptedPlugSensor(
+    CloudSensor sensor,
+    String homeId,
+    HubOwnership ownership,
+    SavedPlug plug,
+  ) =>
+      sensor.homeId == homeId &&
+      sensor.hubId == ownership.hubId &&
+      sensor.ownershipEpoch == ownership.ownershipEpoch &&
+      sensor.localSensorId == plug.id &&
+      sensor.kind == 'plug' &&
+      sensor.capabilities.toSet().containsAll(const {'power', 'energy'});
+
+  String _sensorRegistrationKey(
+    String homeId,
+    String hubId,
+    int epoch,
+    String localSensorId,
+    List<String> capabilities,
+  ) {
+    final digest = sha256
+        .convert(
+          utf8.encode(
+            jsonEncode([
+              'energylens-discovery-sensor-v1',
+              homeId,
+              hubId,
+              epoch,
+              localSensorId,
+              capabilities,
+            ]),
+          ),
+        )
+        .bytes
+        .take(16)
+        .toList();
+    digest[6] = (digest[6] & 0x0f) | 0x40;
+    digest[8] = (digest[8] & 0x3f) | 0x80;
+    final hex = digest
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
   void _invalidateHubData() {
     if (_saved.isEmpty &&
         _estimates.isEmpty &&
@@ -110,6 +281,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
     setState(() {
       _saved = const [];
+      _cloudAttached.clear();
       _hubConnected = false;
       _estimates.clear();
       _candidates = const [];
@@ -139,6 +311,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         await widget.api.verifyStoredPairing(
           StoredHubIdentity(address: pairing.address, hubId: pairing.hubId),
         );
+        try {
+          if (await _ownedHub() != null && mounted) {
+            setState(() => _claimedThisSession = true);
+          }
+        } catch (_) {
+          // Local discovery remains available if Cloud is offline.
+        }
         await _loadSaved();
         if (widget.autoScan) await _search();
         return;
@@ -188,6 +367,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           _hubConnected = true;
           _error = null;
         });
+        await _syncAdoptedPlugSensors(plugs);
+        await _loadCloudAttachments(plugs);
         for (final plug in plugs) {
           final appliance = plug.connectedAppliance;
           if (appliance == null) continue;
@@ -215,6 +396,51 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               'Could not load saved plugs from the hub. Check its connection.';
         });
       }
+    }
+  }
+
+  Future<void> _loadCloudAttachments(Iterable<SavedPlug> plugs) async {
+    final cloud = widget.cloudApi;
+    final home = widget.cloudHome;
+    if (cloud == null || home == null || plugs.isEmpty) return;
+    try {
+      final ownership = await _ownedHub();
+      if (ownership == null) return;
+      final sensors = await cloud.sensors(home.id);
+      final attachments = await cloud.attachments(home.id);
+      final appliances = (await cloud.applianceList(home.id)).appliances;
+      final applianceById = {
+        for (final item in appliances)
+          if (item.homeId == home.id &&
+              item.archivedAt == null &&
+              item.demoDeviceId == null)
+            item.id: item,
+      };
+      final attached = <String, CloudAppliance>{};
+      for (final plug in plugs) {
+        final matches = sensors.where(
+          (sensor) =>
+              sensor.hubId == ownership.hubId &&
+              sensor.ownershipEpoch == ownership.ownershipEpoch &&
+              sensor.localSensorId == plug.id,
+        );
+        if (matches.length != 1) continue;
+        final active = attachments.where(
+          (item) => item.sensorId == matches.single.id && item.endedAt == null,
+        );
+        if (active.length != 1) continue;
+        final appliance = applianceById[active.single.applianceId];
+        if (appliance != null) attached[plug.id] = appliance;
+      }
+      if (mounted) {
+        setState(() {
+          _cloudAttached
+            ..clear()
+            ..addAll(attached);
+        });
+      }
+    } catch (_) {
+      // The local plug remains available if Cloud readback is unavailable.
     }
   }
 
@@ -329,6 +555,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   Future<void> _connectAppliance(SavedPlug plug) async {
     if (_busy) return;
+    if (widget.cloudHome != null && widget.cloudApi != null) {
+      await _connectCloudAppliance(plug);
+      return;
+    }
     List<SavedAppliance> appliances;
     try {
       appliances = await widget.api.appliances(
@@ -429,6 +659,206 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
   }
 
+  Future<void> _connectCloudAppliance(SavedPlug plug) async {
+    final cloud = widget.cloudApi!;
+    final home = widget.cloudHome!;
+    List<CloudAppliance> appliances;
+    try {
+      final inventory = await cloud.applianceList(home.id);
+      appliances = inventory.appliances
+          .where(
+            (item) =>
+                item.homeId == home.id &&
+                item.demoDeviceId == null &&
+                item.archivedAt == null &&
+                item.fuel == 'electricity' &&
+                item.version != null,
+          )
+          .toList();
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = 'Could not load this home’s appliances. Try again.',
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    final choice = await showDialog<Object>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Connected appliance or lamp'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 0, 24, 12),
+            child: Text(
+              'For appliance-specific readings, connect only that appliance to this plug. A shared plug measures the combined load.',
+            ),
+          ),
+          for (final item in appliances)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, item),
+              child: Text('${item.name} · ${item.category}'),
+            ),
+          const Divider(),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'manual'),
+            child: const Text('Enter a new appliance'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'photo'),
+            child: const Text('Identify a new appliance from photo'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice is String) {
+      final saved = await Navigator.push<CloudAppliance>(
+        context,
+        MaterialPageRoute<CloudAppliance>(
+          builder: (_) => ApplianceOnboardingScreen(
+            method: choice,
+            cloudHome: home,
+            cloudApi: cloud,
+          ),
+        ),
+      );
+      if (saved != null && mounted) {
+        setState(() {
+          _busy = true;
+          _error = null;
+        });
+        try {
+          await _attachCloudAppliance(plug, saved);
+          if (mounted) setState(() => _cloudAttached[plug.id] = saved);
+        } catch (_) {
+          if (mounted) {
+            setState(
+              () => _error = 'Could not connect this appliance to the plug.',
+            );
+          }
+        } finally {
+          if (mounted) setState(() => _busy = false);
+        }
+      }
+      return;
+    }
+    if (choice is! CloudAppliance) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await _attachCloudAppliance(plug, choice);
+      if (mounted) setState(() => _cloudAttached[plug.id] = choice);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = 'Could not connect this appliance to the plug.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _attachCloudAppliance(
+    SavedPlug plug,
+    CloudAppliance appliance,
+  ) async {
+    final cloud = widget.cloudApi!;
+    final homeId = widget.cloudHome!.id;
+    final ownership = await _ownedHub();
+    if (ownership == null || plug.meterStatus != 'verified') {
+      throw StateError('Cloud sensor unavailable');
+    }
+    await _syncAdoptedPlugSensors([plug]);
+    final sensors = (await cloud.sensors(homeId))
+        .where(
+          (sensor) =>
+              sensor.hubId == ownership.hubId &&
+              sensor.ownershipEpoch == ownership.ownershipEpoch &&
+              sensor.localSensorId == plug.id &&
+              _matchesAdoptedPlugSensor(sensor, homeId, ownership, plug),
+        )
+        .toList();
+    if (sensors.length != 1 || appliance.version == null) {
+      throw StateError('Cloud sensor or appliance unavailable');
+    }
+    final sensor = sensors.single;
+    final active = (await cloud.attachments(homeId))
+        .where((item) => item.sensorId == sensor.id && item.endedAt == null)
+        .toList();
+    if (active.length > 1) throw StateError('Duplicate active attachment');
+    if (active.isNotEmpty) {
+      if (active.single.applianceId == appliance.id) return;
+    }
+    final startedAt = DateTime.now().toUtc();
+    final request = CloudAttachmentCreate(
+      sensorId: sensor.id,
+      applianceId: appliance.id,
+      startedAt: startedAt,
+      identityRevision: appliance.version!,
+    );
+    try {
+      await cloud.createAttachment(
+        homeId,
+        request,
+        ifMatch: '"${sensor.version}"',
+        idempotencyKey: _attachmentKey(
+          homeId,
+          sensor.id,
+          appliance.id,
+          startedAt,
+        ),
+      );
+    } catch (_) {
+      final readback = (await cloud.attachments(homeId))
+          .where((item) => item.sensorId == sensor.id && item.endedAt == null)
+          .toList();
+      if (readback.length != 1 || readback.single.applianceId != appliance.id) {
+        rethrow;
+      }
+    }
+    final readback = (await cloud.attachments(homeId))
+        .where((item) => item.sensorId == sensor.id && item.endedAt == null)
+        .toList();
+    if (readback.length != 1 || readback.single.applianceId != appliance.id) {
+      throw const FormatException('Cloud attachment readback changed');
+    }
+  }
+
+  String _attachmentKey(
+    String homeId,
+    String sensorId,
+    String applianceId,
+    DateTime startedAt,
+  ) {
+    final bytes = sha256
+        .convert(
+          utf8.encode(
+            jsonEncode([
+              'energylens-discovery-attachment-v1',
+              homeId,
+              sensorId,
+              applianceId,
+              startedAt.toIso8601String(),
+            ]),
+          ),
+        )
+        .bytes
+        .take(16)
+        .toList();
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
   Future<void> _adopt(DiscoveredPlug plug) async {
     final name = TextEditingController(
       text: plug.alias?.isNotEmpty == true ? plug.alias : plug.model,
@@ -517,6 +947,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           );
         }
       }
+      await _syncAdoptedPlugSensors(_saved);
     } catch (error) {
       if (mounted) {
         setState(
@@ -567,6 +998,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         _hubConnected = true;
         if (_candidates.isEmpty) _showManualEntry = true;
       });
+      await _syncAdoptedPlugSensors(_saved);
     } catch (error) {
       if (!mounted) return;
       setState(
@@ -914,7 +1346,17 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         'Connected appliance or lamp',
                         style: theme.textTheme.labelLarge,
                       ),
-                      if (plug.connectedAppliance case final appliance?) ...[
+                      if (_cloudAttached[plug.id]
+                          case final cloudAppliance?) ...[
+                        Text(
+                          cloudAppliance.name,
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        Text(
+                          '${cloudAppliance.category} · ${cloudAppliance.fullModel}',
+                        ),
+                      ] else if (plug.connectedAppliance
+                          case final appliance?) ...[
                         Text(
                           appliance.name,
                           style: theme.textTheme.titleMedium,
@@ -972,7 +1414,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       TextButton(
                         onPressed: _busy ? null : () => _connectAppliance(plug),
                         child: Text(
-                          plug.connectedAppliance == null
+                          plug.connectedAppliance == null &&
+                                  !_cloudAttached.containsKey(plug.id)
                               ? 'Identify connected appliance'
                               : 'Change connected appliance',
                         ),

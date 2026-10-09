@@ -15,6 +15,7 @@ CloudAppliance appliance(
   String brand = 'Acme',
   String model = 'F100',
   DateTime? archivedAt,
+  String? demoDeviceId,
 }) => CloudAppliance(
   id: id,
   homeId: home,
@@ -26,6 +27,7 @@ CloudAppliance appliance(
   fuel: 'electric',
   matchQuality: 'confirmed_exact',
   archivedAt: archivedAt,
+  demoDeviceId: demoDeviceId,
 );
 
 Map<String, dynamic> payloadOf(String script) {
@@ -70,6 +72,7 @@ void main() {
           'model': 'M<1>',
           'fuel': 'electric',
           'variant': '',
+          'persisted': true,
         },
       ],
     });
@@ -82,8 +85,39 @@ void main() {
       ),
     );
     expect(script, isNot(contains('innerHTML')));
-    expect(script, isNot(contains('delete')));
-    expect(script, isNot(contains('removeDevice')));
+    expect(script, contains("data-el-delete-appliance-id"));
+    expect(
+      script,
+      contains("remove.setAttribute('aria-label', 'Remove ' + row.name)"),
+    );
+    expect(script, contains("removeIcon.textContent = 'delete_outline'"));
+  });
+
+  test('synthetic inventory rows never receive the archive action', () {
+    final script = renderer.appendScript(
+      homeId: homeA,
+      generation: 5,
+      appliances: [
+        appliance(
+          'demo-device-01',
+          name: 'Demo refrigerator',
+          demoDeviceId: 'demo-device-01',
+        ),
+      ],
+    );
+    expect(payloadOf(script)['rows'], [
+      {
+        'id': 'demo-device-01',
+        'name': 'Demo refrigerator',
+        'brand': 'Acme',
+        'model': 'F100',
+        'fuel': 'electric',
+        'variant': '',
+        'persisted': false,
+      },
+    ]);
+    expect(script, contains('if (row.persisted)'));
+    expect(script, contains("typeof row.persisted !== 'boolean'"));
   });
 
   test('rejects cross-home rows and guards stale script generations', () {

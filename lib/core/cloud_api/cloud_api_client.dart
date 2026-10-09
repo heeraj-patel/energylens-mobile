@@ -221,6 +221,12 @@ class CloudApiClient {
             .hasMatch(revisionHeader)) {
       dataMode = CloudApplianceDataMode.sample;
       fixtureRevision = revisionHeader;
+    } else if (modeHeader == 'mixed' &&
+        revisionHeader != null &&
+        RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+            .hasMatch(revisionHeader)) {
+      dataMode = CloudApplianceDataMode.mixed;
+      fixtureRevision = revisionHeader;
     } else {
       throw const FormatException('Invalid cloud appliance provenance');
     }
@@ -536,6 +542,12 @@ class CloudApiClient {
         RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
             .hasMatch(revisionHeader)) {
       dataMode = CloudApplianceDataMode.sample;
+      fixtureRevision = revisionHeader;
+    } else if (modeHeader == 'mixed' &&
+        revisionHeader != null &&
+        RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+            .hasMatch(revisionHeader)) {
+      dataMode = CloudApplianceDataMode.mixed;
       fixtureRevision = revisionHeader;
     } else {
       throw const FormatException('Invalid cloud appliance provenance');
@@ -1106,6 +1118,19 @@ class CloudApiClient {
         evidenceRevision: evidenceRevision,
       );
     }
+    if (modeHeader == 'mixed' &&
+        revisionHeader != null &&
+        RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+            .hasMatch(revisionHeader)) {
+      return CloudMeteredSummaryPage(
+        granularity: page.granularity,
+        summaries: page.summaries,
+        nextCursor: page.nextCursor,
+        dataMode: CloudApplianceDataMode.mixed,
+        fixtureRevision: revisionHeader,
+        evidenceRevision: evidenceRevision,
+      );
+    }
     throw const FormatException('Invalid metered summary provenance');
   }
 
@@ -1252,6 +1277,19 @@ class CloudApiClient {
     return HubClaimChallenge.fromJson(
       jsonDecode(response.body) as Map<String, dynamic>,
     );
+  }
+
+  Future<List<HubOwnership>> hubs(String homeId) async {
+    final response = await get('/v1/homes/${Uri.encodeComponent(homeId)}/hubs');
+    final rows = (jsonDecode(response.body) as Map<String, dynamic>)['hubs'];
+    if (rows is! List) throw const FormatException('Invalid cloud hub list');
+    return rows.map((row) {
+      final hub = HubOwnership.fromJson(row as Map<String, dynamic>);
+      if (hub.homeId != homeId) {
+        throw const FormatException('Cloud hub belongs to another home');
+      }
+      return hub;
+    }).toList();
   }
 
   Future<HubOwnership> finishHubClaim(

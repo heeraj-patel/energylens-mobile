@@ -63,11 +63,11 @@ class DashboardChartRenderer {
     const base = 110;
     if (bar.useful > 0) group.appendChild(element('rect', {
       x: center - 12, y: base - bar.useful, width: 24, height: bar.useful,
-      rx: 3, fill: '#7dd3fc'
+      rx: 3, fill: '#059669'
     }));
     if (bar.waste > 0) group.appendChild(element('rect', {
       x: center - 12, y: base - bar.useful - bar.waste,
-      width: 24, height: bar.waste, rx: 3, fill: '#ffdad6'
+      width: 24, height: bar.waste, rx: 3, fill: '#d97706'
     }));
     group.appendChild(element('text', {
       x: center, y: 126, 'text-anchor': 'middle',

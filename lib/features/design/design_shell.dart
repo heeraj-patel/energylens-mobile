@@ -6,6 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/cloud_api/cloud_appliance.dart';
+import '../../core/cloud_api/cloud_appliance_list.dart';
+import '../../core/cloud_api/cloud_home.dart' show newCloudIdempotencyKey;
 import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import '../identify/appliance_onboarding_screen.dart'
     show manufacturerHintFromOcr, modelHintFromOcr;
@@ -23,10 +25,16 @@ import 'design_page_read_dispatcher.dart';
 import 'design_page_bridge.dart';
 import 'design_page_state_script.dart';
 import 'design_page_state_snapshot.dart';
+import 'devices_domain_repository.dart';
 import 'live_devices_card_renderer.dart';
 import 'live_devices_projection.dart';
 import 'knowledge_page_script.dart';
 import 'settings_saved_devices_renderer.dart';
+import 'settings_identity_renderer.dart';
+import 'settings_domain_repository.dart';
+import 'local_pilot_device_lifecycle.dart';
+import 'local_pilot_device_review_sheet.dart';
+import 'local_settings_devices_renderer.dart';
 
 /// The approved design files are complete mobile pages. Keep their markup and
 /// wording in assets/design_pages; this shell only supplies native navigation.
@@ -36,22 +44,28 @@ class DesignShell extends StatefulWidget {
     this.onSignOut,
     this.onChangeHome,
     this.onReportPreview,
+    this.onDiscoverDevices,
     this.onboardingLifecycle,
     this.photoCapture = const PhotoCaptureService(),
     this.designContextCoordinator,
     this.designTour = false,
+    this.localPilot = false,
+    this.localDeviceLifecycle,
     this.homeName = 'The Miller Home',
   });
 
   final VoidCallback? onSignOut;
   final VoidCallback? onChangeHome;
   final VoidCallback? onReportPreview;
+  final Future<void> Function()? onDiscoverDevices;
   final CloudAuxiliaryDomainLifecycle? onboardingLifecycle;
   final PhotoCaptureService photoCapture;
 
   /// Native-only verified scope. It is never passed into the WebView.
   final DesignContextCoordinator? designContextCoordinator;
   final bool designTour;
+  final bool localPilot;
+  final LocalPilotDeviceLifecycle? localDeviceLifecycle;
   final String homeName;
 
   @override
@@ -96,6 +110,8 @@ class _DesignShellState extends State<DesignShell> {
   late final DesignPageReadDispatcher _pageReads;
   static const _liveDevicesRenderer = LiveDevicesCardRenderer();
   static const _settingsSavedRenderer = SettingsSavedDevicesRenderer();
+  static const _localSettingsRenderer = LocalSettingsDevicesRenderer();
+  static const _settingsIdentityRenderer = SettingsIdentityRenderer();
   static const _settingsDevicePages = <String>{
     'settings_manage_devices',
     'settings_manual_device_entry',
@@ -114,6 +130,9 @@ class _DesignShellState extends State<DesignShell> {
   bool _pageReady = false;
   LiveDevicesProjection? _devicesProjection;
   List<CloudAppliance>? _savedAppliances;
+  LocalInventory? _localInventory;
+  String? _renderedLocalIdentity;
+  final Set<int> _deletingLocalIds = <int>{};
   DesignNumericBindings? _dashboardBindings;
   DesignNumericBindings? _sampleDevicesBindings;
   List<DesignTextBinding>? _efficiencyBindings;
@@ -124,6 +143,8 @@ class _DesignShellState extends State<DesignShell> {
   String _page = 'dashboard';
   bool _reviewOpen = false;
   bool _capturingPhoto = false;
+  final Set<String> _archivingApplianceIds = <String>{};
+  final Map<String, String> _archiveKeys = <String, String>{};
   bool _navigating = false;
   int _navigationEpoch = 0;
   String? _activePageStateScope;
@@ -155,6 +176,11 @@ class _DesignShellState extends State<DesignShell> {
         'EnergyLensPhotoCapture',
         onMessageReceived: (message) =>
             unawaited(_capturePhoto(message.message)),
+      )
+      ..addJavaScriptChannel(
+        'EnergyLensDeleteDevice',
+        onMessageReceived: (message) =>
+            unawaited(_archiveSavedAppliance(message.message)),
       )
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -285,6 +311,8 @@ class _DesignShellState extends State<DesignShell> {
     _pageReady = false;
     _devicesProjection = null;
     _savedAppliances = null;
+    _localInventory = null;
+    _renderedLocalIdentity = null;
     _dashboardBindings = null;
     _sampleDevicesBindings = null;
     _efficiencyBindings = null;
@@ -298,6 +326,10 @@ class _DesignShellState extends State<DesignShell> {
   Future<void> _readPage(String page, int generation) async {
     await _pageReads.load(page);
     if (!_isCurrentPageLoad(page, generation)) return;
+    if (page == 'settings') {
+      await _applySettingsIdentity(generation);
+      return;
+    }
     if (_settingsDevicePages.contains(page)) {
       await _refreshSavedAppliances(page, generation);
       return;
@@ -348,6 +380,20 @@ class _DesignShellState extends State<DesignShell> {
       return;
     }
     if (read.mode != DesignContextMode.household) return;
+    if (read.value is DevicesDomainSnapshot &&
+        (read.value as DevicesDomainSnapshot).hasSeededRows) {
+      try {
+        final bindings = prepareDesignNumericBindings(read);
+        if (!_isCurrentPageLoad(page, generation) ||
+            !identical(_pageReads.latestRead, read)) {
+          return;
+        }
+        _sampleDevicesBindings = bindings;
+        await _applySampleDevicesBindings(generation);
+      } catch (_) {
+        // Invalid seeded cost data cannot alter the packaged cards.
+      }
+    }
     try {
       final projection = prepareLiveDevicesProjection(read);
       if (!_isCurrentPageLoad(page, generation) ||
@@ -362,6 +408,10 @@ class _DesignShellState extends State<DesignShell> {
   }
 
   Future<void> _refreshSavedAppliances(String page, int generation) async {
+    if (widget.localPilot && !widget.designTour) {
+      await _refreshLocalInventory(page, generation);
+      return;
+    }
     final context = widget.designContextCoordinator?.context;
     final lifecycle = widget.onboardingLifecycle;
     if (!_settingsDevicePages.contains(page) ||
@@ -386,6 +436,67 @@ class _DesignShellState extends State<DesignShell> {
       await _applySavedAppliances(page, generation);
     } catch (_) {
       // A failed inventory read never creates a saved row from a draft.
+    }
+  }
+
+  Future<void> _refreshLocalInventory(String page, int generation) async {
+    if (!_settingsDevicePages.contains(page)) return;
+    final lifecycle = widget.localDeviceLifecycle;
+    final inventory = await lifecycle?.inventory();
+    if (!_isCurrentPageLoad(page, generation)) return;
+    _localInventory = inventory;
+    if (inventory != null) {
+      await _applyLocalInventory(page, generation);
+    } else if (_pageReady) {
+      try {
+        await _controller.runJavaScriptReturningResult(
+          _localSettingsRenderer.installationScript(
+            identity: '__unavailable__',
+            generation: generation,
+          ),
+        );
+        _renderedLocalIdentity = '__unavailable__';
+      } catch (_) {
+        // The unavailable state never exposes a saved Hub row.
+      }
+    }
+  }
+
+  Future<void> _applyLocalInventory(String page, int generation) async {
+    final inventory = _localInventory;
+    if (!_pageReady ||
+        !_isCurrentPageLoad(page, generation) ||
+        !_settingsDevicePages.contains(page) ||
+        inventory == null) {
+      return;
+    }
+    // Recheck credentials before projecting any asynchronous Hub result.
+    final currentIdentity = await widget.localDeviceLifecycle
+        ?.currentIdentity();
+    if (currentIdentity != inventory.identity ||
+        !_isCurrentPageLoad(page, generation)) {
+      return;
+    }
+    try {
+      if (_renderedLocalIdentity != inventory.identity) {
+        final installed = await _controller.runJavaScriptReturningResult(
+          _localSettingsRenderer.installationScript(
+            identity: inventory.identity,
+            generation: generation,
+          ),
+        );
+        if (installed != true || !_isCurrentPageLoad(page, generation)) return;
+        _renderedLocalIdentity = inventory.identity;
+      }
+      await _controller.runJavaScriptReturningResult(
+        _localSettingsRenderer.updateScript(
+          identity: inventory.identity,
+          generation: generation,
+          appliances: inventory.rows,
+        ),
+      );
+    } catch (_) {
+      // No Hub inventory is inferred from a failed projection.
     }
   }
 
@@ -419,6 +530,14 @@ class _DesignShellState extends State<DesignShell> {
             !identical(_pageTicket, ticket)) {
           return;
         }
+        if (page == 'settings') {
+          await _applySettingsIdentity(generation);
+          if (!_isCurrentPageLoad(page, generation) ||
+              !identical(widget.designContextCoordinator?.context, context) ||
+              !identical(_pageTicket, ticket)) {
+            return;
+          }
+        }
       } catch (_) {
         // The packaged home name remains visible on script failure.
       }
@@ -446,6 +565,25 @@ class _DesignShellState extends State<DesignShell> {
       return;
     }
     if (_settingsDevicePages.contains(page)) {
+      if (widget.localPilot && !widget.designTour) {
+        try {
+          final identity = _localInventory?.identity ?? '__unavailable__';
+          final installed = await _controller.runJavaScriptReturningResult(
+            _localSettingsRenderer.installationScript(
+              identity: identity,
+              generation: generation,
+            ),
+          );
+          if (installed != true || !_isCurrentPageLoad(page, generation)) {
+            return;
+          }
+          _renderedLocalIdentity = identity;
+          await _applyLocalInventory(page, generation);
+        } catch (_) {
+          // Functional local mode does not promote packaged examples.
+        }
+        return;
+      }
       if (context == null ||
           context.mode != DesignContextMode.household ||
           widget.onboardingLifecycle?.isVerifiedScope(
@@ -491,6 +629,7 @@ class _DesignShellState extends State<DesignShell> {
           !identical(widget.designContextCoordinator?.context, context)) {
         return;
       }
+      await _applySampleDevicesBindings(generation);
       await _applyDevicesProjection(generation);
     } catch (_) {
       // A WebView failure leaves the static asset intact.
@@ -502,6 +641,7 @@ class _DesignShellState extends State<DesignShell> {
     int generation,
     DesignPageTicket ticket,
   ) async {
+    if (page == 'settings') return;
     final context = widget.designContextCoordinator?.context;
     if (!_isCurrentPageLoad(page, generation) ||
         !identical(_pageTicket, ticket) ||
@@ -520,6 +660,38 @@ class _DesignShellState extends State<DesignShell> {
     }
   }
 
+  Future<void> _applySettingsIdentity(int generation) async {
+    final read = _pageReads.latestRead;
+    final context = widget.designContextCoordinator?.context;
+    final ticket = _pageTicket;
+    if (!_pageReady ||
+        !_isCurrentPageLoad('settings', generation) ||
+        read == null ||
+        read.page != 'settings' ||
+        read.mode != DesignContextMode.household ||
+        read.value is! SettingsDomainSnapshot ||
+        context == null ||
+        context.mode != DesignContextMode.household ||
+        ticket == null ||
+        read.accountId != context.accountId ||
+        read.homeId != context.homeId ||
+        ticket.homeId != context.homeId ||
+        !identical(widget.designContextCoordinator?.context, context)) {
+      return;
+    }
+    final script = _settingsIdentityRenderer.script(
+      ticket: ticket,
+      snapshot: read.value as SettingsDomainSnapshot,
+      expectedAccountId: context.accountId,
+    );
+    if (script == null || !identical(_pageReads.latestRead, read)) return;
+    try {
+      await _controller.runJavaScriptReturningResult(script);
+    } catch (_) {
+      // Blank identity fields remain unavailable if the page rejects the read.
+    }
+  }
+
   Future<void> _applySampleDevicesBindings(int generation) async {
     final projection = _sampleDevicesBindings;
     final read = _pageReads.latestRead;
@@ -529,11 +701,16 @@ class _DesignShellState extends State<DesignShell> {
         !_isCurrentPageLoad('devices', generation) ||
         projection == null ||
         projection.bindings.isEmpty ||
-        read?.page != 'devices' ||
-        read?.mode != DesignContextMode.sample ||
-        context?.allowsReadMode(DesignContextMode.sample) != true ||
-        read?.accountId != context?.accountId ||
-        read?.homeId != context?.homeId ||
+        read == null ||
+        read.page != 'devices' ||
+        (read.mode != DesignContextMode.sample &&
+            !(read.mode == DesignContextMode.household &&
+                read.value is DevicesDomainSnapshot &&
+                (read.value as DevicesDomainSnapshot).dataMode ==
+                    CloudApplianceDataMode.mixed)) ||
+        context?.allowsReadMode(read.mode) != true ||
+        read.accountId != context?.accountId ||
+        read.homeId != context?.homeId ||
         ticket == null) {
       return;
     }
@@ -694,10 +871,11 @@ class _DesignShellState extends State<DesignShell> {
     }
     final context = widget.designContextCoordinator?.context;
     final lifecycle = widget.onboardingLifecycle;
-    if (context == null ||
-        context.mode != DesignContextMode.household ||
-        lifecycle == null ||
-        !lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+    if (!widget.localPilot &&
+        (context == null ||
+            context.mode != DesignContextMode.household ||
+            lifecycle == null ||
+            !lifecycle.isVerifiedScope(context.accountId, context.homeId))) {
       return;
     }
     final Map<String, dynamic> fields;
@@ -735,6 +913,36 @@ class _DesignShellState extends State<DesignShell> {
     }
     _reviewOpen = true;
     try {
+      if (widget.localPilot) {
+        final page = _page;
+        final generation = _pageLoadGeneration;
+        final inventory = _localInventory;
+        final localLifecycle = widget.localDeviceLifecycle;
+        if (inventory == null || localLifecycle == null) return;
+        final session = await localLifecycle.beginSave(inventory);
+        if (session == null || !_isCurrentPageLoad(page, generation)) return;
+        if (!mounted) return;
+        final result = await showDialog<LocalWriteResult>(
+          context: this.context,
+          builder: (_) => LocalPilotDeviceReviewSheet(
+            lifecycle: localLifecycle,
+            session: session,
+            onboardingMethod: fromPhoto ? 'photo' : 'manual',
+            name: fields['name'] as String,
+            manufacturer: fields['manufacturer'] as String,
+            model: fields['model'] as String,
+            initialCategory: reviewCategories.contains(selectedCategory)
+                ? selectedCategory
+                : null,
+          ),
+        );
+        if (result?.status == LocalWriteStatus.confirmed &&
+            _settingsDevicePages.contains(_page)) {
+          await _refreshLocalInventory(_page, _pageLoadGeneration);
+        }
+        return;
+      }
+      if (context == null || lifecycle == null || !mounted) return;
       final saved = await showDialog<CloudAppliance>(
         context: this.context,
         builder: (_) => DeviceReviewSheet(
@@ -768,10 +976,11 @@ class _DesignShellState extends State<DesignShell> {
     }
     final context = widget.designContextCoordinator?.context;
     final lifecycle = widget.onboardingLifecycle;
-    if (context == null ||
-        context.mode != DesignContextMode.household ||
-        lifecycle == null ||
-        !lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+    if (!widget.localPilot &&
+        (context == null ||
+            context.mode != DesignContextMode.household ||
+            lifecycle == null ||
+            !lifecycle.isVerifiedScope(context.accountId, context.homeId))) {
       return;
     }
     final pageGeneration = _pageLoadGeneration;
@@ -786,15 +995,24 @@ class _DesignShellState extends State<DesignShell> {
             'settings_photo_scan_onboarding',
             pageGeneration,
           ) ||
-          !lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+          (!widget.localPilot &&
+              !lifecycle!.isVerifiedScope(
+                context!.accountId,
+                context.homeId,
+              ))) {
         return;
       }
       final text = await widget.photoCapture.extractTextHint(photo.path);
+      if (text == null) return;
       if (!_isCurrentPageLoad(
             'settings_photo_scan_onboarding',
             pageGeneration,
           ) ||
-          !lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+          (!widget.localPilot &&
+              !lifecycle!.isVerifiedScope(
+                context!.accountId,
+                context.homeId,
+              ))) {
         return;
       }
       await _reviewDevice(
@@ -813,7 +1031,147 @@ class _DesignShellState extends State<DesignShell> {
     }
   }
 
+  Future<void> _archiveSavedAppliance(String applianceId) async {
+    if (widget.localPilot) {
+      await _deleteLocalAppliance(applianceId);
+      return;
+    }
+    if (_archivingApplianceIds.contains(applianceId)) return;
+    final context = widget.designContextCoordinator?.context;
+    final lifecycle = widget.onboardingLifecycle;
+    final row = _savedAppliances
+        ?.where((item) => item.id == applianceId)
+        .firstOrNull;
+    if (context == null ||
+        context.mode != DesignContextMode.household ||
+        lifecycle == null ||
+        row == null ||
+        row.homeId != context.homeId ||
+        row.archivedAt != null ||
+        !lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+      return;
+    }
+    final page = _page;
+    final generation = _pageLoadGeneration;
+    _archivingApplianceIds.add(applianceId);
+    final key = _archiveKeys.putIfAbsent(applianceId, newCloudIdempotencyKey);
+    try {
+      await lifecycle.archiveAppliance(
+        context.accountId,
+        context.homeId,
+        applianceId,
+        key,
+      );
+      _archiveKeys.remove(applianceId);
+      await _refreshSavedAppliances(page, generation);
+    } catch (_) {
+      // Reconcile an uncertain response against the authoritative inventory.
+      try {
+        final rows = await lifecycle.refreshSavedAppliances(
+          context.accountId,
+          context.homeId,
+        );
+        if (rows != null &&
+            !rows.any((item) => item.id == applianceId) &&
+            _isCurrentPageLoad(page, generation) &&
+            identical(widget.designContextCoordinator?.context, context)) {
+          _archiveKeys.remove(applianceId);
+          _savedAppliances = rows;
+          await _applySavedAppliances(page, generation);
+        }
+      } catch (_) {
+        // Retain the row and retry key when neither write nor read is confirmed.
+      }
+    } finally {
+      _archivingApplianceIds.remove(applianceId);
+    }
+  }
+
+  Future<void> _deleteLocalAppliance(String rawId) async {
+    final id = int.tryParse(rawId);
+    final inventory = _localInventory;
+    final lifecycle = widget.localDeviceLifecycle;
+    if (id == null ||
+        id <= 0 ||
+        _deletingLocalIds.contains(id) ||
+        inventory == null ||
+        lifecycle == null ||
+        !inventory.rows.any(
+          (row) =>
+              row.id == id &&
+              (row.onboardingMethod == 'manual' ||
+                  row.onboardingMethod == 'photo'),
+        )) {
+      return;
+    }
+    final page = _page;
+    final generation = _pageLoadGeneration;
+    if (!_settingsDevicePages.contains(page)) return;
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete device?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (approved != true || !_isCurrentPageLoad(page, generation)) return;
+    _deletingLocalIds.add(id);
+    try {
+      final result = await lifecycle.delete(inventory, id);
+      if (_isCurrentPageLoad(page, generation) &&
+          result.inventory?.identity == inventory.identity) {
+        _localInventory = result.inventory;
+        await _applyLocalInventory(page, generation);
+      }
+    } finally {
+      _deletingLocalIds.remove(id);
+    }
+  }
+
   Future<void> _open(String route) async {
+    if (route == 'discover_devices') {
+      if (widget.localPilot && !widget.designTour) {
+        if (_page != 'settings_manage_devices' ||
+            widget.onDiscoverDevices == null) {
+          return;
+        }
+        final generation = _pageLoadGeneration;
+        await widget.onDiscoverDevices!();
+        if (_isCurrentPageLoad('settings_manage_devices', generation)) {
+          _localInventory = null;
+          await _refreshLocalInventory('settings_manage_devices', generation);
+        }
+        return;
+      }
+      final context = widget.designContextCoordinator?.context;
+      final lifecycle = widget.onboardingLifecycle;
+      final discover = widget.onDiscoverDevices;
+      if (_page != 'settings_manage_devices' ||
+          context == null ||
+          context.mode != DesignContextMode.household ||
+          lifecycle == null ||
+          discover == null ||
+          !lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+        return;
+      }
+      final generation = _pageLoadGeneration;
+      await discover();
+      if (_isCurrentPageLoad('settings_manage_devices', generation) &&
+          identical(widget.designContextCoordinator?.context, context) &&
+          lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+        await _refreshSavedAppliances('settings_manage_devices', generation);
+      }
+      return;
+    }
     if (_page == 'dashboard' && route.startsWith('dashboard_period:')) {
       final granularity = route.substring('dashboard_period:'.length);
       if (const {'day', 'week', 'month'}.contains(granularity)) {

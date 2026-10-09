@@ -1,5 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_hub_claim.dart';
+import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:energylens_mobile/features/discovery/discovery_api.dart';
 import 'package:energylens_mobile/features/discovery/discovery_credentials.dart';
 import 'package:energylens_mobile/features/discovery/discovery_screen.dart';
@@ -7,6 +12,102 @@ import 'package:energylens_mobile/features/discovery/electricity_settings_screen
 import 'package:energylens_mobile/features/discovery/device_energy_detail_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+
+const _cloudHomeId = '11111111-1111-4111-8111-111111111111';
+const _cloudHubId = '22222222-2222-4222-8222-222222222222';
+const _cloudSensorId = '33333333-3333-4333-8333-333333333333';
+const _localHubId = 'elhub_test-hub';
+const _cloudConfig = CloudAuthConfig(
+  issuer: 'https://issuer.example',
+  audience: 'audience',
+  clientId: 'client',
+  redirectUrl: 'io.energylens.app://login-callback',
+  apiUrl: 'https://api.example',
+);
+
+class _TestTokenStore implements CloudTokenStore {
+  @override
+  Future<void> clear() async {}
+  @override
+  Future<CloudTokens?> read() async => const CloudTokens(accessToken: 'token');
+  @override
+  Future<void> save(CloudTokens tokens) async {}
+}
+
+class _TestAuthenticator implements CloudAuthenticator {
+  @override
+  Future<CloudTokens> signIn(CloudAuthConfig config) async =>
+      const CloudTokens(accessToken: 'token');
+  @override
+  Future<CloudTokens> refresh(
+    CloudAuthConfig config,
+    String refreshToken,
+  ) async => const CloudTokens(accessToken: 'token');
+}
+
+class _ClaimCredentials extends FakeCredentials {
+  @override
+  Future<StoredPairingCredential?> readPairing() async =>
+      const StoredPairingCredential(
+        address: 'https://192.168.1.20:8787#sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        hubId: _localHubId,
+        clientId: 'client-1',
+        token: 'issued-token',
+      );
+}
+
+class _ClaimDiscoveryApi extends SavingApi {
+  @override
+  Future<void> verifyStoredPairing(StoredHubIdentity pairing) async {}
+
+  @override
+  Future<List<DiscoveredPlug>> scan(String baseUrl, String token) async => [
+    const DiscoveredPlug(
+      id: 'stable-local-plug-1',
+      ip: '192.168.1.42',
+      model: 'HS110',
+      alias: 'Office meter',
+      meterStatus: 'verified',
+      relayOn: true,
+    ),
+  ];
+
+  @override
+  Future<SavedPlug> adopt(
+    String baseUrl,
+    String token,
+    DiscoveredPlug candidate,
+    String name,
+    String room,
+    bool acknowledgeNoMeter,
+  ) async {
+    plug = SavedPlug(
+      id: candidate.id,
+      ip: candidate.ip,
+      model: candidate.model,
+      name: name,
+      room: room,
+      meterStatus: candidate.meterStatus,
+      lastVerifiedAt: 100,
+    );
+    return plug!;
+  }
+
+  @override
+  Future<HubClaimProof> claimProof(
+    HubClaimChallenge challenge, {
+    required String address,
+    required String hubId,
+    required String token,
+  }) async => HubClaimProof(
+    claimId: challenge.claimId,
+    localHubId: hubId,
+    possessionProof: 'p' * 24,
+    deviceSignature: 'signature',
+  );
+}
 
 class FakeDiscoveryApi extends DiscoveryApi {
   const FakeDiscoveryApi();
@@ -422,6 +523,367 @@ class PeriodRaceApi extends DeviceDetailApi {
 }
 
 void main() {
+  testWidgets(
+    'auto scan waits for selection and attaches only a chosen Cloud appliance',
+    (tester) async {
+      const applianceId = '55555555-5555-4555-8555-555555555555';
+      const newApplianceId = '77777777-7777-4777-8777-777777777777';
+      const attachmentId = '66666666-6666-4666-8666-666666666666';
+      final api = _ClaimDiscoveryApi();
+      final sensors = <Map<String, dynamic>>[];
+      final attachments = <Map<String, dynamic>>[];
+      final applianceRows = <Map<String, dynamic>>[
+        {
+          'id': applianceId,
+          'home_id': _cloudHomeId,
+          'name': 'Desk lamp',
+          'category': 'lighting',
+          'identity': {
+            'brand': 'Example',
+            'full_model': 'L123',
+            'fuel': 'electricity',
+            'match_quality': 'unresolved',
+          },
+          'version': 2,
+        },
+      ];
+      var attachmentCreates = 0;
+      var applianceCreates = 0;
+      final client = CloudApiClient(
+        session: CloudSession(
+          config: _cloudConfig,
+          store: _TestTokenStore(),
+          authenticator: _TestAuthenticator(),
+        ),
+        client: MockClient((request) async {
+          final path = request.url.path;
+          if (path == '/v1/homes/$_cloudHomeId/hubs') {
+            return http.Response(
+              jsonEncode({
+                'hubs': [
+                  {
+                    'hub_id': _cloudHubId,
+                    'local_hub_id': _localHubId,
+                    'home_id': _cloudHomeId,
+                    'ownership_epoch': 3,
+                    'version': 1,
+                  },
+                ],
+              }),
+              200,
+            );
+          }
+          if (path == '/v1/homes/$_cloudHomeId/sensors') {
+            if (request.method == 'GET') {
+              return http.Response(jsonEncode({'sensors': sensors}), 200);
+            }
+            final body = jsonDecode(request.body) as Map<String, dynamic>;
+            sensors.add({
+              'id': _cloudSensorId,
+              'home_id': _cloudHomeId,
+              'hub_id': body['hub_id'],
+              'ownership_epoch': body['ownership_epoch'],
+              'local_sensor_id': body['local_sensor_id'],
+              'kind': body['kind'],
+              'capabilities': body['capabilities'],
+              'version': 1,
+            });
+            return http.Response(jsonEncode(sensors.single), 201);
+          }
+          if (path == '/v1/homes/$_cloudHomeId/appliances') {
+            if (request.method == 'POST') {
+              applianceCreates++;
+              final body = jsonDecode(request.body) as Map<String, dynamic>;
+              final row = {
+                'id': newApplianceId,
+                'home_id': _cloudHomeId,
+                ...body,
+                'version': 1,
+              };
+              applianceRows.add(row);
+              return http.Response(jsonEncode(row), 201);
+            }
+            return http.Response(
+              jsonEncode({'appliances': applianceRows}),
+              200,
+            );
+          }
+          if (path == '/v1/me/preferences') {
+            return http.Response(
+              jsonEncode({
+                'schema_version': 1,
+                'version': 1,
+                'email_reports_enabled': false,
+                'history_disclosure_accepted_at': '2026-10-01T00:00:00Z',
+              }),
+              200,
+              headers: {'etag': '"1"'},
+            );
+          }
+          if (path == '/v1/homes/$_cloudHomeId/questions') {
+            return http.Response(jsonEncode({'questions': []}), 200);
+          }
+          if (path == '/v1/homes/$_cloudHomeId/questions/answers') {
+            return http.Response(jsonEncode({'answers': []}), 200);
+          }
+          if (path == '/v1/homes/$_cloudHomeId/attachments') {
+            if (request.method == 'GET') {
+              return http.Response(
+                jsonEncode({'attachments': attachments}),
+                200,
+              );
+            }
+            attachmentCreates++;
+            expect(
+              request.headers['if-match'],
+              '"${sensors.single['version']}"',
+            );
+            final body = jsonDecode(request.body) as Map<String, dynamic>;
+            expect(
+              body['identity_revision'],
+              body['appliance_id'] == applianceId ? 2 : 1,
+            );
+            for (final item in attachments) {
+              if (item['ended_at'] == null) {
+                item['ended_at'] = body['started_at'];
+              }
+            }
+            final attached = {
+              'id': attachmentCreates == 1
+                  ? attachmentId
+                  : '88888888-8888-4888-8888-888888888888',
+              'home_id': _cloudHomeId,
+              ...body,
+              'version': 1,
+            };
+            attachments.add(attached);
+            sensors.single['version'] = (sensors.single['version'] as int) + 1;
+            return http.Response(jsonEncode(attached), 201);
+          }
+          return http.Response('{}', 404);
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(
+            api: api,
+            credentials: _ClaimCredentials(),
+            autoScan: true,
+            cloudHome: const CloudHome(
+              id: _cloudHomeId,
+              name: 'Selected home',
+              timezone: 'America/Chicago',
+              countryCode: 'US',
+              postalCode: '60601',
+            ),
+            cloudApi: client,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Office meter'), findsWidgets);
+      expect(api.plug, isNull);
+      expect(sensors, isEmpty);
+      expect(attachments, isEmpty);
+
+      await tester.tap(find.text('Office meter').first);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Save this plug'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save this plug'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save plug'));
+      await tester.pumpAndSettle();
+      expect(api.plug, isNotNull);
+      expect(sensors, hasLength(1));
+      expect(attachments, isEmpty);
+
+      await tester.ensureVisible(find.text('Identify connected appliance'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Identify connected appliance'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Desk lamp · lighting'));
+      await tester.pumpAndSettle();
+      expect(attachmentCreates, 1);
+
+      await tester.ensureVisible(find.text('Change connected appliance'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Change connected appliance'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Enter a new appliance'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('applianceName')));
+      await tester.enterText(
+        find.byKey(const Key('applianceName')),
+        'Office computer',
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('applianceManufacturer')),
+      );
+      await tester.enterText(
+        find.byKey(const Key('applianceManufacturer')),
+        'Example',
+      );
+      await tester.enterText(find.byKey(const Key('applianceModel')), 'C123');
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.text('I checked this full model and fuel against the label'),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.text('I checked this full model and fuel against the label'),
+      );
+      await tester.ensureVisible(find.byKey(const Key('saveAppliance')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('saveAppliance')));
+      await tester.pumpAndSettle();
+      expect(applianceCreates, 1);
+      await tester.tap(find.byKey(const Key('saveUsageAnswers')));
+      await tester.pumpAndSettle();
+      expect(attachmentCreates, 2);
+      expect(
+        attachments
+            .where((item) => item['ended_at'] == null)
+            .single['appliance_id'],
+        newApplianceId,
+      );
+      expect(attachments.every((item) => item['sensor_id'] == _cloudSensorId), isTrue);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(
+            api: api,
+            credentials: _ClaimCredentials(),
+            autoScan: true,
+            cloudHome: const CloudHome(
+              id: _cloudHomeId,
+              name: 'Selected home',
+              timezone: 'America/Chicago',
+              countryCode: 'US',
+              postalCode: '60601',
+            ),
+            cloudApi: client,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Office computer'), findsWidgets);
+      await tester.ensureVisible(find.text('Change connected appliance'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Change connected appliance'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Office computer ·').first);
+      await tester.pumpAndSettle();
+      expect(attachmentCreates, 2);
+    },
+  );
+
+  testWidgets(
+    'adopting a verified plug registers and reads back its Cloud sensor',
+    (tester) async {
+      final api = _ClaimDiscoveryApi();
+      final credentials = _ClaimCredentials();
+      final sensors = <Map<String, dynamic>>[];
+      var sensorCreates = 0;
+      final client = CloudApiClient(
+        session: CloudSession(
+          config: _cloudConfig,
+          store: _TestTokenStore(),
+          authenticator: _TestAuthenticator(),
+        ),
+        client: MockClient((request) async {
+          if (request.method == 'POST' &&
+              request.url.path == '/v1/homes/$_cloudHomeId/hub-claims') {
+            return http.Response(
+              jsonEncode({
+                'claim_id': '44444444-4444-4444-8444-444444444444',
+                'hub_id': _cloudHubId,
+                'local_hub_id': _localHubId,
+                'nonce': 'nonce',
+                'expires_at': '2099-01-01T00:00:00Z',
+              }),
+              201,
+            );
+          }
+          if (request.method == 'POST' &&
+              request.url.path == '/v1/hubs/claim') {
+            return http.Response(
+              jsonEncode({
+                'hub_id': _cloudHubId,
+                'local_hub_id': _localHubId,
+                'home_id': _cloudHomeId,
+                'ownership_epoch': 3,
+                'version': 1,
+              }),
+              200,
+            );
+          }
+          if (request.url.path == '/v1/homes/$_cloudHomeId/sensors' &&
+              request.method == 'GET') {
+            return http.Response(jsonEncode({'sensors': sensors}), 200);
+          }
+          if (request.url.path == '/v1/homes/$_cloudHomeId/sensors' &&
+              request.method == 'POST') {
+            sensorCreates++;
+            final body = jsonDecode(request.body) as Map<String, dynamic>;
+            final registered = {
+              'id': _cloudSensorId,
+              'home_id': _cloudHomeId,
+              'hub_id': body['hub_id'],
+              'ownership_epoch': body['ownership_epoch'],
+              'local_sensor_id': body['local_sensor_id'],
+              'kind': body['kind'],
+              'capabilities': body['capabilities'],
+              'version': 1,
+            };
+            sensors.add(registered);
+            return http.Response(jsonEncode(registered), 201);
+          }
+          return http.Response('{}', 404);
+        }),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(
+            api: api,
+            credentials: credentials,
+            cloudHome: const CloudHome(
+              id: _cloudHomeId,
+              name: 'Selected home',
+              timezone: 'America/Chicago',
+              countryCode: 'US',
+              postalCode: '60601',
+            ),
+            cloudApi: client,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Link paired hub to home'));
+      await tester.pumpAndSettle();
+
+      expect(sensorCreates, 0);
+      await tester.tap(find.text('Scan for plugs'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Office meter'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Save this plug'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save this plug'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save plug'));
+      await tester.pumpAndSettle();
+
+      expect(api.plug, isNotNull);
+      expect(sensorCreates, 1);
+      expect(sensors.single['local_sensor_id'], 'stable-local-plug-1');
+      expect(sensors.single['ownership_epoch'], 3);
+      expect(sensors.single['capabilities'], ['power', 'energy']);
+      expect(find.byKey(const Key('hubClaimMessage')), findsNothing);
+    },
+  );
+
   testWidgets('shows OEM nameplate rating separate from measured energy', (
     tester,
   ) async {
@@ -1031,6 +1493,8 @@ void main() {
     await tester.ensureVisible(find.text('Save this plug'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save this plug'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save plug'));
     await tester.pumpAndSettle();
     expect(find.text('Save plug'), findsOneWidget);
     await tester.tap(find.text('I understand this plug cannot measure energy'));

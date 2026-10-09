@@ -17,7 +17,7 @@ List<DesignTextBinding>? prepareEfficiencyRollingBindings(
       rolling == null ||
       !snapshot.energy.matchesHomeAndSnapshot(snapshot.homeId) ||
       rolling.homeId.toLowerCase() != snapshot.homeId.toLowerCase() ||
-      rolling.dataMode != 'sample' ||
+      (rolling.dataMode != 'sample' && rolling.dataMode != 'mixed') ||
       rolling.fixtureRevision != snapshot.energy.dashboard.fixtureRevision ||
       rolling.timezone != snapshot.energy.dashboard.timezone ||
       rolling.scope != snapshot.energy.dashboard.scope ||

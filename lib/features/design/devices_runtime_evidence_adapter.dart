@@ -250,10 +250,12 @@ class DevicesRuntimeEvidenceAdapter {
         sensors.any((s) => !sensorIds.add(s.id))) {
       throw const FormatException('Duplicate runtime inventory identity');
     }
-    if (inventory.isSample && inventory.fixtureRevision == null) {
+    if (inventory.dataMode != CloudApplianceDataMode.household &&
+        inventory.fixtureRevision == null) {
       throw const FormatException('Sample inventory lacks provenance');
     }
-    if (!inventory.isSample && inventory.fixtureRevision != null) {
+    if (inventory.dataMode == CloudApplianceDataMode.household &&
+        inventory.fixtureRevision != null) {
       throw const FormatException('Household inventory has sample provenance');
     }
   }

@@ -64,8 +64,8 @@ globalThis.document = {
 assert.equal(eval(script), true);
 assert.equal(svg.children.length, 2);
 assert.deepEqual(svg.children.map(group => group.children.at(-1).textContent), ['Mon', 'Tue']);
-assert.equal(svg.children[0].children[0].attrs.fill, '#7dd3fc');
-assert.equal(svg.children[0].children[1].attrs.fill, '#ffdad6');
+assert.equal(svg.children[0].children[0].attrs.fill, '#059669');
+assert.equal(svg.children[0].children[1].attrs.fill, '#d97706');
 assert.equal(buttons[0].state['bg-white'], true);
 assert.equal(buttons[1].state['bg-white'], false);
 window.__energyLensTextBindingContext.generation = 2;

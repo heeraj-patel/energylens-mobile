@@ -29,6 +29,7 @@ import 'features/energy/cloud_report_preview_screen.dart';
 import 'features/identify/appliance_onboarding_screen.dart';
 import 'features/identify/cloud_usage_questions_screen.dart';
 import 'features/design/design_shell.dart';
+import 'features/design/local_pilot_device_lifecycle.dart';
 
 void main() => runApp(const EnergyLensApp());
 
@@ -42,9 +43,13 @@ class EnergyLensApp extends StatelessWidget {
   const EnergyLensApp({
     super.key,
     this.localPilot = const bool.fromEnvironment('ENERGYLENS_LOCAL_PILOT'),
+    this.localDiscoveryApi = const DiscoveryApi(),
+    this.localDiscoveryCredentials = const DiscoveryCredentials(),
   });
 
   final bool localPilot;
+  final DiscoveryApi localDiscoveryApi;
+  final DiscoveryCredentials localDiscoveryCredentials;
   static final GlobalKey<NavigatorState> _navigatorKey =
       GlobalKey<NavigatorState>();
 
@@ -100,8 +105,24 @@ class EnergyLensApp extends StatelessWidget {
       theme: theme(Brightness.light),
       darkTheme: theme(Brightness.dark),
       home: localPilot
-          ? const DesignShell(
-              designTour: bool.fromEnvironment('ENERGYLENS_DESIGN_TOUR'),
+          ? DesignShell(
+              localPilot: true,
+              localDeviceLifecycle: LocalPilotDeviceLifecycle(
+                api: localDiscoveryApi,
+                credentials: localDiscoveryCredentials,
+              ),
+              designTour: const bool.fromEnvironment('ENERGYLENS_DESIGN_TOUR'),
+              onDiscoverDevices: () async {
+                await _navigatorKey.currentState?.push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => DiscoveryScreen(
+                      autoScan: true,
+                      api: localDiscoveryApi,
+                      credentials: localDiscoveryCredentials,
+                    ),
+                  ),
+                );
+              },
             )
           : CloudEntryGate(
               homeBuilder: (cloudHome, signOut, changeHome, cloudApi) =>
@@ -134,6 +155,22 @@ class EnergyLensApp extends StatelessWidget {
                     onChangeHome: changeHome,
                     designContextCoordinator: designContextCoordinator,
                     onboardingLifecycle: lifecycle,
+                    onDiscoverDevices: () async {
+                      final accountId = lifecycle.verifiedAccountId;
+                      if (accountId == null ||
+                          !lifecycle.isVerifiedScope(accountId, cloudHome.id)) {
+                        return;
+                      }
+                      await _navigatorKey.currentState?.push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => DiscoveryScreen(
+                            autoScan: true,
+                            cloudHome: cloudHome,
+                            cloudApi: cloudApi,
+                          ),
+                        ),
+                      );
+                    },
                     onReportPreview: () {
                       final accountId = lifecycle.verifiedAccountId;
                       if (accountId == null ||
@@ -1884,7 +1921,7 @@ class _StopWaste extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Findings and verified savings will appear after monitoring starts.',
+                      'Findings and savings will appear after monitoring starts.',
                       style: Theme.of(context).textTheme.bodySmall
                           ?.copyWith(color: _secondary(context)),
                     ),
@@ -1907,7 +1944,7 @@ class _StopWaste extends StatelessWidget {
       const SizedBox(height: 18),
       const _InfoRow(
         Icons.verified_outlined,
-        'Verified wins will live here',
+        'Wins will live here',
         'Compare observed use before and after an action to see the result.',
         color: _green,
       ),
@@ -2583,8 +2620,8 @@ class _AskAndAddState extends State<_AskAndAdd> {
         const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: () async {
-            await Navigator.of(context).push<SavedAppliance>(
-              MaterialPageRoute<SavedAppliance>(
+            await Navigator.of(context).push<Object>(
+              MaterialPageRoute<Object>(
                 builder: (_) => ApplianceOnboardingScreen(
                   method: 'manual',
                   cloudHome: widget.cloudHome,

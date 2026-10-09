@@ -6,6 +6,7 @@ const appliance = '22222222-2222-4222-8222-222222222222';
 const fact = '33333333-3333-4333-8333-333333333333';
 const tariff = '44444444-4444-4444-8444-444444444444';
 const id = '55555555-5555-4555-8555-555555555555';
+const seeded = '839e2376-d211-5137-b5fb-09486a7d978a';
 
 Map<String, dynamic> payload() => {
   'id': id,
@@ -42,6 +43,64 @@ Map<String, dynamic> payload() => {
 };
 
 void main() {
+  test(
+    'accepts v2 seeded and mixed previews with version-specific statuses',
+    () {
+      final v2 = {
+        ...payload(),
+        'schema_version': 'manual-preview/v2',
+        'measured_status': 'unavailable',
+        'recommendations_status': 'unavailable',
+        'items': [
+          {
+            'appliance_id': seeded,
+            'category': 'other',
+            'explanation': 'No current reviewed monthly estimate is available.',
+            'estimate': null,
+          },
+          ...(payload()['items'] as List),
+        ],
+      };
+      final preview = CloudReportPreview.fromJson(v2, home, {
+        seeded,
+        appliance,
+      });
+      expect(preview.items.length, 2);
+      expect(preview.items.first.estimate, isNull);
+      expect(preview.items.last.estimate!.costUsd, '0.00');
+      for (final measured in ['unavailable', 'partial']) {
+        for (final recommendations in ['unavailable', 'available']) {
+          expect(
+            CloudReportPreview.fromJson(
+              {
+                ...v2,
+                'measured_status': measured,
+                'recommendations_status': recommendations,
+              },
+              home,
+              {seeded, appliance},
+            ).items.length,
+            2,
+          );
+        }
+      }
+      for (final bad in [
+        {...v2, 'measured_status': 'not_included'},
+        {...v2, 'recommendations_status': 'not_included'},
+        {...payload(), 'measured_status': 'partial'},
+        {
+          ...v2,
+          'items': [(v2['items'] as List).first, (v2['items'] as List).first],
+        },
+      ]) {
+        expect(
+          () => CloudReportPreview.fromJson(bad, home, {seeded, appliance}),
+          throwsFormatException,
+        );
+      }
+    },
+  );
+
   test('validates home, fingerprint, source evidence and local expiry', () {
     final preview = CloudReportPreview.fromJson(payload(), home, {appliance});
     expect(preview.items.single.estimate!.costUsd, '0.00');

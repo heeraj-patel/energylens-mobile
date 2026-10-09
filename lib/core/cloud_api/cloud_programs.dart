@@ -104,8 +104,11 @@ class CloudProgram {
         !{
           'open',
           'upcoming',
+          'waitlist',
           'exhausted',
+          'suspended',
           'closed',
+          'unknown',
         }.contains(json['availability_status']) ||
         !{'unknown', 'potentially_eligible'}.contains(json['status']) ||
         reasons is! List ||

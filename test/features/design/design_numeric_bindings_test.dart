@@ -492,6 +492,42 @@ void main() {
     expect(result.bindings[2].text, names.first);
     expect(result.bindings[3].text, '\$0.01');
     expect(result.unknownBindingIds, isEmpty);
+
+    json['data_mode'] = 'mixed';
+    json['evidence_basis'] = 'mixed';
+    (json['buckets'] as List).single['device_allocations'].add({
+      'appliance_id': '99999999-9999-4999-8999-999999999999',
+      'allocation': {
+        ...((rows.first['allocation'] as Map<String, dynamic>)),
+        'useful_cost': null,
+        'waste_cost': null,
+        'unclassified_cost': {'amount': '0.03', 'currency': 'USD'},
+        'evidence_basis': 'measured',
+      },
+    });
+    final mixedInventory = DevicesDomainSnapshot(
+      homeId: homeA,
+      items: inventory.items,
+      hasMoreMeteredPages: false,
+      dataMode: CloudApplianceDataMode.mixed,
+      fixtureRevision: 'db-demo-v1',
+      sampleDayCosts: CloudHouseholdEnergyTrends.fromJson(
+        json,
+        expectedHomeId: homeA,
+      ),
+      isCurrent: () => true,
+    );
+    final mixed = prepareDesignNumericBindings(
+      DesignContextRead(
+        accountId: 'owner',
+        homeId: homeA,
+        mode: DesignContextMode.household,
+        page: 'devices',
+        value: mixedInventory,
+      ),
+    );
+    expect(mixed.bindings, hasLength(32));
+    expect(mixed.bindings[3].text, '\$0.01');
   });
 
   test('unclassified cost alone leaves useful and waste slots unknown', () {

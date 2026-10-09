@@ -440,6 +440,7 @@ void main() {
       expect(dummyWasteDrawForProfile('camera'), isNull);
       expect(dummyWasteDrawForProfile('freezer'), isNull);
       expect(dummyWasteDrawForProfile('modem'), isNull);
+      expect(dummyWasteDrawForProfile('lighting'), DummyWasteDraw.low);
       expect(
         () => WasteDurationEvidence(
           seconds: 0,

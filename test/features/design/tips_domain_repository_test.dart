@@ -152,12 +152,86 @@ void main() {
         .fetch(homeA, TipsPage.efficiency);
     expect(result!.operatingEstimates.single.cost, '2.00');
     expect(result.recommendations.map((action) => action.ruleId), [
+      'refrigerator.maintenance',
       'computer.sleep_settings',
     ]);
     expect(result.savingsAmount, isNull);
     expect(result.programs, isNull);
     expect(source.programCalls, 0);
     expect(source.factCalls, 0);
+  });
+
+  test('every Tips page retains all actions in source order', () async {
+    final source = FakeSource()
+      ..actions = [
+        const CloudRecommendation(
+          ruleId: 'general.gather_information',
+          applianceId: applianceId,
+          state: 'candidate',
+          title: 'Identify the appliance',
+          explanation: 'More information needed',
+          nextQuestion: 'confirm_model',
+          evidenceCount: 0,
+        ),
+        recommendation(),
+        const CloudRecommendation(
+          ruleId: 'computer.sleep_settings',
+          applianceId: applianceId,
+          state: 'active',
+          title: 'Adjust sleep settings',
+          explanation: 'Reviewed explanation',
+          nextQuestion: null,
+          evidenceCount: 2,
+        ),
+      ];
+    final repository = TipsDomainRepository(source);
+    for (final page in TipsPage.values) {
+      final result = await repository.fetch(homeA, page);
+      expect(result!.recommendations, orderedEquals(source.actions));
+      expect(result.recommendations.map((action) => action.state), [
+        'candidate',
+        'active',
+        'active',
+      ]);
+      expect(result.savingsAmount, isNull);
+      expect(result.eligibility, isNull);
+    }
+  });
+
+  test('perks retains every program status and availability', () async {
+    final programs = [
+      for (var index = 0; index < 3; index++)
+        CloudProgram(
+          id: '44444444-4444-4444-8444-${(index + 1).toString().padLeft(12, '0')}',
+          title: 'Program $index',
+          administratorName: 'Administrator $index',
+          administratorKind: 'utility',
+          benefitKind: 'rebate',
+          benefitDisplay: 'Benefit $index',
+          benefitTerms: const {},
+          eligibilityTerms: const {},
+          stackingTerms: const {},
+          availabilityStatus: ['unknown', 'waitlist', 'suspended'][index],
+          status: index.isEven ? 'unknown' : 'potentially_eligible',
+          reasons: const ['provider_unknown'],
+          sourceUrl: Uri.parse('https://utility.example/program/$index'),
+          sourceSha256: 'a' * 64,
+          reviewExpiresAt: DateTime.utc(2026, 11),
+        ),
+    ];
+    final source = FakeSource(
+      programRead: (_) async => CloudProgramPage(
+        programs: programs,
+        asOf: DateTime.utc(2026, 10, 6),
+        locationRequired: false,
+        coverage: null,
+      ),
+    );
+    final result = await TipsDomainRepository(source)
+        .fetch(homeA, TipsPage.perksTips);
+    expect(result!.programs!.programs, orderedEquals(programs));
+    expect(result.eligibility, isNull);
+    expect(result.savingsAmount, isNull);
   });
 
   test('care fetches only exact reviewed fact scope', () async {

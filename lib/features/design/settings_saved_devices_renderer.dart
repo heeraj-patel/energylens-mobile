@@ -29,7 +29,7 @@ class SettingsSavedDevicesRenderer {
     required List<CloudAppliance> appliances,
   }) {
     final ids = <String>{};
-    final rows = <Map<String, String>>[];
+    final rows = <Map<String, Object?>>[];
     for (final appliance in appliances) {
       if (appliance.homeId.toLowerCase() != homeId.toLowerCase()) {
         throw const FormatException(
@@ -48,6 +48,7 @@ class SettingsSavedDevicesRenderer {
         'model': appliance.fullModel,
         'fuel': appliance.fuel,
         'variant': appliance.variant ?? '',
+        'persisted': appliance.demoDeviceId == null,
       });
     }
     final payload = _encode({
@@ -66,7 +67,8 @@ class SettingsSavedDevicesRenderer {
   for (const row of payload.rows) {
     if (typeof row.id !== 'string' || typeof row.name !== 'string' ||
         typeof row.brand !== 'string' || typeof row.model !== 'string' ||
-        typeof row.fuel !== 'string' || typeof row.variant !== 'string') return false;
+        typeof row.fuel !== 'string' || typeof row.variant !== 'string' ||
+        typeof row.persisted !== 'boolean') return false;
     const card = document.createElement('div');
     card.className = 'p-3 rounded-lg bg-surface-container-low/50 border border-outline-variant/20 flex items-center gap-3';
     card.setAttribute('data-el-saved-appliance-id', row.id);
@@ -86,6 +88,18 @@ class SettingsSavedDevicesRenderer {
     identity.textContent = [row.brand, row.model].filter(Boolean).join(' ');
     labels.append(name, identity);
     card.append(iconBox, labels);
+    if (row.persisted) {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors';
+      remove.setAttribute('aria-label', 'Remove ' + row.name);
+      remove.setAttribute('data-el-delete-appliance-id', row.id);
+      const removeIcon = document.createElement('span');
+      removeIcon.className = 'material-symbols-outlined text-[18px]';
+      removeIcon.textContent = 'delete_outline';
+      remove.appendChild(removeIcon);
+      card.appendChild(remove);
+    }
     cards.push(card);
   }
   for (const card of list.querySelectorAll('[data-el-saved-appliance-id]')) card.remove();

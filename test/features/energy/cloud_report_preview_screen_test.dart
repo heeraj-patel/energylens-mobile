@@ -24,6 +24,7 @@ const home = CloudHome(
   postalCode: '60601',
 );
 const applianceId = '22222222-2222-4222-8222-222222222222';
+const seededId = '839e2376-d211-5137-b5fb-09486a7d978a';
 const previewId = '55555555-5555-4555-8555-555555555555';
 const deliveryId = '66666666-6666-4666-8666-666666666666';
 const accountA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -117,6 +118,110 @@ Map<String, Object?> _preview() {
 }
 
 void main() {
+  testWidgets('seeded inventory UUID and persisted UUID reach v2 POST and GET', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final posted = <String>[];
+    var reads = 0;
+    final response = {
+      ..._preview(),
+      'schema_version': 'manual-preview/v2',
+      'measured_status': 'unavailable',
+      'recommendations_status': 'unavailable',
+      'items': [
+        {
+          'appliance_id': seededId,
+          'category': 'other',
+          'estimate': null,
+          'explanation': 'No current reviewed monthly estimate is available for this appliance.',
+        },
+        {
+          'appliance_id': applianceId,
+          'category': 'washer',
+          'estimate': null,
+          'explanation': 'No current reviewed monthly estimate is available for this appliance.',
+        },
+      ],
+    };
+    final api = _api(
+      MockClient((request) async {
+        if (request.url.path.endsWith('/appliances')) {
+          return http.Response(
+            jsonEncode({
+              'appliances': [
+                {
+                  'id': seededId,
+                  'demo_device_id': 'demo-device-01',
+                  'home_id': home.id,
+                  'name': 'Study Desktop & Rig',
+                  'category': '',
+                  'identity': {
+                    'brand': '',
+                    'full_model': '',
+                    'fuel': '',
+                    'match_quality': 'unresolved',
+                  },
+                  'version': 1,
+                  'archived_at': null,
+                },
+                {
+                  'id': applianceId,
+                  'home_id': home.id,
+                  'name': 'Washer',
+                  'category': 'washer',
+                  'identity': {
+                    'brand': '',
+                    'full_model': '',
+                    'fuel': 'electricity',
+                    'match_quality': 'unresolved',
+                  },
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path.endsWith('/reports/preview')) {
+          posted.addAll(
+            (jsonDecode(request.body) as Map<String, dynamic>)['appliance_ids']
+                .cast<String>(),
+          );
+          return http.Response(jsonEncode(response), 201);
+        }
+        if (request.url.path.endsWith('/reports/previews/$previewId')) {
+          reads++;
+          return http.Response(jsonEncode(response), 200);
+        }
+        fail('Unexpected request: ${request.url.path}');
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudReportPreviewScreen(api: api, home: home),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('reportAppliance-$seededId')));
+    await tester.tap(find.byKey(const Key('reportAppliance-$applianceId')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create private preview'));
+    await tester.pumpAndSettle();
+    expect(posted, [applianceId, seededId]);
+    expect(reads, 1);
+    expect(find.byKey(const Key('reportStatus')), findsOneWidget);
+    expect(
+      find.text(
+        'No current reviewed monthly estimate is available for this appliance.',
+      ),
+      findsNWidgets(2),
+    );
+    api.close();
+  });
+
   testWidgets('only current delivery readback reports sent status', (
     tester,
   ) async {

@@ -39,9 +39,10 @@ class LiveDevicesCardRenderer {
             'id': row.applianceId,
             'name': row.name,
             'identity': '${row.manufacturer} ${row.model}'.trim(),
+            'wasteCost': row.wasteCost,
             'demoWaste': row.demoWasteMicrosPerDay == null
                 ? null
-                : 'Demo estimate \$${_formatDemoWaste(row.demoWasteMicrosPerDay!)}/day',
+                : '\$${_formatDemoWaste(row.demoWasteMicrosPerDay!)}',
           },
       ],
     });
@@ -59,7 +60,8 @@ class LiveDevicesCardRenderer {
   for (const row of payload.rows) {
     if (typeof row.id !== 'string' || typeof row.name !== 'string' ||
         typeof row.identity !== 'string' ||
-        (row.demoWaste !== null && typeof row.demoWaste !== 'string')) return false;
+        (row.demoWaste !== null && typeof row.demoWaste !== 'string') ||
+        (row.wasteCost !== null && typeof row.wasteCost !== 'string')) return false;
     const clone = template.cloneNode(true);
     const name = clone.querySelector('[data-el-bind="devices_text_022"]');
     const identity = clone.querySelector('[data-el-bind="devices_text_023"]');
@@ -75,15 +77,16 @@ class LiveDevicesCardRenderer {
     }
     name.textContent = row.name;
     identity.textContent = row.identity;
-    status.textContent = 'Status unknown';
-    status.classList.remove('bg-[#fffbeb]', 'text-[#d97706]', 'border-[#fde68a]');
-    status.classList.add('bg-surface-container-high', 'text-on-surface-variant', 'border-outline-variant/50');
+    status.closest('.flex.flex-col.items-end')?.remove();
     useful.textContent = 'N/A';
     useful.classList.remove('text-[#059669]');
     useful.classList.add('text-on-surface-variant');
-    waste.textContent = row.demoWaste ?? 'N/A';
+    const wasteText = row.wasteCost ?? row.demoWaste;
+    waste.textContent = wasteText ?? 'N/A';
     waste.classList.remove('text-[#d97706]');
-    waste.classList.add('text-on-surface-variant');
+    waste.classList.remove('text-on-surface-variant');
+    const wasteAmount = wasteText && Number(wasteText.replace(/[^0-9.]/g, ''));
+    waste.classList.add(wasteAmount > 0 ? 'text-[#d97706]' : 'text-on-surface-variant');
     icon.textContent = 'devices_other';
     clone.setAttribute('data-el-live-device-id', row.id);
     clone.setAttribute('data-el-device-name', row.name);
@@ -100,6 +103,12 @@ class LiveDevicesCardRenderer {
   String _encode(Object payload) =>
       base64Encode(utf8.encode(jsonEncode(payload)));
 
-  String _formatDemoWaste(int micros) =>
-      (micros / 1000000).toStringAsFixed(micros % 10000 == 0 ? 2 : 4);
+  String _formatDemoWaste(int micros) {
+    final whole = micros ~/ 1000000;
+    var fraction = (micros % 1000000).toString().padLeft(6, '0');
+    while (fraction.length > 2 && fraction.endsWith('0')) {
+      fraction = fraction.substring(0, fraction.length - 1);
+    }
+    return '$whole.$fraction';
+  }
 }

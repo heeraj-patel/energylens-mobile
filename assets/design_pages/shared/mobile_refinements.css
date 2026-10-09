@@ -1,0 +1,122 @@
+/* Keep the existing page copy and selection behavior readable on narrow phones. */
+:root {
+  --el-useful-ink: #047857;
+  --el-waste-ink: #92400e;
+}
+
+[data-el-bind][class*="text-[#059669]"] {
+  color: var(--el-useful-ink);
+}
+
+[data-el-bind][class*="text-[#d97706]"] {
+  color: var(--el-waste-ink);
+}
+
+[data-el-bind="dashboard_text_018"]::before {
+  content: "";
+  display: inline-block;
+  width: .25rem;
+  height: .25rem;
+  margin: 0 .4rem .12rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+[aria-label="Savings Categories"] .tab-pill,
+#status-filter-group .filter-chip,
+#sort-pill-group .sort-pill,
+[id^="tab-"][id$="-btn"] {
+  min-height: 44px;
+}
+
+#status-filter-group {
+  scroll-padding-inline: 1rem;
+}
+
+#sort-pill-group .sort-pill {
+  padding-inline: .5rem;
+  white-space: nowrap;
+}
+
+#status-filter-group .active-chip,
+#sort-pill-group .active-sort,
+[aria-label="Savings Categories"] .tab-pill[aria-selected="true"],
+[data-tab-target].bg-surface-container-lowest,
+#tab-profile-btn.bg-white,
+#tab-devices-btn.bg-white {
+  outline: 1px solid #006686;
+  outline-offset: -1px;
+}
+
+#status-filter-group button:focus-visible,
+#sort-pill-group button:focus-visible,
+[aria-label="Savings Categories"] button:focus-visible,
+[data-tab-target]:focus-visible,
+[id^="tab-"][id$="-btn"]:focus-visible,
+[id^="method-btn-"]:focus-visible {
+  outline: 2px solid #006686;
+  outline-offset: 2px;
+}
+
+[id^="method-btn-"] [data-el-bind],
+[aria-label="Savings Categories"] [data-el-bind] {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+
+/* Existing subpage titles remain present, with less repeated framing above content. */
+body:has([data-el-bind="efficiency_away_text_003"]) main > div > div:first-child,
+body:has([data-el-bind="efficiency_peak_rates_text_003"]) main > div > div:first-child,
+body:has([data-el-bind="efficiency_habits_text_003"]) main > div > div:first-child {
+  padding-top: 0;
+}
+
+body:has([data-el-bind="efficiency_away_text_003"]) main h1,
+body:has([data-el-bind="efficiency_peak_rates_text_003"]) main h1,
+body:has([data-el-bind="efficiency_habits_text_003"]) main h1 {
+  font-size: 1.125rem;
+  line-height: 1.3;
+}
+
+body:has([data-el-bind="perks_tips_text_003"]) main header,
+body:has([data-el-bind="tips_efficiency_text_003"]) main header,
+body:has([data-el-bind="tips_care_upgrades_text_003"]) main header,
+body:has([data-el-bind="tips_knowledge_text_003"]) main header {
+  margin-top: .5rem;
+  margin-bottom: .75rem;
+}
+
+body:has([data-el-bind="settings_manage_devices_text_003"]) main > div,
+body:has([data-el-bind="settings_manual_device_entry_text_003"]) main > div,
+body:has([data-el-bind="settings_photo_scan_onboarding_text_003"]) main > div {
+  padding-top: .5rem;
+}
+
+body:has([data-el-bind="settings_manage_devices_text_003"]) main h1,
+body:has([data-el-bind="settings_manual_device_entry_text_003"]) main h1,
+body:has([data-el-bind="settings_photo_scan_onboarding_text_003"]) main h1 {
+  font-size: 1.25rem;
+  line-height: 1.3;
+}
+
+/* Make names and questions wrap before an action or metric takes their space. */
+[data-el-bind="dashboard_text_038"],
+[data-el-bind="dashboard_text_015"],
+[data-el-bind="dashboard_text_016"],
+[data-el-bind^="devices_text_"].truncate,
+[data-el-bind="perks_tips_text_021"] {
+  min-width: 0;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  overflow-wrap: anywhere;
+}
+
+[data-el-bind="perks_tips_text_009"],
+[data-el-bind="perks_tips_text_019"],
+[data-el-bind="perks_tips_text_056"] {
+  font-size: 1.125rem;
+  line-height: 1.3;
+}

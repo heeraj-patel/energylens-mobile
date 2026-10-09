@@ -142,21 +142,11 @@ class TipsDomainRepository {
           facts[appliance.id] = result;
         }
       }
-      final selectedActions = batch.actions.where((action) {
-        if (page == TipsPage.careUpgrades) {
-          return action.ruleId == 'refrigerator.maintenance';
-        }
-        if (page == TipsPage.efficiency) {
-          return action.ruleId != 'refrigerator.maintenance' &&
-              action.ruleId != 'general.gather_information';
-        }
-        return action.ruleId != 'general.gather_information';
-      }).toList();
       return TipsDomainSnapshot(
         homeId: homeId,
         page: page,
         programs: programs,
-        recommendations: List.unmodifiable(selectedActions),
+        recommendations: List.unmodifiable(batch.actions),
         operatingEstimates: List.unmodifiable(estimates),
         usageFactsByAppliance: Map.unmodifiable(facts),
         factsIncomplete: factsIncomplete,

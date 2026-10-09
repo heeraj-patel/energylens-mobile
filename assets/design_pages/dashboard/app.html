@@ -110,7 +110,7 @@
       min-height: max(884px, 100dvh);
     }
   </style>
-<link rel="stylesheet" href="../shared/fonts.css"><script src="../shared/chrome.js"></script></head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen"><div id="el-header"></div><main class="flex-1 flex flex-col relative w-full pt-16 pb-20 bg-surface"><div class="flex flex-col w-full px-gutter space-y-space-md pb-space-lg">
+<link rel="stylesheet" href="../shared/fonts.css"><script src="../shared/chrome.js"></script><link rel="stylesheet" href="../shared/mobile_refinements.css"></head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen"><div id="el-header"></div><main class="flex-1 flex flex-col relative w-full pt-16 pb-20 bg-surface"><div class="flex flex-col w-full px-gutter space-y-space-md pb-space-lg">
 <!-- Friendly Greeting Banner -->
 <div class="relative overflow-hidden rounded-xl bg-surface-container-lowest border border-outline-variant/40 p-space-md shadow-sm text-on-surface">
 <div class="absolute -right-4 -bottom-4 w-32 h-32 rounded-full bg-primary-container/25 blur-2xl pointer-events-none"></div>
@@ -121,7 +121,7 @@
 <div class="flex flex-col min-w-0">
 <div class="flex items-center gap-space-xs">
 <span class="font-label-md text-label-md text-primary font-semibold tracking-wide" data-el-bind="dashboard_text_002">PIGGYBANK HAPPY</span>
-<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+<span class="w-2 h-2 rounded-full bg-primary"></span>
 </div>
 <p class="font-body-md text-body-md text-on-surface leading-tight mt-0.5" data-el-bind="dashboard_text_003">
           Happy afternoon, Alex! Piggybank is looking safe &amp; happy today 🌻
@@ -129,12 +129,12 @@
 </div>
 </div>
 </div>
-<!-- Energy Lens Card -->
+<!-- Cost Card -->
 <div class="rounded-xl bg-surface-container-lowest border border-outline-variant/40 p-space-md shadow-sm flex flex-col space-y-space-sm text-on-surface">
 <div class="flex items-center justify-between">
 <div class="flex items-center gap-space-xs">
 <span class="material-symbols-outlined text-primary text-[20px]">filter_center_focus</span>
-<span class="font-headline-lg text-2xl font-black uppercase tracking-tight text-slate-900" data-el-bind="dashboard_text_004">Energy Lens</span>
+<span class="text-sm font-bold uppercase tracking-wider text-slate-600" data-el-bind="dashboard_text_004">Cost</span>
 </div>
 
 </div>
@@ -142,65 +142,33 @@
 <div class="grid grid-cols-2 gap-space-sm pt-space-xs">
 <div class="bg-surface-container-low rounded-lg p-space-sm flex flex-col border border-surface-container-highest/60">
 <div class="flex items-center justify-between mb-1">
-<span class="font-label-md text-label-md text-on-surface-variant" data-el-bind="dashboard_text_005">Useful Power</span>
+<span class="font-label-md text-label-md text-on-surface-variant" data-el-bind="dashboard_text_005">Useful cost</span>
 
 </div>
-<span class="font-headline-lg text-headline-lg font-semibold leading-none tracking-tight" style="color: rgb(5, 150, 105);" data-el-bind="dashboard_text_006">$6.96<span class="font-body-md text-body-md text-on-surface-variant font-normal" data-el-bind="dashboard_text_007">/day</span></span>
+<span class="font-headline-lg text-headline-lg font-semibold leading-none tracking-tight" style="color: var(--el-useful-ink);" data-el-bind="dashboard_text_006">$6.96<span class="font-body-md text-body-md text-on-surface-variant font-normal" data-el-bind="dashboard_text_007">/day</span></span>
 
 </div>
 <div class="bg-surface-container-low rounded-lg p-space-sm flex flex-col border border-surface-container-highest/60">
 <div class="flex items-center justify-between mb-1">
-<span class="font-label-md text-label-md text-on-surface-variant" data-el-bind="dashboard_text_008">Wasted Power</span>
+<span class="font-label-md text-label-md text-on-surface-variant" data-el-bind="dashboard_text_008">Waste cost</span>
 
 </div>
-<span class="font-headline-lg text-headline-lg font-semibold leading-none tracking-tight" style="color: rgb(217, 119, 6);" data-el-bind="dashboard_text_009">$2.88<span class="font-body-md text-body-md text-on-surface-variant font-normal" data-el-bind="dashboard_text_010">/day</span></span>
+<span class="font-headline-lg text-headline-lg font-semibold leading-none tracking-tight" style="color: var(--el-waste-ink);" data-el-bind="dashboard_text_009">$2.88<span class="font-body-md text-body-md text-on-surface-variant font-normal" data-el-bind="dashboard_text_010">/day</span></span>
 
 </div>
 </div>
 <!-- Dual Bar Meter -->
 <div class="pt-space-xs">
 <div class="w-full h-3 rounded-full overflow-hidden flex bg-surface-container-highest">
-<div class="h-full bg-primary-container transition-all duration-500 rounded-l-full" style="width: 71%;"></div>
-<div class="h-full bg-error/70 transition-all duration-500 rounded-r-full" style="width: 29%;"></div>
+<div class="h-full transition-all duration-500 rounded-l-full" style="width: 71%; background-color: #059669;"></div>
+<div class="h-full transition-all duration-500 rounded-r-full" style="width: 29%; background-color: #d97706;"></div>
 </div>
 <div class="flex justify-between items-center text-on-surface-variant pt-1">
 <span class="font-label-md text-label-md text-[11px] flex items-center gap-1" data-el-bind="dashboard_text_011">
-<span class="w-2 h-2 rounded-full bg-primary-container inline-block"></span> 71% Productive load
+<span class="w-2 h-2 rounded-full inline-block" style="background-color: #059669;"></span> 71% Useful
         </span>
-<span class="font-label-md text-label-md text-[11px] flex items-center gap-1" data-el-bind="dashboard_text_012"><span class="w-2 h-2 rounded-full bg-error/70 inline-block"></span> 29% Wasted Energy</span>
+<span class="font-label-md text-label-md text-[11px] flex items-center gap-1" data-el-bind="dashboard_text_012"><span class="w-2 h-2 rounded-full inline-block" style="background-color: #d97706;"></span> 29% Waste</span>
 </div>
-</div>
-</div>
-<!-- Top Saving Move Card -->
-<div class="rounded-xl bg-surface-container-lowest border border-outline-variant/40 p-space-md shadow-sm flex flex-col space-y-space-sm text-on-surface">
-<div class="flex items-center justify-between">
-<div class="flex items-center gap-space-xs">
-<span class="material-symbols-outlined text-primary text-[20px]">lightbulb</span>
-<span class="text-sm font-bold uppercase tracking-wider text-slate-600" data-el-bind="dashboard_text_013">Top Saving Move</span>
-</div>
-<span class="font-label-md text-label-md px-2 py-0.5 rounded-full font-semibold" style="color: rgb(6, 95, 70); background-color: rgb(167, 243, 208);" data-el-bind="dashboard_text_014">-$23.00/mo</span>
-</div>
-<div class="bg-surface-container-low rounded-lg p-space-sm flex items-center justify-between gap-space-sm border border-surface-container-highest/60">
-<div class="flex items-center gap-space-sm min-w-0">
-<div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary flex-shrink-0">
-<span class="material-symbols-outlined text-[22px]">sports_esports</span>
-</div>
-<div class="flex flex-col min-w-0">
-<span class="font-body-md text-body-md font-semibold text-on-surface truncate" data-el-bind="dashboard_text_015">Study Gaming PC</span>
-<span class="font-label-md text-label-md text-on-surface-variant truncate" data-el-bind="dashboard_text_016">Idle 3h • $0.19/hr idle waste</span>
-</div>
-</div>
-<button class="flex-shrink-0 bg-primary-container text-on-primary-container font-label-md text-label-md font-semibold px-3 py-2 rounded-lg hover:opacity-95 active:scale-95 transition-all shadow-sm flex items-center gap-1" type="button" data-el-action="dashboard_action_002">
-<span class="" data-el-bind="dashboard_text_017">Quick Nap</span>
-<span class="material-symbols-outlined text-[16px]">power_settings_new</span>
-</button>
-</div>
-<div class="flex items-center justify-between pt-space-xs">
-<span class="font-label-md text-label-md text-on-surface-variant" data-el-bind="dashboard_text_018">Could power your LED lamps for 14 days</span>
-<a class="font-label-md text-label-md text-primary font-semibold hover:underline flex items-center gap-0.5" data-path="perks-and-tips" href="#" data-el-action="dashboard_action_003">
-<span class="" data-el-bind="dashboard_text_019">More tips</span>
-<span class="material-symbols-outlined text-[16px]">Tips</span>
-</a>
 </div>
 </div>
 <!-- Energy Trends Section -->
@@ -208,7 +176,7 @@
 <div class="flex items-center justify-between">
 <div class="flex items-center gap-space-xs">
 <span class="material-symbols-outlined text-primary text-[20px]">bar_chart</span>
-<span class="text-sm font-bold uppercase tracking-wider text-slate-600" data-el-bind="dashboard_text_020">Energy Trends</span>
+<span class="text-sm font-bold uppercase tracking-wider text-slate-600" data-el-bind="dashboard_text_020">Trends</span>
 </div>
 <!-- Tab Switcher -->
 <div class="flex bg-slate-100/80 p-1 rounded-xl text-[12px] border border-slate-200/60"><button class="px-2.5 py-1 rounded-lg text-slate-500 font-medium hover:text-slate-800 transition-colors" type="button" data-el-action="dashboard_action_004" data-el-bind="dashboard_text_021">Daily</button><button class="px-2.5 py-1 rounded-lg bg-white shadow-sm text-slate-900 font-bold transition-all" type="button" data-el-action="dashboard_action_005" data-el-bind="dashboard_text_022">Weekly</button><button class="px-2.5 py-1 rounded-lg text-slate-500 font-medium hover:text-slate-800 transition-colors" type="button" data-el-action="dashboard_action_006" data-el-bind="dashboard_text_023">Monthly</button></div>
@@ -217,10 +185,10 @@
 <div class="flex items-baseline justify-between bg-surface-container-low p-space-sm rounded-lg border border-surface-container-highest/60">
 <div class="flex flex-col">
 <span class="font-label-md text-label-md text-on-surface-variant" data-el-bind="dashboard_text_024">Device cost · week to date</span>
-<span class="font-headline-lg text-headline-lg font-semibold text-on-surface tracking-tight" data-el-bind="dashboard_text_025">N/A</span>
+<span class="font-label-md text-label-md font-medium text-on-surface-variant" data-el-bind="dashboard_text_025">N/A</span>
 </div>
 <div class="flex items-center gap-space-sm text-right">
-<div class="flex flex-col items-end"><span class="font-label-md text-label-md font-medium" style="color: rgb(5, 150, 105);" data-el-bind="dashboard_text_026">$18.40 Useful</span><span class="font-label-md text-label-md font-medium" style="color: rgb(217, 119, 6);" data-el-bind="dashboard_text_027">$4.90 Waste</span></div>
+<div class="flex flex-col items-end"><span class="font-label-md text-label-md font-medium" style="color: var(--el-useful-ink);" data-el-bind="dashboard_text_026">$18.40 Useful</span><span class="font-label-md text-label-md font-medium" style="color: var(--el-waste-ink);" data-el-bind="dashboard_text_027">$4.90 Waste</span></div>
 </div>
 </div>
 <!-- Inline SVG Split Bar Chart -->
@@ -232,34 +200,34 @@
 <line class="text-surface-container-highest" opacity="0.9" stroke="currentColor" stroke-width="1" x1="0" x2="320" y1="110" y2="110"></line>
 <!-- Mon: Total $4.20 (Waste: 1.00, Useful: 3.20) -->
 <g class="transition-opacity hover:opacity-80 cursor-pointer">
-<rect fill="#7dd3fc" height="52" rx="4" width="24" x="24" y="38"></rect>
-<rect fill="#ffdad6" height="14" rx="4" width="24" x="24" y="22"></rect>
+<rect fill="#059669" height="52" rx="4" width="24" x="24" y="38"></rect>
+<rect fill="#d97706" height="14" rx="4" width="24" x="24" y="22"></rect>
 <text fill="#6f787e" font-family="Rubik, sans-serif" font-size="11" text-anchor="middle" x="36" y="126" data-el-bind="dashboard_text_028">Mon</text>
 </g>
 <!-- Tue: Total $3.80 (Waste: 0.80, Useful: 3.00) -->
 <g class="transition-opacity hover:opacity-80 cursor-pointer">
-<rect fill="#7dd3fc" height="50" rx="4" width="24" x="88" y="48"></rect>
-<rect fill="#ffdad6" height="12" rx="4" width="24" x="88" y="34"></rect>
+<rect fill="#059669" height="50" rx="4" width="24" x="88" y="48"></rect>
+<rect fill="#d97706" height="12" rx="4" width="24" x="88" y="34"></rect>
 <text fill="#6f787e" font-family="Rubik, sans-serif" font-size="11" text-anchor="middle" x="100" y="126" data-el-bind="dashboard_text_029">Tue</text>
 </g>
 <!-- Wed: Total $5.10 (Waste: 1.30, Useful: 3.80) -->
 <g class="transition-opacity hover:opacity-80 cursor-pointer">
-<rect fill="#7dd3fc" height="58" rx="4" width="24" x="152" y="32"></rect>
-<rect fill="#ffdad6" height="18" rx="4" width="24" x="152" y="12"></rect>
+<rect fill="#059669" height="58" rx="4" width="24" x="152" y="32"></rect>
+<rect fill="#d97706" height="18" rx="4" width="24" x="152" y="12"></rect>
 <text fill="#6f787e" font-family="Rubik, sans-serif" font-size="11" text-anchor="middle" x="164" y="126" data-el-bind="dashboard_text_030">Wed</text>
 </g>
 <!-- Thu: Total $4.60 (Waste: 0.90, Useful: 3.70) -->
 <g class="transition-opacity hover:opacity-80 cursor-pointer">
-<rect fill="#7dd3fc" height="60" rx="4" width="24" x="216" y="36"></rect>
-<rect fill="#ffdad6" height="12" rx="4" width="24" x="216" y="22"></rect>
+<rect fill="#059669" height="60" rx="4" width="24" x="216" y="36"></rect>
+<rect fill="#d97706" height="12" rx="4" width="24" x="216" y="22"></rect>
 <text fill="#6f787e" font-family="Rubik, sans-serif" font-size="11" text-anchor="middle" x="228" y="126" data-el-bind="dashboard_text_031">Thu</text>
 </g>
 <!-- Today: Total $3.40 (Waste: 0.90, Useful: 2.50) Highlighted -->
 <g class="transition-opacity hover:opacity-80 cursor-pointer">
 <!-- Active day halo -->
 <rect fill="#7dd3fc" fill-opacity="0.22" height="130" rx="6" width="36" x="274" y="4"></rect>
-<rect fill="#006686" height="42" rx="4" width="24" x="280" y="56"></rect>
-<rect fill="#ba1a1a" height="12" rx="4" width="24" x="280" y="42"></rect>
+<rect fill="#059669" height="42" rx="4" width="24" x="280" y="56"></rect>
+<rect fill="#d97706" height="12" rx="4" width="24" x="280" y="42"></rect>
 <text fill="#006686" font-family="Rubik, sans-serif" font-size="11" font-weight="600" text-anchor="middle" x="292" y="126" data-el-bind="dashboard_text_032">Today</text>
 <!-- Current value bubble -->
 <rect fill="#bae6ff" height="16" rx="4" width="44" x="270" y="18"></rect>
@@ -269,12 +237,12 @@
 </div>
 <div class="flex items-center justify-center gap-space-lg text-on-surface-variant">
 <div class="flex items-center gap-1.5 font-label-md text-label-md text-[12px]">
-<div class="w-3 h-3 rounded-sm bg-primary-container"></div>
-<span class="" data-el-bind="dashboard_text_034">Useful energy</span>
+<div class="w-3 h-3 rounded-sm" style="background-color: #059669;"></div>
+<span class="" data-el-bind="dashboard_text_034">Useful</span>
 </div>
 <div class="flex items-center gap-1.5 font-label-md text-label-md text-[12px]">
-<div class="w-3 h-3 rounded-sm bg-error/70"></div>
-<span class="" data-el-bind="dashboard_text_035">Wasted Energy</span>
+<div class="w-3 h-3 rounded-sm" style="background-color: #d97706;"></div>
+<span class="" data-el-bind="dashboard_text_035">Waste</span>
 </div>
 </div>
 </div>
@@ -287,12 +255,35 @@
 <!-- Suggested Question Pill Button -->
 <button class="w-full text-left bg-surface-container-lowest hover:bg-surface-container-low text-on-surface px-space-md py-space-sm rounded-lg flex items-center justify-between transition-all group shadow-sm border border-surface-container-highest active:scale-98" type="button" data-el-action="dashboard_action_007">
 <span class="font-label-md text-label-md font-medium text-on-surface flex items-center gap-2 truncate">
-<span class="" data-el-bind="dashboard_text_038">How can I shave $10 off this month? 💰</span>
+<span class="" data-el-bind="dashboard_text_038">Browse energy answers</span>
 </span>
 <span class="material-symbols-outlined text-primary text-[20px] transition-transform group-hover:translate-x-1 flex-shrink-0">
         arrow_forward
       </span>
 </button>
+</div>
+<!-- Top Saving Move Card -->
+<div class="rounded-xl bg-surface-container-lowest border border-outline-variant/40 p-space-md shadow-sm flex flex-col space-y-space-sm text-on-surface">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[20px]">lightbulb</span>
+<span class="text-sm font-bold uppercase tracking-wider text-slate-600" data-el-bind="dashboard_text_013">Top Saving Move</span>
+</div>
+<span class="font-label-md text-label-md px-2 py-0.5 rounded-full font-semibold" style="color: rgb(6, 95, 70); background-color: rgb(167, 243, 208);" data-el-bind="dashboard_text_014">-$23.00/mo</span>
+</div>
+<div class="flex items-start gap-space-sm min-w-0">
+<span class="material-symbols-outlined text-[22px] text-primary flex-shrink-0" aria-hidden="true">sports_esports</span>
+<div class="flex flex-col min-w-0">
+<span class="font-body-md text-body-md font-semibold text-on-surface" data-el-bind="dashboard_text_015">Study Gaming PC</span>
+<p class="font-label-md text-label-md text-on-surface-variant leading-snug"><span data-el-bind="dashboard_text_016">Idle 3h • $0.19/hr idle waste</span> <span data-el-bind="dashboard_text_018">Could power your LED lamps for 14 days</span></p>
+</div>
+</div>
+<div class="flex justify-end pt-space-xs">
+<a class="font-label-md text-label-md text-primary font-semibold hover:underline inline-flex items-center whitespace-nowrap" data-path="perks-and-tips" href="#" data-el-action="dashboard_action_003">
+<span class="" data-el-bind="dashboard_text_019">More tips</span>
+<span class="hidden material-symbols-outlined text-[16px]" aria-hidden="true">Tips</span>
+</a>
+</div>
 </div>
 </div></main><div id="el-footer"></div><script>EnergyLensChrome.mount({"activeTab":"dashboard","homeName":"The Miller Home","pageLabel":"Dashboard","leadingIcon":"bolt","profileImage":"../shared/images/image-3.jpg","tabIcons":["space_dashboard","devices","energy_savings_leaf","savings","settings"],"tabLabels":["Dashboard","Devices","Efficiency","Tips","Settings"],"headerActions":["dashboard_action_001"],"headerBindings":["dashboard_text_001","dashboard_text_002"],"footerActions":["dashboard_action_008","dashboard_action_009","dashboard_action_010","dashboard_action_011","dashboard_action_012"],"footerBindings":["dashboard_text_039","dashboard_text_040","dashboard_text_041","dashboard_text_042","dashboard_text_043"],"homeRoute":"change_home"});</script>
 
