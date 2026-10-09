@@ -42,7 +42,10 @@ String _visibleText(String html) {
       .replaceAll('&gt;', '>')
       .replaceAll('&quot;', '"')
       .replaceAll('&#39;', "'");
-  return withoutNonVisibleContent.replaceAll(RegExp(r'\s+'), ' ').trim();
+  return withoutNonVisibleContent
+      .replaceAll('tips_and_updates', '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
 }
 
 String _withoutOuterChrome(String html) => html
@@ -224,6 +227,35 @@ void main() {
         expect(belowTabs, isNot(contains('>Identified Opportunity<')));
         expect(belowTabs, isNot(contains('>Optimal Base<')));
         expect(belowTabs, isNot(contains('>Off-Peak Shift<')));
+      }
+    });
+
+    test('Efficiency opportunity amounts use the approved brown and tips are text only', () async {
+      const pages = [
+        'efficiency',
+        'efficiency_away',
+        'efficiency_habits',
+        'efficiency_peak_rates',
+      ];
+      for (final pageId in pages) {
+        final html = await rootBundle.loadString(
+          'assets/design_pages/$pageId/app.html',
+        );
+        expect(
+          html,
+          contains(
+            'class="text-[#92400e]" data-el-bind="${pageId}_text_006">\$18.60',
+          ),
+          reason: pageId,
+        );
+        expect(
+          RegExp(
+            r'<span class="[^"]*bg-amber-100 text-\[#92400e\][^"]*" data-el-bind="[^"]+">\+?\$[^<]+</span>',
+          ).allMatches(html),
+          isNotEmpty,
+          reason: pageId,
+        );
+        expect(html, isNot(contains('tips_and_updates')), reason: pageId);
       }
     });
 
