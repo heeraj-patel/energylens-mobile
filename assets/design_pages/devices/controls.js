@@ -1,20 +1,17 @@
 (() => {
   const feed = document.getElementById('devices-feed');
-  const filters = document.getElementById('status-filter-group');
-  const sorts = document.getElementById('sort-pill-group');
+  const filterSelect = document.getElementById('status-filter-select');
+  const sortSelect = document.getElementById('sort-select');
   const summary = document.querySelector('[data-el-bind="devices_text_092"]');
-  const reveal = document.getElementById('devices-reveal');
-  if (!feed || !filters || !sorts || !summary || !reveal) return;
+  const pagination = document.getElementById('devices-pagination');
+  const pageNumbers = document.getElementById('devices-page-numbers');
+  const previous = document.getElementById('devices-previous-page');
+  const next = document.getElementById('devices-next-page');
+  if (!feed || !filterSelect || !sortSelect || !summary || !pagination ||
+      !pageNumbers || !previous || !next) return;
 
-  const action = number => '[data-el-action="devices_action_' + String(number).padStart(3, '0') + '"]';
-  const filterActions = {devices_action_004: 'all', devices_action_005: 'active',
-    devices_action_006: 'idle', devices_action_007: 'standby'};
-  const sortActions = {devices_action_008: 'name', devices_action_009: 'usage',
-    devices_action_010: 'waste'};
-  let filter = 'all';
-  let sort = 'waste';
-  let expanded = false;
-  const previewCount = 3;
+  const pageSize = 10;
+  let currentPage = 1;
 
   function money(text) {
     const match = /^\$([0-9]+(?:\.[0-9]+)?)$/.exec(text.trim());
@@ -35,26 +32,10 @@
       usage: useful !== null && waste !== null ? useful + waste : null, waste};
   }
 
-  function setCount(number, count) {
-    const button = filters.querySelector(action(number));
-    if (!button) return;
-    let badge = button.querySelector('[data-el-count]') ||
-      button.querySelector('[data-el-bind="devices_text_012"], [data-el-bind="devices_text_014"], [data-el-bind="devices_text_016"]');
-    if (!badge) {
-      badge = document.createElement('span');
-      badge.className = 'text-[11px] text-on-surface-variant ml-0.5';
-      button.appendChild(badge);
-    }
-    badge.setAttribute('data-el-count', '');
-    badge.textContent = number === 4 ? String(count) : '(' + count + ')';
-  }
-
   function render() {
     const rows = Array.from(feed.children).map(row);
-    setCount(4, rows.length);
-    for (const [index, state] of ['active', 'idle', 'standby'].entries()) {
-      setCount(index + 5, rows.filter(item => item.state === state).length);
-    }
+    const filter = filterSelect.value || 'all';
+    const sort = sortSelect.value || 'waste';
     const matches = rows.filter(item => filter === 'all' || item.state === filter);
     matches.sort((a, b) => {
       if (sort !== 'name') {
@@ -66,45 +47,73 @@
       }
       return a.name.localeCompare(b.name);
     });
+
+    const pageCount = Math.max(1, Math.ceil(matches.length / pageSize));
+    currentPage = Math.min(Math.max(1, currentPage), pageCount);
+    const start = (currentPage - 1) * pageSize;
+    const pageRows = matches.slice(start, start + pageSize);
     for (const item of rows) {
       item.card.hidden = true;
       item.card.style.display = 'none';
     }
     for (const item of matches) feed.appendChild(item.card);
-    const visibleCount = expanded ? matches.length : Math.min(previewCount, matches.length);
-    for (const item of matches.slice(0, visibleCount)) {
+    for (const item of pageRows) {
       item.card.hidden = false;
       item.card.style.display = '';
     }
-    summary.textContent = 'Showing ' + (matches.length ? 1 : 0) + '–' +
-      visibleCount + ' of ' + matches.length + ' devices';
-    reveal.hidden = matches.length <= previewCount;
-    reveal.style.display = reveal.hidden ? 'none' : '';
-    reveal.textContent = expanded ? 'Show fewer devices' :
-      'Show all ' + matches.length + ' devices';
-    reveal.setAttribute('aria-expanded', String(expanded));
+
+    const first = matches.length ? start + 1 : 0;
+    const last = matches.length ? start + pageRows.length : 0;
+    summary.textContent = 'Showing ' + first + '–' + last + ' of ' + matches.length + ' devices';
+    pagination.hidden = matches.length === 0;
+    pagination.style.display = pagination.hidden ? 'none' : '';
+    previous.disabled = currentPage === 1;
+    next.disabled = currentPage === pageCount;
+    previous.setAttribute('aria-label', 'Previous page');
+    next.setAttribute('aria-label', 'Next page');
+
+    pageNumbers.replaceChildren();
+    const visiblePageCount = Math.min(4, pageCount);
+    const firstPage = Math.min(
+      Math.max(1, currentPage - Math.floor(visiblePageCount / 2)),
+      pageCount - visiblePageCount + 1);
+    for (let page = firstPage; page < firstPage + visiblePageCount; page++) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = String(page);
+      button.className = 'min-w-11 min-h-11 rounded-lg border flex items-center justify-center font-label-md text-[13px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ' +
+        (page === currentPage
+          ? 'bg-secondary-container border-secondary-container text-on-secondary-container'
+          : 'bg-surface-container-lowest border-outline-variant/60 text-on-surface');
+      button.setAttribute('aria-label', 'Page ' + page);
+      button.setAttribute('aria-controls', 'devices-feed');
+      if (page === currentPage) button.setAttribute('aria-current', 'page');
+      button.addEventListener('click', () => {
+        currentPage = page;
+        render();
+      });
+      pageNumbers.appendChild(button);
+    }
   }
 
-  filters.addEventListener('click', event => {
-    const selected = filterActions[event.target.closest('button')?.dataset.elAction];
-    if (!selected) return;
-    filter = selected;
-    expanded = false;
+  filterSelect.addEventListener('change', () => {
+    currentPage = 1;
     render();
   });
-  sorts.addEventListener('click', event => {
-    const selected = sortActions[event.target.closest('button')?.dataset.elAction];
-    if (!selected) return;
-    sort = selected;
-    expanded = false;
+  sortSelect.addEventListener('change', () => {
+    currentPage = 1;
     render();
   });
-  reveal.addEventListener('click', () => {
-    expanded = !expanded;
+  previous.addEventListener('click', () => {
+    currentPage--;
+    render();
+  });
+  next.addEventListener('click', () => {
+    currentPage++;
     render();
   });
   feed.addEventListener('energylens:devices-changed', () => {
-    expanded = false;
+    currentPage = 1;
     render();
   });
   render();

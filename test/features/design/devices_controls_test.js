@@ -5,28 +5,29 @@ const vm = require('node:vm');
 const {test} = require('node:test');
 
 class Element {
-  constructor(action) {
-    this.dataset = {elAction: action};
+  constructor() {
     this.children = [];
     this.attributes = {};
     this.listeners = {};
-    this.classList = {toggle() {}};
     this.disabled = false;
     this.hidden = false;
     this.style = {display: ''};
     this.textContent = '';
+    this.value = '';
   }
-  addEventListener(type, listener) { this.listeners[type] = listener; }
-  dispatch(type, event = {}) { this.listeners[type]?.(event); }
-  click() {
-    this.dispatch('click', {target: {closest: () => this}});
+  addEventListener(type, listener) {
+    (this.listeners[type] ||= []).push(listener);
   }
-  appendChild(child) { this.children.push(child); }
-  querySelector(selector) {
-    const match = selector.match(/devices_action_(\d{3})/);
-    if (match) return this.buttons?.[Number(match[1])] || null;
-    return this.badge || null;
+  dispatch(type, event = {}) {
+    for (const listener of this.listeners[type] || []) listener(event);
   }
+  click() { this.dispatch('click'); }
+  appendChild(child) {
+    this.children = this.children.filter(current => current !== child);
+    this.children.push(child);
+    return child;
+  }
+  replaceChildren(...children) { this.children = [...children]; }
   setAttribute(name, value) { this.attributes[name] = value; }
   hasAttribute(name) { return Object.hasOwn(this.attributes, name); }
   getAttribute(name) { return this.attributes[name] || null; }
@@ -40,42 +41,42 @@ function card(name, state, useful, waste) {
   return item;
 }
 
-function makePage() {
+function makePage(rows = defaultRows()) {
   const feed = new Element();
-  feed.appendChild = item => {
-    feed.children = feed.children.filter(current => current !== item);
-    feed.children.push(item);
-  };
-  const filters = new Element();
-  const sorts = new Element();
-  filters.buttons = {};
-  sorts.buttons = {};
-  const buttons = {};
-  for (let number = 4; number <= 14; number++) {
-    const button = new Element('devices_action_' + String(number).padStart(3, '0'));
-    buttons[number] = button;
-    if (number <= 7) {
-      button.badge = new Element();
-      filters.buttons[number] = button;
-      button.addEventListener('click', () => {});
-    } else if (number <= 10) sorts.buttons[number] = button;
-  }
+  const filter = new Element();
+  filter.value = 'all';
+  const sort = new Element();
+  sort.value = 'waste';
   const summary = new Element();
-  const reveal = new Element();
+  const pagination = new Element();
+  const pageNumbers = new Element();
+  const previous = new Element();
+  const next = new Element();
+  const elements = {
+    'devices-feed': feed,
+    'status-filter-select': filter,
+    'sort-select': sort,
+    'devices-pagination': pagination,
+    'devices-page-numbers': pageNumbers,
+    'devices-previous-page': previous,
+    'devices-next-page': next
+  };
   const document = {
-    getElementById(id) {
-      return id === 'devices-feed' ? feed :
-        id === 'status-filter-group' ? filters :
-        id === 'sort-pill-group' ? sorts : id === 'devices-reveal' ? reveal : null;
-    },
-    querySelector(selector) {
-      if (selector.includes('devices_text_092')) return summary;
-      const match = selector.match(/devices_action_(\d{3})/);
-      return match ? buttons[Number(match[1])] : null;
-    },
+    getElementById: id => elements[id] || null,
+    querySelector: selector => selector.includes('devices_text_092') ? summary : null,
     createElement: () => new Element()
   };
-  const rows = [
+  for (const item of rows) feed.appendChild(item);
+  const script = fs.readFileSync(
+    path.join(__dirname, '../../../assets/design_pages/devices/controls.js'), 'utf8');
+  vm.runInNewContext(script, {document});
+  const visible = () => feed.children.filter(item => !item.hidden)
+    .map(item => item.fields?.[0].textContent || item.getAttribute('data-el-device-name'));
+  return {feed, filter, sort, summary, pagination, pageNumbers, previous, next, visible};
+}
+
+function defaultRows() {
+  return [
     card('A', 'Active', '$1.00', '$0.05'),
     card('B', 'Idle', '$0.10', '$0.30'),
     card('C', 'Standby', '$0.05', '$0.15'),
@@ -87,55 +88,89 @@ function makePage() {
     card('I', 'Standby', '$0.01', '$0.09'),
     card('J', 'Active', '$0.70', '$0.01')
   ];
-  for (const row of rows) feed.appendChild(row);
-  const script = fs.readFileSync(
-    path.join(__dirname, '../../../assets/design_pages/devices/controls.js'), 'utf8');
-  vm.runInNewContext(script, {document});
-  const visible = () => feed.children.filter(item => !item.hidden)
-    .map(item => item.fields?.[0].textContent || item.getAttribute('data-el-device-name'));
-  const click = number => {
-    const group = number <= 7 ? filters : number <= 10 ? sorts : buttons[number];
-    if (number <= 10) group.dispatch('click',
-      {target: {closest: () => buttons[number]}});
-    else buttons[number].click();
-  };
-  return {feed, buttons, filters, reveal, summary, visible, click};
 }
 
-test('filters, sorts, and reveals the cards actually present', () => {
-  const page = makePage();
-  assert.equal(page.summary.textContent, 'Showing 1–3 of 10 devices');
-  assert.deepEqual(page.visible(), ['B', 'C', 'E']);
-  assert.equal(page.reveal.textContent, 'Show all 10 devices');
-  assert.equal(page.reveal.attributes['aria-expanded'], 'false');
-  assert.equal(page.filters.buttons[4].badge.textContent, '10');
-  assert.equal(page.filters.buttons[5].badge.textContent, '(4)');
-  assert.equal(page.filters.buttons[6].badge.textContent, '(3)');
-  assert.equal(page.filters.buttons[7].badge.textContent, '(3)');
-  page.reveal.click();
-  assert.equal(page.summary.textContent, 'Showing 1–10 of 10 devices');
-  assert.deepEqual(page.visible(), ['B', 'C', 'E', 'I', 'F', 'G', 'A', 'H', 'D', 'J']);
-  assert.equal(page.reveal.textContent, 'Show fewer devices');
-  assert.equal(page.reveal.attributes['aria-expanded'], 'true');
-  page.click(6);
-  assert.equal(page.summary.textContent, 'Showing 1–3 of 3 devices');
-  assert.deepEqual(page.visible(), ['B', 'E', 'H']);
-  assert.equal(page.reveal.hidden, true);
-  page.click(8);
-  assert.deepEqual(page.visible(), ['B', 'E', 'H']);
+function namedRows(count) {
+  return Array.from({length: count}, (_, index) =>
+    card('Device ' + String(index + 1).padStart(2, '0'), 'Active',
+      '$0.10', '$' + String((index + 1) / 100).padStart(4, '0')));
+}
+
+test('paginates more than two pages and exposes accessible page controls', () => {
+  const page = makePage(namedRows(25));
+  assert.equal(page.summary.textContent, 'Showing 1–10 of 25 devices');
+  assert.deepEqual(page.visible(),
+    Array.from({length: 10}, (_, index) => 'Device ' + String(25 - index).padStart(2, '0')));
+  assert.equal(page.pagination.hidden, false);
+  assert.equal(page.previous.disabled, true);
+  assert.equal(page.next.disabled, false);
+  assert.equal(page.previous.attributes['aria-label'], 'Previous page');
+  assert.equal(page.next.attributes['aria-label'], 'Next page');
+  assert.deepEqual(page.pageNumbers.children.map(button => button.textContent), ['1', '2', '3']);
+  assert.equal(page.pageNumbers.children[0].attributes['aria-label'], 'Page 1');
+  assert.equal(page.pageNumbers.children[0].attributes['aria-current'], 'page');
+
+  page.next.click();
+  assert.equal(page.summary.textContent, 'Showing 11–20 of 25 devices');
+  assert.equal(page.pageNumbers.children[1].attributes['aria-current'], 'page');
+  page.pageNumbers.children[2].click();
+  assert.equal(page.summary.textContent, 'Showing 21–25 of 25 devices');
+  assert.equal(page.next.disabled, true);
+  page.previous.click();
+  assert.equal(page.summary.textContent, 'Showing 11–20 of 25 devices');
 });
 
-test('live cards with unknown values stay in All and sort after known cost', () => {
-  const page = makePage();
+test('keeps numbered pagination within the phone-width control row', () => {
+  const page = makePage(namedRows(100));
+  assert.deepEqual(page.pageNumbers.children.map(button => button.textContent),
+    ['1', '2', '3', '4']);
+  assert.ok(page.pageNumbers.children.every(button =>
+    button.className.includes('min-w-11') &&
+    button.attributes['aria-controls'] === 'devices-feed'));
+  for (let index = 0; index < 5; index++) page.next.click();
+  assert.equal(page.summary.textContent, 'Showing 51–60 of 100 devices');
+  assert.deepEqual(page.pageNumbers.children.map(button => button.textContent),
+    ['4', '5', '6', '7']);
+});
+
+test('sort and filter update count and reset to the first page', () => {
+  const page = makePage([...namedRows(15), card('ZZ Standby', 'Standby', '$0.10', '$0.99')]);
+  page.next.click();
+  assert.equal(page.summary.textContent, 'Showing 11–16 of 16 devices');
+  page.sort.value = 'name';
+  page.sort.dispatch('change');
+  assert.equal(page.summary.textContent, 'Showing 1–10 of 16 devices');
+  page.filter.value = 'standby';
+  page.filter.dispatch('change');
+  assert.equal(page.summary.textContent, 'Showing 1–1 of 1 devices');
+  assert.deepEqual(page.visible(), ['ZZ Standby']);
+  assert.equal(page.pagination.hidden, false);
+  assert.equal(page.previous.disabled, true);
+  assert.equal(page.next.disabled, true);
+});
+
+test('shows zero range and hides pagination when filter has no matches', () => {
+  const page = makePage([card('Idle', 'Idle', '$0.10', '$0.01')]);
+  page.filter.value = 'active';
+  page.filter.dispatch('change');
+  assert.equal(page.summary.textContent, 'Showing 0–0 of 0 devices');
+  assert.equal(page.pagination.hidden, true);
+  assert.deepEqual(page.visible(), []);
+});
+
+test('unknown live devices remain in All, sort after known values, and reset on change', () => {
+  const page = makePage(namedRows(10));
   const live = new Element();
   live.setAttribute('data-el-live-device-id', 'live-1');
   live.setAttribute('data-el-device-name', 'Live Device');
   page.feed.appendChild(live);
   page.feed.dispatch('energylens:devices-changed');
-  assert.equal(page.filters.buttons[4].badge.textContent, '11');
-  assert.equal(page.filters.buttons[5].badge.textContent, '(4)');
-  page.click(8);
-  assert.equal(page.reveal.textContent, 'Show all 11 devices');
-  page.reveal.click();
-  assert.equal(page.visible().at(-1), 'Live Device');
+  assert.equal(page.summary.textContent, 'Showing 1–10 of 11 devices');
+  assert.equal(page.next.disabled, false);
+  page.next.click();
+  assert.equal(page.summary.textContent, 'Showing 11–11 of 11 devices');
+  assert.deepEqual(page.visible(), ['Live Device']);
+  page.filter.value = 'active';
+  page.filter.dispatch('change');
+  assert.equal(page.summary.textContent, 'Showing 1–10 of 10 devices');
 });

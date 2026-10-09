@@ -57,6 +57,24 @@ String _withoutApprovedRevealControls(String html) => html.replaceAll(
   '',
 );
 
+String _withoutApprovedDeviceSections(String html, String pageId) {
+  if (pageId != 'devices') return html;
+  for (final (start, end) in [
+    ('<!-- Quick Glancer Stats Mini-Bar -->', '<!-- Devices Feed -->'),
+    (
+      '<!-- Pagination Component -->',
+      '<!-- Pairing / Settings Action Callout Card -->',
+    ),
+  ]) {
+    final from = html.indexOf(start);
+    final to = html.indexOf(end, from);
+    expect(from, greaterThanOrEqualTo(0), reason: start);
+    expect(to, greaterThan(from), reason: end);
+    html = html.replaceRange(from, to, '');
+  }
+  return html;
+}
+
 String _withApprovedLabelChanges(String html, String pageId) {
   if (pageId == 'dashboard') {
     return html
@@ -78,11 +96,10 @@ String _withApprovedLabelChanges(String html, String pageId) {
   }
   if (pageId == 'devices') {
     return html
-        .replaceFirst('Total Waste', 'Waste cost')
-        .replaceFirst('Productive', 'Useful cost')
+        .replaceFirst('add_circle', '')
         .replaceFirst(
-          'Showing 1–10 of 18 devices',
-          'Showing 1–3 of 10 devices',
+          'Smart Plugs can be auto-calibrated or assigned to custom automation routines.',
+          '',
         );
   }
   if (const {
@@ -250,6 +267,31 @@ void main() {
           expect(sourceButton.hasMatch(sourceHtml), isTrue);
           expect(packagedButton.hasMatch(packagedHtml), isTrue);
         }
+        if (pageId == 'devices') {
+          final useful = packagedHtml.indexOf(
+            'data-el-bind="devices_text_008"',
+          );
+          final waste = packagedHtml.indexOf('data-el-bind="devices_text_005"');
+          expect(useful, greaterThanOrEqualTo(0));
+          expect(waste, greaterThan(useful));
+          expect(
+            packagedHtml,
+            contains('for="status-filter-select">Filter by'),
+          );
+          expect(packagedHtml, contains('for="sort-select"'));
+          expect(packagedHtml, contains('id="devices-pagination"'));
+          expect(packagedHtml, contains('aria-label="Previous page"'));
+          expect(packagedHtml, contains('aria-label="Next page"'));
+          expect(packagedHtml, isNot(contains('id="devices-reveal"')));
+          expect(
+            packagedHtml,
+            isNot(
+              contains(
+                'Smart Plugs can be auto-calibrated or assigned to custom automation routines.',
+              ),
+            ),
+          );
+        }
 
         expect(_visibleText(sourceHtml), isNotEmpty, reason: pageId);
         if (const {
@@ -320,24 +362,30 @@ void main() {
         }
         expect(
           _visibleText(
-            _withoutApprovedRevealControls(
-              _withSourceFallbackValues(packagedHtml, pageId),
+            _withoutApprovedDeviceSections(
+              _withoutApprovedRevealControls(
+                _withSourceFallbackValues(packagedHtml, pageId),
+              ),
+              pageId,
             ),
           ),
           _withoutApprovedTabSummary(
             _visibleText(
-              _withoutOuterChrome(
-                _withApprovedLabelChanges(
-                  pageId == 'efficiency'
-                      ? sourceHtml.replaceFirst(
-                          'Monthly Spend',
-                          'Month to date',
-                        )
-                      : pageId == 'dashboard'
-                      ? _withApprovedDashboardOrder(sourceHtml)
-                      : sourceHtml,
-                  pageId,
+              _withoutApprovedDeviceSections(
+                _withoutOuterChrome(
+                  _withApprovedLabelChanges(
+                    pageId == 'efficiency'
+                        ? sourceHtml.replaceFirst(
+                            'Monthly Spend',
+                            'Month to date',
+                          )
+                        : pageId == 'dashboard'
+                        ? _withApprovedDashboardOrder(sourceHtml)
+                        : sourceHtml,
+                    pageId,
+                  ),
                 ),
+                pageId,
               ),
             ),
             pageId,

@@ -10,6 +10,18 @@ Set<String> _approvedRemovedIds(String page, String category) {
   if (page == 'dashboard' && category == 'actions') {
     return {'dashboard_action_002'};
   }
+  if (page == 'devices' && category == 'bindings') {
+    return {
+      for (final n in [12, 14, 16, 93, 94, 96])
+        'devices_text_${n.toString().padLeft(3, '0')}',
+    };
+  }
+  if (page == 'devices' && category == 'actions') {
+    return {
+      for (var n = 11; n <= 14; n++)
+        'devices_action_${n.toString().padLeft(3, '0')}',
+    };
+  }
   if (page == 'efficiency' && category == 'bindings') {
     return {
       for (final n in [29, 30, 32, 36])

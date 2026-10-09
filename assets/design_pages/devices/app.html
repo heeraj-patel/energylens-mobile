@@ -124,17 +124,27 @@
 <a class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container text-primary hover:bg-surface-container-high border border-outline-variant/50 transition-colors shadow-xs shrink-0" data-path="settings" href="#" data-el-action="devices_action_003"><span class="material-symbols-outlined text-[16px]">monitoring</span><span class="font-label-md text-[12px] font-semibold" data-el-bind="devices_text_004">Daily Overview</span></a>
 </div>
 <!-- Quick Glancer Stats Mini-Bar -->
-<div class="grid grid-cols-2 gap-4 mt-2 pt-2 bg-surface-container-low rounded-lg p-2.5 border border-surface-container-high/60"><div class="flex flex-col"><span class="font-label-md text-[10px] tracking-wide uppercase text-on-surface-variant" data-el-bind="devices_text_005">Waste cost</span><span class="font-headline-lg text-label-md font-semibold text-[#d97706] tracking-tight" data-el-bind="devices_text_006">$1.96<span class="text-[10px] font-normal text-on-surface-variant ml-0.5" data-el-bind="devices_text_007">/day</span></span></div><div class="flex flex-col"><span class="font-label-md text-[10px] tracking-wide uppercase text-on-surface-variant" data-el-bind="devices_text_008">Useful cost</span><span class="font-headline-lg text-label-md font-semibold text-[#059669] tracking-tight" data-el-bind="devices_text_009">$6.83<span class="text-[10px] font-normal text-on-surface-variant ml-0.5" data-el-bind="devices_text_010">/day</span></span></div></div>
+<div class="grid grid-cols-2 gap-2 mt-2"><div class="flex flex-col rounded-lg bg-surface-container-low border border-surface-container-highest/60 p-2.5"><span class="font-label-md text-[10px] tracking-wide uppercase text-on-surface-variant" data-el-bind="devices_text_008">Useful cost</span><span class="font-headline-lg text-label-md font-semibold text-[#059669] tracking-tight" data-el-bind="devices_text_009">$6.83<span class="text-[10px] font-normal text-on-surface-variant ml-0.5" data-el-bind="devices_text_010">/day</span></span></div><div class="flex flex-col rounded-lg bg-surface-container-low border border-surface-container-highest/60 p-2.5"><span class="font-label-md text-[10px] tracking-wide uppercase text-on-surface-variant" data-el-bind="devices_text_005">Waste cost</span><span class="font-headline-lg text-label-md font-semibold text-[#d97706] tracking-tight" data-el-bind="devices_text_006">$1.96<span class="text-[10px] font-normal text-on-surface-variant ml-0.5" data-el-bind="devices_text_007">/day</span></span></div></div>
 </div>
 </div>
 <!-- Filters & Controls Card -->
-<div class="flex flex-col space-y-space-sm">
-<!-- Filter Chips (Horizontal Scroll) -->
-<div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5" id="status-filter-group"><button class="filter-chip active-chip px-3 py-1.5 rounded-full text-label-md text-[12px] font-medium bg-primary text-on-primary shadow-xs shrink-0 transition-all flex items-center gap-1" type="button" data-el-action="devices_action_004"><span class="" data-el-bind="devices_text_011">All</span><span class="w-4 h-4 rounded-full bg-on-primary/25 text-[10px] flex items-center justify-center font-bold" data-el-bind="devices_text_012">18</span></button><button class="filter-chip px-3 py-1.5 rounded-full text-label-md text-[12px] font-medium bg-surface-container-lowest border border-outline-variant/60 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low shrink-0 transition-all flex items-center gap-1" type="button" data-el-action="devices_action_005"><span class="w-1.5 h-1.5 rounded-full bg-[#059669]"></span><span class="" data-el-bind="devices_text_013">Active</span><span class="text-[11px] text-on-surface-variant ml-0.5" data-el-bind="devices_text_014">(6)</span></button><button class="filter-chip px-3 py-1.5 rounded-full text-label-md text-[12px] font-medium bg-surface-container-lowest border border-outline-variant/60 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low shrink-0 transition-all flex items-center gap-1" type="button" data-el-action="devices_action_006"><span class="w-1.5 h-1.5 rounded-full bg-[#d97706]"></span><span class="" data-el-bind="devices_text_015">Idle</span><span class="text-[11px] text-on-surface-variant ml-0.5" data-el-bind="devices_text_016">(4)</span></button><button class="filter-chip px-3 py-1.5 rounded-full text-label-md text-[12px] font-medium bg-surface-container-lowest border border-outline-variant/60 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low shrink-0 transition-all flex items-center gap-1" type="button" data-el-action="devices_action_007"><span class="w-1.5 h-1.5 rounded-full bg-outline"></span><span class="" data-el-bind="devices_text_017">Standby</span></button></div>
-<!-- Sort Selector Bar -->
-<div class="flex items-center justify-between px-1">
-<span class="font-label-md text-[11px] font-bold text-on-surface uppercase tracking-wider flex items-center gap-1" data-el-bind="devices_text_018"><span class="material-symbols-outlined text-[14px]">sort</span>SORT BY</span>
-<div class="flex items-center bg-surface-container p-0.5 border border-outline-variant/40 rounded-xl" id="sort-pill-group"><button class="sort-pill px-2.5 py-1 rounded-xl text-label-md text-[11px] font-medium text-on-surface-variant hover:text-on-surface transition-all" type="button" data-el-action="devices_action_008" data-el-bind="devices_text_019">Name</button><button class="sort-pill px-2.5 py-1 rounded-xl text-label-md text-[11px] font-medium text-on-surface-variant hover:text-on-surface transition-all" type="button" data-el-action="devices_action_009" data-el-bind="devices_text_020">Usage $</button><button class="sort-pill active-sort px-2.5 py-1 rounded-xl text-label-md text-[11px] font-bold bg-surface-container-lowest text-primary shadow-sm transition-all flex items-center gap-0.5" type="button" data-el-action="devices_action_010"><span class="" data-el-bind="devices_text_021">Waste $</span><span class="material-symbols-outlined text-[12px]">arrow_downward</span></button></div>
+<div class="grid grid-cols-2 gap-space-sm" id="devices-list-controls">
+<div class="flex flex-col gap-1 min-w-0">
+<label class="font-label-md text-[11px] font-semibold text-on-surface-variant" for="status-filter-select">Filter by</label>
+<select id="status-filter-select" class="w-full min-h-11 rounded-lg border border-outline-variant/60 bg-surface-container-lowest px-3 font-label-md text-[13px] font-semibold text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+<option value="all" data-el-action="devices_action_004" data-el-bind="devices_text_011">All</option>
+<option value="active" data-el-action="devices_action_005" data-el-bind="devices_text_013">Active</option>
+<option value="idle" data-el-action="devices_action_006" data-el-bind="devices_text_015">Idle</option>
+<option value="standby" data-el-action="devices_action_007" data-el-bind="devices_text_017">Standby</option>
+</select>
+</div>
+<div class="flex flex-col gap-1 min-w-0">
+<label class="font-label-md text-[11px] font-semibold text-on-surface-variant" for="sort-select" data-el-bind="devices_text_018">Sort by</label>
+<select id="sort-select" class="w-full min-h-11 rounded-lg border border-outline-variant/60 bg-surface-container-lowest px-3 font-label-md text-[13px] font-semibold text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+<option value="name" data-el-action="devices_action_008" data-el-bind="devices_text_019">Name</option>
+<option value="usage" data-el-action="devices_action_009" data-el-bind="devices_text_020">Usage $</option>
+<option value="waste" selected data-el-action="devices_action_010" data-el-bind="devices_text_021">Waste $</option>
+</select>
 </div>
 </div>
 <!-- Devices Feed -->
@@ -226,39 +236,18 @@
 </div>
 <!-- Pagination Component -->
 <div class="flex flex-col items-center gap-2 pt-2">
-<div class="flex items-center justify-between w-full px-1">
-<span class="font-label-md text-[12px] text-on-surface-variant font-medium" data-el-bind="devices_text_092">Showing 1–3 of 10 devices</span>
-<div class="flex items-center gap-1.5" hidden style="display:none">
-<!-- Previous (Disabled) -->
-<button class="w-8 h-8 rounded-lg bg-surface-container-low text-outline flex items-center justify-center opacity-50 cursor-not-allowed border border-outline-variant/40" disabled="" type="button" data-el-action="devices_action_011">
-<span class="material-symbols-outlined text-[18px]">chevron_left</span>
-</button>
-<!-- Page 1 (Active) -->
-<button class="w-8 h-8 rounded-lg bg-primary text-on-primary font-label-md text-[12px] font-bold flex items-center justify-center shadow-xs" type="button" data-el-action="devices_action_012" data-el-bind="devices_text_093">
-          1
-        </button>
-<!-- Page 2 -->
-<button class="w-8 h-8 rounded-lg bg-surface-container-lowest text-on-surface hover:bg-surface-container font-label-md text-[12px] font-medium flex items-center justify-center transition-colors border border-outline-variant/60" type="button" data-el-action="devices_action_013" data-el-bind="devices_text_094">
-          2
-        </button>
-<!-- Next -->
-<button class="w-8 h-8 rounded-lg bg-surface-container-lowest text-on-surface hover:bg-surface-container flex items-center justify-center transition-colors border border-outline-variant/60" type="button" data-el-action="devices_action_014">
-<span class="material-symbols-outlined text-[18px]">chevron_right</span>
-</button>
+<span class="font-label-md text-[12px] text-on-surface-variant font-medium self-start" data-el-bind="devices_text_092">Showing 1–10 of 10 devices</span>
+<div id="devices-pagination" class="flex items-center justify-center gap-1.5">
+<button id="devices-previous-page" type="button" aria-label="Previous page" aria-controls="devices-feed" class="min-w-11 min-h-11 rounded-lg bg-surface-container-lowest border border-outline-variant/60 text-on-surface flex items-center justify-center disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span class="material-symbols-outlined text-[18px]" aria-hidden="true">chevron_left</span></button>
+<div id="devices-page-numbers" class="flex items-center gap-1.5"></div>
+<button id="devices-next-page" type="button" aria-label="Next page" aria-controls="devices-feed" class="min-w-11 min-h-11 rounded-lg bg-surface-container-lowest border border-outline-variant/60 text-on-surface flex items-center justify-center disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span class="material-symbols-outlined text-[18px]" aria-hidden="true">chevron_right</span></button>
 </div>
-</div>
-<button id="devices-reveal" class="w-full min-h-11 rounded-lg bg-secondary-container text-on-secondary-container font-label-md text-[13px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" type="button" aria-expanded="false" aria-controls="devices-feed">Show all 10 devices</button>
 </div>
 <!-- Pairing / Settings Action Callout Card -->
 <div class="relative overflow-hidden rounded-xl bg-surface-container-lowest border border-surface-container-high/80 p-space-md shadow-sm">
-<div class="flex items-start gap-3">
-<div class="w-10 h-10 rounded-xl bg-secondary-container text-on-secondary-container flex items-center justify-center shrink-0">
-<span class="material-symbols-outlined text-[20px]">add_circle</span>
-</div>
-<div class="flex flex-col space-y-2 flex-1 min-w-0">
+<div class="flex flex-col space-y-2">
 <div class="flex flex-col">
 <span class="font-label-md text-label-md font-semibold text-on-surface" data-el-bind="devices_text_095">Need to pair or remove an appliance?</span>
-<span class="font-body-md text-body-md text-[12px] text-on-surface-variant leading-relaxed" data-el-bind="devices_text_096">Smart Plugs can be auto-calibrated or assigned to custom automation routines.</span>
 </div>
 <a class="inline-flex items-center justify-center gap-1.5 w-full py-2.5 px-3 rounded-lg bg-secondary-container text-on-secondary-container hover:bg-secondary-container/80 transition-all font-label-md text-[13px] font-semibold text-center shadow-xs" data-path="settings" href="#" data-el-action="devices_action_015">
 <span class="" data-el-bind="devices_text_097">Manage Devices in Settings</span>
