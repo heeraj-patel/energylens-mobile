@@ -117,6 +117,12 @@ class _DesignShellState extends State<DesignShell> {
     'settings_manual_device_entry',
     'settings_photo_scan_onboarding',
   };
+  static const _efficiencyPages = <String>{
+    'efficiency',
+    'efficiency_away',
+    'efficiency_habits',
+    'efficiency_peak_rates',
+  };
   final DesignPageRequestGate _bindingGate = DesignPageRequestGate();
   final DesignPageStateSnapshotStore _pageStates =
       DesignPageStateSnapshotStore();
@@ -136,6 +142,9 @@ class _DesignShellState extends State<DesignShell> {
   DesignNumericBindings? _dashboardBindings;
   DesignNumericBindings? _sampleDevicesBindings;
   List<DesignTextBinding>? _efficiencyBindings;
+  List<DesignTextBinding>? _sharedEfficiencyBindings;
+  Object? _sharedEfficiencyContext;
+  bool _efficiencyDetailsExpanded = false;
   DesignPageTicket? _pageTicket;
   Timer? _tourTimer;
   int _tourIndex = 0;
@@ -243,6 +252,14 @@ class _DesignShellState extends State<DesignShell> {
       _navigationEpoch++;
       _history.clear();
       _dashboardGranularity = 'day';
+      _sharedEfficiencyBindings = null;
+      _sharedEfficiencyContext = null;
+      _efficiencyDetailsExpanded = false;
+    }
+    if (!_efficiencyPages.contains(_page)) {
+      _sharedEfficiencyBindings = null;
+      _sharedEfficiencyContext = null;
+      _efficiencyDetailsExpanded = false;
     }
     _pageStates.selectHome(scope);
     _invalidatePageLoad();
@@ -289,6 +306,13 @@ class _DesignShellState extends State<DesignShell> {
     final generation = _pageLoadGeneration;
     final homeId = _pageStateHomeId;
     try {
+      if (_efficiencyPages.contains(page)) {
+        final expanded = await _controller.runJavaScriptReturningResult(
+          "document.getElementById('efficiency-details-toggle')?.getAttribute('aria-expanded') === 'true'",
+        );
+        if (!_isCurrentPageLoad(page, generation)) return;
+        _efficiencyDetailsExpanded = expanded == true;
+      }
       final result = await _controller.runJavaScriptReturningResult(
         buildDesignPageStateCaptureScript(page),
       );
@@ -345,6 +369,8 @@ class _DesignShellState extends State<DesignShell> {
         return;
       }
       _efficiencyBindings = bindings;
+      _sharedEfficiencyBindings = bindings;
+      _sharedEfficiencyContext = widget.designContextCoordinator?.context;
       await _applyEfficiencyBindings(generation);
       return;
     }
@@ -542,6 +568,15 @@ class _DesignShellState extends State<DesignShell> {
         // The packaged home name remains visible on script failure.
       }
     }
+    if (_efficiencyPages.contains(page) && _efficiencyDetailsExpanded) {
+      try {
+        await _controller.runJavaScriptReturningResult(
+          "(() => { const toggle = document.getElementById('efficiency-details-toggle'); if (!toggle) return false; toggle.click(); return true; })()",
+        );
+      } catch (_) {
+        // The shared summary remains available with its default collapsed detail.
+      }
+    }
     if (page == 'tips_knowledge') {
       try {
         await _controller.runJavaScriptReturningResult(
@@ -562,6 +597,10 @@ class _DesignShellState extends State<DesignShell> {
     }
     if (page == 'efficiency') {
       await _applyEfficiencyBindings(generation);
+      return;
+    }
+    if (_efficiencyPages.contains(page)) {
+      await _applySharedEfficiencyBindings(page, generation);
       return;
     }
     if (_settingsDevicePages.contains(page)) {
@@ -804,6 +843,38 @@ class _DesignShellState extends State<DesignShell> {
       await _controller.runJavaScriptReturningResult(script);
     } catch (_) {
       // Keep the packaged month-to-date fixture when coverage is unavailable.
+    }
+  }
+
+  Future<void> _applySharedEfficiencyBindings(
+    String page,
+    int generation,
+  ) async {
+    final context = widget.designContextCoordinator?.context;
+    final ticket = _pageTicket;
+    final bindings = _sharedEfficiencyBindings;
+    if (!_pageReady ||
+        !_isCurrentPageLoad(page, generation) ||
+        !_efficiencyPages.contains(page) ||
+        page == 'efficiency' ||
+        context == null ||
+        !identical(context, _sharedEfficiencyContext) ||
+        ticket == null ||
+        bindings == null) {
+      return;
+    }
+    final script = _bindingRenderer.updateScript(ticket, [
+      for (final binding in bindings)
+        DesignTextBinding(
+          binding.id.replaceFirst('efficiency_text_', '${page}_text_'),
+          binding.text,
+        ),
+    ]);
+    if (script == null) return;
+    try {
+      await _controller.runJavaScriptReturningResult(script);
+    } catch (_) {
+      // Keep the same packaged summary when a prior overview read is unavailable.
     }
   }
 
@@ -1195,6 +1266,9 @@ class _DesignShellState extends State<DesignShell> {
       _invalidatePageLoad();
       _pageReads.clear();
       _dashboardGranularity = 'day';
+      _sharedEfficiencyBindings = null;
+      _sharedEfficiencyContext = null;
+      _efficiencyDetailsExpanded = false;
       widget.onSignOut?.call();
       return;
     }
@@ -1205,6 +1279,9 @@ class _DesignShellState extends State<DesignShell> {
       _invalidatePageLoad();
       _pageReads.clear();
       _dashboardGranularity = 'day';
+      _sharedEfficiencyBindings = null;
+      _sharedEfficiencyContext = null;
+      _efficiencyDetailsExpanded = false;
       widget.onChangeHome?.call();
       return;
     }

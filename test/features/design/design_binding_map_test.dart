@@ -19,13 +19,38 @@ Set<String> _approvedRemovedIds(String page, String category) {
   if (category == 'bindings' && page.startsWith('efficiency_')) {
     final removed = switch (page) {
       'efficiency_away' => [29, 30, 33, 34, 36, 40, 44],
-      'efficiency_habits' => [29, 30, 33, 34, 37, 38, 40, 44, 48],
-      'efficiency_peak_rates' => [29, 30, 31, 32, 33, 34, 35, 40, 44],
+      'efficiency_habits' => [
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        40,
+        44,
+        48,
+      ],
+      'efficiency_peak_rates' => [
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        40,
+        44,
+      ],
       _ => const <int>[],
     };
     return {
-      for (var n = 5; n <= 21; n++)
-        '${page}_text_${n.toString().padLeft(3, '0')}',
       for (final n in removed) '${page}_text_${n.toString().padLeft(3, '0')}',
     };
   }

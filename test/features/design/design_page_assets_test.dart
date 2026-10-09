@@ -90,15 +90,24 @@ String _withApprovedLabelChanges(String html, String pageId) {
     'efficiency_habits',
     'efficiency_peak_rates',
   }.contains(pageId)) {
-    const start = r'<!-- Hero Card: Identified Opportunity $18.60 -->';
-    const end = '<!-- Segmented Tabs Navigation -->';
-    final from = html.indexOf(start);
-    final to = html.indexOf(end, from);
-    expect(from, greaterThanOrEqualTo(0), reason: '$pageId hero marker');
-    expect(to, greaterThan(from), reason: '$pageId category marker');
-    return html.replaceRange(from, to, '');
+    return html.replaceFirst('Monthly Spend', 'Month to date');
   }
   return html;
+}
+
+String _withoutApprovedTabSummary(String text, String pageId) {
+  final adjusted = switch (pageId) {
+    'efficiency_habits' => text.replaceFirst(
+      'Aggregated Monthly Impact 3 Routines Diagnosed Optimal Base \$135.90',
+      '',
+    ),
+    'efficiency_peak_rates' => text.replaceFirst(
+      'savings Off-Peak Shift \$3.90 recoverable',
+      '',
+    ),
+    _ => text,
+  };
+  return adjusted.replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
 String _withApprovedDashboardOrder(String html) {
@@ -128,6 +137,12 @@ String _withSourceFallbackValues(String html, String pageId) {
     },
     for (final page in <String>['efficiency'])
       page: {'${page}_text_009': ('\$37.42', '\$142.30')},
+    for (final page in <String>[
+      'efficiency_away',
+      'efficiency_habits',
+      'efficiency_peak_rates',
+    ])
+      page: {'${page}_text_009': ('\$37.42', '\$142.30')},
   };
   for (final entry in (approved[pageId] ?? {}).entries) {
     final (packaged, source) = entry.value;
@@ -153,6 +168,48 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('approved design page assets', () {
+    test('Efficiency summary stays above every category tab', () async {
+      const pages = [
+        'efficiency',
+        'efficiency_away',
+        'efficiency_habits',
+        'efficiency_peak_rates',
+      ];
+      const start = '<!-- Top Insight Badge & Sub-header -->';
+      const end = '<!-- Segmented Tabs Navigation -->';
+      String? sharedSummary;
+      for (final pageId in pages) {
+        final html = await rootBundle.loadString(
+          'assets/design_pages/$pageId/app.html',
+        );
+        final topStart = html.indexOf(start);
+        final tabsStart = html.indexOf(end, topStart);
+        expect(topStart, greaterThanOrEqualTo(0), reason: pageId);
+        expect(tabsStart, greaterThan(topStart), reason: pageId);
+        final summary = html
+            .substring(topStart, tabsStart)
+            .replaceAll('${pageId}_text_', 'efficiency_text_');
+        sharedSummary ??= summary;
+        expect(summary, sharedSummary, reason: pageId);
+        expect(summary, contains('>Identified Opportunity</span>'));
+        expect(summary, contains('>Optimal Base</span>'));
+        expect(html, contains('id="efficiency-details-toggle"'));
+        expect(html, contains('id="efficiency-details"'));
+        expect(
+          html,
+          contains(
+            pageId == 'efficiency'
+                ? '<script src="controls.js"></script>'
+                : '<script src="../efficiency/controls.js"></script>',
+          ),
+        );
+        final belowTabs = html.substring(tabsStart);
+        expect(belowTabs, isNot(contains('>Identified Opportunity<')));
+        expect(belowTabs, isNot(contains('>Optimal Base<')));
+        expect(belowTabs, isNot(contains('>Off-Peak Shift<')));
+      }
+    });
+
     test('source and packaged page content stays unchanged outside chrome', () async {
       for (final pageId in _pageIds) {
         final source = File('assets/design_pages/$pageId/code.html');
@@ -267,17 +324,23 @@ void main() {
               _withSourceFallbackValues(packagedHtml, pageId),
             ),
           ),
-          _visibleText(
-            _withoutOuterChrome(
-              _withApprovedLabelChanges(
-                pageId == 'efficiency'
-                    ? sourceHtml.replaceFirst('Monthly Spend', 'Month to date')
-                    : pageId == 'dashboard'
-                    ? _withApprovedDashboardOrder(sourceHtml)
-                    : sourceHtml,
-                pageId,
+          _withoutApprovedTabSummary(
+            _visibleText(
+              _withoutOuterChrome(
+                _withApprovedLabelChanges(
+                  pageId == 'efficiency'
+                      ? sourceHtml.replaceFirst(
+                          'Monthly Spend',
+                          'Month to date',
+                        )
+                      : pageId == 'dashboard'
+                      ? _withApprovedDashboardOrder(sourceHtml)
+                      : sourceHtml,
+                  pageId,
+                ),
               ),
             ),
+            pageId,
           ),
           reason:
               '$pageId content must match its approved source except approved fallback values',
