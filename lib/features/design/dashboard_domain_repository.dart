@@ -8,7 +8,24 @@ abstract interface class DashboardDomainSource {
   Future<CloudHouseholdEnergyTrends> trends(String homeId);
 }
 
-class CloudDashboardDomainSource implements DashboardDomainSource {
+/// Optional typed period reads. Each period has its own snapshot identity.
+abstract interface class DashboardPeriodDomainSource {
+  Future<CloudHouseholdEnergyTrends> periodTrends(
+    String homeId,
+    String granularity,
+  );
+}
+
+/// The current Monday-start week is a separate read from chart occurrences.
+abstract interface class DashboardCurrentWeekDomainSource {
+  Future<CloudHouseholdEnergyTrends> currentWeekTrends(String homeId);
+}
+
+class CloudDashboardDomainSource
+    implements
+        DashboardDomainSource,
+        DashboardPeriodDomainSource,
+        DashboardCurrentWeekDomainSource {
   const CloudDashboardDomainSource(this.api);
   final CloudApiClient api;
 
@@ -19,12 +36,34 @@ class CloudDashboardDomainSource implements DashboardDomainSource {
   @override
   Future<CloudHouseholdEnergyTrends> trends(String homeId) =>
       api.householdEnergyTrends(homeId, granularity: 'hour');
+
+  @override
+  Future<CloudHouseholdEnergyTrends> periodTrends(
+    String homeId,
+    String granularity,
+  ) => api.householdEnergyTrends(
+    homeId,
+    granularity: granularity,
+    window: 'last_5_occurrences',
+  );
+
+  @override
+  Future<CloudHouseholdEnergyTrends> currentWeekTrends(String homeId) =>
+      api.householdEnergyTrends(homeId, granularity: 'day');
 }
 
 class DashboardDomainSnapshot {
-  const DashboardDomainSnapshot(this.dashboard, this.trends, {this.isCurrent});
+  const DashboardDomainSnapshot(
+    this.dashboard,
+    this.trends, {
+    this.periodTrends = const {},
+    this.weekToDateTrends,
+    this.isCurrent,
+  });
   final CloudHouseholdDashboard dashboard;
   final CloudHouseholdEnergyTrends trends;
+  final Map<String, CloudHouseholdEnergyTrends> periodTrends;
+  final CloudHouseholdEnergyTrends? weekToDateTrends;
   final bool Function()? isCurrent;
 
   String get homeId => dashboard.homeId;
@@ -56,9 +95,36 @@ class DashboardDomainRepository {
     final generation = ++_generation;
     bool stale() => generation != _generation || _homeId != homeId;
     try {
-      final results = await Future.wait<Object>([
-        source.dashboard(homeId),
-        source.trends(homeId),
+      final dashboardRead = source.dashboard(homeId);
+      final hourlyRead = source.trends(homeId);
+      final DashboardPeriodDomainSource? periodSource =
+          source is DashboardPeriodDomainSource
+          ? source as DashboardPeriodDomainSource
+          : null;
+      final periodReads = periodSource != null
+          ? Future.wait<CloudHouseholdEnergyTrends?>([
+              for (final granularity in const ['day', 'week', 'month'])
+                periodSource
+                    .periodTrends(homeId, granularity)
+                    .then<CloudHouseholdEnergyTrends?>((value) => value)
+                    .catchError((Object _) => null),
+            ])
+          : Future.value(<CloudHouseholdEnergyTrends?>[]);
+      final DashboardCurrentWeekDomainSource? weekSource =
+          source is DashboardCurrentWeekDomainSource
+          ? source as DashboardCurrentWeekDomainSource
+          : null;
+      final weekRead = weekSource == null
+          ? Future<CloudHouseholdEnergyTrends?>.value(null)
+          : weekSource
+                .currentWeekTrends(homeId)
+                .then<CloudHouseholdEnergyTrends?>((value) => value)
+                .catchError((Object _) => null);
+      final results = await Future.wait<Object?>([
+        dashboardRead,
+        hourlyRead,
+        periodReads,
+        weekRead,
       ]);
       if (stale()) return null;
       final dashboard = results[0] as CloudHouseholdDashboard;
@@ -66,9 +132,28 @@ class DashboardDomainRepository {
       if (!_sameSnapshot(dashboard, trends, homeId)) {
         throw const FormatException('Dashboard and trends disagree');
       }
+      final periodRows = results[2] as List<CloudHouseholdEnergyTrends?>;
+      final periodTrends = <String, CloudHouseholdEnergyTrends>{};
+      for (var i = 0; i < periodRows.length; i++) {
+        final row = periodRows[i];
+        final granularity = const ['day', 'week', 'month'][i];
+        if (row != null &&
+            row.granularity == granularity &&
+            _samePeriodContext(dashboard, row, homeId)) {
+          periodTrends[granularity] = row;
+        }
+      }
+      final weekRow = results[3] as CloudHouseholdEnergyTrends?;
       return DashboardDomainSnapshot(
         dashboard,
         trends,
+        periodTrends: Map.unmodifiable(periodTrends),
+        weekToDateTrends:
+            weekRow != null &&
+                weekRow.granularity == 'day' &&
+                _samePeriodContext(dashboard, weekRow, homeId)
+            ? weekRow
+            : null,
         isCurrent: () => !stale(),
       );
     } catch (_) {
@@ -77,6 +162,22 @@ class DashboardDomainRepository {
     }
   }
 }
+
+bool _samePeriodContext(
+  CloudHouseholdDashboard dashboard,
+  CloudHouseholdEnergyTrends trends,
+  String homeId,
+) =>
+    trends.homeId.toLowerCase() == homeId.toLowerCase() &&
+    trends.dataMode == dashboard.dataMode &&
+    trends.fixtureRevision == dashboard.fixtureRevision &&
+    trends.timezone == dashboard.timezone &&
+    trends.scope == dashboard.scope &&
+    trends.schemaRevision == dashboard.schemaRevision &&
+    trends.generatedAt.difference(dashboard.generatedAt).abs() <=
+        const Duration(minutes: 5) &&
+    !dashboard.generatedAt.isBefore(trends.period.start) &&
+    dashboard.generatedAt.isBefore(trends.period.endExclusive);
 
 final _uuid = RegExp(
   r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',

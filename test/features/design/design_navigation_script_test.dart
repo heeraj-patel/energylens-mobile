@@ -5,12 +5,53 @@ import 'package:energylens_mobile/features/design/design_navigation_script.dart'
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('Dashboard period buttons route exact backend granularities', () async {
+    final script = buildDesignNavigationScript('dashboard');
+    final file = await File(
+      '${Directory.systemTemp.path}/energylens-dashboard-period-${DateTime.now().microsecondsSinceEpoch}.json',
+    ).writeAsString(jsonEncode({'script': script}));
+    try {
+      final result = await Process.run('node', [
+        '-e',
+        r'''
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const {script} = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+const routes = [];
+let clickHandler;
+globalThis.document = {addEventListener(type, handler) { clickHandler = handler; }};
+globalThis.EnergyLensNavigation = {postMessage(route) { routes.push(route); }};
+eval(script);
+for (const action of ['dashboard_action_004', 'dashboard_action_005', 'dashboard_action_006']) {
+  let prevented = false, stopped = false;
+  const button = {dataset: {elAction: action}};
+  clickHandler({
+    target: {closest(selector) { return selector === 'button' ? button : null; }},
+    preventDefault() { prevented = true; },
+    stopImmediatePropagation() { stopped = true; }
+  });
+  assert.equal(prevented, true);
+  assert.equal(stopped, true);
+}
+assert.deepEqual(routes, [
+  'dashboard_period:day', 'dashboard_period:week', 'dashboard_period:month'
+]);
+''',
+        file.path,
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    } finally {
+      await file.delete();
+    }
+  });
+
   test('manual and photo controls bypass packaged fake save handlers', () async {
     for (final page in [
       'settings_manage_devices',
       'settings_manual_device_entry',
     ]) {
-      final html = await File('assets/design_pages/$page/app.html').readAsString();
+      final html = await File('assets/design_pages/$page/app.html')
+          .readAsString();
       expect(html, isNot(contains('onclick="saveManualDevice()"')));
       expect(html, contains('data-el-action="${page}_action_020"'));
     }
@@ -45,6 +86,11 @@ for (const [page, script] of Object.entries(scripts)) {
   const reviews = [], photos = [], routes = [];
   globalThis.document = {
     addEventListener(_, handler) { clickHandler = handler; },
+    querySelectorAll() { return [{
+      dataset: {elAction: page + '_action_015'},
+      classList: {contains(name) { return name === 'bg-primary-container'; }},
+      getAttribute() { return null; },
+    }]; },
     getElementById(id) {
       return {value: ({'input-device-name': 'Fridge',
                        'input-manufacturer': 'Acme',
@@ -76,7 +122,10 @@ for (const [page, script] of Object.entries(scripts)) {
     assert.deepEqual(reviews, []);
   } else {
     click(page + '_action_020');
-    assert.deepEqual(reviews, [{name: 'Fridge', manufacturer: 'Acme', model: 'A123'}]);
+    assert.deepEqual(reviews, [{
+      name: 'Fridge', manufacturer: 'Acme', model: 'A123',
+      category: page === 'settings_manual_device_entry' ? 'refrigerator' : 'dishwasher'
+    }]);
     assert.deepEqual(photos, []);
   }
   assert.deepEqual(routes, []);

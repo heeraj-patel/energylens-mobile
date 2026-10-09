@@ -296,6 +296,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
           accountId: accountId,
           homeId: home.id,
           mode: DesignContextMode.household,
+          dataPolicy: DesignDataPolicy.sameHomeDemoFallback,
         ),
       );
     } on ArgumentError {

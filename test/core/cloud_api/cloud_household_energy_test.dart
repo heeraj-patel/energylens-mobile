@@ -106,6 +106,95 @@ Map<String, dynamic> _trends({bool sample = false}) => {
 };
 
 void main() {
+  test('parses synthetic split and scoped device rows in both responses', () {
+    const applianceId = '10000000-0000-4000-8000-000000000001';
+    final split = _allocation(sample: true)
+      ..['useful_energy'] = {'value': '9', 'unit': 'kWh'}
+      ..['useful_cost'] = {'amount': '1.80', 'currency': 'USD'}
+      ..['waste_energy'] = {'value': '2', 'unit': 'kWh'}
+      ..['waste_cost'] = {'amount': '0.40', 'currency': 'USD'}
+      ..['unclassified_energy'] = {'value': '1', 'unit': 'kWh'}
+      ..['unclassified_cost'] = {'amount': '0.20', 'currency': 'USD'};
+    final dashboardJson = _dashboard(sample: true)
+      ..['device_allocations'] = [
+        {'appliance_id': applianceId, 'allocation': split},
+      ];
+    final trendsJson = _trends(sample: true);
+    (trendsJson['buckets'] as List).single['device_allocations'] = [
+      {'appliance_id': applianceId, 'allocation': split},
+    ];
+    final dashboard = CloudHouseholdDashboard.fromJson(
+      dashboardJson,
+      expectedHomeId: homeId,
+    );
+    final trends = CloudHouseholdEnergyTrends.fromJson(
+      trendsJson,
+      expectedHomeId: homeId,
+    );
+    expect(dashboard.deviceAllocations.single.applianceId, applianceId);
+    expect(
+      trends
+          .buckets
+          .single
+          .deviceAllocations
+          .single
+          .allocation
+          .wasteCost!
+          .amount,
+      '0.40',
+    );
+    expect(
+      dashboard.deviceAllocations.single.allocation.usefulEnergy!.value,
+      '9',
+    );
+    dashboardJson['device_allocations'] = [
+      {'appliance_id': applianceId, 'allocation': split},
+      {'appliance_id': applianceId.toUpperCase(), 'allocation': split},
+    ];
+    expect(
+      () => CloudHouseholdDashboard.fromJson(
+        dashboardJson,
+        expectedHomeId: homeId,
+      ),
+      throwsFormatException,
+    );
+  });
+
+  test('parses database demo IDs with nullable names and unknown energy', () {
+    final split = _allocation(sample: true)
+      ..['energy'] = null
+      ..['useful_energy'] = null
+      ..['waste_energy'] = null
+      ..['unclassified_energy'] = null;
+    final json = _dashboard(sample: true)
+      ..['device_allocations'] = [
+        {
+          'device_id': 'demo-device-01',
+          'name': 'Study Desktop & Rig',
+          'allocation': split,
+        },
+        {'device_id': 'demo-device-11', 'name': null, 'allocation': split},
+      ];
+    final parsed = CloudHouseholdDashboard.fromJson(
+      json,
+      expectedHomeId: homeId,
+    );
+    expect(parsed.deviceAllocations, hasLength(2));
+    expect(parsed.deviceAllocations.first.deviceId, 'demo-device-01');
+    expect(parsed.deviceAllocations.first.name, 'Study Desktop & Rig');
+    expect(parsed.deviceAllocations.last.name, isNull);
+    expect(parsed.deviceAllocations.first.allocation.energy, isNull);
+    (json['device_allocations'] as List).add({
+      'device_id': 'demo-device-01',
+      'name': null,
+      'allocation': split,
+    });
+    expect(
+      () => CloudHouseholdDashboard.fromJson(json, expectedHomeId: homeId),
+      throwsFormatException,
+    );
+  });
+
   test(
     'dashboard parses household values with exact decimals and unknowns',
     () async {
@@ -163,6 +252,74 @@ void main() {
       client.close();
     },
   );
+
+  test(
+    'trailing 30 day query is scoped and only valid for daily buckets',
+    () async {
+      final seen = <http.Request>[];
+      final client = _api(
+        MockClient((request) async {
+          seen.add(request);
+          final json = _trends(sample: true);
+          json['granularity'] = 'day';
+          return http.Response(jsonEncode(json), 200);
+        }),
+      );
+      await client.householdEnergyTrends(
+        homeId,
+        granularity: 'day',
+        window: 'trailing_30_days',
+      );
+      expect(seen.single.url.queryParameters, {
+        'granularity': 'day',
+        'window': 'trailing_30_days',
+      });
+      await expectLater(
+        client.householdEnergyTrends(
+          homeId,
+          granularity: 'week',
+          window: 'trailing_30_days',
+        ),
+        throwsArgumentError,
+      );
+      client.close();
+    },
+  );
+
+  test('last five occurrence queries accept day week and month only', () async {
+    final seen = <http.Request>[];
+    final client = _api(
+      MockClient((request) async {
+        seen.add(request);
+        final json = _trends(sample: true);
+        json['granularity'] = request.url.queryParameters['granularity'];
+        return http.Response(jsonEncode(json), 200);
+      }),
+    );
+    for (final granularity in const ['day', 'week', 'month']) {
+      await client.householdEnergyTrends(
+        homeId,
+        granularity: granularity,
+        window: 'last_5_occurrences',
+      );
+    }
+    expect(
+      seen.map((request) => request.url.queryParameters).toList(),
+      [
+        for (final granularity in const ['day', 'week', 'month'])
+          {'granularity': granularity, 'window': 'last_5_occurrences'},
+      ],
+    );
+    await expectLater(
+      client.householdEnergyTrends(
+        homeId,
+        granularity: 'hour',
+        window: 'last_5_occurrences',
+      ),
+      throwsArgumentError,
+    );
+    client.close();
+  });
 
   test(
     'household reads preserve measured energy and estimated unclassified money',

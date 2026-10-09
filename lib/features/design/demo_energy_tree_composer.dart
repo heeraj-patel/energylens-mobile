@@ -33,6 +33,7 @@ class DemoEnergyTreeComposer {
   final DemoEnergyTreeLiveAdapter liveAdapter;
 
   DemoMonthTree compose({
+    required DemoMonthTree baseTree,
     required String homeId,
     required String timezone,
     required DateTime referenceUtc,
@@ -52,13 +53,14 @@ class DemoEnergyTreeComposer {
       throw const FormatException('Unknown demo timezone');
     }
     final local = tz.TZDateTime.from(referenceUtc, location);
-    var tree = buildDemoMonthTree(
-      homeId: homeId,
-      year: local.year,
-      month: local.month,
-      timezone: timezone,
-      referenceDay: local.day,
-    );
+    final expectedLocalDate =
+        '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+    if (baseTree.homeId.toLowerCase() != homeId.toLowerCase() ||
+        baseTree.referenceLocalDate != expectedLocalDate ||
+        baseTree.days.any((day) => day.period.timezone != timezone)) {
+      throw const FormatException('Base tree does not match requested day');
+    }
+    var tree = baseTree;
     if (snapshot != null &&
         snapshot.homeId.toLowerCase() != homeId.toLowerCase()) {
       throw const FormatException('Devices snapshot belongs to another home');
@@ -136,13 +138,7 @@ class DemoEnergyTreeComposer {
     // A sign-out or home switch can invalidate the snapshot during traversal.
     // Discard every live merge rather than return a mixed stale view.
     if (snapshot.isCurrent?.call() == false) {
-      return buildDemoMonthTree(
-        homeId: homeId,
-        year: local.year,
-        month: local.month,
-        timezone: timezone,
-        referenceDay: local.day,
-      );
+      return baseTree;
     }
     return tree;
   }

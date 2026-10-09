@@ -93,12 +93,23 @@ class CloudApiClient {
   Future<CloudHouseholdEnergyTrends> householdEnergyTrends(
     String homeId, {
     required String granularity,
+    String? window,
   }) async {
     _validateHouseholdHomeId(homeId);
     if (!const {'hour', 'day', 'week', 'month'}.contains(granularity)) {
       throw ArgumentError.value(granularity, 'granularity');
     }
-    final query = Uri(queryParameters: {'granularity': granularity}).query;
+    if (window != null &&
+        !((window == 'trailing_30_days' && granularity == 'day') ||
+            (window == 'last_5_occurrences' &&
+                const {'day', 'week', 'month'}.contains(granularity)))) {
+      throw ArgumentError.value(window, 'window');
+    }
+    final query = Uri(
+      queryParameters: window == null
+          ? {'granularity': granularity}
+          : {'granularity': granularity, 'window': window},
+    ).query;
     final response = await get(
       '/v1/homes/${Uri.encodeComponent(homeId)}/energy-trends?$query',
     );

@@ -17,6 +17,7 @@ class CloudAppliance {
     this.updatedAt,
     this.archivedAt,
     this.kbWasteResult,
+    this.demoDeviceId,
   });
 
   final String id;
@@ -37,6 +38,9 @@ class CloudAppliance {
   final DateTime? archivedAt;
   final CloudKbWasteResult? kbWasteResult;
 
+  /// Present only for a database-backed synthetic inventory row.
+  final String? demoDeviceId;
+
   factory CloudAppliance.fromJson(Map<String, dynamic> json) {
     final identity = json['identity'];
     if (json['id'] is! String ||
@@ -47,7 +51,11 @@ class CloudAppliance {
         identity['brand'] is! String ||
         identity['full_model'] is! String ||
         identity['fuel'] is! String ||
-        identity['match_quality'] is! String) {
+        identity['match_quality'] is! String ||
+        (json['demo_device_id'] != null &&
+            (json['demo_device_id'] is! String ||
+                !RegExp(r'^demo-device-(0[1-9]|1[0-8])$')
+                    .hasMatch(json['demo_device_id'] as String)))) {
       throw const FormatException('Invalid cloud appliance');
     }
     return CloudAppliance(
@@ -70,6 +78,7 @@ class CloudAppliance {
       kbWasteResult: json['kb_waste_result'] == null
           ? null
           : CloudKbWasteResult.fromJson(json['kb_waste_result']),
+      demoDeviceId: json['demo_device_id'] as String?,
     );
   }
 

@@ -1,4 +1,7 @@
 import 'package:energylens_mobile/features/design/demo_energy_bindings.dart';
+
+import '../../support/demo_energy_tree_fixtures.dart';
+
 import 'package:energylens_mobile/features/design/demo_energy_tree.dart';
 import 'package:flutter_test/flutter_test.dart';
 

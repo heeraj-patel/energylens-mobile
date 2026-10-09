@@ -232,6 +232,8 @@ class CloudHouseholdDashboard {
     required this.trendPeriod,
     required this.topRecommendationId,
     required this.assistantIntentId,
+    this.deviceAllocations = const [],
+    this.unattributed,
   });
 
   final CloudHouseholdEnergyMetadata metadata;
@@ -239,6 +241,8 @@ class CloudHouseholdDashboard {
   final String trendPeriod;
   final String? topRecommendationId;
   final String? assistantIntentId;
+  final List<CloudDeviceEnergyAllocation> deviceAllocations;
+  final CloudEnergyAllocation? unattributed;
 
   String get schemaRevision => metadata.schemaRevision;
   String get contentRevision => metadata.contentRevision;
@@ -279,8 +283,14 @@ class CloudHouseholdDashboard {
         'trend_period',
         'top_recommendation_id',
         'assistant_intent_id',
+        'device_allocations',
+        'unattributed',
       },
-      optional: const {'fixture_revision'},
+      optional: const {
+        'fixture_revision',
+        'device_allocations',
+        'unattributed',
+      },
     );
     if (json['view'] != 'dashboard') {
       throw const FormatException('Invalid household dashboard view');
@@ -304,6 +314,11 @@ class CloudHouseholdDashboard {
       }, 'trend period'),
       topRecommendationId: top as String?,
       assistantIntentId: intent as String?,
+      deviceAllocations: _deviceAllocations(json['device_allocations']),
+      unattributed: _nullable(
+        json['unattributed'],
+        CloudEnergyAllocation.fromJson,
+      ),
     );
   }
 }
@@ -313,19 +328,29 @@ class CloudEnergyTrendBucket {
     required this.period,
     required this.allocation,
     required this.coverageFraction,
+    this.deviceAllocations = const [],
+    this.unattributed,
   });
   final CloudEnergyPeriod period;
   final CloudEnergyAllocation allocation;
   final String? coverageFraction;
+  final List<CloudDeviceEnergyAllocation> deviceAllocations;
+  final CloudEnergyAllocation? unattributed;
 
   factory CloudEnergyTrendBucket.fromJson(Object? value) {
     final json = _object(value, 'trend bucket');
-    _keys(json, const {
-      'start_local',
-      'end_exclusive_local',
-      'allocation',
-      'coverage_fraction',
-    });
+    _keys(
+      json,
+      const {
+        'start_local',
+        'end_exclusive_local',
+        'allocation',
+        'coverage_fraction',
+        'device_allocations',
+        'unattributed',
+      },
+      optional: const {'device_allocations', 'unattributed'},
+    );
     final fraction = json['coverage_fraction'];
     return CloudEnergyTrendBucket(
       period: CloudEnergyPeriod.fromJson({
@@ -336,8 +361,74 @@ class CloudEnergyTrendBucket {
       coverageFraction: fraction == null
           ? null
           : _decimal(fraction, 'coverage fraction'),
+      deviceAllocations: _deviceAllocations(json['device_allocations']),
+      unattributed: _nullable(
+        json['unattributed'],
+        CloudEnergyAllocation.fromJson,
+      ),
     );
   }
+}
+
+class CloudDeviceEnergyAllocation {
+  const CloudDeviceEnergyAllocation({
+    this.applianceId,
+    this.deviceId,
+    this.name,
+    required this.allocation,
+  });
+
+  final String? applianceId;
+  final String? deviceId;
+  final String? name;
+  final CloudEnergyAllocation allocation;
+
+  factory CloudDeviceEnergyAllocation.fromJson(Object? value) {
+    final json = _object(value, 'device allocation');
+    _keys(
+      json,
+      const {'appliance_id', 'device_id', 'name', 'allocation'},
+      optional: const {'appliance_id', 'device_id', 'name'},
+    );
+    final applianceId = json['appliance_id'];
+    final deviceId = json['device_id'];
+    final name = json['name'];
+    if ((applianceId == null) == (deviceId == null) ||
+        (applianceId != null &&
+            (applianceId is! String ||
+                !RegExp(r'^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$')
+                    .hasMatch(applianceId))) ||
+        (deviceId != null &&
+            (deviceId is! String ||
+                !RegExp(r'^demo-device-(0[1-9]|1[0-8])$')
+                    .hasMatch(deviceId))) ||
+        (name != null && (name is! String || name.trim().isEmpty)) ||
+        (applianceId != null && name != null)) {
+      throw const FormatException('Invalid device allocation ID');
+    }
+    return CloudDeviceEnergyAllocation(
+      applianceId: applianceId as String?,
+      deviceId: deviceId as String?,
+      name: name as String?,
+      allocation: CloudEnergyAllocation.fromJson(json['allocation']),
+    );
+  }
+}
+
+List<CloudDeviceEnergyAllocation> _deviceAllocations(Object? raw) {
+  if (raw == null) return const [];
+  if (raw is! List) {
+    throw const FormatException('Invalid device allocations');
+  }
+  final rows = raw.map(CloudDeviceEnergyAllocation.fromJson).toList();
+  if (rows
+          .map((row) => (row.applianceId ?? row.deviceId!).toLowerCase())
+          .toSet()
+          .length !=
+      rows.length) {
+    throw const FormatException('Duplicate device allocation');
+  }
+  return List.unmodifiable(rows);
 }
 
 class CloudHouseholdEnergyTrends {

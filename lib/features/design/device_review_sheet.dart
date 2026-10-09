@@ -17,6 +17,7 @@ class DeviceReviewSheet extends StatefulWidget {
     this.name = '',
     this.manufacturer = '',
     this.model = '',
+    this.initialCategory,
   });
 
   final CloudAuxiliaryDomainLifecycle lifecycle;
@@ -26,6 +27,7 @@ class DeviceReviewSheet extends StatefulWidget {
   final String name;
   final String manufacturer;
   final String model;
+  final String? initialCategory;
 
   @override
   State<DeviceReviewSheet> createState() => _DeviceReviewSheetState();
@@ -41,7 +43,22 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
   late final TextEditingController _model = TextEditingController(
     text: widget.model,
   );
-  String? _category;
+  late String? _category =
+      const {
+        'computer',
+        'lighting',
+        'refrigerator',
+        'television',
+        'washer',
+        'dryer',
+        'dishwasher',
+        'space_heater',
+        'air_conditioner',
+        'water_heater',
+        'other',
+      }.contains(widget.initialCategory)
+      ? widget.initialCategory
+      : null;
   String? _fuel;
   bool _saving = false;
   PendingOnboardingDraft? _pending;
@@ -160,6 +177,10 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
               DropdownMenuItem(
                 value: 'air_conditioner',
                 child: Text('Air conditioner'),
+              ),
+              DropdownMenuItem(
+                value: 'water_heater',
+                child: Text('Water Heater'),
               ),
               DropdownMenuItem(value: 'other', child: Text('Other appliance')),
             ],

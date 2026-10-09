@@ -164,7 +164,33 @@ class _Source implements EfficiencyDomainSource {
   }
 }
 
+class _RollingSource extends _Source implements EfficiencyRollingDomainSource {
+  int rollingCalls = 0;
+
+  @override
+  Future<CloudHouseholdEnergyTrends> rolling30Days(String home) async {
+    rollingCalls++;
+    final body = _body('energy_trends', home);
+    body['granularity'] = 'day';
+    return CloudHouseholdEnergyTrends.fromJson(body, expectedHomeId: home);
+  }
+}
+
 void main() {
+  test(
+    'overview fetches trailing 30 days without adding it to other pages',
+    () async {
+      final source = _RollingSource();
+      final repository = EfficiencyDomainRepository(source);
+      final overview = await repository.fetch(homeA, EfficiencyPage.overview);
+      expect(overview!.rolling30Days?.granularity, 'day');
+      expect(source.rollingCalls, 1);
+      final away = await repository.fetch(homeA, EfficiencyPage.away);
+      expect(away!.rolling30Days, isNull);
+      expect(source.rollingCalls, 1);
+    },
+  );
+
   test(
     'all four pages retain aggregate evidence and unknown categories',
     () async {

@@ -1,4 +1,7 @@
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
+
+import '../../support/demo_energy_tree_fixtures.dart';
+
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance_list.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_tariff.dart';
 import 'package:energylens_mobile/features/design/demo_energy_tree.dart';
@@ -75,9 +78,19 @@ DevicesDomainSnapshot snapshot(
 
 DemoMonthTree compose({
   DevicesDomainSnapshot? devices,
+  DemoMonthTree? baseTree,
   List<VerifiedDemoApplianceMapping> mappings = const [],
   List<VerifiedDemoWasteDay> verifiedWasteDays = const [],
 }) => const DemoEnergyTreeComposer().compose(
+  baseTree:
+      baseTree ??
+      buildDemoMonthTree(
+        homeId: home,
+        year: 2026,
+        month: 10,
+        timezone: 'America/Chicago',
+        referenceDay: 7,
+      ),
   homeId: home,
   timezone: 'America/Chicago',
   referenceUtc: reference,
@@ -91,6 +104,54 @@ void main() {
   final mock = compose();
   final today = mock.day('2026-10-07').period;
   final prior = mock.day('2026-10-06').period;
+
+  test(
+    'uses a caller-supplied base tree without synthesizing fixture values',
+    () {
+      final seed = buildDemoMonthTree(
+        homeId: home,
+        year: 2026,
+        month: 10,
+        timezone: 'America/Chicago',
+        referenceDay: 7,
+      );
+      final markedDay = seed.day('2026-10-07');
+      final markedDevices = markedDay.devices.toList();
+      final original = markedDevices.first;
+      markedDevices[0] = DemoBranch(
+        deviceId: original.deviceId,
+        name: 'Supplied template device',
+        period: original.period,
+        cost: original.cost,
+        origin: original.origin,
+        sourceId: original.sourceId,
+      );
+      final baseTree = DemoMonthTree(
+        homeId: seed.homeId,
+        referenceLocalDate: seed.referenceLocalDate,
+        days: seed.days
+            .map(
+              (day) => day.period.localDate == markedDay.period.localDate
+                  ? DemoDayTree(
+                      homeId: day.homeId,
+                      period: day.period,
+                      devices: markedDevices,
+                      unattributed: day.unattributed,
+                    )
+                  : day,
+            )
+            .toList(),
+      );
+
+      final result = compose(baseTree: baseTree);
+
+      expect(result, same(baseTree));
+      expect(
+        result.day('2026-10-07').devices.first.name,
+        'Supplied template device',
+      );
+    },
+  );
 
   test(
     'mixes mapped and distinct real days into derived day and month totals',

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance_list.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_household_energy.dart';
 import 'package:energylens_mobile/features/design/dashboard_domain_repository.dart';
 import 'package:energylens_mobile/features/design/design_context_coordinator.dart';
@@ -77,8 +78,75 @@ DesignContextRead _dashboardRead({
   );
 }
 
+DesignContextRead _weekRead({
+  String? cost = '4.123',
+  void Function(Map<String, dynamic>)? alterWeek,
+}) {
+  final daily = _dashboardRead(useful: '1.00', waste: '0.20');
+  final snapshot = daily.value as DashboardDomainSnapshot;
+  final weekJson = _body('energy_trends', useful: '3.12', waste: '0.50');
+  weekJson['granularity'] = 'day';
+  weekJson['period'] = {
+    'start_local': '2026-10-05T00:00:00-05:00',
+    'end_exclusive_local': '2026-10-12T00:00:00-05:00',
+  };
+  weekJson['totals']['cost'] = cost == null
+      ? null
+      : {'amount': cost, 'currency': 'USD'};
+  alterWeek?.call(weekJson);
+  return DesignContextRead(
+    accountId: daily.accountId,
+    homeId: daily.homeId,
+    mode: daily.mode,
+    page: daily.page,
+    value: DashboardDomainSnapshot(
+      snapshot.dashboard,
+      snapshot.trends,
+      weekToDateTrends: CloudHouseholdEnergyTrends.fromJson(
+        weekJson,
+        expectedHomeId: homeA,
+      ),
+      isCurrent: () => true,
+    ),
+  );
+}
+
 void main() {
-  test('uses only exact daily cost IDs and preserves decimal strings', () {
+  test('binds only the validated week-to-date cost and available split', () {
+    final result = prepareDesignNumericBindings(_weekRead());
+    expect(result.bindings.map((row) => row.id), [
+      'dashboard_text_006',
+      'dashboard_text_009',
+      'dashboard_text_025',
+      'dashboard_text_026',
+      'dashboard_text_027',
+    ]);
+    expect(result.bindings.map((row) => row.text), [
+      '\$1.00',
+      '\$0.20',
+      '\$4.12',
+      '\$3.12 Useful',
+      '\$0.50 Waste',
+    ]);
+  });
+
+  test('weekly cost stays unavailable for absent price or wrong period', () {
+    for (final read in [
+      _weekRead(cost: null),
+      _weekRead(
+        alterWeek: (json) {
+          json['period']['start_local'] = '2026-10-06T00:00:00-05:00';
+        },
+      ),
+    ]) {
+      final result = prepareDesignNumericBindings(read);
+      expect(result.bindings.last.id, 'dashboard_text_025');
+      expect(result.bindings.last.text, 'N/A');
+      expect(result.unknownBindingIds, contains('dashboard_text_025'));
+    }
+  });
+
+  test('uses only exact daily cost IDs and rounds display once', () {
     final result = prepareDesignNumericBindings(
       _dashboardRead(useful: '6.9600', waste: '0.020'),
     );
@@ -86,13 +154,13 @@ void main() {
       'dashboard_text_006',
       'dashboard_text_009',
     ]);
-    expect(result.bindings.map((b) => b.text), ['\$6.9600', '\$0.020']);
+    expect(result.bindings.map((b) => b.text), ['\$6.96', '\$0.02']);
     expect(result.unknownBindingIds, isEmpty);
     expect(jsonDecode(result.encode()), {
       'version': 1,
       'bindings': [
-        {'id': 'dashboard_text_006', 'text': '\$6.9600'},
-        {'id': 'dashboard_text_009', 'text': '\$0.020'},
+        {'id': 'dashboard_text_006', 'text': '\$6.96'},
+        {'id': 'dashboard_text_009', 'text': '\$0.02'},
       ],
     });
   });
@@ -216,7 +284,7 @@ void main() {
     }
   });
 
-  test('keeps isolated sample values without adding visible source labels', () {
+  test('withholds a full-day sample claim without its matching day bucket', () {
     final dashboardJson = _body('dashboard', useful: '6.96', waste: '2.88');
     final trendsJson = _body('energy_trends', useful: '6.96', waste: '2.88');
     for (final json in [dashboardJson, trendsJson]) {
@@ -239,11 +307,191 @@ void main() {
 
     final result = prepareDesignNumericBindings(read);
 
-    expect(result.bindings.map((binding) => binding.text), [
-      '\$6.96',
-      '\$2.88',
-    ]);
+    expect(result.bindings, isEmpty);
+    expect(result.unknownBindingIds, {
+      'dashboard_text_006',
+      'dashboard_text_009',
+    });
     expect(result.encode(), isNot(contains('synthetic')));
+  });
+
+  test(
+    'sample weekly card excludes unattributed cost and uses full day split',
+    () {
+      final dashboardJson = _body('dashboard', useful: '0.01', waste: '0.01');
+      final hourlyJson = _body('energy_trends', useful: '0.01', waste: '0.01');
+      final dayJson = _body('energy_trends', useful: '0.20', waste: '0.40');
+      for (final json in [dashboardJson, hourlyJson, dayJson]) {
+        json['data_mode'] = 'sample';
+        json['fixture_revision'] = 'db-demo-v1';
+        json['scope'] = 'whole_home_including_unattributed_load';
+        json['evidence_basis'] = 'synthetic';
+        json['totals']['evidence_basis'] = 'synthetic';
+      }
+      dayJson['granularity'] = 'day';
+      dayJson['period'] = {
+        'start_local': '2026-10-05T00:00:00-05:00',
+        'end_exclusive_local': '2026-10-12T00:00:00-05:00',
+      };
+      dayJson['totals']['cost'] = {'amount': '0.60', 'currency': 'USD'};
+      dayJson['buckets'] = [
+        {
+          'start_local': '2026-10-06T00:00:00-05:00',
+          'end_exclusive_local': '2026-10-07T00:00:00-05:00',
+          'coverage_fraction': '1',
+          'allocation': {
+            ...(_body('dashboard')['totals'] as Map<String, dynamic>),
+            'useful_cost': {'amount': '0.20', 'currency': 'USD'},
+            'waste_cost': {'amount': '0.40', 'currency': 'USD'},
+            'evidence_basis': 'synthetic',
+          },
+          'device_allocations': [
+            for (var i = 1; i <= 18; i++)
+              {
+                'device_id': 'demo-device-${i.toString().padLeft(2, '0')}',
+                'name': i <= 10 ? 'Existing device' : null,
+                'allocation': {
+                  ...(_body('dashboard')['totals'] as Map<String, dynamic>),
+                  'cost': {'amount': '0.03', 'currency': 'USD'},
+                  'useful_cost': {'amount': '0.01', 'currency': 'USD'},
+                  'waste_cost': {'amount': '0.02', 'currency': 'USD'},
+                  'evidence_basis': 'synthetic',
+                },
+              },
+          ],
+        },
+      ];
+      final dashboard = CloudHouseholdDashboard.fromJson(
+        dashboardJson,
+        expectedHomeId: homeA,
+      );
+      final hourly = CloudHouseholdEnergyTrends.fromJson(
+        hourlyJson,
+        expectedHomeId: homeA,
+      );
+      final day = CloudHouseholdEnergyTrends.fromJson(
+        dayJson,
+        expectedHomeId: homeA,
+      );
+      final result = prepareDesignNumericBindings(
+        DesignContextRead(
+          accountId: 'sample',
+          homeId: homeA,
+          mode: DesignContextMode.sample,
+          page: 'dashboard',
+          value: DashboardDomainSnapshot(
+            dashboard,
+            hourly,
+            weekToDateTrends: day,
+            isCurrent: () => true,
+          ),
+        ),
+      );
+      final byId = {for (final row in result.bindings) row.id: row.text};
+      expect(byId['dashboard_text_006'], '\$0.20');
+      expect(byId['dashboard_text_009'], '\$0.40');
+      expect(byId['dashboard_text_025'], '\$0.54');
+    },
+  );
+
+  test('binds ten named sample cards from eighteen Cloud cost rows', () {
+    const names = [
+      'Study Desktop & Rig',
+      'Living Room 65" TV',
+      'Phone & Tablet Chargers',
+      'Kitchen Refrigerator',
+      'Hallway Central AC',
+      'Living Room Soundbar',
+      'Home Office Monitors',
+      'Mesh Wi-Fi Gateway & Router',
+      'Subwoofer & Amp Rack',
+      'Central Heat Pump',
+    ];
+    final rows = [
+      for (var i = 1; i <= 18; i++)
+        {
+          'device_id': 'demo-device-${i.toString().padLeft(2, '0')}',
+          'name': i <= 10 ? names[i - 1] : null,
+          'allocation': {
+            'energy': null,
+            'cost': {'amount': '0.03', 'currency': 'USD'},
+            'useful_energy': null,
+            'useful_cost': {'amount': '0.01', 'currency': 'USD'},
+            'waste_energy': null,
+            'waste_cost': {'amount': '0.02', 'currency': 'USD'},
+            'unclassified_energy': null,
+            'unclassified_cost': null,
+            'availability': 'partial',
+            'evidence_basis': 'synthetic',
+          },
+        },
+    ];
+    final json = _body('energy_trends')
+      ..['data_mode'] = 'sample'
+      ..['fixture_revision'] = 'db-demo-v1'
+      ..['evidence_basis'] = 'synthetic'
+      ..['granularity'] = 'day'
+      ..['period'] = {
+        'start_local': '2026-10-05T00:00:00-05:00',
+        'end_exclusive_local': '2026-10-12T00:00:00-05:00',
+      }
+      ..['buckets'] = [
+        {
+          'start_local': '2026-10-06T00:00:00-05:00',
+          'end_exclusive_local': '2026-10-07T00:00:00-05:00',
+          'coverage_fraction': '1',
+          'allocation': {
+            ...(_body('dashboard')['totals'] as Map<String, dynamic>),
+            'evidence_basis': 'synthetic',
+          },
+          'device_allocations': rows,
+        },
+      ];
+    final inventory = DevicesDomainSnapshot(
+      homeId: homeA,
+      items: [
+        for (var i = 1; i <= 10; i++)
+          DeviceInventoryItem(
+            appliance: CloudAppliance(
+              id: '10000000-0000-4000-8000-${i.toString().padLeft(12, '0')}',
+              homeId: homeA,
+              name: names[i - 1],
+              category: '',
+              room: null,
+              brand: '',
+              fullModel: '',
+              fuel: '',
+              matchQuality: 'unresolved',
+              demoDeviceId: 'demo-device-${i.toString().padLeft(2, '0')}',
+            ),
+            activeAttachmentIds: const [],
+            measuredBuckets: const [],
+          ),
+      ],
+      hasMoreMeteredPages: false,
+      dataMode: CloudApplianceDataMode.sample,
+      fixtureRevision: 'db-demo-v1',
+      sampleDayCosts: CloudHouseholdEnergyTrends.fromJson(
+        json,
+        expectedHomeId: homeA,
+      ),
+      isCurrent: () => true,
+    );
+    final result = prepareDesignNumericBindings(
+      DesignContextRead(
+        accountId: 'sample',
+        homeId: homeA,
+        mode: DesignContextMode.sample,
+        page: 'devices',
+        value: inventory,
+      ),
+    );
+    expect(result.bindings, hasLength(32));
+    expect(result.bindings.first.text, '\$0.36/day');
+    expect(result.bindings[1].text, '\$0.18/day');
+    expect(result.bindings[2].text, names.first);
+    expect(result.bindings[3].text, '\$0.01');
+    expect(result.unknownBindingIds, isEmpty);
   });
 
   test('unclassified cost alone leaves useful and waste slots unknown', () {

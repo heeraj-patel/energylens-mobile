@@ -4,6 +4,7 @@ import '../../core/cloud_api/cloud_api_client.dart';
 import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_api/cloud_appliance_list.dart';
 import '../../core/cloud_api/cloud_interventions.dart';
+import '../../core/cloud_api/cloud_household_energy.dart';
 import '../../core/cloud_api/cloud_metered_summary.dart';
 import '../../core/cloud_api/cloud_sensor.dart';
 
@@ -19,7 +20,12 @@ abstract interface class DevicesDomainSource {
   });
 }
 
-class CloudDevicesDomainSource implements DevicesDomainSource {
+abstract interface class DevicesSampleCostSource {
+  Future<CloudHouseholdEnergyTrends> sampleDayCosts(String homeId);
+}
+
+class CloudDevicesDomainSource
+    implements DevicesDomainSource, DevicesSampleCostSource {
   const CloudDevicesDomainSource(this.api);
   final CloudApiClient api;
 
@@ -36,6 +42,10 @@ class CloudDevicesDomainSource implements DevicesDomainSource {
     String homeId, {
     String? cursor,
   }) => api.meteredSummaries(homeId, granularity: 'day', cursor: cursor);
+
+  @override
+  Future<CloudHouseholdEnergyTrends> sampleDayCosts(String homeId) =>
+      api.householdEnergyTrends(homeId, granularity: 'day');
 }
 
 /// One measured bucket, with its own time and coverage. It is not a full-day
@@ -100,6 +110,7 @@ class DevicesDomainSnapshot {
     required this.dataMode,
     required this.fixtureRevision,
     this.sampleMeteredSummaries = const [],
+    this.sampleDayCosts,
     this.isCurrent,
   });
 
@@ -116,6 +127,7 @@ class DevicesDomainSnapshot {
   /// Fixture evidence only. These rows do not establish installed sensors,
   /// attachments, measured usage, or household totals.
   final List<CloudMeteredSummary> sampleMeteredSummaries;
+  final CloudHouseholdEnergyTrends? sampleDayCosts;
   final bool Function()? isCurrent;
   bool get isSample => dataMode == CloudApplianceDataMode.sample;
 
@@ -220,13 +232,42 @@ class DevicesDomainRepository {
               'Devices inventory changed during read',
             );
           }
-          return _compose(
+          final snapshot = _compose(
             homeId,
             before.inventory,
             before.attachments,
             before.sensors,
             metered,
             () => !stale(),
+          );
+          if (!snapshot.isSample || source is! DevicesSampleCostSource) {
+            return snapshot;
+          }
+          CloudHouseholdEnergyTrends? sampleCosts;
+          try {
+            sampleCosts = await (source as DevicesSampleCostSource)
+                .sampleDayCosts(homeId);
+          } catch (_) {
+            // The inventory is still useful when its cost read is unavailable.
+          }
+          if (stale()) return null;
+          if (sampleCosts == null ||
+              sampleCosts.homeId.toLowerCase() != homeId.toLowerCase() ||
+              sampleCosts.dataMode != 'sample' ||
+              sampleCosts.fixtureRevision != snapshot.fixtureRevision ||
+              sampleCosts.granularity != 'day' ||
+              sampleCosts.evidenceBasis != 'synthetic') {
+            return snapshot;
+          }
+          return DevicesDomainSnapshot(
+            homeId: snapshot.homeId,
+            items: snapshot.items,
+            hasMoreMeteredPages: snapshot.hasMoreMeteredPages,
+            dataMode: snapshot.dataMode,
+            fixtureRevision: snapshot.fixtureRevision,
+            sampleMeteredSummaries: snapshot.sampleMeteredSummaries,
+            sampleDayCosts: sampleCosts,
+            isCurrent: snapshot.isCurrent,
           );
         } on CloudApiException catch (error) {
           if (stale()) return null;

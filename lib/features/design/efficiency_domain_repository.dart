@@ -19,7 +19,12 @@ abstract interface class EfficiencyDomainSource
   );
 }
 
-class CloudEfficiencyDomainSource implements EfficiencyDomainSource {
+abstract interface class EfficiencyRollingDomainSource {
+  Future<CloudHouseholdEnergyTrends> rolling30Days(String homeId);
+}
+
+class CloudEfficiencyDomainSource
+    implements EfficiencyDomainSource, EfficiencyRollingDomainSource {
   const CloudEfficiencyDomainSource(this.api);
   final CloudApiClient api;
 
@@ -29,6 +34,13 @@ class CloudEfficiencyDomainSource implements EfficiencyDomainSource {
   @override
   Future<CloudHouseholdEnergyTrends> trends(String homeId) =>
       api.householdEnergyTrends(homeId, granularity: 'hour');
+  @override
+  Future<CloudHouseholdEnergyTrends> rolling30Days(String homeId) =>
+      api.householdEnergyTrends(
+        homeId,
+        granularity: 'day',
+        window: 'trailing_30_days',
+      );
   @override
   Future<List<CloudAppliance>> appliances(String homeId) =>
       api.appliances(homeId);
@@ -47,6 +59,7 @@ class EfficiencyDomainSnapshot {
     required this.energy,
     required this.operatingEstimates,
     required this.recommendations,
+    this.rolling30Days,
   });
 
   final EfficiencyPage page;
@@ -59,6 +72,7 @@ class EfficiencyDomainSnapshot {
   /// Their periods and currencies must not be summed into household totals.
   final List<CloudEstimate> operatingEstimates;
   final List<CloudRecommendation> recommendations;
+  final CloudHouseholdEnergyTrends? rolling30Days;
 
   String get homeId => energy.homeId;
   CloudEnergyAllocation get totals => energy.totals;
@@ -110,9 +124,20 @@ class EfficiencyDomainRepository {
           throw const FormatException('Invalid Efficiency appliance inventory');
         }
       }
-      final results = await Future.wait<Object>([
+      final rollingSource = source is EfficiencyRollingDomainSource
+          ? source as EfficiencyRollingDomainSource
+          : null;
+      final rollingRead =
+          page == EfficiencyPage.overview && rollingSource != null
+          ? rollingSource
+                .rolling30Days(homeId)
+                .then<CloudHouseholdEnergyTrends?>((value) => value)
+                .catchError((Object _) => null)
+          : Future<CloudHouseholdEnergyTrends?>.value(null);
+      final results = await Future.wait<Object?>([
         source.estimates(homeId),
         source.recommendations(homeId, ids),
+        rollingRead,
       ]);
       if (stale()) return null;
       final estimates = (results[0] as CloudEstimateBatch).estimates;
@@ -132,6 +157,7 @@ class EfficiencyDomainRepository {
         energy: energy,
         operatingEstimates: List.unmodifiable(estimates),
         recommendations: List.unmodifiable(recommendations),
+        rolling30Days: results[2] as CloudHouseholdEnergyTrends?,
       );
     } catch (_) {
       if (stale()) return null;

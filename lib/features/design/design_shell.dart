@@ -11,6 +11,11 @@ import '../identify/appliance_onboarding_screen.dart'
     show manufacturerHintFromOcr, modelHintFromOcr;
 import '../identify/photo_capture_service.dart';
 import 'device_review_sheet.dart';
+import 'efficiency_domain_repository.dart';
+import 'efficiency_rolling_bindings.dart';
+import 'dashboard_chart_projection.dart';
+import 'dashboard_chart_renderer.dart';
+import 'dashboard_domain_repository.dart';
 import 'design_context_coordinator.dart';
 import 'design_numeric_bindings.dart';
 import 'design_navigation_script.dart';
@@ -101,11 +106,17 @@ class _DesignShellState extends State<DesignShell> {
       DesignPageStateSnapshotStore();
   late final DesignTextBindingRenderer _bindingRenderer =
       DesignTextBindingRenderer(_bindingGate);
+  late final DashboardChartRenderer _chartRenderer = DashboardChartRenderer(
+    _bindingGate,
+  );
+  String _dashboardGranularity = 'day';
   int _pageLoadGeneration = 0;
   bool _pageReady = false;
   LiveDevicesProjection? _devicesProjection;
   List<CloudAppliance>? _savedAppliances;
   DesignNumericBindings? _dashboardBindings;
+  DesignNumericBindings? _sampleDevicesBindings;
+  List<DesignTextBinding>? _efficiencyBindings;
   DesignPageTicket? _pageTicket;
   Timer? _tourTimer;
   int _tourIndex = 0;
@@ -205,6 +216,7 @@ class _DesignShellState extends State<DesignShell> {
       _activePageStateScope = scope;
       _navigationEpoch++;
       _history.clear();
+      _dashboardGranularity = 'day';
     }
     _pageStates.selectHome(scope);
     _invalidatePageLoad();
@@ -274,6 +286,8 @@ class _DesignShellState extends State<DesignShell> {
     _devicesProjection = null;
     _savedAppliances = null;
     _dashboardBindings = null;
+    _sampleDevicesBindings = null;
+    _efficiencyBindings = null;
     _pageTicket = null;
     _bindingGate.clear();
   }
@@ -289,6 +303,19 @@ class _DesignShellState extends State<DesignShell> {
       return;
     }
     final read = _pageReads.latestRead;
+    if (page == 'efficiency') {
+      if (read?.value is! EfficiencyDomainSnapshot) return;
+      final source = read!.value as EfficiencyDomainSnapshot;
+      final bindings = prepareEfficiencyRollingBindings(source);
+      if (bindings == null ||
+          !_isCurrentPageLoad(page, generation) ||
+          !identical(_pageReads.latestRead, read)) {
+        return;
+      }
+      _efficiencyBindings = bindings;
+      await _applyEfficiencyBindings(generation);
+      return;
+    }
     if (page == 'dashboard') {
       if (read == null || read.page != 'dashboard') return;
       try {
@@ -299,13 +326,28 @@ class _DesignShellState extends State<DesignShell> {
         }
         _dashboardBindings = projection;
         await _applyDashboardBindings(generation);
+        await _applyDashboardChart(generation);
       } catch (_) {
         // Packaged numeric values remain visible when live values are invalid.
       }
       return;
     }
-    if (page != 'devices') return;
-    if (read == null || read.mode != DesignContextMode.household) return;
+    if (page != 'devices' || read == null) return;
+    if (read.mode == DesignContextMode.sample) {
+      try {
+        final bindings = prepareDesignNumericBindings(read);
+        if (!_isCurrentPageLoad(page, generation) ||
+            !identical(_pageReads.latestRead, read)) {
+          return;
+        }
+        _sampleDevicesBindings = bindings;
+        await _applySampleDevicesBindings(generation);
+      } catch (_) {
+        // A rejected sample response cannot alter the approved packaged cards.
+      }
+      return;
+    }
+    if (read.mode != DesignContextMode.household) return;
     try {
       final projection = prepareLiveDevicesProjection(read);
       if (!_isCurrentPageLoad(page, generation) ||
@@ -396,6 +438,11 @@ class _DesignShellState extends State<DesignShell> {
     if (page == 'dashboard') {
       if (context == null) return;
       await _applyDashboardBindings(generation);
+      await _applyDashboardChart(generation);
+      return;
+    }
+    if (page == 'efficiency') {
+      await _applyEfficiencyBindings(generation);
       return;
     }
     if (_settingsDevicePages.contains(page)) {
@@ -427,6 +474,10 @@ class _DesignShellState extends State<DesignShell> {
       return;
     }
     if (page != 'devices') return;
+    if (context?.mode == DesignContextMode.sample) {
+      await _applySampleDevicesBindings(generation);
+      return;
+    }
     if (context == null || context.mode != DesignContextMode.household) return;
     try {
       final installed = await _controller.runJavaScriptReturningResult(
@@ -469,6 +520,32 @@ class _DesignShellState extends State<DesignShell> {
     }
   }
 
+  Future<void> _applySampleDevicesBindings(int generation) async {
+    final projection = _sampleDevicesBindings;
+    final read = _pageReads.latestRead;
+    final context = widget.designContextCoordinator?.context;
+    final ticket = _pageTicket;
+    if (!_pageReady ||
+        !_isCurrentPageLoad('devices', generation) ||
+        projection == null ||
+        projection.bindings.isEmpty ||
+        read?.page != 'devices' ||
+        read?.mode != DesignContextMode.sample ||
+        context?.allowsReadMode(DesignContextMode.sample) != true ||
+        read?.accountId != context?.accountId ||
+        read?.homeId != context?.homeId ||
+        ticket == null) {
+      return;
+    }
+    final script = _bindingRenderer.updateScript(ticket, projection.bindings);
+    if (script == null) return;
+    try {
+      await _controller.runJavaScriptReturningResult(script);
+    } catch (_) {
+      // The packaged cards remain available when the WebView rejects a read.
+    }
+  }
+
   Future<void> _applyDashboardBindings(int generation) async {
     final projection = _dashboardBindings;
     final read = _pageReads.latestRead;
@@ -477,12 +554,13 @@ class _DesignShellState extends State<DesignShell> {
     if (!_pageReady ||
         !_isCurrentPageLoad('dashboard', generation) ||
         projection == null ||
-        read?.page != 'dashboard' ||
+        read == null ||
+        read.page != 'dashboard' ||
         context == null ||
         ticket == null ||
-        read?.accountId != context.accountId ||
-        read?.homeId != context.homeId ||
-        read?.mode != context.mode) {
+        read.accountId != context.accountId ||
+        read.homeId != context.homeId ||
+        !context.allowsReadMode(read.mode)) {
       return;
     }
     final script = _bindingRenderer.updateScript(ticket, projection.bindings);
@@ -491,6 +569,64 @@ class _DesignShellState extends State<DesignShell> {
       await _controller.runJavaScriptReturningResult(script);
     } catch (_) {
       // The packaged values remain visible on script failure.
+    }
+  }
+
+  Future<void> _applyDashboardChart(int generation) async {
+    final read = _pageReads.latestRead;
+    final context = widget.designContextCoordinator?.context;
+    final ticket = _pageTicket;
+    if (!_pageReady ||
+        !_isCurrentPageLoad('dashboard', generation) ||
+        read == null ||
+        read.page != 'dashboard' ||
+        read.value is! DashboardDomainSnapshot ||
+        context == null ||
+        ticket == null ||
+        read.accountId != context.accountId ||
+        read.homeId != context.homeId ||
+        !context.allowsReadMode(read.mode)) {
+      return;
+    }
+    final snapshot = read.value as DashboardDomainSnapshot;
+    final chart = DashboardChartProjection.fromSnapshot(
+      snapshot,
+      _dashboardGranularity,
+    );
+    if (chart == null) return;
+    final script = _chartRenderer.script(ticket, chart);
+    if (script == null) return;
+    try {
+      await _controller.runJavaScriptReturningResult(script);
+    } catch (_) {
+      // Keep the packaged chart if WebView rendering fails.
+    }
+  }
+
+  Future<void> _applyEfficiencyBindings(int generation) async {
+    final bindings = _efficiencyBindings;
+    final read = _pageReads.latestRead;
+    final context = widget.designContextCoordinator?.context;
+    final ticket = _pageTicket;
+    if (!_pageReady ||
+        !_isCurrentPageLoad('efficiency', generation) ||
+        bindings == null ||
+        read == null ||
+        read.page != 'efficiency' ||
+        read.value is! EfficiencyDomainSnapshot ||
+        context == null ||
+        ticket == null ||
+        read.accountId != context.accountId ||
+        read.homeId != context.homeId ||
+        !context.allowsReadMode(read.mode)) {
+      return;
+    }
+    final script = _bindingRenderer.updateScript(ticket, bindings);
+    if (script == null) return;
+    try {
+      await _controller.runJavaScriptReturningResult(script);
+    } catch (_) {
+      // Keep the packaged month-to-date fixture when coverage is unavailable.
     }
   }
 
@@ -570,11 +706,31 @@ class _DesignShellState extends State<DesignShell> {
       if (decoded is! Map<String, dynamic> ||
           decoded['name'] is! String ||
           decoded['manufacturer'] is! String ||
-          decoded['model'] is! String) {
+          decoded['model'] is! String ||
+          (decoded['category'] != null && decoded['category'] is! String)) {
         return;
       }
       fields = decoded;
     } catch (_) {
+      return;
+    }
+    const reviewCategories = {
+      'computer',
+      'lighting',
+      'refrigerator',
+      'television',
+      'washer',
+      'dryer',
+      'dishwasher',
+      'space_heater',
+      'air_conditioner',
+      'water_heater',
+      'other',
+    };
+    final selectedCategory = fields['category'] as String?;
+    if (!fromPhoto &&
+        (selectedCategory == null ||
+            !reviewCategories.contains(selectedCategory))) {
       return;
     }
     _reviewOpen = true;
@@ -589,6 +745,9 @@ class _DesignShellState extends State<DesignShell> {
           name: fields['name'] as String,
           manufacturer: fields['manufacturer'] as String,
           model: fields['model'] as String,
+          initialCategory: reviewCategories.contains(selectedCategory)
+              ? selectedCategory
+              : null,
         ),
       );
       if (saved != null &&
@@ -655,12 +814,29 @@ class _DesignShellState extends State<DesignShell> {
   }
 
   Future<void> _open(String route) async {
+    if (_page == 'dashboard' && route.startsWith('dashboard_period:')) {
+      final granularity = route.substring('dashboard_period:'.length);
+      if (const {'day', 'week', 'month'}.contains(granularity)) {
+        final read = _pageReads.latestRead;
+        if (read?.value is DashboardDomainSnapshot &&
+            DashboardChartProjection.fromSnapshot(
+                  read!.value as DashboardDomainSnapshot,
+                  granularity,
+                ) !=
+                null) {
+          _dashboardGranularity = granularity;
+          await _applyDashboardChart(_pageLoadGeneration);
+        }
+      }
+      return;
+    }
     if (route == 'sign_out') {
       _navigationEpoch++;
       _pageStates.clear();
       _history.clear();
       _invalidatePageLoad();
       _pageReads.clear();
+      _dashboardGranularity = 'day';
       widget.onSignOut?.call();
       return;
     }
@@ -670,6 +846,7 @@ class _DesignShellState extends State<DesignShell> {
       _history.clear();
       _invalidatePageLoad();
       _pageReads.clear();
+      _dashboardGranularity = 'day';
       widget.onChangeHome?.call();
       return;
     }

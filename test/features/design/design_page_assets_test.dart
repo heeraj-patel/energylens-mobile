@@ -51,6 +51,10 @@ String _withoutOuterChrome(String html) => html
 
 String _withSourceFallbackValues(String html, String pageId) {
   final approved = <String, Map<String, (String, String)>>{
+    'dashboard': {
+      'dashboard_text_024': ('Device cost · week to date', 'This Week Total'),
+      'dashboard_text_025': ('N/A', '\$23.30'),
+    },
     'devices': {
       'devices_text_006': ('\$1.96', '\$1.14'),
       'devices_text_009': ('\$6.83', '\$6.67'),
@@ -99,6 +103,13 @@ void main() {
         if (pageId == 'efficiency') {
           expect(_visibleText(packagedHtml), contains('Month to date'));
           expect(_visibleText(packagedHtml), isNot(contains('Monthly Spend')));
+        }
+        if (pageId == 'dashboard') {
+          expect(
+            _visibleText(packagedHtml),
+            contains('Device cost · week to date'),
+          );
+          expect(packagedHtml, contains('data-el-chart="dashboard-trends"'));
         }
 
         expect(_visibleText(sourceHtml), isNotEmpty, reason: pageId);

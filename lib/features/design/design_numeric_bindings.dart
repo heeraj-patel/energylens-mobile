@@ -3,6 +3,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../../core/cloud_api/cloud_household_energy.dart';
 import 'dashboard_domain_repository.dart';
+import 'dashboard_chart_projection.dart';
 import 'design_context_coordinator.dart';
 import 'design_page_bridge.dart';
 import 'devices_domain_repository.dart';
@@ -56,6 +57,42 @@ bool _isOneHomeLocalDay(CloudHouseholdDashboard dashboard) {
   }
 }
 
+bool _isMatchingWeek(
+  CloudHouseholdEnergyTrends week,
+  CloudHouseholdDashboard daily,
+) {
+  if (week.granularity != 'day' ||
+      week.homeId.toLowerCase() != daily.homeId.toLowerCase() ||
+      week.dataMode != daily.dataMode ||
+      week.fixtureRevision != daily.fixtureRevision ||
+      week.timezone != daily.timezone ||
+      (week.scope != 'attributed_devices' &&
+          !(week.dataMode == 'sample' &&
+              week.scope == 'whole_home_including_unattributed_load')) ||
+      week.generatedAt.difference(daily.generatedAt).abs() >
+          const Duration(minutes: 5)) {
+    return false;
+  }
+  try {
+    final location = tz.getLocation(week.timezone);
+    final start = tz.TZDateTime.from(week.period.start, location);
+    final end = tz.TZDateTime.from(week.period.endExclusive, location);
+    final nextMonday = DateTime.utc(start.year, start.month, start.day + 7);
+    return start.weekday == DateTime.monday &&
+        start.hour == 0 &&
+        start.minute == 0 &&
+        end.year == nextMonday.year &&
+        end.month == nextMonday.month &&
+        end.day == nextMonday.day &&
+        end.hour == 0 &&
+        end.minute == 0 &&
+        !daily.generatedAt.isBefore(week.period.start) &&
+        daily.generatedAt.isBefore(week.period.endExclusive);
+  } catch (_) {
+    return false;
+  }
+}
+
 // The Devices API currently has no tariff or waste policy. Its measured Wh
 // buckets cannot fill these daily cost slots or any whole-device total.
 const _devicesCostIds = <String>{
@@ -94,7 +131,15 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
         value.isSample != (read.mode == DesignContextMode.sample)) {
       throw const FormatException('Devices binding context changed');
     }
-    return DesignNumericBindings(const [], _devicesCostIds);
+    final costs = value.sampleDayCosts;
+    if (!value.isSample || costs == null) {
+      return DesignNumericBindings(const [], _devicesCostIds);
+    }
+    final bindings = _sampleDevicesBindings(value, costs);
+    return DesignNumericBindings(
+      bindings ?? const [],
+      bindings == null ? _devicesCostIds : const {},
+    );
   }
   if (read.page != 'dashboard' || value is! DashboardDomainSnapshot) {
     throw ArgumentError.value(
@@ -124,6 +169,31 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
             dashboard.totals.evidenceBasis == 'synthetic'
       : supportedHouseholdEvidence.contains(dashboard.evidenceBasis) &&
             supportedHouseholdEvidence.contains(dashboard.totals.evidenceBasis);
+  final week = value.weekToDateTrends;
+  CloudEnergyAllocation? daily = read.mode == DesignContextMode.sample
+      ? null
+      : dashboard.totals;
+  if (read.mode == DesignContextMode.sample &&
+      week != null &&
+      _isMatchingWeek(week, dashboard) &&
+      week.evidenceBasis == 'synthetic') {
+    try {
+      final location = tz.getLocation(week.timezone);
+      final now = tz.TZDateTime.from(week.generatedAt, location);
+      final currentDays = week.buckets.where((row) {
+        final start = tz.TZDateTime.from(row.period.start, location);
+        return start.year == now.year &&
+            start.month == now.month &&
+            start.day == now.day;
+      }).toList();
+      if (currentDays.length == 1 &&
+          currentDays.single.allocation.evidenceBasis == 'synthetic') {
+        daily = currentDays.single.allocation;
+      }
+    } catch (_) {
+      // An invalid sample day cannot be shown as a full-day amount.
+    }
+  }
   void add(String id, CloudEnergyMoney? money) {
     if (money == null ||
         !supportedEvidence ||
@@ -136,13 +206,199 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
         !RegExp(r'^(0|[1-9][0-9]*)(\.[0-9]+)?$').hasMatch(money.amount)) {
       throw const FormatException('Unsafe dashboard money value');
     }
-    bindings.add(DesignTextBinding(id, '\$${money.amount}'));
+    final text = formatDashboardUsd(money);
+    if (text == null) {
+      throw const FormatException('Unsafe dashboard money value');
+    }
+    bindings.add(DesignTextBinding(id, text));
   }
 
-  add('dashboard_text_006', dashboard.totals.usefulCost);
-  add('dashboard_text_009', dashboard.totals.wasteCost);
+  add('dashboard_text_006', daily?.usefulCost);
+  add('dashboard_text_009', daily?.wasteCost);
+  if (week != null) {
+    final supportedWeekEvidence = read.mode == DesignContextMode.sample
+        ? week.evidenceBasis == 'synthetic' &&
+              week.totals.evidenceBasis == 'synthetic'
+        : supportedHouseholdEvidence.contains(week.evidenceBasis) &&
+              supportedHouseholdEvidence.contains(week.totals.evidenceBasis);
+    final sampleDeviceCost = read.mode == DesignContextMode.sample
+        ? _sampleWeekDeviceCosts(week)
+        : null;
+    final cost =
+        _isMatchingWeek(week, dashboard) &&
+            supportedWeekEvidence &&
+            week.availability != 'unavailable' &&
+            week.totals.availability != 'unavailable'
+        ? read.mode == DesignContextMode.sample
+              ? sampleDeviceCost == null
+                    ? null
+                    : _microsText(sampleDeviceCost.$1)
+              : formatDashboardUsd(week.totals.cost)
+        : null;
+    if (cost == null) {
+      bindings.add(const DesignTextBinding('dashboard_text_025', 'N/A'));
+      unknown.add('dashboard_text_025');
+    } else {
+      bindings.add(DesignTextBinding('dashboard_text_025', cost));
+      final useful = read.mode == DesignContextMode.sample
+          ? sampleDeviceCost == null
+                ? null
+                : _microsText(sampleDeviceCost.$2)
+          : formatDashboardUsd(week.totals.usefulCost);
+      final waste = read.mode == DesignContextMode.sample
+          ? sampleDeviceCost == null
+                ? null
+                : _microsText(sampleDeviceCost.$3)
+          : formatDashboardUsd(week.totals.wasteCost);
+      if (useful != null && waste != null) {
+        bindings.add(DesignTextBinding('dashboard_text_026', '$useful Useful'));
+        bindings.add(DesignTextBinding('dashboard_text_027', '$waste Waste'));
+      }
+    }
+  }
   return DesignNumericBindings(
     List.unmodifiable(bindings),
     Set.unmodifiable(unknown),
   );
+}
+
+(BigInt, BigInt, BigInt)? _sampleWeekDeviceCosts(
+  CloudHouseholdEnergyTrends week,
+) {
+  if (week.dataMode != 'sample' ||
+      week.scope != 'whole_home_including_unattributed_load') {
+    return null;
+  }
+  var total = BigInt.zero;
+  var useful = BigInt.zero;
+  var waste = BigInt.zero;
+  var observed = 0;
+  for (final bucket in week.buckets) {
+    if (bucket.period.start.isAfter(week.generatedAt)) continue;
+    if (bucket.deviceAllocations.length != 18 ||
+        bucket.allocation.evidenceBasis != 'synthetic') {
+      return null;
+    }
+    final ids = <String>{};
+    for (final device in bucket.deviceAllocations) {
+      if (device.deviceId == null || !ids.add(device.deviceId!)) return null;
+      final rowTotal = _usdMicros(device.allocation.cost);
+      final rowUseful = _usdMicros(device.allocation.usefulCost);
+      final rowWaste = _usdMicros(device.allocation.wasteCost);
+      if (rowTotal == null ||
+          rowUseful == null ||
+          rowWaste == null ||
+          rowUseful + rowWaste > rowTotal) {
+        return null;
+      }
+      total += rowTotal;
+      useful += rowUseful;
+      waste += rowWaste;
+    }
+    observed++;
+  }
+  return observed == 0 ? null : (total, useful, waste);
+}
+
+List<DesignTextBinding>? _sampleDevicesBindings(
+  DevicesDomainSnapshot inventory,
+  CloudHouseholdEnergyTrends costs,
+) {
+  if (costs.homeId.toLowerCase() != inventory.homeId.toLowerCase() ||
+      costs.dataMode != 'sample' ||
+      costs.fixtureRevision != inventory.fixtureRevision ||
+      costs.granularity != 'day' ||
+      costs.evidenceBasis != 'synthetic') {
+    return null;
+  }
+  tz.Location location;
+  try {
+    location = tz.getLocation(costs.timezone);
+  } catch (_) {
+    return null;
+  }
+  final now = tz.TZDateTime.from(costs.generatedAt, location);
+  final today = costs.buckets.where((bucket) {
+    final start = tz.TZDateTime.from(bucket.period.start, location);
+    return start.year == now.year &&
+        start.month == now.month &&
+        start.day == now.day;
+  }).toList();
+  if (today.length != 1 ||
+      today.single.allocation.evidenceBasis != 'synthetic' ||
+      today.single.deviceAllocations.length != 18) {
+    return null;
+  }
+  final rows = <String, CloudDeviceEnergyAllocation>{};
+  var usefulMicros = BigInt.zero;
+  var wasteMicros = BigInt.zero;
+  for (final row in today.single.deviceAllocations) {
+    if (row.deviceId == null ||
+        row.applianceId != null ||
+        row.allocation.evidenceBasis != 'synthetic' ||
+        row.allocation.energy != null ||
+        row.allocation.usefulEnergy != null ||
+        row.allocation.wasteEnergy != null ||
+        row.allocation.unclassifiedEnergy != null ||
+        rows.containsKey(row.deviceId)) {
+      return null;
+    }
+    final useful = _usdMicros(row.allocation.usefulCost);
+    final waste = _usdMicros(row.allocation.wasteCost);
+    if (useful == null || waste == null) return null;
+    usefulMicros += useful;
+    wasteMicros += waste;
+    rows[row.deviceId!] = row;
+  }
+  if (rows.length != 18 || inventory.items.length != 10) return null;
+  final bindings = <DesignTextBinding>[
+    DesignTextBinding('devices_text_006', '${_microsText(wasteMicros)}/day'),
+    DesignTextBinding('devices_text_009', '${_microsText(usefulMicros)}/day'),
+  ];
+  const nameIds = [22, 29, 36, 43, 50, 57, 64, 71, 78, 85];
+  for (var i = 0; i < nameIds.length; i++) {
+    final id = 'demo-device-${(i + 1).toString().padLeft(2, '0')}';
+    final row = rows[id];
+    if (row == null ||
+        row.name == null ||
+        inventory.items
+                .where(
+                  (item) =>
+                      item.appliance.demoDeviceId == id &&
+                      item.appliance.name == row.name,
+                )
+                .length !=
+            1) {
+      return null;
+    }
+    final useful = _usdMicros(row.allocation.usefulCost)!;
+    final waste = _usdMicros(row.allocation.wasteCost)!;
+    final stem = nameIds[i].toString().padLeft(3, '0');
+    final usefulId = (nameIds[i] + 4).toString().padLeft(3, '0');
+    final wasteId = (nameIds[i] + 6).toString().padLeft(3, '0');
+    bindings.add(DesignTextBinding('devices_text_$stem', row.name!));
+    bindings.add(
+      DesignTextBinding('devices_text_$usefulId', _microsText(useful)),
+    );
+    bindings.add(
+      DesignTextBinding('devices_text_$wasteId', _microsText(waste)),
+    );
+  }
+  return List.unmodifiable(bindings);
+}
+
+BigInt? _usdMicros(CloudEnergyMoney? value) {
+  if (value == null ||
+      value.currency != 'USD' ||
+      !RegExp(r'^(0|[1-9][0-9]*)(\.[0-9]{1,6})?$').hasMatch(value.amount)) {
+    return null;
+  }
+  final parts = value.amount.split('.');
+  return BigInt.parse(parts[0]) * BigInt.from(1000000) +
+      BigInt.parse((parts.length == 1 ? '' : parts[1]).padRight(6, '0'));
+}
+
+String _microsText(BigInt micros) {
+  final cents = (micros + BigInt.from(5000)) ~/ BigInt.from(10000);
+  return '\$${cents ~/ BigInt.from(100)}.${(cents % BigInt.from(100)).toString().padLeft(2, '0')}';
 }

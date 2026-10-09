@@ -1,4 +1,5 @@
 import 'demo_energy_projection.dart';
+import 'demo_energy_rolling_projection.dart';
 import 'demo_energy_tree.dart';
 import 'design_page_bridge.dart';
 
@@ -83,6 +84,49 @@ class DemoEnergyBindings {
 
   final List<DesignTextBinding> bindings;
   final Map<String, DemoCostClaimProvenance> provenanceByBindingId;
+
+  /// Approved Efficiency 30-day presentation, prepared only when every
+  /// home-local day in the window is available. Callers still own the visible
+  /// binding gate and must never substitute a partial month for this window.
+  static DemoEnergyBindings forRollingEfficiency({
+    required Iterable<DemoMonthTree> trees,
+    required String homeId,
+    required String referenceLocalDate,
+  }) {
+    final months = trees.toList(growable: false);
+    final window = DemoRollingCostWindow.fromTrees(
+      trees: months,
+      homeId: homeId,
+      referenceLocalDate: referenceLocalDate,
+      dayCount: 30,
+    );
+    final leaves = <DemoBranch>[
+      for (final tree in months)
+        for (final day in tree.days)
+          if (day.period.localDate.compareTo(window.startLocalDate) >= 0 &&
+              day.period.localDate.compareTo(window.endExclusiveLocalDate) <
+                  0) ...[
+            ...day.devices,
+            day.unattributed,
+          ],
+    ];
+    return DemoEnergyBindings(
+      List.unmodifiable([
+        const DesignTextBinding('efficiency_text_008', 'Last 30 days'),
+        DesignTextBinding(
+          'efficiency_text_009',
+          _money(_roundMicrosToCents(window.presentation.totalMicros)),
+        ),
+      ]),
+      Map.unmodifiable({
+        'efficiency_text_009': _provenance(
+          leaves,
+          _CostComponent.total,
+          referenceLocalDate,
+        ),
+      }),
+    );
+  }
 
   static DemoEnergyBindings forPage({
     required DemoMonthTree tree,

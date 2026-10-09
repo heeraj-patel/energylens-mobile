@@ -134,6 +134,7 @@ void main() {
     WidgetTester tester,
     CloudAuxiliaryDomainLifecycle lifecycle, {
     void Function(CloudAppliance?)? onResult,
+    String? initialCategory,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -151,6 +152,7 @@ void main() {
                     name: 'Fridge',
                     manufacturer: 'Acme',
                     model: 'A123',
+                    initialCategory: initialCategory,
                   ),
                 );
                 onResult?.call(saved);
@@ -212,6 +214,21 @@ void main() {
       expect(find.text('Review device'), findsNothing);
     },
   );
+
+  testWidgets('water heater category stays selected through native review', (
+    tester,
+  ) async {
+    final source = _Appliances();
+    final lifecycle = _lifecycle(_Storage(), source);
+    await lifecycle.selectVerifiedHome(account, home);
+    await open(tester, lifecycle, initialCategory: 'water_heater');
+    expect(find.text('Water Heater'), findsOneWidget);
+    await choose(tester, 'reviewEnergySource', 'Electricity');
+    await tester.tap(find.byKey(const Key('reviewSave')));
+    await tester.pumpAndSettle();
+    expect(source.input!.category, 'water_heater');
+    expect(source.input!.fuel, 'electricity');
+  });
 
   testWidgets('uncertain save retries same draft key without fake success', (
     tester,

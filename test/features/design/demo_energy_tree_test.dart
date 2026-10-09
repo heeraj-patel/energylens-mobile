@@ -1,4 +1,7 @@
 import 'package:energylens_mobile/features/design/demo_energy_tree.dart';
+
+import '../../support/demo_energy_tree_fixtures.dart';
+
 import 'package:flutter_test/flutter_test.dart';
 
 const realApplianceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -280,7 +283,7 @@ void main() {
         month = month.applyDummyWasteAfterKb(
           localDate: day.period.localDate,
           deviceId: realApplianceId,
-          profileCategory: 'camera',
+          profileCategory: 'media_player',
           durationEvidence: WasteDurationEvidence(
             seconds: day.period.seconds,
             evidenceId: 'duration-verified-1',
@@ -434,6 +437,7 @@ void main() {
         throwsFormatException,
       );
       expect(dummyWasteDrawForProfile('sensor'), isNull);
+      expect(dummyWasteDrawForProfile('camera'), isNull);
       expect(dummyWasteDrawForProfile('freezer'), isNull);
       expect(dummyWasteDrawForProfile('modem'), isNull);
       expect(

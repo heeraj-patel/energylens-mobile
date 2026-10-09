@@ -27,6 +27,7 @@ class VerifiedDesignContext {
     required this.accountId,
     required this.homeId,
     required this.mode,
+    this.dataPolicy = DesignDataPolicy.modeOnly,
   }) {
     if (accountId.isEmpty || !_uuid.hasMatch(homeId)) {
       throw ArgumentError('Invalid verified design context');
@@ -36,9 +37,19 @@ class VerifiedDesignContext {
   final String accountId;
   final String homeId;
   final DesignContextMode mode;
+  final DesignDataPolicy dataPolicy;
+
+  bool allowsReadMode(DesignContextMode readMode) =>
+      readMode == mode ||
+      (mode == DesignContextMode.household &&
+          dataPolicy == DesignDataPolicy.sameHomeDemoFallback &&
+          readMode == DesignContextMode.sample);
 }
 
 enum DesignContextMode { household, sample }
+
+/// Authorization for typed demo responses is independent of authentication.
+enum DesignDataPolicy { modeOnly, sameHomeDemoFallback }
 
 /// Native, typed adapter boundary. Implementations must use the authenticated
 /// cloud client for the verified account; no transport or credential is passed
@@ -250,7 +261,8 @@ class DesignContextCoordinator {
     final previous = _context;
     if (previous?.accountId == context.accountId &&
         previous?.homeId == context.homeId &&
-        previous?.mode == context.mode) {
+        previous?.mode == context.mode &&
+        previous?.dataPolicy == context.dataPolicy) {
       return;
     }
     _generation++;
@@ -344,9 +356,9 @@ class DesignContextCoordinator {
         _ => throw StateError('Unreachable design read'),
       };
       if (stale() || value == null) return null;
-      _validateValue(context, value);
+      final readMode = _validateValue(context, value);
       if (page == 'devices' &&
-          context.mode == DesignContextMode.household &&
+          readMode == DesignContextMode.household &&
           value is DevicesDomainSnapshot) {
         final observer = deviceReferenceObserver;
         if (observer != null) unawaited(observer.observe(value));
@@ -354,7 +366,7 @@ class DesignContextCoordinator {
       return DesignContextRead(
         accountId: context.accountId,
         homeId: context.homeId,
-        mode: context.mode,
+        mode: readMode,
         page: page,
         value: value,
       );
@@ -466,7 +478,9 @@ class DesignContextCoordinator {
           !runtime.isCurrent()) {
         return null;
       }
-      _validateValue(context, inventory);
+      if (_validateValue(context, inventory) != DesignContextMode.household) {
+        throw const FormatException('Sample inventory has no runtime scope');
+      }
       if (runtime.homeId.toLowerCase() != context.homeId.toLowerCase() ||
           runtime.isSample ||
           inventory.items.length > DevicesDomainSnapshot.maxLocalInventory ||
@@ -519,7 +533,7 @@ class DesignContextCoordinator {
   }
 }
 
-void _validateValue(VerifiedDesignContext context, Object value) {
+DesignContextMode _validateValue(VerifiedDesignContext context, Object value) {
   String? homeId;
   DesignContextMode? mode;
   if (value is DashboardDomainSnapshot) {
@@ -565,9 +579,10 @@ void _validateValue(VerifiedDesignContext context, Object value) {
   }
   if (homeId == null ||
       homeId.toLowerCase() != context.homeId.toLowerCase() ||
-      (mode != null && mode != context.mode)) {
+      (mode != null && !context.allowsReadMode(mode))) {
     throw const FormatException('Design context changed');
   }
+  return mode ?? context.mode;
 }
 
 const _readablePages = <String>{

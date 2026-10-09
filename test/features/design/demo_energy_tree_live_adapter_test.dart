@@ -1,7 +1,9 @@
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
+
+import '../../support/demo_energy_tree_fixtures.dart';
+
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance_list.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_tariff.dart';
-import 'package:energylens_mobile/features/design/demo_energy_tree.dart';
 import 'package:energylens_mobile/features/design/demo_energy_tree_live_adapter.dart';
 import 'package:energylens_mobile/features/design/devices_domain_repository.dart';
 import 'package:flutter_test/flutter_test.dart';

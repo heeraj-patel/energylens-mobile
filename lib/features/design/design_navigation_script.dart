@@ -29,14 +29,44 @@ String buildDesignNavigationScript(String page) {
         const button = event.target.closest('button');
         if (!button) return;
         const action = button.dataset.elAction;
+        if (page === 'dashboard' &&
+            ['dashboard_action_004', 'dashboard_action_005', 'dashboard_action_006'].includes(action)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          send('dashboard_period:' + ({
+            dashboard_action_004: 'day',
+            dashboard_action_005: 'week',
+            dashboard_action_006: 'month'
+          })[action]);
+          return;
+        }
         if ((page === 'settings_manage_devices' || page === 'settings_manual_device_entry') &&
             action === page + '_action_020') {
           event.preventDefault();
           event.stopImmediatePropagation();
+          const selectedType = Array.from(document.querySelectorAll('button.type-pill[data-el-action]'))
+            .find((element) => element.dataset.elAction?.startsWith(page + '_action_01') &&
+              (element.classList.contains('bg-primary-container') || element.getAttribute('aria-pressed') === 'true'));
+          const categoryByAction = page === 'settings_manual_device_entry' ? {
+            [page + '_action_014']: 'air_conditioner',
+            [page + '_action_015']: 'refrigerator',
+            [page + '_action_016']: 'television',
+            [page + '_action_017']: 'computer',
+            [page + '_action_018']: 'dishwasher',
+            [page + '_action_019']: 'water_heater'
+          } : {
+            [page + '_action_014']: 'air_conditioner',
+            [page + '_action_015']: 'dishwasher',
+            [page + '_action_016']: 'television',
+            [page + '_action_017']: 'computer',
+            [page + '_action_018']: 'lighting',
+            [page + '_action_019']: 'other'
+          };
           EnergyLensDeviceReview.postMessage(JSON.stringify({
             name: document.getElementById('input-device-name')?.value || '',
             manufacturer: document.getElementById('input-manufacturer')?.value || '',
-            model: document.getElementById('input-model')?.value || ''
+            model: document.getElementById('input-model')?.value || '',
+            category: categoryByAction[selectedType?.dataset.elAction] || ''
           }));
           return;
         }

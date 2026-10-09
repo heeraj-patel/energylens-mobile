@@ -1,12 +1,64 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_household_energy.dart';
+import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
+import 'package:energylens_mobile/features/design/dashboard_chart_projection.dart';
 import 'package:energylens_mobile/features/design/dashboard_domain_repository.dart';
+import 'package:energylens_mobile/features/design/design_context_coordinator.dart';
+import 'package:energylens_mobile/features/design/design_numeric_bindings.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 const homeA = '11111111-1111-4111-8111-111111111111';
 const homeB = '22222222-2222-4222-8222-222222222222';
+
+const _config = CloudAuthConfig(
+  issuer: 'https://issuer.example',
+  audience: 'a',
+  clientId: 'c',
+  redirectUrl: 'io.energylens.app://login-callback',
+  apiUrl: 'https://api.example',
+);
+
+class _TokenStore implements CloudTokenStore {
+  @override
+  Future<void> clear() async {}
+  @override
+  Future<CloudTokens?> read() async => const CloudTokens(accessToken: 'token');
+  @override
+  Future<void> save(CloudTokens value) async {}
+}
+
+class _Authenticator implements CloudAuthenticator {
+  @override
+  Future<CloudTokens> signIn(CloudAuthConfig config) async =>
+      const CloudTokens(accessToken: 'token');
+  @override
+  Future<CloudTokens> refresh(
+    CloudAuthConfig config,
+    String refreshToken,
+  ) async => const CloudTokens(accessToken: 'token');
+}
+
+Map<String, dynamic> _pricedAllocation(
+  String total,
+  String useful,
+  String waste,
+) => {
+  'energy': null,
+  'cost': {'amount': total, 'currency': 'USD'},
+  'useful_energy': null,
+  'useful_cost': {'amount': useful, 'currency': 'USD'},
+  'waste_energy': null,
+  'waste_cost': {'amount': waste, 'currency': 'USD'},
+  'unclassified_energy': null,
+  'unclassified_cost': null,
+  'availability': 'partial',
+  'evidence_basis': 'estimated',
+};
 
 Map<String, dynamic> _allocation({bool sample = false}) => {
   'energy': sample ? {'value': '24', 'unit': 'kWh'} : null,
@@ -86,12 +138,247 @@ class _Reads implements DashboardDomainSource {
   }
 }
 
+class _ReadsWithPeriods extends _Reads implements DashboardPeriodDomainSource {
+  _ReadsWithPeriods(super.dash, super.series, this.periodSeries);
+  final Future<CloudHouseholdEnergyTrends> Function(String, String)
+  periodSeries;
+
+  @override
+  Future<CloudHouseholdEnergyTrends> periodTrends(
+    String homeId,
+    String granularity,
+  ) {
+    calls.add('$granularity:$homeId');
+    return periodSeries(homeId, granularity);
+  }
+}
+
+class _ReadsWithWeek extends _ReadsWithPeriods
+    implements DashboardCurrentWeekDomainSource {
+  _ReadsWithWeek(super.dash, super.series, super.periodSeries, this.weekSeries);
+
+  final Future<CloudHouseholdEnergyTrends> Function(String) weekSeries;
+
+  @override
+  Future<CloudHouseholdEnergyTrends> currentWeekTrends(String homeId) {
+    calls.add('currentWeek:$homeId');
+    return weekSeries(homeId);
+  }
+}
+
 _Reads _fixed({bool sample = false}) => _Reads(
   (home) async => _dashboard(_body('dashboard', home: home, sample: sample)),
   (home) async => _trends(_body('energy_trends', home: home, sample: sample)),
 );
 
 void main() {
+  test('actual chart and week requests project independent periods', () async {
+    final queries = <Map<String, String>>[];
+    final api = CloudApiClient(
+      session: CloudSession(
+        config: _config,
+        store: _TokenStore(),
+        authenticator: _Authenticator(),
+      ),
+      client: MockClient((request) async {
+        final query = request.url.queryParameters;
+        final isDashboard = request.url.path.endsWith('/dashboard');
+        if (!isDashboard) queries.add(query);
+        final json = _body(isDashboard ? 'dashboard' : 'energy_trends');
+        json['availability'] = 'partial';
+        json['evidence_basis'] = 'estimated';
+        json['totals'] = _pricedAllocation('0.50', '0.30', '0.20');
+        if (!isDashboard) {
+          final granularity = query['granularity']!;
+          json['granularity'] = granularity;
+          if (granularity == 'day') {
+            final chart = query['window'] == 'last_5_occurrences';
+            json['snapshot_id'] = chart ? 'chart-day' : 'current-week';
+            json['period'] = chart
+                ? {
+                    'start_local': '2026-10-02T00:00:00-05:00',
+                    'end_exclusive_local': '2026-10-07T00:00:00-05:00',
+                  }
+                : {
+                    'start_local': '2026-10-05T00:00:00-05:00',
+                    'end_exclusive_local': '2026-10-12T00:00:00-05:00',
+                  };
+            json['totals'] = chart
+                ? _pricedAllocation('4.50', '2.70', '1.80')
+                : _pricedAllocation('1.50', '0.90', '0.60');
+            final dates = chart ? [2, 3, 4, 5, 6] : [5, 6];
+            json['buckets'] = [
+              for (final day in dates)
+                {
+                  'start_local':
+                      '2026-10-${day.toString().padLeft(2, '0')}T00:00:00-05:00',
+                  'end_exclusive_local':
+                      '2026-10-${(day + 1).toString().padLeft(2, '0')}T00:00:00-05:00',
+                  'allocation': day == 6
+                      ? _pricedAllocation('0.50', '0.30', '0.20')
+                      : _pricedAllocation('1.00', '0.60', '0.40'),
+                  'coverage_fraction': '1',
+                },
+            ];
+          } else if (granularity != 'hour') {
+            json['snapshot_id'] = 'chart-$granularity';
+            json['period'] = granularity == 'week'
+                ? {
+                    'start_local': '2026-09-28T00:00:00-05:00',
+                    'end_exclusive_local': '2026-11-02T00:00:00-06:00',
+                  }
+                : {
+                    'start_local': '2026-06-01T00:00:00-05:00',
+                    'end_exclusive_local': '2026-11-01T00:00:00-05:00',
+                  };
+          }
+        }
+        return http.Response(jsonEncode(json), 200);
+      }),
+    );
+    final snapshot = await DashboardDomainRepository(
+      CloudDashboardDomainSource(api),
+    ).fetch(homeA);
+    expect(snapshot, isNotNull);
+    expect(
+      queries.any(
+        (query) =>
+            query['granularity'] == 'day' &&
+            query['window'] == 'last_5_occurrences',
+      ),
+      isTrue,
+    );
+    expect(
+      queries.any(
+        (query) =>
+            query['granularity'] == 'day' && !query.containsKey('window'),
+      ),
+      isTrue,
+    );
+    expect(
+      snapshot!.periodTrends['day']!.period.start,
+      isNot(snapshot.weekToDateTrends!.period.start),
+    );
+    final chart = DashboardChartProjection.fromSnapshot(snapshot, 'day');
+    expect(chart!.bars.map((bar) => bar.label), [
+      'Fri',
+      'Sat',
+      'Sun',
+      'Mon',
+      'Tue',
+    ]);
+    final bindings = prepareDesignNumericBindings(
+      DesignContextRead(
+        accountId: 'account',
+        homeId: homeA,
+        mode: DesignContextMode.household,
+        page: 'dashboard',
+        value: snapshot,
+      ),
+    );
+    expect(
+      {
+        for (final row in bindings.bindings) row.id: row.text,
+      }['dashboard_text_025'],
+      '\$1.50',
+    );
+    api.close();
+  });
+
+  test(
+    'keeps matching daily, weekly, monthly reads under selected home',
+    () async {
+      final source = _ReadsWithPeriods(
+        (home) async => _dashboard(_body('dashboard', home: home)),
+        (home) async => _trends(_body('energy_trends', home: home)),
+        (home, granularity) async {
+          final json = _body('energy_trends', home: home);
+          json['granularity'] = granularity;
+          json['snapshot_id'] = 'snapshot-$granularity';
+          json['period'] = switch (granularity) {
+            'day' => {
+              'start_local': '2026-10-05T00:00:00-05:00',
+              'end_exclusive_local': '2026-10-12T00:00:00-05:00',
+            },
+            'week' => {
+              'start_local': '2026-10-01T00:00:00-05:00',
+              'end_exclusive_local': '2026-11-01T00:00:00-05:00',
+            },
+            _ => {
+              'start_local': '2026-01-01T00:00:00-06:00',
+              'end_exclusive_local': '2027-01-01T00:00:00-06:00',
+            },
+          };
+          return _trends(json);
+        },
+      );
+      final snapshot = await DashboardDomainRepository(source).fetch(homeA);
+      expect(snapshot!.periodTrends.keys, {'day', 'week', 'month'});
+      expect(source.calls, [
+        'dashboard:$homeA',
+        'trends:$homeA',
+        'day:$homeA',
+        'week:$homeA',
+        'month:$homeA',
+      ]);
+    },
+  );
+
+  test(
+    'drops mismatched or failed period reads without losing daily data',
+    () async {
+      final source = _ReadsWithPeriods(
+        (home) async => _dashboard(_body('dashboard', home: home)),
+        (home) async => _trends(_body('energy_trends', home: home)),
+        (home, granularity) async {
+          if (granularity == 'day') throw StateError('temporary');
+          final json = _body('energy_trends', home: home);
+          json['granularity'] = granularity;
+          if (granularity == 'week') json['timezone'] = 'America/New_York';
+          if (granularity == 'month') {
+            json['scope'] = 'whole_home_including_unattributed_load';
+          }
+          return _trends(json);
+        },
+      );
+      final snapshot = await DashboardDomainRepository(source).fetch(homeA);
+      expect(snapshot!.periodTrends, isEmpty);
+      expect(snapshot.totals.cost, isNull);
+    },
+  );
+
+  test('failed current week read does not hide chart occurrences', () async {
+    final source = _ReadsWithWeek(
+      (home) async => _dashboard(_body('dashboard', home: home)),
+      (home) async => _trends(_body('energy_trends', home: home)),
+      (home, granularity) async {
+        final json = _body('energy_trends', home: home);
+        json['granularity'] = granularity;
+        json['snapshot_id'] = 'chart-$granularity';
+        json['period'] = switch (granularity) {
+          'day' => {
+            'start_local': '2026-10-02T00:00:00-05:00',
+            'end_exclusive_local': '2026-10-07T00:00:00-05:00',
+          },
+          'week' => {
+            'start_local': '2026-09-28T00:00:00-05:00',
+            'end_exclusive_local': '2026-11-02T00:00:00-06:00',
+          },
+          _ => {
+            'start_local': '2026-06-01T00:00:00-05:00',
+            'end_exclusive_local': '2026-11-01T00:00:00-05:00',
+          },
+        };
+        return _trends(json);
+      },
+      (_) async => throw StateError('week unavailable'),
+    );
+    final snapshot = await DashboardDomainRepository(source).fetch(homeA);
+    expect(snapshot!.periodTrends.keys, {'day', 'week', 'month'});
+    expect(snapshot.weekToDateTrends, isNull);
+    expect(source.calls, contains('currentWeek:$homeA'));
+  });
+
   test(
     'composes matching household reads and preserves unknown values',
     () async {
@@ -135,7 +422,7 @@ void main() {
           'currency': 'USD',
         },
         'availability': 'partial',
-      'evidence_basis': 'mixed',
+        'evidence_basis': 'mixed',
       };
       dashboardJson['totals'] = allocation;
       trendsJson['totals'] = allocation;

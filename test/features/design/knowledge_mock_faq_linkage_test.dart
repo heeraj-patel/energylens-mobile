@@ -1,4 +1,7 @@
 import 'package:energylens_mobile/features/design/demo_energy_projection.dart';
+
+import '../../support/demo_energy_tree_fixtures.dart';
+
 import 'package:energylens_mobile/features/design/demo_energy_tree.dart';
 import 'package:energylens_mobile/features/design/knowledge_domain_repository.dart';
 import 'package:energylens_mobile/features/design/knowledge_mock_faq_linkage.dart';

@@ -1,4 +1,8 @@
 import 'package:energylens_mobile/features/design/demo_energy_rolling_projection.dart';
+
+import '../../support/demo_energy_tree_fixtures.dart';
+
+import 'package:energylens_mobile/features/design/demo_energy_bindings.dart';
 import 'package:energylens_mobile/features/design/demo_energy_tree.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -15,6 +19,26 @@ DemoMonthTree _october({int referenceDay = 7, String homeId = _home}) =>
     );
 
 void main() {
+  test('total rounds once after summing sub-cent allocations', () {
+    const cost = DemoCost.fromMicros(
+      usefulMicros: 4000,
+      wasteMicros: 4000,
+      unclassifiedMicros: 0,
+    );
+    expect(cost.usefulCents, 0);
+    expect(cost.wasteCents, 0);
+    expect(cost.totalCents, 1);
+
+    const other = DemoCost.fromMicros(
+      usefulMicros: 6000,
+      wasteMicros: 6000,
+      unclassifiedMicros: 0,
+    );
+    expect(other.usefulCents + other.wasteCents, 2);
+    expect(other.totalCents, 1);
+    expect((cost + other).totalCents, 2);
+  });
+
   test('last 7 local days use complete October leaves', () {
     final window = DemoRollingCostWindow.fromTrees(
       trees: [_october()],
@@ -30,6 +54,39 @@ void main() {
     expect(window.source.totalCents, 3742);
     expect(window.presentation.totalMicros, window.source.totalMicros);
     expect(window.hasUnknownSourceCost, isFalse);
+  });
+
+  test('approved Efficiency label and value use the complete last 30 days', () {
+    final trees = [buildSeptember2026DemoTree(homeId: _home), _october()];
+    final window = DemoRollingCostWindow.fromTrees(
+      trees: trees,
+      homeId: _home,
+      referenceLocalDate: '2026-10-07',
+      dayCount: 30,
+    );
+    final bindings = DemoEnergyBindings.forRollingEfficiency(
+      trees: trees,
+      homeId: _home,
+      referenceLocalDate: '2026-10-07',
+    );
+    expect(bindings.bindings.map((row) => row.id), [
+      'efficiency_text_008',
+      'efficiency_text_009',
+    ]);
+    expect(bindings.bindings.map((row) => row.text), [
+      'Last 30 days',
+      '\$147.80',
+    ]);
+    expect(window.presentation.totalCents, 14780);
+    expect(bindings.provenanceByBindingId['efficiency_text_009'], isNotNull);
+    expect(
+      () => DemoEnergyBindings.forRollingEfficiency(
+        trees: [_october()],
+        homeId: _home,
+        referenceLocalDate: '2026-10-07',
+      ),
+      throwsFormatException,
+    );
   });
 
   test(

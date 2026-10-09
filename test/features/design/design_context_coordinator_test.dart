@@ -102,7 +102,13 @@ VerifiedDesignContext _context(
   String homeId, {
   String accountId = 'account-a',
   DesignContextMode mode = DesignContextMode.household,
-}) => VerifiedDesignContext(accountId: accountId, homeId: homeId, mode: mode);
+  DesignDataPolicy dataPolicy = DesignDataPolicy.modeOnly,
+}) => VerifiedDesignContext(
+  accountId: accountId,
+  homeId: homeId,
+  mode: mode,
+  dataPolicy: dataPolicy,
+);
 
 void main() {
   test('routes supported pages and rejects unbound pages', () async {
@@ -243,6 +249,38 @@ void main() {
       );
     },
   );
+
+  test('verified home accepts only its authorized demo response', () async {
+    final adapters = FakeAdapters();
+    final coordinator = DesignContextCoordinator(adapters);
+    adapters.deviceResult = const DevicesDomainSnapshot(
+      homeId: homeA,
+      items: [],
+      hasMoreMeteredPages: false,
+      dataMode: CloudApplianceDataMode.sample,
+      fixtureRevision: 'fixture',
+    );
+    coordinator.useVerifiedContext(
+      _context(homeA, dataPolicy: DesignDataPolicy.sameHomeDemoFallback),
+    );
+    final accepted = await coordinator.read('devices');
+    expect(accepted?.homeId, homeA);
+    expect(accepted?.mode, DesignContextMode.sample);
+    expect(coordinator.context?.mode, DesignContextMode.household);
+
+    adapters.deviceResult = const DevicesDomainSnapshot(
+      homeId: homeB,
+      items: [],
+      hasMoreMeteredPages: false,
+      dataMode: CloudApplianceDataMode.sample,
+      fixtureRevision: 'fixture',
+    );
+    await expectLater(coordinator.read('devices'), throwsFormatException);
+
+    coordinator.signOut();
+    expect(coordinator.context, isNull);
+    await expectLater(coordinator.read('devices'), throwsStateError);
+  });
 
   test('runtime evidence is a separate authenticated household read', () async {
     final adapters = FakeAdapters()

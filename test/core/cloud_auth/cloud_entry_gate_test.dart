@@ -609,6 +609,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(coordinator.context?.accountId, verifiedAccountId);
     expect(coordinator.context?.homeId, firstHomeId);
+    expect(
+      coordinator.context?.dataPolicy,
+      DesignDataPolicy.sameHomeDemoFallback,
+    );
     expect(auxiliary.verifiedHomeId, firstHomeId);
     await auxiliary.drafts.stage(
       const OnboardingDraft(
