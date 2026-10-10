@@ -24,9 +24,21 @@ const _nextQuestions = {
   'add_electricity_rate',
   'add_gas_rate',
 };
+const _recommendationStates = {
+  'active',
+  'candidate',
+  'accepted',
+  'completed',
+  'snoozed',
+  'dismissed',
+  'expired',
+  'superseded',
+};
 final _uuid = RegExp(
   r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
 );
+
+enum CloudRecommendationTipCategory { general, care, upgrade }
 
 class CloudRecommendation {
   const CloudRecommendation({
@@ -37,6 +49,7 @@ class CloudRecommendation {
     required this.explanation,
     required this.nextQuestion,
     required this.evidenceCount,
+    this.tipCategory = CloudRecommendationTipCategory.general,
   });
   final String ruleId;
   final String applianceId;
@@ -45,6 +58,7 @@ class CloudRecommendation {
   final String explanation;
   final String? nextQuestion;
   final int evidenceCount;
+  final CloudRecommendationTipCategory tipCategory;
 
   factory CloudRecommendation.fromJson(
     Map<String, dynamic> json,
@@ -57,6 +71,12 @@ class CloudRecommendation {
     final explanation = json['explanation'];
     final next = json['next_question'];
     final refs = json['evidence_refs'];
+    final categoryValue = json['tip_category'];
+    final tipCategory = categoryValue == null
+        ? CloudRecommendationTipCategory.general
+        : CloudRecommendationTipCategory.values
+              .where((value) => value.name == categoryValue)
+              .firstOrNull;
     if (ruleId is! String ||
         !_ruleIds.contains(ruleId) ||
         json['rule_version'] != 1 ||
@@ -64,7 +84,7 @@ class CloudRecommendation {
         !_uuid.hasMatch(applianceId) ||
         !applianceIds.contains(applianceId.toLowerCase()) ||
         state is! String ||
-        !const {'active', 'candidate'}.contains(state) ||
+        !_recommendationStates.contains(state) ||
         title is! String ||
         title.trim().isEmpty ||
         title.length > 120 ||
@@ -73,6 +93,7 @@ class CloudRecommendation {
         explanation.length > 500 ||
         json['benefit_group'] is! String ||
         (json['benefit_group'] as String).isEmpty ||
+        tipCategory == null ||
         refs is! List ||
         refs.length > 8 ||
         refs.any(
@@ -86,9 +107,12 @@ class CloudRecommendation {
               (ref['revision'] as int) < 1,
         ) ||
         json['savings_amount'] != null ||
+        (next != null && !_nextQuestions.contains(next)) ||
         (state == 'active'
             ? next != null || refs.length < 2
-            : !_nextQuestions.contains(next))) {
+            : state == 'candidate'
+            ? !_nextQuestions.contains(next)
+            : false)) {
       throw const FormatException('Invalid cloud recommendation');
     }
     return CloudRecommendation(
@@ -99,6 +123,7 @@ class CloudRecommendation {
       explanation: explanation,
       nextQuestion: next as String?,
       evidenceCount: refs.length,
+      tipCategory: tipCategory,
     );
   }
 }

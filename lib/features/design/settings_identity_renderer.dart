@@ -12,6 +12,7 @@ class SettingsIdentityRenderer {
     required DesignPageTicket ticket,
     required SettingsDomainSnapshot snapshot,
     required String expectedAccountId,
+    bool localAuthSession = false,
   }) {
     if (ticket.page != 'settings' ||
         snapshot.account.id != expectedAccountId ||
@@ -30,8 +31,10 @@ class SettingsIdentityRenderer {
           'page': ticket.page,
           'generation': ticket.generation,
           'homeName': snapshot.home.name,
+          'ownerName': _visibleValue(snapshot.account.displayName),
           'email': email,
           'postalCode': postalCode,
+          'localAuthSession': localAuthSession,
         }),
       ),
     );
@@ -45,12 +48,26 @@ class SettingsIdentityRenderer {
   const postal = document.querySelectorAll('[data-el-bind="settings_text_019"]');
   const emailRow = document.querySelectorAll('[data-el-settings-email-row]');
   const postalRow = document.querySelectorAll('[data-el-settings-postal-row]');
-  if (home.length !== 1 || email.length !== 1 || postal.length !== 1 || emailRow.length !== 1 || postalRow.length !== 1) return false;
+  const editButtons = document.querySelectorAll('[data-el-settings-edit]');
+  const owner = document.querySelectorAll('[data-el-settings-owner]')[0];
+  const ownerRow = document.querySelectorAll('[data-el-settings-owner-row]')[0];
+  const ownerEdit = document.querySelectorAll('[data-el-settings-owner-edit]')[0];
+  const emailEdit = document.querySelectorAll('[data-el-settings-email-edit]')[0];
+  const passwordChange = document.querySelectorAll('[data-el-settings-password-change]')[0];
+  if (home.length !== 1 || email.length !== 1 || postal.length !== 1 || emailRow.length !== 1 || postalRow.length !== 1 || editButtons.length !== 2) return false;
   home[0].textContent = payload.homeName;
   email[0].textContent = payload.email || '';
   postal[0].textContent = payload.postalCode || '';
-  emailRow[0].hidden = !payload.email;
-  postalRow[0].hidden = !payload.postalCode;
+  emailRow[0].hidden = false;
+  postalRow[0].hidden = false;
+  editButtons.forEach(button => button.hidden = false);
+  if (owner && ownerRow && ownerEdit && emailEdit && passwordChange) {
+    owner.textContent = payload.ownerName || '';
+    ownerRow.hidden = false;
+    ownerEdit.hidden = false;
+    emailEdit.hidden = !payload.email || !payload.localAuthSession;
+    passwordChange.hidden = !payload.localAuthSession;
+  }
   return true;
 })()
 ''';

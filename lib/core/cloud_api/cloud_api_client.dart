@@ -42,10 +42,14 @@ class CloudAccount {
     required this.id,
     required this.email,
     required this.emailVerified,
+    this.displayName,
+    this.profileVersion,
   });
   final String id;
   final String? email;
   final bool emailVerified;
+  final String? displayName;
+  final int? profileVersion;
 
   factory CloudAccount.fromJson(Map<String, dynamic> json) {
     final id = json['id'];
@@ -57,6 +61,8 @@ class CloudAccount {
       id: id,
       email: json['email'] as String?,
       emailVerified: verified,
+      displayName: json['display_name'] as String?,
+      profileVersion: json['profile_version'] as int?,
     );
   }
 }
@@ -100,7 +106,8 @@ class CloudApiClient {
       throw ArgumentError.value(granularity, 'granularity');
     }
     if (window != null &&
-        !((window == 'trailing_30_days' && granularity == 'day') ||
+        !((window == 'month_to_date' && granularity == 'day') ||
+            (window == 'trailing_30_days' && granularity == 'day') ||
             (window == 'last_5_occurrences' &&
                 const {'day', 'week', 'month'}.contains(granularity)))) {
       throw ArgumentError.value(window, 'window');
@@ -458,6 +465,7 @@ class CloudApiClient {
     String approvedSnapshotSha256,
     List<String> recipients, {
     required String idempotencyKey,
+    bool sendNow = false,
   }) async {
     if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(approvedSnapshotSha256) ||
         !RegExp(
@@ -473,6 +481,7 @@ class CloudApiClient {
         'approved_snapshot_sha256': approvedSnapshotSha256,
         'recipients': recipients,
         'approved': true,
+        if (sendNow) 'send_now': true,
       }),
       idempotencyKey: idempotencyKey,
     );
@@ -490,6 +499,74 @@ class CloudApiClient {
     final response = await get('/v1/me');
     return CloudAccount.fromJson(
       jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<CloudVersioned<CloudAccount>> accountProfile() async {
+    final response = await get('/v1/me');
+    final account = CloudAccount.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+    return CloudVersioned(value: account, etag: _requiredEtag(response));
+  }
+
+  Future<CloudVersioned<CloudAccount>> updateAccountOwner(
+    String name, {
+    required String ifMatch,
+    required String idempotencyKey,
+  }) async {
+    _validateMutationHeaders(ifMatch, idempotencyKey);
+    final response = await _request(
+      'PATCH',
+      '/v1/me/profile',
+      jsonBody: jsonEncode({'display_name': name}),
+      ifMatch: ifMatch,
+      idempotencyKey: idempotencyKey,
+    );
+    return CloudVersioned(
+      value: CloudAccount.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      ),
+      etag: _requiredEtag(response),
+    );
+  }
+
+  Future<CloudVersioned<CloudAccount>> changeLocalEmail(
+    String email,
+    String currentPassword, {
+    required String ifMatch,
+    required String idempotencyKey,
+  }) async {
+    _validateMutationHeaders(ifMatch, idempotencyKey);
+    final response = await _request(
+      'POST',
+      '/v1/auth/local/change-email',
+      jsonBody: jsonEncode({
+        'new_email': email,
+        'current_password': currentPassword,
+      }),
+      ifMatch: ifMatch,
+      idempotencyKey: idempotencyKey,
+    );
+    return CloudVersioned(
+      value: CloudAccount.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      ),
+      etag: _requiredEtag(response),
+    );
+  }
+
+  Future<void> changeLocalPassword(
+    String currentPassword,
+    String newPassword,
+  ) async {
+    await _request(
+      'POST',
+      '/v1/auth/local/change-password',
+      jsonBody: jsonEncode({
+        'current_password': currentPassword,
+        'new_password': newPassword,
+      }),
     );
   }
 

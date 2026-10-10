@@ -105,6 +105,15 @@ String _withApprovedLabelChanges(String html, String pageId) {
           '',
         );
   }
+  if (pageId == 'settings') {
+    return html
+        .replaceFirst('Home Name', 'Home Name Edit')
+        .replaceFirst('Zipcode (Tariff Zone)', 'Zipcode (Tariff Zone) Edit')
+        .replaceFirst(
+          'Email report with useful cost, wastage, trends and breakdowns.',
+          'Email a report for selected devices.',
+        );
+  }
   if (const {
     'efficiency_away',
     'efficiency_habits',
@@ -128,6 +137,14 @@ String _withoutApprovedTabSummary(String text, String pageId) {
     _ => text,
   };
   return adjusted.replaceAll(RegExp(r'\s+'), ' ').trim();
+}
+
+String _withoutRestoredProfileActions(String text, String pageId) {
+  if (pageId != 'settings') return text;
+  return text
+      .replaceFirst('person Account Owner Edit ', '')
+      .replaceFirst('Email ID Edit ', 'Email ID ')
+      .replaceFirst('Password •••••••••••• Change ', 'Password •••••••••••• ');
 }
 
 String _withApprovedDashboardOrder(String html) {
@@ -263,7 +280,11 @@ void main() {
       for (final pageId in _pageIds) {
         final source = File('assets/design_pages/$pageId/code.html');
         expect(source.existsSync(), isTrue, reason: '$pageId source HTML');
-        final sourceHtml = await source.readAsString();
+        // The owner retired this source-only Efficiency badge from the app.
+        final sourceHtml = (await source.readAsString()).replaceAll(
+          RegExp(r'<span\b[^>]*>13% of Bill</span>'),
+          '',
+        );
         final packagedHtml = await rootBundle.loadString(
           'assets/design_pages/$pageId/app.html',
         );
@@ -393,13 +414,16 @@ void main() {
           continue;
         }
         expect(
-          _visibleText(
-            _withoutApprovedDeviceSections(
-              _withoutApprovedRevealControls(
-                _withSourceFallbackValues(packagedHtml, pageId),
+          _withoutRestoredProfileActions(
+            _visibleText(
+              _withoutApprovedDeviceSections(
+                _withoutApprovedRevealControls(
+                  _withSourceFallbackValues(packagedHtml, pageId),
+                ),
+                pageId,
               ),
-              pageId,
             ),
+            pageId,
           ),
           _withoutApprovedTabSummary(
             _visibleText(
@@ -476,7 +500,7 @@ void main() {
     );
 
     test(
-      'Settings profile has identity bindings and no unsupported controls',
+      'Settings profile exposes approved owner and credential actions',
       () async {
         final html = await rootBundle.loadString(
           'assets/design_pages/settings/app.html',
@@ -487,7 +511,13 @@ void main() {
         expect(html, contains('data-el-settings-email-row hidden'));
         expect(html, contains('data-el-settings-postal-row hidden'));
         expect(html, isNot(contains('Alex Miller')));
-        expect(html, isNot(contains('Account Owner')));
+        expect(html, contains('Account Owner'));
+        expect(html, contains('data-el-action="settings_action_edit_owner"'));
+        expect(html, contains('data-el-action="settings_action_edit_email"'));
+        expect(
+          html,
+          contains('data-el-action="settings_action_change_password"'),
+        );
         for (var action = 5; action <= 10; action++) {
           final actionId =
               'settings_action_${action.toString().padLeft(3, '0')}';

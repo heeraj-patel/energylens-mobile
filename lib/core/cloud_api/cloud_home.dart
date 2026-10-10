@@ -28,6 +28,7 @@ class CloudHome {
     required this.timezone,
     required this.countryCode,
     required this.postalCode,
+    this.timezoneResolution,
     this.version,
     this.etag,
   });
@@ -37,6 +38,7 @@ class CloudHome {
   final String timezone;
   final String countryCode;
   final String postalCode;
+  final String? timezoneResolution;
   final int? version;
   final String? etag;
 
@@ -47,6 +49,11 @@ class CloudHome {
         json['name'] is! String ||
         (json['name'] as String).isEmpty ||
         json['timezone'] is! String ||
+        (json['timezone_resolution'] != null &&
+            !{
+              'resolved',
+              'unresolved',
+            }.contains(json['timezone_resolution'])) ||
         location is! Map<String, dynamic> ||
         location['country_code'] is! String ||
         location['postal_code'] is! String) {
@@ -58,6 +65,7 @@ class CloudHome {
       timezone: json['timezone'] as String,
       countryCode: location['country_code'] as String,
       postalCode: location['postal_code'] as String,
+      timezoneResolution: json['timezone_resolution'] as String?,
       version: json['version'] as int?,
     );
   }

@@ -279,6 +279,12 @@ class CloudSession {
   final LocalCloudAuthService? localAuth;
   Future<CloudTokens?>? _refreshInFlight;
 
+  /// Whether the stored session was created with EnergyLens local credentials.
+  /// This deliberately checks the persisted token provider, not whether local
+  /// auth happens to be configured alongside an OIDC account.
+  Future<bool> get isLocalAuthSession async =>
+      (await store.read())?.provider == 'local';
+
   Future<String?> accessToken() async {
     if (!config.hasCloudSignIn) return null;
     final tokens = await store.read();

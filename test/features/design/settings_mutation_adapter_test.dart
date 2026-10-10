@@ -15,6 +15,8 @@ const keyB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 class FakeSource implements SettingsMutationSource {
   String accountId = 'owner';
   String name = 'Home';
+  String postalCode = '60601';
+  String timezone = 'America/Chicago';
   int homeVersion = 1;
   int accountVersion = 1;
   int preferencesVersion = 1;
@@ -28,12 +30,18 @@ class FakeSource implements SettingsMutationSource {
   int homePatchCount = 0;
   String? lastIfMatch;
 
-  CloudHome _home(String id, {String? value, int? version}) => CloudHome(
+  CloudHome _home(
+    String id, {
+    String? value,
+    int? version,
+    String? timezoneResolution,
+  }) => CloudHome(
     id: id,
     name: value ?? name,
-    timezone: 'America/Chicago',
+    timezone: timezone,
     countryCode: 'US',
-    postalCode: '60601',
+    postalCode: postalCode,
+    timezoneResolution: timezoneResolution,
     version: version ?? homeVersion,
   );
 
@@ -92,8 +100,17 @@ class FakeSource implements SettingsMutationSource {
     }
     if (pendingPatch != null) return pendingPatch!.future;
     name = patch.name ?? name;
+    String? resolution;
+    if (patch.postalCode != null) {
+      postalCode = patch.postalCode!;
+      resolution = postalCode == '94107' ? 'resolved' : 'unresolved';
+      if (resolution == 'resolved') timezone = 'America/Los_Angeles';
+    }
     homeVersion++;
-    final result = CloudVersioned(value: _home(homeId), etag: '"$homeVersion"');
+    final result = CloudVersioned(
+      value: _home(homeId, timezoneResolution: resolution),
+      etag: '"$homeVersion"',
+    );
     completedHomeWrites[idempotencyKey] = result;
     return result;
   }
@@ -130,6 +147,24 @@ class FakeSource implements SettingsMutationSource {
 }
 
 void main() {
+  test('ZIP readback carries derived zone and unresolved status', () async {
+    final source = FakeSource();
+    final adapter = SettingsMutationAdapter(source);
+    await adapter.load(homeA);
+    final resolved = await adapter.updateHome(
+      const CloudHomePatch(countryCode: 'US', postalCode: '94107'),
+      idempotencyKey: keyA,
+    );
+    expect(resolved?.timezone, 'America/Los_Angeles');
+    expect(adapter.lastHomeTimezoneResolution, 'resolved');
+    final unresolved = await adapter.updateHome(
+      const CloudHomePatch(countryCode: 'US', postalCode: '85001'),
+      idempotencyKey: keyB,
+    );
+    expect(unresolved?.timezone, 'America/Los_Angeles');
+    expect(adapter.lastHomeTimezoneResolution, 'unresolved');
+  });
+
   test(
     'home and preference mutations return fresh versioned readback',
     () async {

@@ -1,4 +1,5 @@
 import 'design_context_coordinator.dart';
+import 'recommendations_programs_projection.dart';
 
 /// Holds page reads in native memory until an approved presentation uses them.
 /// Navigation and account lifecycle changes invalidate every pending result.
@@ -12,6 +13,7 @@ class DesignPageReadDispatcher {
   VerifiedDesignContext? _readContext;
   int? _contextGeneration;
   DesignContextRead? _latestRead;
+  RecommendationsProgramsProjection? _latestRecommendationsPrograms;
   Object? _latestError;
 
   DesignContextRead? get latestRead =>
@@ -27,6 +29,9 @@ class DesignPageReadDispatcher {
       ? _latestError
       : null;
 
+  RecommendationsProgramsProjection? get latestRecommendationsPrograms =>
+      latestRead == null ? null : _latestRecommendationsPrograms;
+
   void useCoordinator(DesignContextCoordinator? coordinator) {
     if (identical(_coordinator, coordinator)) return;
     clear();
@@ -39,6 +44,7 @@ class DesignPageReadDispatcher {
     _readContext = null;
     _contextGeneration = null;
     _latestRead = null;
+    _latestRecommendationsPrograms = null;
     _latestError = null;
   }
 
@@ -71,7 +77,11 @@ class DesignPageReadDispatcher {
         !identical(coordinator.context, context);
     try {
       final result = await coordinator.read(page);
-      if (!stale()) _latestRead = result;
+      if (!stale() && result != null) {
+        _latestRecommendationsPrograms =
+            RecommendationsProgramsProjection.fromRead(result);
+        _latestRead = result;
+      }
     } catch (error) {
       if (!stale()) _latestError = error;
     }

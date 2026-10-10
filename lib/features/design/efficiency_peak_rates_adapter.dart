@@ -1,5 +1,6 @@
 import '../../core/cloud_api/cloud_api_client.dart';
 import '../../core/cloud_api/cloud_tariff.dart';
+import 'efficiency_domain_repository.dart';
 
 /// Reads the existing electricity tariff resource for Peak Rates.
 /// The tariff API has no time-of-use schedule or peak attribution contract.
@@ -25,6 +26,7 @@ class EfficiencyPeakRatesSnapshot {
     required this.marginalRateUsdPerKwh,
     required this.sourceAsOf,
     required this.effectiveFrom,
+    this.efficiencySnapshot,
   });
 
   final String homeId;
@@ -34,6 +36,7 @@ class EfficiencyPeakRatesSnapshot {
   final String? marginalRateUsdPerKwh;
   final DateTime? sourceAsOf;
   final DateTime? effectiveFrom;
+  final EfficiencyDomainSnapshot? efficiencySnapshot;
 
   /// Existing tariff data does not establish time-of-use windows or savings.
   String? get peakWindows => null;

@@ -104,7 +104,7 @@
       const labelClass = active ? theme.activeLabelClass : theme.labelClass;
       const iconStyle = active && theme.activeIconStyle
         ? ` style="${theme.activeIconStyle}"` : '';
-      return `<a${current} class="${escapeHtml(tabClass)}" data-path="${destination}" href="#" data-el-action="${escapeHtml(config.footerActions[index])}"><span class="${escapeHtml(iconClass)}"${iconStyle}>${escapeHtml(config.tabIcons[index])}</span><span class="${escapeHtml(labelClass)}" data-el-bind="${escapeHtml(config.footerBindings[index])}">${escapeHtml(config.tabLabels[index])}</span></a>`;
+      return `<a${current} class="${escapeHtml(tabClass)}" data-path="${destination}" href="#" data-el-action="${escapeHtml(config.footerActions[index])}"><span class="${escapeHtml(iconClass)}"${iconStyle} aria-hidden="true">${escapeHtml(config.tabIcons[index])}</span><span class="${escapeHtml(labelClass)}" data-el-bind="${escapeHtml(config.footerBindings[index])}">${escapeHtml(config.tabLabels[index])}</span></a>`;
     }).join('');
     return `<nav class="${escapeHtml(theme.navClass)}"${activeClasses}><div class="flex justify-around items-center h-16 px-space-xs">${tabs}</div></nav>`;
   };

@@ -126,7 +126,7 @@ class CloudReportDeliveryStatus {
         id is! String ||
         !_uuid.hasMatch(id) ||
         id == previewId ||
-        !{'pending', 'sent', 'canceled'}.contains(state) ||
+        !{'pending', 'sent', 'canceled', 'unconfirmed'}.contains(state) ||
         createdRaw is! String ||
         (sentRaw != null && sentRaw is! String)) {
       throw const FormatException('Invalid report delivery status');

@@ -399,11 +399,6 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Eligibility unknown',
-                              style: Theme.of(context).textTheme.labelLarge,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
                               program.title,
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
@@ -412,9 +407,7 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
                               '${program.administratorName} · ${program.benefitKind.replaceAll('_', ' ')}',
                             ),
                             const SizedBox(height: 8),
-                            Text(
-                              'Still to confirm: ${program.reasons.map((reason) => reason.replaceAll('_', ' ')).join(', ')}.',
-                            ),
+                            Text(program.benefitDisplay),
                             TextButton.icon(
                               onPressed: () => launchUrl(
                                 program.sourceUrl,
@@ -422,10 +415,6 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
                               ),
                               icon: const Icon(Icons.open_in_new),
                               label: const Text('Review official source'),
-                            ),
-                            Text(
-                              'Source fingerprint ${program.sourceSha256.substring(0, 12)} · Review expires ${program.reviewExpiresAt.toUtc().toIso8601String()}',
-                              style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ],
                         ),

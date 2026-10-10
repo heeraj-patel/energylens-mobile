@@ -60,7 +60,7 @@ class CloudReportDelivery {
     if (id is! String ||
         !_deliveryUuid.hasMatch(id) ||
         previewId != expectedPreviewId ||
-        state != 'pending' ||
+        !{'pending', 'sent'}.contains(state) ||
         rawRecipients is! List ||
         rawRecipients.any((e) => e is! String) ||
         created is! String) {

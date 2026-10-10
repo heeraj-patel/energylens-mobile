@@ -127,6 +127,72 @@ void main() {
     );
   });
 
+  test('accepts every Cloud lifecycle state without dropping the action', () {
+    const states = [
+      'active',
+      'candidate',
+      'accepted',
+      'completed',
+      'snoozed',
+      'dismissed',
+      'expired',
+      'superseded',
+    ];
+    for (final state in states) {
+      final value = {
+        ...action(),
+        'state': state,
+        if (state != 'candidate') 'next_question': null,
+        if (state == 'active')
+          'evidence_refs': [
+            {
+              'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              'kind': 'annual_energy',
+              'revision': 1,
+            },
+            {
+              'id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+              'kind': 'confirmed_answer',
+              'revision': 1,
+            },
+          ],
+      };
+      expect(CloudRecommendation.fromJson(value, {appliance}).state, state);
+    }
+  });
+
+  test('parses source tip categories and defaults old servers to general', () {
+    final rows = [
+      {
+        ...action(),
+        'rule_id': 'refrigerator.maintenance',
+        'tip_category': 'care',
+      },
+      {
+        ...action(),
+        'rule_id': 'lighting.equivalent_bulb',
+        'tip_category': 'upgrade',
+      },
+      action(),
+    ];
+    final parsed = CloudRecommendationBatch.fromJson(
+      {'actions': rows, 'as_of': '2026-10-01T12:00:00Z'},
+      {appliance},
+    );
+    expect(parsed.actions.map((item) => item.tipCategory), [
+      CloudRecommendationTipCategory.care,
+      CloudRecommendationTipCategory.upgrade,
+      CloudRecommendationTipCategory.general,
+    ]);
+    expect(
+      () => CloudRecommendation.fromJson(
+        {...action(), 'tip_category': 'unclear'},
+        {appliance},
+      ),
+      throwsFormatException,
+    );
+  });
+
   test('accepts the seven Cloud rule IDs and rejects unknown IDs', () {
     const ruleIds = [
       'dishwasher.cycle_options',

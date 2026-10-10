@@ -145,17 +145,14 @@ void main() {
     expect(adapters.typedEfficiencyCalls, [(homeA, 'away')]);
   });
 
-  test('peak tariff reads are unavailable in sample context', () async {
+  test('peak tariff reads stay scoped to the sample context', () async {
     final adapters = FakeAdapters();
     final coordinator = DesignContextCoordinator(adapters);
     coordinator.useVerifiedContext(
       _context(homeA, mode: DesignContextMode.sample),
     );
-    expect(
-      () => coordinator.read('efficiency_peak_rates'),
-      throwsArgumentError,
-    );
-    expect(adapters.typedEfficiencyCalls, isEmpty);
+    expect(await coordinator.read('efficiency_peak_rates'), isNull);
+    expect(adapters.typedEfficiencyCalls, [(homeA, 'peak')]);
   });
 
   test(

@@ -39,15 +39,7 @@ class _StopWasteProgramsState extends State<StopWastePrograms> {
     try {
       final page = await widget.api.homePrograms(widget.home.id);
       if (!mounted || generation != _generation) return;
-      final now = DateTime.now();
-      final programs = <CloudProgram>[];
-      for (final program in page.programs) {
-        if (program.availabilityStatus == 'open' &&
-            program.reviewExpiresAt.isAfter(now)) {
-          programs.add(program);
-        }
-      }
-      setState(() => _programs = programs);
+      setState(() => _programs = page.programs);
     } catch (_) {
       if (mounted && generation == _generation) {
         setState(() => _programs = const []);

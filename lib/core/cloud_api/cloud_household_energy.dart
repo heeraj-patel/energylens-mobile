@@ -432,18 +432,134 @@ List<CloudDeviceEnergyAllocation> _deviceAllocations(Object? raw) {
   return List.unmodifiable(rows);
 }
 
+/// Final month-to-date Efficiency amounts calculated by Cloud for a demo home.
+/// Mobile keeps these amounts as typed API values and performs no savings math.
+class CloudEfficiencyMonthToDate {
+  const CloudEfficiencyMonthToDate({
+    required this.monthToDateCost,
+    required this.identifiedOpportunity,
+    required this.optimalBase,
+    required this.wasteOpportunity,
+    required this.awayOpportunity,
+    required this.peakRatesOpportunity,
+    required this.habitsOpportunity,
+    required this.nightTotalOpportunity,
+    required this.awayTotalOpportunity,
+    required this.chartSegmentWidthPercent,
+  });
+
+  final CloudEnergyMoney monthToDateCost;
+  final CloudEnergyMoney identifiedOpportunity;
+  final CloudEnergyMoney optimalBase;
+  final CloudEnergyMoney wasteOpportunity;
+  final CloudEnergyMoney awayOpportunity;
+  final CloudEnergyMoney peakRatesOpportunity;
+  final CloudEnergyMoney habitsOpportunity;
+  final CloudEnergyMoney nightTotalOpportunity;
+  final CloudEnergyMoney awayTotalOpportunity;
+  final CloudEfficiencyChartSegmentWidthPercent chartSegmentWidthPercent;
+
+  factory CloudEfficiencyMonthToDate.fromJson(Object? value) {
+    final json = _object(value, 'efficiency month-to-date');
+    _keys(json, const {
+      'month_to_date_cost',
+      'identified_opportunity',
+      'optimal_base',
+      'waste_opportunity',
+      'away_opportunity',
+      'peak_rates_opportunity',
+      'habits_opportunity',
+      'night_total_opportunity',
+      'away_total_opportunity',
+      'chart_segment_width_percent',
+      'waste_timing_basis',
+      'evidence_basis',
+    });
+    if (json['evidence_basis'] != 'synthetic' ||
+        json['waste_timing_basis'] != 'unknown_75_25_demo_fallback') {
+      throw const FormatException('Invalid Efficiency evidence basis');
+    }
+    final values = [
+      CloudEnergyMoney.fromJson(json['month_to_date_cost']),
+      CloudEnergyMoney.fromJson(json['identified_opportunity']),
+      CloudEnergyMoney.fromJson(json['optimal_base']),
+      CloudEnergyMoney.fromJson(json['waste_opportunity']),
+      CloudEnergyMoney.fromJson(json['away_opportunity']),
+      CloudEnergyMoney.fromJson(json['peak_rates_opportunity']),
+      CloudEnergyMoney.fromJson(json['habits_opportunity']),
+      CloudEnergyMoney.fromJson(json['night_total_opportunity']),
+      CloudEnergyMoney.fromJson(json['away_total_opportunity']),
+    ];
+    if (values.any((value) => value.currency != 'USD')) {
+      throw const FormatException('Invalid Efficiency currency');
+    }
+    return CloudEfficiencyMonthToDate(
+      monthToDateCost: values[0],
+      identifiedOpportunity: values[1],
+      optimalBase: values[2],
+      wasteOpportunity: values[3],
+      awayOpportunity: values[4],
+      peakRatesOpportunity: values[5],
+      habitsOpportunity: values[6],
+      nightTotalOpportunity: values[7],
+      awayTotalOpportunity: values[8],
+      chartSegmentWidthPercent:
+          CloudEfficiencyChartSegmentWidthPercent.fromJson(
+            json['chart_segment_width_percent'],
+          ),
+    );
+  }
+}
+
+class CloudEfficiencyChartSegmentWidthPercent {
+  const CloudEfficiencyChartSegmentWidthPercent({
+    required this.night,
+    required this.away,
+    required this.peakRates,
+    required this.habits,
+  });
+
+  final String night;
+  final String away;
+  final String peakRates;
+  final String habits;
+
+  factory CloudEfficiencyChartSegmentWidthPercent.fromJson(Object? value) {
+    final json = _object(value, 'efficiency chart widths');
+    _keys(json, const {'night', 'away', 'peak_rates', 'habits'});
+    String percent(String key) {
+      final value = json[key];
+      if (value is String &&
+          RegExp(r'^(?:[0-9]|[1-9][0-9])\.[0-9]{2}$|^100\.00$')
+              .hasMatch(value)) {
+        return value;
+      }
+      throw const FormatException('Invalid Efficiency chart width');
+    }
+
+    return CloudEfficiencyChartSegmentWidthPercent(
+      night: percent('night'),
+      away: percent('away'),
+      peakRates: percent('peak_rates'),
+      habits: percent('habits'),
+    );
+  }
+}
+
 class CloudHouseholdEnergyTrends {
   const CloudHouseholdEnergyTrends({
     required this.metadata,
     required this.granularity,
     required this.totals,
     required this.buckets,
+    this.efficiencyMonthToDate,
   });
 
   final CloudHouseholdEnergyMetadata metadata;
   final String granularity;
   final CloudEnergyAllocation totals;
   final List<CloudEnergyTrendBucket> buckets;
+  final CloudEfficiencyMonthToDate? efficiencyMonthToDate;
 
   String get schemaRevision => metadata.schemaRevision;
   String get contentRevision => metadata.contentRevision;
@@ -483,8 +599,9 @@ class CloudHouseholdEnergyTrends {
         'granularity',
         'totals',
         'buckets',
+        'efficiency_month_to_date',
       },
-      optional: const {'fixture_revision'},
+      optional: const {'fixture_revision', 'efficiency_month_to_date'},
     );
     if (json['view'] != 'energy_trends' || json['buckets'] is! List) {
       throw const FormatException('Invalid household energy trends');
@@ -503,6 +620,11 @@ class CloudHouseholdEnergyTrends {
       }, 'granularity'),
       totals: CloudEnergyAllocation.fromJson(json['totals']),
       buckets: List.unmodifiable(rows.map(CloudEnergyTrendBucket.fromJson)),
+      efficiencyMonthToDate: json['efficiency_month_to_date'] == null
+          ? null
+          : CloudEfficiencyMonthToDate.fromJson(
+              json['efficiency_month_to_date'],
+            ),
     );
   }
 }

@@ -317,11 +317,11 @@ for (const [page, script] of Object.entries(scripts)) {
   }};
   globalThis.EnergyLensNavigation = {postMessage(route) { routes.push(route); }};
   eval(script);
-  function click(label, {tab = false, id = '', route} = {}) {
+  function click(label, {tab = false, id = '', route, action} = {}) {
     let prevented = false;
     const button = {
       id,
-      dataset: {elRoute: route},
+      dataset: {elRoute: route, elAction: action},
       closest(selector) { return selector === '[role="tablist"]' && tab ? {} : null; },
       cloneNode() { return {textContent: label, querySelectorAll() { return []; }}; },
     };
@@ -345,8 +345,8 @@ for (const [page, script] of Object.entries(scripts)) {
   } else if (page === 'settings') {
     assert.equal(click('Manage Devices'), true);
     assert.equal(click('Email Report Now', {id: 'email-btn'}), true);
-    assert.deepEqual(routes, ['settings_manage_devices', 'report_preview']);
-    assert.equal(click('Edit'), false);
+    assert.equal(click('Edit', {action: 'settings_action_edit_home'}), true);
+    assert.deepEqual(routes, ['settings_manage_devices', 'report_preview', 'edit_home_details']);
   } else {
     assert.equal(click('Monthly'), false);
     assert.deepEqual(routes, []);

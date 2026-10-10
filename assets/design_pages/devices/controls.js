@@ -19,9 +19,12 @@
   }
 
   function row(card) {
-    if (card.hasAttribute('data-el-live-device-id')) {
+    if (card.hasAttribute('data-el-live-device-id') ||
+        card.hasAttribute('data-el-seeded-device-id')) {
       return {card, name: card.getAttribute('data-el-device-name') || '',
-        state: null, usage: null, waste: null};
+        state: null,
+        usage: money(card.getAttribute('data-el-usage-cost') || ''),
+        waste: money(card.getAttribute('data-el-waste-cost') || '')};
     }
     const fields = Array.from(card.querySelectorAll('[data-el-bind]'));
     const stateText = (fields[2]?.textContent || '').trim().toLowerCase();
@@ -45,7 +48,11 @@
         if (aValue !== null && bValue === null) return -1;
         if (aValue !== null && bValue !== null && aValue !== bValue) return bValue - aValue;
       }
-      return a.name.localeCompare(b.name);
+      return a.name.localeCompare(b.name) ||
+        (a.card.getAttribute('data-el-live-device-id') ||
+          a.card.getAttribute('data-el-seeded-device-id') || '').localeCompare(
+          b.card.getAttribute('data-el-live-device-id') ||
+          b.card.getAttribute('data-el-seeded-device-id') || '');
     });
 
     const pageCount = Math.max(1, Math.ceil(matches.length / pageSize));

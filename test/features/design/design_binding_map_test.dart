@@ -24,14 +24,15 @@ Set<String> _approvedRemovedIds(String page, String category) {
   }
   if (page == 'efficiency' && category == 'bindings') {
     return {
-      for (final n in [29, 30, 32, 36])
+      for (final n in [13, 29, 30, 32, 36])
         'efficiency_text_${n.toString().padLeft(3, '0')}',
     };
   }
   if (category == 'bindings' && page.startsWith('efficiency_')) {
     final removed = switch (page) {
-      'efficiency_away' => [29, 30, 33, 34, 36, 40, 44],
+      'efficiency_away' => [13, 29, 30, 33, 34, 36, 40, 44],
       'efficiency_habits' => [
+        13,
         29,
         30,
         31,
@@ -47,6 +48,7 @@ Set<String> _approvedRemovedIds(String page, String category) {
         48,
       ],
       'efficiency_peak_rates' => [
+        13,
         29,
         30,
         31,
@@ -116,6 +118,17 @@ Set<String> _approvedRemovedIds(String page, String category) {
       : const {};
 }
 
+Set<String> _approvedAddedIds(String page, String category) =>
+    page == 'settings' && category == 'actions'
+    ? {
+        'settings_action_edit_home',
+        'settings_action_edit_zip',
+        'settings_action_edit_owner',
+        'settings_action_edit_email',
+        'settings_action_change_password',
+      }
+    : const {};
+
 void main() {
   test('all 14 packaged pages carry their frozen unique binding IDs', () {
     final manifest = jsonDecode(
@@ -177,7 +190,9 @@ void main() {
         );
         expect(
           {...raw, ...shared},
-          declared.difference(removed),
+          declared
+              .difference(removed)
+              .union(_approvedAddedIds(page, category.key)),
           reason: '$page ${category.key}',
         );
         for (final id in declared) {

@@ -12,6 +12,7 @@ import 'features/discovery/discovery_screen.dart';
 import 'features/discovery/discovery_api.dart';
 import 'features/discovery/discovery_credentials.dart';
 import 'features/discovery/electricity_settings_screen.dart';
+import 'features/design/demo_report_preview_screen.dart';
 import 'features/energy/useful_waste_cost_card.dart';
 import 'features/energy/daily_cost.dart';
 import 'features/energy/power_now_daily_cost_table.dart';
@@ -107,6 +108,11 @@ class EnergyLensApp extends StatelessWidget {
       home: localPilot
           ? DesignShell(
               localPilot: true,
+              onReportPreview: () => _navigatorKey.currentState?.push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const DemoReportPreviewScreen(),
+                ),
+              ),
               localDeviceLifecycle: LocalPilotDeviceLifecycle(
                 api: localDiscoveryApi,
                 credentials: localDiscoveryCredentials,
@@ -128,6 +134,7 @@ class EnergyLensApp extends StatelessWidget {
               homeBuilder: (cloudHome, signOut, changeHome, cloudApi) =>
                   DesignShell(
                     homeName: cloudHome?.name ?? 'The Miller Home',
+                    settingsApi: cloudApi,
                     onSignOut: signOut,
                     onChangeHome: changeHome,
                     onReportPreview: cloudHome == null
@@ -151,6 +158,7 @@ class EnergyLensApp extends StatelessWidget {
                     designContextCoordinator,
                   ) => DesignShell(
                     homeName: cloudHome.name,
+                    settingsApi: cloudApi,
                     onSignOut: signOut,
                     onChangeHome: changeHome,
                     designContextCoordinator: designContextCoordinator,

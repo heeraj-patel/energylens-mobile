@@ -9,10 +9,12 @@ class EfficiencyHabitsSnapshot {
   const EfficiencyHabitsSnapshot({
     required this.energy,
     required this.recommendations,
+    this.efficiencySnapshot,
   });
 
   final DashboardDomainSnapshot energy;
   final List<CloudRecommendation> recommendations;
+  final EfficiencyDomainSnapshot? efficiencySnapshot;
 
   String get homeId => energy.homeId;
   CloudEnergyAllocation get totals => energy.totals;
@@ -39,6 +41,7 @@ class EfficiencyHabitsDomainAdapter {
     return EfficiencyHabitsSnapshot(
       energy: result.energy,
       recommendations: result.recommendations,
+      efficiencySnapshot: result,
     );
   }
 }

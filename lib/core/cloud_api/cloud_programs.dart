@@ -110,7 +110,11 @@ class CloudProgram {
           'closed',
           'unknown',
         }.contains(json['availability_status']) ||
-        !{'unknown', 'potentially_eligible'}.contains(json['status']) ||
+        !{
+          'unknown',
+          'potentially_eligible',
+          'ineligible',
+        }.contains(json['status']) ||
         reasons is! List ||
         reasons.isEmpty ||
         reasons.length > 20 ||

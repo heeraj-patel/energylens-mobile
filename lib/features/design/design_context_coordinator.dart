@@ -138,8 +138,29 @@ class RepositoryDesignContextAdapters implements DesignContextAdapters {
   Future<EfficiencyHabitsSnapshot?> efficiencyHabits(String homeId) =>
       efficiencyHabitsAdapter.fetch(homeId);
   @override
-  Future<EfficiencyPeakRatesSnapshot?> efficiencyPeakRates(String homeId) =>
-      efficiencyPeakRatesAdapter.fetch(homeId);
+  Future<EfficiencyPeakRatesSnapshot?> efficiencyPeakRates(
+    String homeId,
+  ) async {
+    final results = await Future.wait<Object?>([
+      efficiencyRepository.fetch(homeId, EfficiencyPage.peak),
+      efficiencyPeakRatesAdapter
+          .fetch(homeId)
+          .then<Object?>((value) => value)
+          .catchError((Object _) => null),
+    ]);
+    final spend = results[0] as EfficiencyDomainSnapshot?;
+    if (spend == null) return null;
+    final tariff = results[1] as EfficiencyPeakRatesSnapshot?;
+    return EfficiencyPeakRatesSnapshot(
+      homeId: homeId,
+      status: tariff?.status ?? EfficiencyTariffStatus.unavailable,
+      marginalRateUsdPerKwh: tariff?.marginalRateUsdPerKwh,
+      sourceAsOf: tariff?.sourceAsOf,
+      effectiveFrom: tariff?.effectiveFrom,
+      efficiencySnapshot: spend,
+    );
+  }
+
   @override
   Future<TipsDomainSnapshot?> tips(String homeId, TipsPage page) =>
       tipsRepository.fetch(homeId, page);
@@ -424,6 +445,76 @@ class DesignContextCoordinator {
     }
   }
 
+  /// Resolves a catalog selection in native memory. Prepared answers keep
+  /// their catalog wording; Cloud intents use the verified selected home.
+  Future<DesignContextRead?> answerKnowledgeEntry(
+    String questionId, {
+    String? applianceId,
+    bool localPilot = false,
+  }) async {
+    final context = _context;
+    if (context == null) throw StateError('No verified design context');
+    if (context.mode != DesignContextMode.household) {
+      throw StateError('Knowledge reads have no sample provenance');
+    }
+    final generation = _generation;
+    bool stale() => generation != _generation || !identical(context, _context);
+    final entry = KnowledgeDomainRepository.bundledCatalog.find(
+      questionId,
+      localPilot: localPilot,
+    );
+    if (entry == null) {
+      return _knowledgeRead(context, KnowledgeAnswerUnavailable(questionId));
+    }
+    if (entry.preparedAnswer case final text?) {
+      return _knowledgeRead(
+        context,
+        KnowledgePreparedAnswerAvailable(questionId, text),
+      );
+    }
+    if (entry.needsAppliance != (applianceId != null)) {
+      return _knowledgeRead(context, KnowledgeAnswerUnavailable(questionId));
+    }
+    try {
+      if (applianceId != null) {
+        final inventory = await adapters.devices(context.homeId);
+        if (stale() || inventory == null) return null;
+        if (!inventory.items.any(
+          (item) =>
+              item.appliance.id.toLowerCase() == applianceId.toLowerCase() &&
+              item.appliance.homeId.toLowerCase() ==
+                  context.homeId.toLowerCase() &&
+              item.appliance.demoDeviceId == null,
+        )) {
+          return _knowledgeRead(
+            context,
+            KnowledgeAnswerUnavailable(questionId),
+          );
+        }
+      }
+      final result = await answerKnowledge(
+        entry.cloudIntent!,
+        applianceId: applianceId,
+      );
+      if (stale() || result == null) return null;
+      return _knowledgeRead(context, result.value as KnowledgeAnswerResult);
+    } catch (_) {
+      if (stale()) return null;
+      rethrow;
+    }
+  }
+
+  DesignContextRead _knowledgeRead(
+    VerifiedDesignContext context,
+    KnowledgeAnswerResult answer,
+  ) => DesignContextRead(
+    accountId: context.accountId,
+    homeId: context.homeId,
+    mode: context.mode,
+    page: 'tips_knowledge',
+    value: answer,
+  );
+
   /// Runtime is an independent optional read. It is never folded into the
   /// device inventory snapshot or displayed by the static shell.
   Future<DesignContextRead?> readDevicesRuntimeEvidence() async {
@@ -558,7 +649,9 @@ DesignContextMode _validateValue(VerifiedDesignContext context, Object value) {
         : DesignContextMode.household;
   } else if (value is EfficiencyPeakRatesSnapshot) {
     homeId = value.homeId;
-    mode = DesignContextMode.household;
+    mode = value.efficiencySnapshot?.energy.dataMode == 'sample'
+        ? DesignContextMode.sample
+        : DesignContextMode.household;
   } else if (value is DevicesDomainSnapshot) {
     homeId = value.homeId;
     mode = value.dataMode == CloudApplianceDataMode.sample
@@ -608,6 +701,7 @@ const _sampleModeReadablePages = <String>{
   'efficiency',
   'efficiency_away',
   'efficiency_habits',
+  'efficiency_peak_rates',
   'settings_manage_devices',
   'settings_manual_device_entry',
   'settings_photo_scan_onboarding',

@@ -32,6 +32,7 @@ class LiveDeviceRow {
     this.model = '',
     required this.measuredBucket,
     this.demoWasteMicrosPerDay,
+    this.usageCost,
     this.wasteCost,
   });
 
@@ -43,7 +44,24 @@ class LiveDeviceRow {
 
   /// Display-only rate, available only after a typed final KB waste miss.
   final int? demoWasteMicrosPerDay;
+  final String? usageCost;
   final String? wasteCost;
+}
+
+class SeededDeviceRow {
+  const SeededDeviceRow({
+    required this.deviceId,
+    required this.name,
+    required this.totalCost,
+    required this.usefulCost,
+    required this.wasteCost,
+  });
+
+  final String deviceId;
+  final String name;
+  final String totalCost;
+  final String usefulCost;
+  final String wasteCost;
 }
 
 class LiveDevicesProjection {
@@ -53,6 +71,7 @@ class LiveDevicesProjection {
     required this.fixtureRevision,
     required this.hasMoreMeteredPages,
     required this.rows,
+    required this.seededRows,
   });
 
   final String homeId;
@@ -60,6 +79,7 @@ class LiveDevicesProjection {
   final String? fixtureRevision;
   final bool hasMoreMeteredPages;
   final List<LiveDeviceRow> rows;
+  final List<SeededDeviceRow> seededRows;
 }
 
 /// The coordinator owns the read lifetime; the snapshot must remain current
@@ -153,6 +173,7 @@ LiveDevicesProjection prepareLiveDevicesProjection(DesignContextRead read) {
         manufacturer: appliance.brand,
         model: appliance.fullModel,
         measuredBucket: bucket,
+        usageCost: dailyCost == null ? null : _costText(dailyCost.totalMicros),
         wasteCost: dailyCost?.wasteCost,
         demoWasteMicrosPerDay: illustrativeWaste,
       ),
@@ -168,7 +189,76 @@ LiveDevicesProjection prepareLiveDevicesProjection(DesignContextRead read) {
     fixtureRevision: value.fixtureRevision,
     hasMoreMeteredPages: value.hasMoreMeteredPages,
     rows: List.unmodifiable(rows),
+    seededRows: List.unmodifiable(_additionalSeededRows(value)),
   );
+}
+
+List<SeededDeviceRow> _additionalSeededRows(DevicesDomainSnapshot snapshot) {
+  if (!snapshot.hasSeededRows || snapshot.sampleDayCosts == null) {
+    return const [];
+  }
+  final costs = snapshot.sampleDayCosts!;
+  if (costs.homeId.toLowerCase() != snapshot.homeId.toLowerCase() ||
+      costs.dataMode != snapshot.dataMode.name ||
+      costs.fixtureRevision != snapshot.fixtureRevision ||
+      costs.granularity != 'day') {
+    return const [];
+  }
+  tz.Location location;
+  try {
+    location = tz.getLocation(costs.timezone);
+  } catch (_) {
+    return const [];
+  }
+  final now = tz.TZDateTime.from(costs.generatedAt, location);
+  final today = costs.buckets.where((bucket) {
+    final start = tz.TZDateTime.from(bucket.period.start, location);
+    return start.year == now.year &&
+        start.month == now.month &&
+        start.day == now.day;
+  }).toList();
+  if (today.length != 1) return const [];
+  final inventoryNames = <String, String>{};
+  for (final item in snapshot.items) {
+    final id = item.appliance.demoDeviceId;
+    if (id != null) inventoryNames[id] = item.appliance.name;
+  }
+  final ids = <String>{};
+  final rows = <SeededDeviceRow>[];
+  for (final row in today.single.deviceAllocations) {
+    final id = row.deviceId;
+    if (id == null) continue;
+    if (!ids.add(id) ||
+        row.applianceId != null ||
+        row.name == null ||
+        inventoryNames[id] != row.name ||
+        row.allocation.evidenceBasis != 'synthetic') {
+      return const [];
+    }
+    final total = _usdMicros(row.allocation.cost);
+    final useful = _usdMicros(row.allocation.usefulCost);
+    final waste = _usdMicros(row.allocation.wasteCost);
+    if (total == null ||
+        useful == null ||
+        waste == null ||
+        useful + waste > total) {
+      return const [];
+    }
+    if (int.parse(id.substring(id.length - 2)) > 10) {
+      rows.add(
+        SeededDeviceRow(
+          deviceId: id,
+          name: row.name!,
+          totalCost: _costText(total)!,
+          usefulCost: _costText(useful)!,
+          wasteCost: _costText(waste)!,
+        ),
+      );
+    }
+  }
+  if (ids.length != 18 || rows.length != 8) return const [];
+  rows.sort((a, b) => a.deviceId.compareTo(b.deviceId));
+  return rows;
 }
 
 class _DailyRealCost {

@@ -12,7 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 const _homeId = '11111111-1111-4111-8111-111111111111';
 const _accountId = 'owner-account';
 
-SettingsDomainSnapshot _snapshot({String? email, String postalCode = '60601'}) {
+SettingsDomainSnapshot _snapshot({String? email, String? ownerName, String postalCode = '60601'}) {
   final home = CloudHome(
     id: _homeId,
     name: 'Selected Home',
@@ -25,6 +25,7 @@ SettingsDomainSnapshot _snapshot({String? email, String postalCode = '60601'}) {
       id: _accountId,
       email: email,
       emailVerified: email != null,
+      displayName: ownerName,
     ),
     homes: [home],
     accountPreferences: const CloudAccountPreferences(
@@ -97,6 +98,7 @@ const html = process.argv[1];
 const expected = JSON.parse(Buffer.from(process.argv[2], 'base64').toString());
 const nodes = Object.fromEntries(['settings_text_010', 'settings_text_016', 'settings_text_019'].map(id => [id, {textContent: 'packaged sample'}]));
 const rows = {'email': {hidden: true}, 'postal': {hidden: true}};
+const editButtons = [{hidden: true}, {hidden: true}];
 const window = {__energyLensTextBindingContext: expected.context};
 const document = {querySelectorAll(selector) {
   if (selector.includes('settings_text_010')) return [nodes.settings_text_010];
@@ -104,6 +106,7 @@ const document = {querySelectorAll(selector) {
   if (selector.includes('settings_text_019')) return [nodes.settings_text_019];
   if (selector.includes('data-el-settings-email-row')) return [rows.email];
   if (selector.includes('data-el-settings-postal-row')) return [rows.postal];
+  if (selector.includes('data-el-settings-edit')) return editButtons;
   return [];
 }};
 const result = vm.runInNewContext(html, {window, document, TextDecoder, Uint8Array, atob: value => Buffer.from(value, 'base64').toString('binary')});
@@ -111,8 +114,9 @@ assert.equal(result, true);
 assert.equal(nodes.settings_text_010.textContent, 'Selected Home');
 assert.equal(nodes.settings_text_016.textContent, '');
 assert.equal(nodes.settings_text_019.textContent, '');
-assert.equal(rows.email.hidden, true);
-assert.equal(rows.postal.hidden, true);
+assert.equal(rows.email.hidden, false);
+assert.equal(rows.postal.hidden, false);
+assert.equal(editButtons.every(button => button.hidden === false), true);
 window.__energyLensTextBindingContext.generation++;
 assert.equal(vm.runInNewContext(html, {window, document, TextDecoder, Uint8Array, atob: value => Buffer.from(value, 'base64').toString('binary')}), false);
 ''';
@@ -134,8 +138,9 @@ assert.equal(vm.runInNewContext(html, {window, document, TextDecoder, Uint8Array
     if (node.exitCode != 0) return;
     final script = renderer.script(
       ticket: const DesignPageTicket(_homeId, 'settings', 8),
-      snapshot: _snapshot(email: 'owner@example.com'),
+      snapshot: _snapshot(email: 'owner@example.com', ownerName: 'Alex Miller'),
       expectedAccountId: _accountId,
+      localAuthSession: true,
     )!;
     const harness = r'''
 const assert = require('node:assert/strict');
@@ -143,6 +148,8 @@ const vm = require('node:vm');
 const html = process.argv[1];
 const nodes = Object.fromEntries(['settings_text_010', 'settings_text_016', 'settings_text_019'].map(id => [id, {textContent: ''}]));
 const rows = {email: {hidden: true}, postal: {hidden: true}};
+const editButtons = [{hidden: true}, {hidden: true}];
+const profileNodes = {owner: {textContent: ''}, ownerRow: {hidden: true}, ownerEdit: {hidden: true}, emailEdit: {hidden: true}, passwordChange: {hidden: true}};
 const window = {__energyLensTextBindingContext: {homeId: '11111111-1111-4111-8111-111111111111', page: 'settings', generation: 8}};
 const document = {querySelectorAll(selector) {
   if (selector.includes('settings_text_010')) return [nodes.settings_text_010];
@@ -150,6 +157,12 @@ const document = {querySelectorAll(selector) {
   if (selector.includes('settings_text_019')) return [nodes.settings_text_019];
   if (selector.includes('data-el-settings-email-row')) return [rows.email];
   if (selector.includes('data-el-settings-postal-row')) return [rows.postal];
+  if (selector.includes('data-el-settings-edit')) return editButtons;
+  if (selector.includes('data-el-settings-owner-row')) return [profileNodes.ownerRow];
+  if (selector.includes('data-el-settings-owner-edit')) return [profileNodes.ownerEdit];
+  if (selector.includes('data-el-settings-owner')) return [profileNodes.owner];
+  if (selector.includes('data-el-settings-email-edit')) return [profileNodes.emailEdit];
+  if (selector.includes('data-el-settings-password-change')) return [profileNodes.passwordChange];
   return [];
 }};
 assert.equal(vm.runInNewContext(html, {window, document, TextDecoder, Uint8Array, atob: value => Buffer.from(value, 'base64').toString('binary')}), true);
@@ -158,6 +171,12 @@ assert.equal(nodes.settings_text_016.textContent, 'owner@example.com');
 assert.equal(nodes.settings_text_019.textContent, '60601');
 assert.equal(rows.email.hidden, false);
 assert.equal(rows.postal.hidden, false);
+assert.equal(editButtons.every(button => button.hidden === false), true);
+assert.equal(profileNodes.owner.textContent, 'Alex Miller');
+assert.equal(profileNodes.ownerRow.hidden, false);
+assert.equal(profileNodes.ownerEdit.hidden, false);
+assert.equal(profileNodes.emailEdit.hidden, false);
+assert.equal(profileNodes.passwordChange.hidden, false);
 ''';
     final result = await Process.run('node', ['-e', harness, script]);
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');

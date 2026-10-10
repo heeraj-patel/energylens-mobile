@@ -222,7 +222,7 @@ void main() {
     api.close();
   });
 
-  testWidgets('only current delivery readback reports sent status', (
+  testWidgets('direct send requires sent confirmation for terminal status', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(900, 1800);
@@ -306,8 +306,9 @@ void main() {
             'id': deliveryId,
             'preview_id': previewId,
             'recipients': ['a@example.com'],
-            'state': 'pending',
+            'state': 'sent',
             'created_at': DateTime.now().toUtc().toIso8601String(),
+            'sent_at': DateTime.now().toUtc().toIso8601String(),
           }),
           201,
         );
@@ -354,6 +355,7 @@ void main() {
       'approved_snapshot_sha256': 'a' * 64,
       'recipients': ['a@example.com'],
       'approved': true,
+      'send_now': true,
     });
     await tester.tap(find.byKey(const Key('requestReportDelivery')));
     await tester.pumpAndSettle();
@@ -363,16 +365,13 @@ void main() {
       deliveryPosts[1].headers['idempotency-key'],
       deliveryPosts[0].headers['idempotency-key'],
     );
-    expect(find.byKey(const Key('reportDeliveryStatus')), findsNothing);
-    expect(find.text('Email sent'), findsNothing);
+    expect(find.byKey(const Key('reportDeliveryStatus')), findsOneWidget);
+    expect(find.text('Email sent'), findsOneWidget);
     expect(find.byKey(const Key('requestReportDelivery')), findsNothing);
-    final readsAfterQueue = previewReads;
     deliveryReadbackState = 'sent';
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
-    expect(previewReads, greaterThan(readsAfterQueue));
     expect(find.text('Email sent'), findsOneWidget);
-    expect(find.textContaining('pending'), findsNothing);
     staleReadback = true;
     deliveryReadbackState = 'canceled';
     await tester.tap(find.text('Check preview status'));

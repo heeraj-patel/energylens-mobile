@@ -39,10 +39,21 @@ class LiveDevicesCardRenderer {
             'id': row.applianceId,
             'name': row.name,
             'identity': '${row.manufacturer} ${row.model}'.trim(),
+            'usageCost': row.usageCost,
             'wasteCost': row.wasteCost,
             'demoWaste': row.demoWasteMicrosPerDay == null
                 ? null
                 : '\$${_formatDemoWaste(row.demoWasteMicrosPerDay!)}',
+          },
+      ],
+      'seededRows': [
+        for (final row in projection.seededRows)
+          {
+            'id': row.deviceId,
+            'name': row.name,
+            'totalCost': row.totalCost,
+            'usefulCost': row.usefulCost,
+            'wasteCost': row.wasteCost,
           },
       ],
     });
@@ -55,11 +66,41 @@ class LiveDevicesCardRenderer {
   const marker = feed?.querySelector('[data-el-bind="devices_text_022"]');
   const template = marker && Array.from(feed.children).find(card => card.contains(marker));
   if (!feed || !template) return false;
-  const existing = Array.from(feed.children).filter(node => node.hasAttribute('data-el-live-device-id'));
+  const existing = Array.from(feed.children).filter(node =>
+    node.hasAttribute('data-el-live-device-id') || node.hasAttribute('data-el-seeded-device-id'));
   const cards = [];
+  for (const row of payload.seededRows) {
+    if (typeof row.id !== 'string' || typeof row.name !== 'string' ||
+        typeof row.totalCost !== 'string' || typeof row.usefulCost !== 'string' ||
+        typeof row.wasteCost !== 'string') return false;
+    const clone = template.cloneNode(true);
+    const name = clone.querySelector('[data-el-bind="devices_text_022"]');
+    const identity = clone.querySelector('[data-el-bind="devices_text_023"]');
+    const useful = clone.querySelector('[data-el-bind="devices_text_026"]');
+    const waste = clone.querySelector('[data-el-bind="devices_text_028"]');
+    if (!name || !identity || !useful || !waste) return false;
+    for (const node of [clone, ...clone.querySelectorAll('[data-el-bind], [data-el-action], [id]')]) {
+      node.removeAttribute('data-el-bind');
+      node.removeAttribute('data-el-action');
+      node.removeAttribute('id');
+    }
+    name.textContent = row.name;
+    identity.textContent = '';
+    clone.querySelector('.flex.flex-col.items-end')?.remove();
+    const icon = clone.querySelector('.material-symbols-outlined');
+    if (icon) icon.textContent = 'devices_other';
+    useful.textContent = row.usefulCost;
+    waste.textContent = row.wasteCost;
+    clone.setAttribute('data-el-seeded-device-id', row.id);
+    clone.setAttribute('data-el-device-name', row.name);
+    clone.setAttribute('data-el-usage-cost', row.totalCost);
+    clone.setAttribute('data-el-waste-cost', row.wasteCost);
+    cards.push(clone);
+  }
   for (const row of payload.rows) {
     if (typeof row.id !== 'string' || typeof row.name !== 'string' ||
         typeof row.identity !== 'string' ||
+        (row.usageCost !== null && typeof row.usageCost !== 'string') ||
         (row.demoWaste !== null && typeof row.demoWaste !== 'string') ||
         (row.wasteCost !== null && typeof row.wasteCost !== 'string')) return false;
     const clone = template.cloneNode(true);
@@ -90,6 +131,8 @@ class LiveDevicesCardRenderer {
     icon.textContent = 'devices_other';
     clone.setAttribute('data-el-live-device-id', row.id);
     clone.setAttribute('data-el-device-name', row.name);
+    if (row.usageCost !== null) clone.setAttribute('data-el-usage-cost', row.usageCost);
+    if (wasteText !== null) clone.setAttribute('data-el-waste-cost', wasteText);
     cards.push(clone);
   }
   for (const node of existing) node.remove();

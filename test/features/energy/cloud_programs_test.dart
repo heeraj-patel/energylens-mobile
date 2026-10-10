@@ -167,6 +167,18 @@ class _RefreshScreenApi extends _ProgramsScreenApi {
 }
 
 void main() {
+  test('program assessment preserves ineligible source-backed rows', () {
+    final parsed = CloudProgram.fromJson({
+      ...program(),
+      'availability_status': 'closed',
+      'status': 'ineligible',
+      'reasons': ['program_not_open'],
+    });
+    expect(parsed.status, 'ineligible');
+    expect(parsed.availabilityStatus, 'closed');
+    expect(parsed.sourceSha256, 'a' * 64);
+  });
+
   test('refresh DTO enforces state and coverage shape', () {
     expect(
       CloudProgramRefresh.fromJson(refreshStatus('pending')).isFinished,

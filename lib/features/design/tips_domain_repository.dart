@@ -47,6 +47,7 @@ class TipsDomainSnapshot {
     required this.page,
     required this.programs,
     required this.recommendations,
+    this.applianceNames = const {},
     required this.operatingEstimates,
     required this.usageFactsByAppliance,
     required this.factsIncomplete,
@@ -60,6 +61,7 @@ class TipsDomainSnapshot {
 
   /// Rule and appliance identity are retained; no new eligibility is inferred.
   final List<CloudRecommendation> recommendations;
+  final Map<String, String> applianceNames;
 
   /// These are operating estimates, never proposed savings.
   final List<CloudEstimate> operatingEstimates;
@@ -147,6 +149,10 @@ class TipsDomainRepository {
         page: page,
         programs: programs,
         recommendations: List.unmodifiable(batch.actions),
+        applianceNames: Map.unmodifiable({
+          for (final appliance in appliances)
+            appliance.id.toLowerCase(): appliance.name,
+        }),
         operatingEstimates: List.unmodifiable(estimates),
         usageFactsByAppliance: Map.unmodifiable(facts),
         factsIncomplete: factsIncomplete,

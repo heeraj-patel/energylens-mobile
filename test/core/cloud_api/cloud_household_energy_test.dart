@@ -333,6 +333,39 @@ void main() {
     },
   );
 
+  test(
+    'month-to-date query is scoped and only valid for daily buckets',
+    () async {
+      final seen = <http.Request>[];
+      final client = _api(
+        MockClient((request) async {
+          seen.add(request);
+          final json = _trends(sample: true);
+          json['granularity'] = 'day';
+          return http.Response(jsonEncode(json), 200);
+        }),
+      );
+      await client.householdEnergyTrends(
+        homeId,
+        granularity: 'day',
+        window: 'month_to_date',
+      );
+      expect(seen.single.url.queryParameters, {
+        'granularity': 'day',
+        'window': 'month_to_date',
+      });
+      await expectLater(
+        client.householdEnergyTrends(
+          homeId,
+          granularity: 'week',
+          window: 'month_to_date',
+        ),
+        throwsArgumentError,
+      );
+      client.close();
+    },
+  );
+
   test('last five occurrence queries accept day week and month only', () async {
     final seen = <http.Request>[];
     final client = _api(

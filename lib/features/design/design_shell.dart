@@ -7,6 +7,9 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_api/cloud_appliance_list.dart';
+import '../../core/cloud_api/cloud_api_client.dart';
+import '../../core/cloud_api/cloud_household_energy.dart'
+    show CloudEfficiencyMonthToDate;
 import '../../core/cloud_api/cloud_home.dart' show newCloudIdempotencyKey;
 import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import '../identify/appliance_onboarding_screen.dart'
@@ -14,7 +17,7 @@ import '../identify/appliance_onboarding_screen.dart'
 import '../identify/photo_capture_service.dart';
 import 'device_review_sheet.dart';
 import 'efficiency_domain_repository.dart';
-import 'efficiency_rolling_bindings.dart';
+import 'efficiency_month_to_date_bindings.dart';
 import 'dashboard_chart_projection.dart';
 import 'dashboard_chart_renderer.dart';
 import 'dashboard_domain_repository.dart';
@@ -26,15 +29,23 @@ import 'design_page_bridge.dart';
 import 'design_page_state_script.dart';
 import 'design_page_state_snapshot.dart';
 import 'devices_domain_repository.dart';
+import 'efficiency_away_domain_adapter.dart';
+import 'efficiency_habits_domain_adapter.dart';
+import 'efficiency_peak_rates_adapter.dart';
 import 'live_devices_card_renderer.dart';
 import 'live_devices_projection.dart';
 import 'knowledge_page_script.dart';
+import 'knowledge_domain_repository.dart';
+import 'tips_domain_repository.dart';
+import 'tips_page_renderer.dart';
 import 'settings_saved_devices_renderer.dart';
 import 'settings_identity_renderer.dart';
 import 'settings_domain_repository.dart';
 import 'local_pilot_device_lifecycle.dart';
 import 'local_pilot_device_review_sheet.dart';
 import 'local_settings_devices_renderer.dart';
+import 'home_details_screen.dart';
+import 'account_profile_screen.dart';
 
 /// The approved design files are complete mobile pages. Keep their markup and
 /// wording in assets/design_pages; this shell only supplies native navigation.
@@ -44,6 +55,7 @@ class DesignShell extends StatefulWidget {
     this.onSignOut,
     this.onChangeHome,
     this.onReportPreview,
+    this.settingsApi,
     this.onDiscoverDevices,
     this.onboardingLifecycle,
     this.photoCapture = const PhotoCaptureService(),
@@ -57,6 +69,7 @@ class DesignShell extends StatefulWidget {
   final VoidCallback? onSignOut;
   final VoidCallback? onChangeHome;
   final VoidCallback? onReportPreview;
+  final CloudApiClient? settingsApi;
   final Future<void> Function()? onDiscoverDevices;
   final CloudAuxiliaryDomainLifecycle? onboardingLifecycle;
   final PhotoCaptureService photoCapture;
@@ -112,6 +125,7 @@ class _DesignShellState extends State<DesignShell> {
   static const _settingsSavedRenderer = SettingsSavedDevicesRenderer();
   static const _localSettingsRenderer = LocalSettingsDevicesRenderer();
   static const _settingsIdentityRenderer = SettingsIdentityRenderer();
+  static const _tipsRenderer = TipsPageRenderer();
   static const _settingsDevicePages = <String>{
     'settings_manage_devices',
     'settings_manual_device_entry',
@@ -133,6 +147,7 @@ class _DesignShellState extends State<DesignShell> {
   );
   String _dashboardGranularity = 'day';
   int _pageLoadGeneration = 0;
+  int _knowledgeRequestGeneration = 0;
   bool _pageReady = false;
   LiveDevicesProjection? _devicesProjection;
   List<CloudAppliance>? _savedAppliances;
@@ -142,8 +157,7 @@ class _DesignShellState extends State<DesignShell> {
   DesignNumericBindings? _dashboardBindings;
   DesignNumericBindings? _sampleDevicesBindings;
   List<DesignTextBinding>? _efficiencyBindings;
-  List<DesignTextBinding>? _sharedEfficiencyBindings;
-  Object? _sharedEfficiencyContext;
+  CloudEfficiencyMonthToDate? _efficiencyChartSummary;
   bool _efficiencyDetailsExpanded = false;
   DesignPageTicket? _pageTicket;
   Timer? _tourTimer;
@@ -190,6 +204,11 @@ class _DesignShellState extends State<DesignShell> {
         'EnergyLensDeleteDevice',
         onMessageReceived: (message) =>
             unawaited(_archiveSavedAppliance(message.message)),
+      )
+      ..addJavaScriptChannel(
+        'EnergyLensKnowledge',
+        onMessageReceived: (message) =>
+            unawaited(_answerKnowledgeEntry(message.message)),
       )
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -252,13 +271,9 @@ class _DesignShellState extends State<DesignShell> {
       _navigationEpoch++;
       _history.clear();
       _dashboardGranularity = 'day';
-      _sharedEfficiencyBindings = null;
-      _sharedEfficiencyContext = null;
       _efficiencyDetailsExpanded = false;
     }
     if (!_efficiencyPages.contains(_page)) {
-      _sharedEfficiencyBindings = null;
-      _sharedEfficiencyContext = null;
       _efficiencyDetailsExpanded = false;
     }
     _pageStates.selectHome(scope);
@@ -289,6 +304,12 @@ class _DesignShellState extends State<DesignShell> {
     _scheduleTourAdvance();
     await _onPageFinished(url);
     if (!_isCurrentPageLoad(page, generation)) return;
+    if (page == 'settings' && widget.localPilot) {
+      await _controller.runJavaScript('''
+        document.querySelector('[data-el-bind="settings_text_025"]')?.replaceChildren('Preview sample energy costs for your devices.');
+        document.querySelector('[data-el-bind="settings_text_026"]')?.replaceChildren('View demo report');
+      ''');
+    }
     final snapshot = _pageStates.forPage(_pageStateHomeId, page);
     if (snapshot == null) return;
     try {
@@ -332,6 +353,7 @@ class _DesignShellState extends State<DesignShell> {
 
   void _invalidatePageLoad() {
     _pageLoadGeneration++;
+    _knowledgeRequestGeneration++;
     _pageReady = false;
     _devicesProjection = null;
     _savedAppliances = null;
@@ -340,6 +362,7 @@ class _DesignShellState extends State<DesignShell> {
     _dashboardBindings = null;
     _sampleDevicesBindings = null;
     _efficiencyBindings = null;
+    _efficiencyChartSummary = null;
     _pageTicket = null;
     _bindingGate.clear();
   }
@@ -359,19 +382,19 @@ class _DesignShellState extends State<DesignShell> {
       return;
     }
     final read = _pageReads.latestRead;
-    if (page == 'efficiency') {
-      if (read?.value is! EfficiencyDomainSnapshot) return;
-      final source = read!.value as EfficiencyDomainSnapshot;
-      final bindings = prepareEfficiencyRollingBindings(source);
+    if (_efficiencyPages.contains(page)) {
+      final source = _efficiencySnapshot(read?.value);
+      if (source == null) return;
+      if (source.page != _efficiencyPageForRoute(page)) return;
+      final bindings = prepareEfficiencyMonthToDateBindings(source);
       if (bindings == null ||
           !_isCurrentPageLoad(page, generation) ||
           !identical(_pageReads.latestRead, read)) {
         return;
       }
       _efficiencyBindings = bindings;
-      _sharedEfficiencyBindings = bindings;
-      _sharedEfficiencyContext = widget.designContextCoordinator?.context;
-      await _applyEfficiencyBindings(generation);
+      _efficiencyChartSummary = source.monthToDate?.efficiencyMonthToDate;
+      await _applyEfficiencyBindings(page, generation);
       return;
     }
     if (page == 'dashboard') {
@@ -390,6 +413,13 @@ class _DesignShellState extends State<DesignShell> {
       }
       return;
     }
+    if (read?.value is TipsDomainSnapshot &&
+        (page == 'perks_tips' ||
+            page == 'tips_efficiency' ||
+            page == 'tips_care_upgrades')) {
+      await _applyTipsSnapshot(page, generation);
+      return;
+    }
     if (page != 'devices' || read == null) return;
     if (read.mode == DesignContextMode.sample) {
       try {
@@ -402,6 +432,16 @@ class _DesignShellState extends State<DesignShell> {
         await _applySampleDevicesBindings(generation);
       } catch (_) {
         // A rejected sample response cannot alter the approved packaged cards.
+      }
+      try {
+        final projection = prepareLiveDevicesProjection(read);
+        if (_isCurrentPageLoad(page, generation) &&
+            identical(_pageReads.latestRead, read)) {
+          _devicesProjection = projection;
+          await _applyDevicesProjection(generation);
+        }
+      } catch (_) {
+        // The packaged cards remain available if extra rows are invalid.
       }
       return;
     }
@@ -580,13 +620,17 @@ class _DesignShellState extends State<DesignShell> {
     if (page == 'tips_knowledge') {
       try {
         await _controller.runJavaScriptReturningResult(
-          buildKnowledgePageScript(
-            localPilot: const bool.fromEnvironment('ENERGYLENS_LOCAL_PILOT'),
-          ),
+          buildKnowledgePageScript(),
         );
       } catch (_) {
         // The packaged local-pilot FAQ remains available on a script failure.
       }
+      return;
+    }
+    if (page == 'perks_tips' ||
+        page == 'tips_efficiency' ||
+        page == 'tips_care_upgrades') {
+      await _applyTipsSnapshot(page, generation);
       return;
     }
     if (page == 'dashboard') {
@@ -595,12 +639,8 @@ class _DesignShellState extends State<DesignShell> {
       await _applyDashboardChart(generation);
       return;
     }
-    if (page == 'efficiency') {
-      await _applyEfficiencyBindings(generation);
-      return;
-    }
     if (_efficiencyPages.contains(page)) {
-      await _applySharedEfficiencyBindings(page, generation);
+      await _applyEfficiencyBindings(page, generation);
       return;
     }
     if (_settingsDevicePages.contains(page)) {
@@ -651,11 +691,7 @@ class _DesignShellState extends State<DesignShell> {
       return;
     }
     if (page != 'devices') return;
-    if (context?.mode == DesignContextMode.sample) {
-      await _applySampleDevicesBindings(generation);
-      return;
-    }
-    if (context == null || context.mode != DesignContextMode.household) return;
+    if (context == null) return;
     try {
       final installed = await _controller.runJavaScriptReturningResult(
         _liveDevicesRenderer.installationScript(
@@ -699,6 +735,99 @@ class _DesignShellState extends State<DesignShell> {
     }
   }
 
+  Future<void> _applyTipsSnapshot(String page, int generation) async {
+    final read = _pageReads.latestRead;
+    final context = widget.designContextCoordinator?.context;
+    final ticket = _pageTicket;
+    if (!_pageReady ||
+        !_isCurrentPageLoad(page, generation) ||
+        read?.page != page ||
+        read?.value is! TipsDomainSnapshot ||
+        context == null ||
+        context.mode != DesignContextMode.household ||
+        read?.accountId != context.accountId ||
+        read?.homeId != context.homeId ||
+        ticket == null ||
+        ticket.homeId != context.homeId ||
+        !identical(widget.designContextCoordinator?.context, context)) {
+      return;
+    }
+    final snapshot = read!.value as TipsDomainSnapshot;
+    if (snapshot.homeId.toLowerCase() != context.homeId.toLowerCase() ||
+        !identical(_pageReads.latestRead, read)) {
+      return;
+    }
+    try {
+      await _controller.runJavaScriptReturningResult(
+        _tipsRenderer.script(ticket, snapshot),
+      );
+    } catch (_) {
+      // The packaged cards remain visible if the source projection fails.
+    }
+  }
+
+  Future<void> _answerKnowledgeEntry(String questionId) async {
+    const page = 'tips_knowledge';
+    final generation = _pageLoadGeneration;
+    final requestGeneration = ++_knowledgeRequestGeneration;
+    final coordinator = widget.designContextCoordinator;
+    final context = coordinator?.context;
+    final ticket = _pageTicket;
+    if (!_pageReady ||
+        !_isCurrentPageLoad(page, generation) ||
+        context == null ||
+        context.mode != DesignContextMode.household ||
+        ticket == null ||
+        ticket.homeId != context.homeId ||
+        KnowledgeDomainRepository.bundledCatalog.find(
+              questionId,
+              localPilot: true,
+            ) ==
+            null) {
+      return;
+    }
+    try {
+      final read = await coordinator!.answerKnowledgeEntry(
+        questionId,
+        localPilot: true,
+      );
+      if (requestGeneration != _knowledgeRequestGeneration ||
+          !_isCurrentPageLoad(page, generation) ||
+          !identical(widget.designContextCoordinator, coordinator) ||
+          !identical(coordinator.context, context) ||
+          !identical(_pageTicket, ticket) ||
+          read?.accountId != context.accountId ||
+          read?.homeId != context.homeId) {
+        return;
+      }
+      final value = read?.value;
+      final String answer;
+      if (value is KnowledgePreparedAnswerAvailable) {
+        answer = value.text;
+      } else if (value is KnowledgeAnswerAvailable) {
+        final result = value.answer;
+        answer = result.status == 'insufficient_information'
+            ? "We can't answer this right now."
+            : [
+                result.text,
+                ...result.findings.map((row) => row.text),
+              ].join('\n');
+      } else {
+        answer = "We can't answer this right now.";
+      }
+      await _controller.runJavaScriptReturningResult(
+        buildKnowledgeAnswerScript(
+          questionId: questionId,
+          answer: answer,
+          homeId: context.homeId,
+          generation: ticket.generation,
+        ),
+      );
+    } catch (_) {
+      // The bundled answer remains visible if the household read fails.
+    }
+  }
+
   Future<void> _applySettingsIdentity(int generation) async {
     final read = _pageReads.latestRead;
     final context = widget.designContextCoordinator?.context;
@@ -718,10 +847,14 @@ class _DesignShellState extends State<DesignShell> {
         !identical(widget.designContextCoordinator?.context, context)) {
       return;
     }
+    final localAuthSession =
+        await widget.settingsApi?.session.isLocalAuthSession ?? false;
+    if (!_isCurrentPageLoad('settings', generation)) return;
     final script = _settingsIdentityRenderer.script(
       ticket: ticket,
       snapshot: read.value as SettingsDomainSnapshot,
       expectedAccountId: context.accountId,
+      localAuthSession: localAuthSession,
     );
     if (script == null || !identical(_pageReads.latestRead, read)) return;
     try {
@@ -819,17 +952,36 @@ class _DesignShellState extends State<DesignShell> {
     }
   }
 
-  Future<void> _applyEfficiencyBindings(int generation) async {
+  EfficiencyPage? _efficiencyPageForRoute(String page) => switch (page) {
+    'efficiency' => EfficiencyPage.overview,
+    'efficiency_away' => EfficiencyPage.away,
+    'efficiency_peak_rates' => EfficiencyPage.peak,
+    'efficiency_habits' => EfficiencyPage.habits,
+    _ => null,
+  };
+
+  EfficiencyDomainSnapshot? _efficiencySnapshot(Object? value) =>
+      switch (value) {
+        EfficiencyDomainSnapshot snapshot => snapshot,
+        EfficiencyAwayDomainSnapshot snapshot => snapshot.efficiency,
+        EfficiencyHabitsSnapshot snapshot => snapshot.efficiencySnapshot,
+        EfficiencyPeakRatesSnapshot snapshot => snapshot.efficiencySnapshot,
+        _ => null,
+      };
+
+  Future<void> _applyEfficiencyBindings(String page, int generation) async {
     final bindings = _efficiencyBindings;
     final read = _pageReads.latestRead;
     final context = widget.designContextCoordinator?.context;
     final ticket = _pageTicket;
     if (!_pageReady ||
-        !_isCurrentPageLoad('efficiency', generation) ||
+        !_isCurrentPageLoad(page, generation) ||
+        !_efficiencyPages.contains(page) ||
         bindings == null ||
         read == null ||
-        read.page != 'efficiency' ||
-        read.value is! EfficiencyDomainSnapshot ||
+        read.page != page ||
+        _efficiencySnapshot(read.value)?.page !=
+            _efficiencyPageForRoute(page) ||
         context == null ||
         ticket == null ||
         read.accountId != context.accountId ||
@@ -837,44 +989,27 @@ class _DesignShellState extends State<DesignShell> {
         !context.allowsReadMode(read.mode)) {
       return;
     }
-    final script = _bindingRenderer.updateScript(ticket, bindings);
+    final pageBindings = page == 'efficiency'
+        ? bindings
+        : [
+            for (final binding in bindings)
+              DesignTextBinding(
+                binding.id.replaceFirst('efficiency_text_', '${page}_text_'),
+                binding.text,
+              ),
+          ];
+    final script = _bindingRenderer.updateScript(ticket, pageBindings);
     if (script == null) return;
     try {
       await _controller.runJavaScriptReturningResult(script);
+      final chart = _efficiencyChartSummary;
+      if (chart != null && _isCurrentPageLoad(page, generation)) {
+        await _controller.runJavaScriptReturningResult(
+          buildEfficiencyMonthToDateChartScript(ticket, chart),
+        );
+      }
     } catch (_) {
-      // Keep the packaged month-to-date fixture when coverage is unavailable.
-    }
-  }
-
-  Future<void> _applySharedEfficiencyBindings(
-    String page,
-    int generation,
-  ) async {
-    final context = widget.designContextCoordinator?.context;
-    final ticket = _pageTicket;
-    final bindings = _sharedEfficiencyBindings;
-    if (!_pageReady ||
-        !_isCurrentPageLoad(page, generation) ||
-        !_efficiencyPages.contains(page) ||
-        page == 'efficiency' ||
-        context == null ||
-        !identical(context, _sharedEfficiencyContext) ||
-        ticket == null ||
-        bindings == null) {
-      return;
-    }
-    final script = _bindingRenderer.updateScript(ticket, [
-      for (final binding in bindings)
-        DesignTextBinding(
-          binding.id.replaceFirst('efficiency_text_', '${page}_text_'),
-          binding.text,
-        ),
-    ]);
-    if (script == null) return;
-    try {
-      await _controller.runJavaScriptReturningResult(script);
-    } catch (_) {
-      // Keep the same packaged summary when a prior overview read is unavailable.
+      // Keep the packaged spend value when coverage is unavailable.
     }
   }
 
@@ -887,11 +1022,11 @@ class _DesignShellState extends State<DesignShell> {
         projection == null ||
         read?.page != 'devices' ||
         context == null ||
-        context.mode != DesignContextMode.household ||
+        !context.allowsReadMode(projection.mode) ||
         read?.accountId != context.accountId ||
         read?.homeId != context.homeId ||
         projection.homeId != context.homeId ||
-        projection.mode != DesignContextMode.household) {
+        projection.mode != read?.mode) {
       return;
     }
     try {
@@ -1266,8 +1401,6 @@ class _DesignShellState extends State<DesignShell> {
       _invalidatePageLoad();
       _pageReads.clear();
       _dashboardGranularity = 'day';
-      _sharedEfficiencyBindings = null;
-      _sharedEfficiencyContext = null;
       _efficiencyDetailsExpanded = false;
       widget.onSignOut?.call();
       return;
@@ -1279,14 +1412,93 @@ class _DesignShellState extends State<DesignShell> {
       _invalidatePageLoad();
       _pageReads.clear();
       _dashboardGranularity = 'day';
-      _sharedEfficiencyBindings = null;
-      _sharedEfficiencyContext = null;
       _efficiencyDetailsExpanded = false;
       widget.onChangeHome?.call();
       return;
     }
     if (route == 'report_preview') {
       widget.onReportPreview?.call();
+      return;
+    }
+    if (route == 'edit_home_details') {
+      final coordinator = widget.designContextCoordinator;
+      final current = coordinator?.context;
+      final api = widget.settingsApi;
+      if (current == null || api == null || _page != 'settings') return;
+      bool stillCurrent() =>
+          mounted &&
+          _page == 'settings' &&
+          identical(coordinator?.context, current);
+      final saved = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) => HomeDetailsScreen(
+            api: api,
+            homeId: current.homeId,
+            isCurrentHome: stillCurrent,
+          ),
+        ),
+      );
+      if (saved == true && stillCurrent()) {
+        await _loadPage();
+        if (mounted && stillCurrent()) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Saved Successfully')));
+        }
+      }
+      return;
+    }
+    if (route == 'edit_account_owner' ||
+        route == 'edit_account_email' ||
+        route == 'change_account_password') {
+      final coordinator = widget.designContextCoordinator;
+      final current = coordinator?.context;
+      final api = widget.settingsApi;
+      if (current == null || api == null || _page != 'settings') return;
+      final field = switch (route) {
+        'edit_account_owner' => AccountProfileField.owner,
+        'edit_account_email' => AccountProfileField.email,
+        _ => AccountProfileField.password,
+      };
+      if (field != AccountProfileField.owner &&
+          !await api.session.isLocalAuthSession) {
+        return;
+      }
+      bool stillCurrent() =>
+          mounted &&
+          _page == 'settings' &&
+          identical(coordinator?.context, current);
+      if (!stillCurrent() || !mounted) return;
+      final saved = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) => AccountProfileScreen(
+            api: api,
+            field: field,
+            isCurrentAccount: stillCurrent,
+          ),
+        ),
+      );
+      if (saved == true && stillCurrent()) {
+        if (field == AccountProfileField.password) {
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Saved Successfully')));
+            await Future<void>.delayed(const Duration(milliseconds: 1500));
+          }
+          await api.session.signOut();
+          if (mounted) {
+            widget.onSignOut?.call();
+          }
+        } else {
+          await _loadPage();
+          if (mounted && stillCurrent()) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Saved Successfully')));
+          }
+        }
+      }
       return;
     }
     if (!_pages.contains(route) || route == _page) return;

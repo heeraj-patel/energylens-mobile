@@ -1,0 +1,419 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_preferences.dart';
+import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
+import 'package:energylens_mobile/features/design/demo_report_preview_screen.dart';
+import 'package:energylens_mobile/features/design/design_context_coordinator.dart';
+import 'package:energylens_mobile/features/design/design_shell.dart';
+import 'package:energylens_mobile/features/design/settings_domain_repository.dart';
+import 'package:energylens_mobile/features/energy/cloud_report_preview_screen.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
+
+const _homeId = '11111111-1111-4111-8111-111111111111';
+
+class _Store implements CloudTokenStore {
+  @override
+  Future<void> clear() async {}
+  @override
+  Future<CloudTokens?> read() async =>
+      const CloudTokens(accessToken: 'owner-token');
+  @override
+  Future<void> save(CloudTokens value) async {}
+}
+
+class _Auth implements CloudAuthenticator {
+  @override
+  Future<CloudTokens> signIn(CloudAuthConfig config) async =>
+      const CloudTokens(accessToken: 'owner-token');
+  @override
+  Future<CloudTokens> refresh(
+    CloudAuthConfig config,
+    String refreshToken,
+  ) async => const CloudTokens(accessToken: 'owner-token');
+}
+
+class _WebPlatform extends WebViewPlatform {
+  late _WebController controller;
+
+  @override
+  PlatformWebViewController createPlatformWebViewController(
+    PlatformWebViewControllerCreationParams params,
+  ) => controller = _WebController(params);
+
+  @override
+  PlatformNavigationDelegate createPlatformNavigationDelegate(
+    PlatformNavigationDelegateCreationParams params,
+  ) => _WebNavigation(params);
+
+  @override
+  PlatformWebViewWidget createPlatformWebViewWidget(
+    PlatformWebViewWidgetCreationParams params,
+  ) => _WebWidget(params);
+}
+
+class _WebNavigation extends PlatformNavigationDelegate {
+  _WebNavigation(super.params) : super.implementation();
+
+  void Function(String)? onFinished;
+
+  @override
+  Future<void> setOnPageFinished(void Function(String) callback) async {
+    onFinished = callback;
+  }
+
+  @override
+  Future<void> setOnNavigationRequest(
+    FutureOr<NavigationDecision> Function(NavigationRequest) callback,
+  ) async {}
+}
+
+class _WebController extends PlatformWebViewController {
+  _WebController(super.params) : super.implementation();
+
+  final Map<String, JavaScriptChannelParams> channels = {};
+  final List<String> scripts = [];
+  String? asset;
+  _WebNavigation? navigation;
+
+  void route(String value) => channels['EnergyLensNavigation']!
+      .onMessageReceived(JavaScriptMessage(message: value));
+
+  @override
+  Future<void> setJavaScriptMode(JavaScriptMode mode) async {}
+  @override
+  Future<void> setBackgroundColor(Color color) async {}
+  @override
+  Future<void> addJavaScriptChannel(JavaScriptChannelParams params) async {
+    channels[params.name] = params;
+  }
+
+  @override
+  Future<void> setPlatformNavigationDelegate(
+    PlatformNavigationDelegate handler,
+  ) async {
+    navigation = handler as _WebNavigation;
+  }
+
+  @override
+  Future<void> loadFlutterAsset(String key) async {
+    asset = key;
+    navigation?.onFinished?.call('file:///$key');
+  }
+
+  @override
+  Future<void> runJavaScript(String script) async {
+    scripts.add(script);
+  }
+
+  @override
+  Future<Object> runJavaScriptReturningResult(String script) async {
+    scripts.add(script);
+    if (script.contains(
+      "const first = document.querySelector('[data-el-bind]')",
+    )) {
+      return true;
+    }
+    return '{}';
+  }
+}
+
+class _WebWidget extends PlatformWebViewWidget {
+  _WebWidget(super.params) : super.implementation();
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.expand();
+}
+
+class _Adapters implements DesignContextAdapters {
+  _Adapters(this.home);
+  CloudHome home;
+
+  @override
+  void clear() {}
+
+  @override
+  Future<SettingsDomainSnapshot?> settings(String homeId) async {
+    if (homeId != home.id) return null;
+    return SettingsDomainSnapshot(
+      account: const CloudAccount(
+        id: 'owner',
+        email: 'owner@example.com',
+        emailVerified: true,
+      ),
+      homes: [home],
+      accountPreferences: const CloudAccountPreferences(
+        version: 1,
+        emailReportsEnabled: false,
+        historyDisclosureAcceptedAt: null,
+      ),
+      accountPreferencesEtag: '"1"',
+      home: home,
+      homeEtag: '"1"',
+      homePreferences: const CloudHomePreferences(
+        version: 1,
+        goal: 'unspecified',
+        comfortPriority: 'unknown',
+      ),
+      homePreferencesEtag: '"1"',
+      appliances: const [],
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+void main() {
+  testWidgets('Settings routes to local preview without delivery controls', (
+    tester,
+  ) async {
+    final platform = _WebPlatform();
+    WebViewPlatform.instance = platform;
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigator,
+        home: DesignShell(
+          localPilot: true,
+          onReportPreview: () => navigator.currentState!.push(
+            MaterialPageRoute<void>(
+              builder: (_) => const DemoReportPreviewScreen(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    platform.controller.route('settings');
+    await tester.pumpAndSettle();
+    expect(platform.controller.asset, 'assets/design_pages/settings/app.html');
+    expect(
+      platform.controller.scripts.any(
+        (script) => script.contains('View demo report'),
+      ),
+      isTrue,
+    );
+    platform.controller.route('report_preview');
+    await tester.pumpAndSettle();
+    expect(find.text('Demo report preview'), findsOneWidget);
+    expect(
+      find.text('This is a sample preview. Nothing will be emailed.'),
+      findsOneWidget,
+    );
+    expect(find.byType(FilledButton), findsNothing);
+  });
+
+  testWidgets('verified Settings route opens selected-home Edit form', (
+    tester,
+  ) async {
+    final platform = _WebPlatform();
+    WebViewPlatform.instance = platform;
+    const home = CloudHome(
+      id: _homeId,
+      name: 'Original Home',
+      timezone: 'America/Chicago',
+      countryCode: 'US',
+      postalCode: '60601',
+      version: 1,
+      etag: '"1"',
+    );
+    final coordinator = DesignContextCoordinator(_Adapters(home));
+    coordinator.useVerifiedContext(
+      VerifiedDesignContext(
+        accountId: 'owner',
+        homeId: _homeId,
+        mode: DesignContextMode.household,
+      ),
+    );
+    final api = CloudApiClient(
+      session: CloudSession(
+        config: const CloudAuthConfig(
+          issuer: 'https://issuer.example',
+          audience: 'energylens-cloud',
+          clientId: 'client',
+          redirectUrl: 'io.energylens.app://login-callback',
+          apiUrl: 'https://api.example',
+        ),
+        store: _Store(),
+        authenticator: _Auth(),
+      ),
+      client: MockClient((request) async {
+        expect(request.headers['authorization'], 'Bearer owner-token');
+        final path = request.url.path;
+        if (path == '/v1/me') {
+          return http.Response(
+            jsonEncode({
+              'id': 'owner',
+              'email': 'owner@example.com',
+              'email_verified': true,
+            }),
+            200,
+          );
+        }
+        final homeJson = {
+          'id': _homeId,
+          'name': 'Original Home',
+          'timezone': 'America/Chicago',
+          'location': {'country_code': 'US', 'postal_code': '60601'},
+          'version': 1,
+        };
+        if (path == '/v1/homes') {
+          return http.Response(
+            jsonEncode({
+              'homes': [homeJson],
+            }),
+            200,
+          );
+        }
+        if (path == '/v1/homes/$_homeId') {
+          return http.Response(
+            jsonEncode(homeJson),
+            200,
+            headers: {'etag': '"1"'},
+          );
+        }
+        if (path == '/v1/me/preferences') {
+          return http.Response(
+            jsonEncode({
+              'schema_version': 1,
+              'version': 1,
+              'email_reports_enabled': false,
+              'history_disclosure_accepted_at': null,
+            }),
+            200,
+            headers: {'etag': '"1"'},
+          );
+        }
+        if (path == '/v1/homes/$_homeId/preferences') {
+          return http.Response(
+            jsonEncode({
+              'schema_version': 1,
+              'version': 1,
+              'goal': 'unspecified',
+              'comfort_priority': 'unknown',
+            }),
+            200,
+            headers: {'etag': '"1"'},
+          );
+        }
+        if (path == '/v1/homes/$_homeId/appliances') {
+          return http.Response(jsonEncode({'appliances': []}), 200);
+        }
+        fail('Unexpected ${request.method} $path');
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DesignShell(
+          settingsApi: api,
+          designContextCoordinator: coordinator,
+        ),
+      ),
+    );
+    await tester.pump();
+    platform.controller.route('settings');
+    await tester.pumpAndSettle();
+    expect(platform.controller.asset, 'assets/design_pages/settings/app.html');
+    expect(
+      platform.controller.scripts.any(
+        (script) =>
+            script.contains('data-el-settings-edit') &&
+            script.contains('button.hidden = false'),
+      ),
+      isTrue,
+    );
+    platform.controller.route('edit_home_details');
+    await tester.pumpAndSettle();
+    expect(find.text('Home details'), findsOneWidget);
+    expect(find.text('Original Home'), findsOneWidget);
+    expect(find.text('Save changes'), findsOneWidget);
+  });
+
+  testWidgets(
+    'verified Settings route opens selected-home Cloud report preview',
+    (tester) async {
+      final platform = _WebPlatform();
+      WebViewPlatform.instance = platform;
+      const home = CloudHome(
+        id: _homeId,
+        name: 'Selected Home',
+        timezone: 'America/Chicago',
+        countryCode: 'US',
+        postalCode: '60601',
+        version: 1,
+        etag: '"1"',
+      );
+      final coordinator = DesignContextCoordinator(_Adapters(home));
+      coordinator.useVerifiedContext(
+        VerifiedDesignContext(
+          accountId: 'owner',
+          homeId: home.id,
+          mode: DesignContextMode.household,
+        ),
+      );
+      final requests = <String>[];
+      final api = CloudApiClient(
+        session: CloudSession(
+          config: const CloudAuthConfig(
+            issuer: 'https://issuer.example',
+            audience: 'energylens-cloud',
+            clientId: 'client',
+            redirectUrl: 'io.energylens.app://login-callback',
+            apiUrl: 'https://api.example',
+          ),
+          store: _Store(),
+          authenticator: _Auth(),
+        ),
+        client: MockClient((request) async {
+          expect(request.headers['authorization'], 'Bearer owner-token');
+          requests.add('${request.method} ${request.url.path}');
+          expect(request.method, 'GET');
+          expect(request.url.path, '/v1/homes/${home.id}/appliances');
+          return http.Response(jsonEncode({'appliances': []}), 200);
+        }),
+      );
+      final navigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigator,
+          home: DesignShell(
+            designContextCoordinator: coordinator,
+            onReportPreview: () {
+              if (coordinator.context?.homeId != home.id) return;
+              navigator.currentState!.push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      CloudReportPreviewScreen(api: api, home: home),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+      platform.controller.route('settings');
+      await tester.pumpAndSettle();
+      expect(
+        platform.controller.asset,
+        'assets/design_pages/settings/app.html',
+      );
+      platform.controller.route('report_preview');
+      await tester.pumpAndSettle();
+      expect(find.text('Private report preview'), findsOneWidget);
+      expect(find.text(home.name), findsOneWidget);
+      expect(
+        find.text('Add a cloud appliance to this home first.'),
+        findsOneWidget,
+      );
+      expect(requests, ['GET /v1/homes/${home.id}/appliances']);
+      expect(find.byKey(const Key('requestReportDelivery')), findsNothing);
+    },
+  );
+}

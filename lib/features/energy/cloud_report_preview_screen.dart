@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../core/cloud_api/cloud_api_client.dart';
@@ -8,8 +6,6 @@ import '../../core/cloud_api/cloud_home.dart';
 import '../../core/cloud_api/cloud_report_preview.dart';
 import '../../core/cloud_api/cloud_report_delivery.dart';
 import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
-import '../design/report_delivery_domain_adapter.dart';
-import '../design/report_preview_domain_repository.dart';
 
 class CloudReportPreviewScreen extends StatefulWidget {
   const CloudReportPreviewScreen({
@@ -33,7 +29,6 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
   List<CloudAppliance>? _appliances;
   final Set<String> _selected = {};
   CloudReportPreview? _preview;
-  ReportPreviewDomainSnapshot? _scopedPreview;
   String? _error;
   bool _busy = false;
   String _key = newCloudIdempotencyKey();
@@ -42,8 +37,6 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
   String? _currentDeliveryId;
   String? _deliveryStatus;
   _DeliveryAttempt? _attempt;
-  Timer? _deliveryPollTimer;
-  int _deliveryPollEpoch = 0;
 
   bool get _hasVerifiedScope {
     final lifecycle = widget.lifecycle;
@@ -68,13 +61,11 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
       ownedApplianceIds: owned,
     );
     if (!_hasVerifiedScope) return null;
-    _scopedPreview = snapshot;
     return snapshot?.preview;
   }
 
   @override
   void dispose() {
-    _stopDeliveryPolling();
     widget.lifecycle?.scopeChanges.removeListener(_onScopeChanged);
     _recipients.dispose();
     super.dispose();
@@ -84,67 +75,9 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
     _approved = false;
     _attempt = null;
     if (clearCurrentDelivery) {
-      _stopDeliveryPolling();
       _currentDeliveryId = null;
       _deliveryStatus = null;
     }
-  }
-
-  void _stopDeliveryPolling() {
-    _deliveryPollEpoch++;
-    _deliveryPollTimer?.cancel();
-    _deliveryPollTimer = null;
-  }
-
-  void _scheduleDeliveryPoll(int epoch) {
-    if (!mounted || epoch != _deliveryPollEpoch) return;
-    _deliveryPollTimer?.cancel();
-    _deliveryPollTimer = Timer(const Duration(seconds: 10), () {
-      _deliveryPollTimer = null;
-      _readCurrentDeliveryStatus(epoch);
-    });
-  }
-
-  Future<void> _readCurrentDeliveryStatus(int epoch) async {
-    final current = _preview;
-    final deliveryId = _currentDeliveryId;
-    final appliances = _appliances;
-    if (!mounted ||
-        !_hasVerifiedScope ||
-        epoch != _deliveryPollEpoch ||
-        current == null ||
-        deliveryId == null ||
-        appliances == null) {
-      return;
-    }
-    try {
-      final owned = appliances.map((a) => a.id.toLowerCase()).toSet();
-      final readback = await _readPreview(current.id, owned);
-      if (!mounted ||
-          !_hasVerifiedScope ||
-          epoch != _deliveryPollEpoch ||
-          _preview?.id != current.id ||
-          _preview?.snapshotSha256 != current.snapshotSha256 ||
-          _currentDeliveryId != deliveryId) {
-        return;
-      }
-      final delivery = readback?.latestDelivery;
-      if (delivery?.id == deliveryId) {
-        final status = switch (delivery?.state) {
-          'sent' => 'Email sent',
-          'canceled' => 'Email failed to send, try again later.',
-          _ => null,
-        };
-        if (status != null) {
-          setState(() => _deliveryStatus = status);
-          _stopDeliveryPolling();
-          return;
-        }
-      }
-    } catch (_) {
-      // A read error is not evidence that delivery failed.
-    }
-    _scheduleDeliveryPoll(epoch);
   }
 
   @override
@@ -161,7 +94,6 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
         _appliances = null;
         _selected.clear();
         _preview = null;
-        _scopedPreview = null;
         _resetApproval();
         _busy = false;
         _error = null;
@@ -204,7 +136,6 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
       _busy = true;
       _error = null;
       _preview = null;
-      _scopedPreview = null;
       _resetApproval();
     });
     try {
@@ -227,7 +158,6 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
           ownedApplianceIds: owned,
           idempotencyKey: _key,
         );
-        _scopedPreview = snapshot;
         preview = snapshot?.preview;
       }
       if (preview == null || !mounted || !_hasVerifiedScope) return;
@@ -283,16 +213,15 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
               : switch (delivery?.state) {
                   'sent' => 'Email sent',
                   'canceled' => 'Email failed to send, try again later.',
+                  'unconfirmed' => 'Could not confirm the request. Retry unchanged to safely check the same request.',
                   _ => null,
                 };
         });
-        if (_deliveryStatus != null) _stopDeliveryPolling();
       }
     } catch (_) {
       if (mounted && _hasVerifiedScope) {
         setState(() {
           _preview = null;
-          _scopedPreview = null;
           _resetApproval();
           _error = 'Could not confirm the latest preview status. Create a new preview.';
         });
@@ -302,7 +231,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
     }
   }
 
-  Future<void> _queueDelivery() async {
+  Future<void> _sendDelivery() async {
     final current = _preview;
     if (!_hasVerifiedScope ||
         current == null ||
@@ -351,52 +280,26 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
         _attempt = attempt;
       }
       if (!_hasVerifiedScope) return;
-      final lifecycle = widget.lifecycle;
-      final CloudReportDelivery delivery;
-      if (lifecycle == null) {
-        delivery = await widget.api.queueReportDelivery(
-          widget.home.id,
-          attempt.previewId,
-          attempt.digest,
-          attempt.recipients,
-          idempotencyKey: attempt.key,
-        );
-      } else {
-        final snapshot = _scopedPreview;
-        if (snapshot == null) return;
-        final result = await lifecycle.queueReportDelivery(
-          preview: snapshot,
-          explicitlyApproved: _approved,
-          approvedSnapshotSha256: attempt.digest,
-          recipients: attempt.recipients.join(','),
-          ownedApplianceIds: _appliances!
-              .map((a) => a.id.toLowerCase())
-              .toSet(),
-          idempotencyKey: attempt.key,
-        );
-        if (result.status == ReportDeliveryStatus.contextChanged ||
-            !_hasVerifiedScope) {
-          return;
-        }
-        if (result.status != ReportDeliveryStatus.queued ||
-            result.delivery == null) {
-          setState(() {
-            _resetApproval();
-            _error = 'This preview changed or expired. Create a new preview and approve it again.';
-          });
-          return;
-        }
-        delivery = result.delivery!;
+      // The Cloud endpoint returns only after the provider accepted the exact
+      // approved snapshot. Retain the same key on an unconfirmed response.
+      final delivery = await widget.api.queueReportDelivery(
+        widget.home.id,
+        attempt.previewId,
+        attempt.digest,
+        attempt.recipients,
+        idempotencyKey: attempt.key,
+        sendNow: true,
+      );
+      if (delivery.state != 'sent') {
+        throw const FormatException('Report provider acceptance unconfirmed');
       }
       if (mounted && _hasVerifiedScope) {
         setState(() {
           _currentDeliveryId = delivery.id;
-          _deliveryStatus = null;
+          _deliveryStatus = 'Email sent';
           _attempt = null;
           _approved = false;
         });
-        _stopDeliveryPolling();
-        _readCurrentDeliveryStatus(_deliveryPollEpoch);
       }
     } on CloudApiException catch (error) {
       if (!mounted || !_hasVerifiedScope) return;
@@ -408,6 +311,8 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
           _resetApproval();
         }
         _error = switch (error.code) {
+          'delivery_failed' => 'Email failed to send, try again later.',
+          'delivery_unconfirmed' => 'Could not confirm the request. Retry unchanged to safely check the same request.',
           'preview_stale' || 'snapshot_mismatch' => 'This preview changed or expired. Create a new preview and approve it again.',
           'idempotency_key_reuse' => 'This request key was used for different recipients. Change recipients and approve again.',
           'delivery_rate_limited' =>
@@ -448,7 +353,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Choose 1 to 25 appliances for a private 24-hour snapshot. This does not send a report.',
+                      "Choose 1 to 25 devices to preview this month's available energy and cost information. This does not send an email.",
                     ),
                     if (_busy)
                       const LinearProgressIndicator(key: Key('reportLoading')),
@@ -480,7 +385,6 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
                                   }
                                   _key = newCloudIdempotencyKey();
                                   _preview = null;
-                                  _scopedPreview = null;
                                   _resetApproval();
                                   _error = null;
                                 }),
@@ -552,9 +456,6 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
                         ),
                       if (_currentDeliveryId == null && !preview.isStale) ...[
                         const SizedBox(height: 16),
-                        const Text(
-                          'Request this snapshot by email. You choose the recipients and explicitly approve this exact preview. A request is queued; email delivery availability and completion are not confirmed here.',
-                        ),
                         TextField(
                           key: const Key('reportRecipients'),
                           controller: _recipients,
@@ -586,12 +487,10 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
                         ),
                         FilledButton(
                           key: const Key('requestReportDelivery'),
-                          onPressed: _busy || !_approved
-                              ? null
-                              : _queueDelivery,
+                          onPressed: _busy || !_approved ? null : _sendDelivery,
                           child: Text(
                             _attempt == null
-                                ? 'Queue email report request'
+                                ? '✉ Email Report Now'
                                 : 'Retry same request',
                           ),
                         ),

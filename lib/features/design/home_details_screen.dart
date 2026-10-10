@@ -1,0 +1,172 @@
+import 'package:flutter/material.dart';
+
+import '../../core/cloud_api/cloud_api_client.dart';
+import '../../core/cloud_api/cloud_home.dart';
+import 'settings_mutation_adapter.dart';
+
+/// Native home edit. The WebView never receives credentials or write tokens.
+class HomeDetailsScreen extends StatefulWidget {
+  const HomeDetailsScreen({
+    super.key,
+    required this.api,
+    required this.homeId,
+    required this.isCurrentHome,
+  });
+
+  final CloudApiClient api;
+  final String homeId;
+  final bool Function() isCurrentHome;
+
+  @override
+  State<HomeDetailsScreen> createState() => _HomeDetailsScreenState();
+}
+
+class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
+  late final SettingsMutationAdapter _settings = SettingsMutationAdapter(
+    CloudSettingsMutationSource(widget.api),
+  );
+  final _name = TextEditingController();
+  final _postal = TextEditingController();
+  final _country = TextEditingController();
+  bool _loading = true;
+  bool _saving = false;
+  bool _conflict = false;
+  bool _timezoneUnresolved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final snapshot = await _settings.load(widget.homeId);
+      if (!mounted || !widget.isCurrentHome() || snapshot == null) return;
+      setState(() {
+        _name.text = snapshot.home.name;
+        _postal.text = snapshot.home.postalCode;
+        _country.text = snapshot.home.countryCode;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted && widget.isCurrentHome()) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _save() async {
+    final before = _settings.snapshot;
+    if (before == null || _saving || !widget.isCurrentHome()) return;
+    final valid = CloudHomeCreate.validate(
+      name: _name.text,
+      timezone: before.home.timezone,
+      countryCode: _country.text,
+      postalCode: _postal.text,
+    );
+    if (valid == null) return;
+    setState(() {
+      _saving = true;
+      _conflict = false;
+      _timezoneUnresolved = false;
+    });
+    try {
+      final locationChanged =
+          valid.countryCode != before.home.countryCode ||
+          valid.postalCode != before.home.postalCode;
+      if (valid.name == before.home.name && !locationChanged) {
+        if (mounted && widget.isCurrentHome()) Navigator.of(context).pop(true);
+        return;
+      }
+      final after = await _settings.updateHome(
+        CloudHomePatch(
+          name: valid.name == before.home.name ? null : valid.name,
+          countryCode: locationChanged ? valid.countryCode : null,
+          postalCode: locationChanged ? valid.postalCode : null,
+        ),
+        idempotencyKey: newCloudIdempotencyKey(),
+      );
+      if (!mounted || !widget.isCurrentHome() || after == null) return;
+      if (locationChanged &&
+          _settings.lastHomeTimezoneResolution == 'unresolved') {
+        setState(() => _timezoneUnresolved = true);
+        return;
+      }
+      Navigator.of(context).pop(true);
+    } on CloudApiException catch (error) {
+      if (!mounted || !widget.isCurrentHome()) return;
+      if (error.statusCode == 409 || error.statusCode == 412) {
+        setState(() => _conflict = true);
+        await _load();
+      }
+    } catch (_) {
+      // Leave the values editable. A failed write has no success readback.
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _settings.clear();
+    _name.dispose();
+    _postal.dispose();
+    _country.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Home details')),
+    body: SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          if (_loading) const LinearProgressIndicator(),
+          TextField(
+            controller: _name,
+            maxLength: 120,
+            enabled: !_loading && !_saving,
+            decoration: const InputDecoration(labelText: 'Home name'),
+          ),
+          TextField(
+            controller: _postal,
+            maxLength: 20,
+            enabled: !_loading && !_saving,
+            onChanged: (_) => setState(() => _timezoneUnresolved = false),
+            decoration: const InputDecoration(labelText: 'ZIP code'),
+          ),
+          if (!_loading &&
+              _settings.snapshot != null &&
+              _postal.text.trim().toUpperCase() !=
+                  _settings.snapshot!.home.postalCode)
+            const Text(
+              'Future energy calculations will use this ZIP code and its time zone. Existing demo dates and amounts will stay the same.',
+            ),
+          TextField(
+            controller: _country,
+            maxLength: 2,
+            enabled: !_loading && !_saving,
+            decoration: const InputDecoration(labelText: 'Country'),
+          ),
+          if (_conflict)
+            const Text('Home details changed elsewhere. Reload and try again.'),
+          if (_timezoneUnresolved)
+            const Text(
+              'ZIP code saved. We couldn’t determine its time zone, so your home time zone stayed the same.',
+            ),
+          const SizedBox(height: 24),
+          FilledButton(
+            onPressed: _loading || _saving || _settings.snapshot == null
+                ? null
+                : _save,
+            child: const Text('Save changes'),
+          ),
+          TextButton(
+            onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    ),
+  );
+}

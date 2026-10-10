@@ -16,6 +16,7 @@ LiveDevicesProjection _projection(String home, List<LiveDeviceRow> rows) =>
       fixtureRevision: null,
       hasMoreMeteredPages: false,
       rows: rows,
+      seededRows: const [],
     );
 
 void main() {
@@ -71,6 +72,7 @@ void main() {
         'id': 'metered-device',
         'name': 'Saved Device',
         'identity': '',
+        'usageCost': null,
         'wasteCost': null,
         'demoWaste': null,
       },
@@ -100,10 +102,7 @@ void main() {
     ) as Map<String, dynamic>;
     expect(payload['rows'][0]['wasteCost'], '\$0.25');
     expect(script, contains("useful.textContent = 'N/A'"));
-    expect(
-      script,
-      contains("waste.textContent = wasteText ?? 'N/A'"),
-    );
+    expect(script, contains("waste.textContent = wasteText ?? 'N/A'"));
   });
 
   test(
@@ -146,6 +145,7 @@ void main() {
           'id': 'light',
           'name': 'Lamp',
           'identity': 'Acme L1',
+          'usageCost': null,
           'wasteCost': null,
           'demoWaste': '\$0.0008',
         },
@@ -153,6 +153,7 @@ void main() {
           'id': 'tv',
           'name': 'Television',
           'identity': '',
+          'usageCost': null,
           'wasteCost': null,
           'demoWaste': '\$0.08',
         },
@@ -160,16 +161,17 @@ void main() {
           'id': 'capped',
           'name': 'Capped device',
           'identity': '',
+          'usageCost': null,
           'wasteCost': null,
           'demoWaste': '\$0.000001',
         },
       ]);
-      expect(script, contains("status.closest('.flex.flex-col.items-end')?.remove()"));
-      expect(script, contains("useful.textContent = 'N/A'"));
       expect(
         script,
-        contains("waste.textContent = wasteText ?? 'N/A'"),
+        contains("status.closest('.flex.flex-col.items-end')?.remove()"),
       );
+      expect(script, contains("useful.textContent = 'N/A'"));
+      expect(script, contains("waste.textContent = wasteText ?? 'N/A'"));
     },
   );
 

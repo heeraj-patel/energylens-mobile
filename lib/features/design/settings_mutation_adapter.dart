@@ -77,13 +77,16 @@ class SettingsMutationAdapter {
   SettingsDomainSnapshot? _snapshot;
   int _generation = 0;
   int? _writingGeneration;
+  String? _lastHomeTimezoneResolution;
 
   SettingsDomainSnapshot? get snapshot => _snapshot;
+  String? get lastHomeTimezoneResolution => _lastHomeTimezoneResolution;
 
   void clear() {
     _generation++;
     _snapshot = null;
     _writingGeneration = null;
+    _lastHomeTimezoneResolution = null;
     _reads.clear();
   }
 
@@ -101,6 +104,7 @@ class SettingsMutationAdapter {
     required String idempotencyKey,
   }) async {
     final fields = patch.toJson();
+    _lastHomeTimezoneResolution = null;
     return _write(
       idempotencyKey,
       (before) => source.updateHome(
@@ -122,6 +126,7 @@ class SettingsMutationAdapter {
                     after.home.postalCode != patch.postalCode))) {
           throw const FormatException('Home readback differs from update');
         }
+        _lastHomeTimezoneResolution = updated.value.timezoneResolution;
       },
     );
   }

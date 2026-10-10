@@ -1,4 +1,4 @@
-<!DOCTYPE html><html class="light" lang="en" style=""><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"><meta content="mobile_tab" name="shell-type">
+<!DOCTYPE html><html class="light" lang="en" style=""><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"><meta content="mobile_tab" name="shell-type">
 <style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#f9f9ff;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="../shared/tailwind.js"></script><script id="tailwind-config">tailwind.config = {
   darkMode: "class",
   theme: {
@@ -227,22 +227,22 @@
 <div class="bg-surface-container-lowest p-space-md rounded-xl space-y-3 shadow-sm border border-outline-variant/30">
 <div class="space-y-2">
 <div>
-<label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" data-el-bind="settings_manage_devices_text_041">Device Name</label>
+<label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" data-el-bind="settings_manage_devices_text_041" for="input-device-name">Device Name</label>
 <input class="w-full px-3 py-2 text-xs rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary" id="input-device-name" placeholder="e.g. Living Room AC" type="text" data-el-field="settings_manage_devices_field_001">
 </div>
 <div class="grid grid-cols-2 gap-2">
 <div>
-<label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" data-el-bind="settings_manage_devices_text_042">Manufacturer</label>
+<label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" data-el-bind="settings_manage_devices_text_042" for="input-manufacturer">Manufacturer</label>
 <input class="w-full px-3 py-2 text-xs rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary" id="input-manufacturer" placeholder="e.g. Daikin" type="text" data-el-field="settings_manage_devices_field_002">
 </div>
 <div>
-<label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" data-el-bind="settings_manage_devices_text_043">Model</label>
+<label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" data-el-bind="settings_manage_devices_text_043" for="input-model">Model</label>
 <input class="w-full px-3 py-2 text-xs rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary" id="input-model" placeholder="e.g. FTXM-R" type="text" data-el-field="settings_manage_devices_field_003">
 </div>
 </div>
 <div>
-<label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" data-el-bind="settings_manage_devices_text_044">Device Type</label>
-<div class="grid grid-cols-3 gap-1.5 text-xs font-label-md">
+<label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" id="device-type-label" data-el-bind="settings_manage_devices_text_044">Device Type</label>
+<div class="grid grid-cols-3 gap-1.5 text-xs font-label-md" role="group" aria-labelledby="device-type-label">
 <button class="type-pill py-1.5 px-2 rounded-lg bg-primary-container text-on-primary-container font-semibold text-center" onclick="selectTypePill(this)" type="button" data-el-action="settings_manage_devices_action_014" data-el-bind="settings_manage_devices_text_045">Climate</button>
 <button class="type-pill py-1.5 px-2 rounded-lg bg-surface-container-low text-on-surface-variant hover:text-on-surface text-center" onclick="selectTypePill(this)" type="button" data-el-action="settings_manage_devices_action_015" data-el-bind="settings_manage_devices_text_046">Kitchen</button>
 <button class="type-pill py-1.5 px-2 rounded-lg bg-surface-container-low text-on-surface-variant hover:text-on-surface text-center" onclick="selectTypePill(this)" type="button" data-el-action="settings_manage_devices_action_016" data-el-bind="settings_manage_devices_text_047">Media</button>
@@ -277,7 +277,7 @@
 <p class="text-[11px] font-body-md text-on-surface-variant" data-el-bind="settings_manage_devices_text_057">Subpanel A • RTX Workstation</p>
 </div>
 </div>
-<button aria-label="Remove Study Gaming PC" class="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors" onclick="removeDevice(this)" type="button" data-el-action="settings_manage_devices_action_021">
+<button aria-label="Remove Study Gaming PC" class="w-12 h-12 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors" onclick="removeDevice(this)" type="button" data-el-action="settings_manage_devices_action_021">
 <span class="material-symbols-outlined text-[18px]">delete</span>
 </button>
 </div>
@@ -291,7 +291,7 @@
 <p class="text-[11px] font-body-md text-on-surface-variant" data-el-bind="settings_manage_devices_text_059">Main Panel • Inverter Linear Base</p>
 </div>
 </div>
-<button aria-label="Remove Kitchen Refrigerator" class="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors" onclick="removeDevice(this)" type="button" data-el-action="settings_manage_devices_action_022">
+<button aria-label="Remove Kitchen Refrigerator" class="w-12 h-12 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors" onclick="removeDevice(this)" type="button" data-el-action="settings_manage_devices_action_022">
 <span class="material-symbols-outlined text-[18px]">delete</span>
 </button>
 </div>
@@ -305,7 +305,7 @@
 <p class="text-[11px] font-body-md text-on-surface-variant" data-el-bind="settings_manage_devices_text_061">Subpanel B • Climate Inverter</p>
 </div>
 </div>
-<button aria-label="Remove Master Bed AC" class="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors" onclick="removeDevice(this)" type="button" data-el-action="settings_manage_devices_action_023">
+<button aria-label="Remove Master Bed AC" class="w-12 h-12 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors" onclick="removeDevice(this)" type="button" data-el-action="settings_manage_devices_action_023">
 <span class="material-symbols-outlined text-[18px]">delete</span>
 </button>
 </div>
@@ -319,7 +319,7 @@
 <p class="text-[11px] font-body-md text-on-surface-variant" data-el-bind="settings_manage_devices_text_063">Subpanel B • Smart Arc Bar</p>
 </div>
 </div>
-<button aria-label="Remove Living Room Soundbar" class="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors" onclick="removeDevice(this)" type="button" data-el-action="settings_manage_devices_action_024">
+<button aria-label="Remove Living Room Soundbar" class="w-12 h-12 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors" onclick="removeDevice(this)" type="button" data-el-action="settings_manage_devices_action_024">
 <span class="material-symbols-outlined text-[18px]">delete</span>
 </button>
 </div>
@@ -333,7 +333,7 @@
 <p class="text-[11px] font-body-md text-on-surface-variant" data-el-bind="settings_manage_devices_text_065">240V Circuit 12 • Hybrid Tank</p>
 </div>
 </div>
-<button aria-label="Remove Water Heater" class="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors" onclick="removeDevice(this)" type="button" data-el-action="settings_manage_devices_action_025">
+<button aria-label="Remove Water Heater" class="w-12 h-12 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors" onclick="removeDevice(this)" type="button" data-el-action="settings_manage_devices_action_025">
 <span class="material-symbols-outlined text-[18px]">delete</span>
 </button>
 </div>

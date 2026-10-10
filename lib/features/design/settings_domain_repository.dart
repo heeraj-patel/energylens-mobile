@@ -36,9 +36,7 @@ class CloudSettingsDomainSource implements SettingsDomainSource {
 
 /// A read-only account/home snapshot for Settings.
 ///
-/// Profile editing, password management and report-delivery state are not
-/// supported by these reads. They are intentionally omitted instead of
-/// supplying guessed values; credentials are never part of this model.
+/// Profile display fields come from Cloud; credentials never enter this model.
 class SettingsDomainSnapshot {
   const SettingsDomainSnapshot({
     required this.account,
@@ -70,8 +68,7 @@ class SettingsDomainSnapshot {
   bool get emailReportsEnabled => accountPreferences.emailReportsEnabled;
   int get applianceCount => appliances.length;
 
-  // There is deliberately no profile-name or password field: the current API
-  // does not supply either value and credentials must never enter page data.
+  String? get accountOwner => account.displayName;
 }
 
 /// Drops pending responses when another home is requested or the session ends.

@@ -148,14 +148,14 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const Key('stopWasteProgram-$makerId')), findsOneWidget);
-    expect(find.text('Local'), findsOneWidget);
+    expect(find.text('Local'), findsNWidgets(3));
     expect(find.text('Federal'), findsOneWidget);
     expect(find.text('Manufacturers'), findsOneWidget);
     expect(find.text('city benefit'), findsOneWidget);
     expect(find.text('city source'), findsOneWidget);
     expect(find.text('https://example.org/city'), findsOneWidget);
-    expect(find.text('county offer'), findsNothing);
-    expect(find.text('state offer'), findsNothing);
+    expect(find.text('county offer'), findsOneWidget);
+    expect(find.text('state offer'), findsOneWidget);
     await tester.tap(find.byKey(const Key('stopWasteProgram-$localId')));
     await tester.pump();
     expect(launcher.openedUrl, 'https://example.org/city');

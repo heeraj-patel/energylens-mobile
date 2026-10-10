@@ -164,19 +164,20 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
   final bindings = <DesignTextBinding>[];
   final unknown = <String>{};
   const supportedHouseholdEvidence = <String>{'measured', 'estimated', 'mixed'};
+  final seededMixed = dashboard.dataMode == 'mixed';
+  final seededWeek = dashboard.dataMode == 'sample' || seededMixed;
   final supportedEvidence = read.mode == DesignContextMode.sample
       ? dashboard.evidenceBasis == 'synthetic' &&
             dashboard.totals.evidenceBasis == 'synthetic'
       : supportedHouseholdEvidence.contains(dashboard.evidenceBasis) &&
             supportedHouseholdEvidence.contains(dashboard.totals.evidenceBasis);
   final week = value.weekToDateTrends;
-  CloudEnergyAllocation? daily = read.mode == DesignContextMode.sample
+  CloudEnergyAllocation? daily =
+      read.mode == DesignContextMode.sample || seededMixed
       ? null
       : dashboard.totals;
-  if (read.mode == DesignContextMode.sample &&
-      week != null &&
-      _isMatchingWeek(week, dashboard) &&
-      week.evidenceBasis == 'synthetic') {
+  (BigInt, BigInt, BigInt)? seededDay;
+  if (seededWeek && week != null && _isMatchingWeek(week, dashboard)) {
     try {
       final location = tz.getLocation(week.timezone);
       final now = tz.TZDateTime.from(week.generatedAt, location);
@@ -186,9 +187,12 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
             start.month == now.month &&
             start.day == now.day;
       }).toList();
-      if (currentDays.length == 1 &&
-          currentDays.single.allocation.evidenceBasis == 'synthetic') {
-        daily = currentDays.single.allocation;
+      if (currentDays.length == 1) {
+        if (seededMixed) {
+          seededDay = _seededDeviceCosts(currentDays);
+        } else if (currentDays.single.allocation.evidenceBasis == 'synthetic') {
+          daily = currentDays.single.allocation;
+        }
       }
     } catch (_) {
       // An invalid sample day cannot be shown as a full-day amount.
@@ -213,23 +217,33 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
     bindings.add(DesignTextBinding(id, text));
   }
 
-  add('dashboard_text_006', daily?.usefulCost);
-  add('dashboard_text_009', daily?.wasteCost);
+  if (seededDay != null) {
+    bindings.add(
+      DesignTextBinding('dashboard_text_006', _microsText(seededDay.$2)),
+    );
+    bindings.add(
+      DesignTextBinding('dashboard_text_009', _microsText(seededDay.$3)),
+    );
+  } else {
+    add('dashboard_text_006', daily?.usefulCost);
+    add('dashboard_text_009', daily?.wasteCost);
+  }
   if (week != null) {
-    final supportedWeekEvidence = read.mode == DesignContextMode.sample
+    final supportedWeekEvidence = seededMixed
+        ? true
+        : read.mode == DesignContextMode.sample
         ? week.evidenceBasis == 'synthetic' &&
               week.totals.evidenceBasis == 'synthetic'
         : supportedHouseholdEvidence.contains(week.evidenceBasis) &&
               supportedHouseholdEvidence.contains(week.totals.evidenceBasis);
-    final sampleDeviceCost = read.mode == DesignContextMode.sample
-        ? _sampleWeekDeviceCosts(week)
-        : null;
+    final sampleDeviceCost = seededWeek ? _sampleWeekDeviceCosts(week) : null;
     final cost =
         _isMatchingWeek(week, dashboard) &&
             supportedWeekEvidence &&
-            week.availability != 'unavailable' &&
-            week.totals.availability != 'unavailable'
-        ? read.mode == DesignContextMode.sample
+            (seededMixed ||
+                (week.availability != 'unavailable' &&
+                    week.totals.availability != 'unavailable'))
+        ? seededWeek
               ? sampleDeviceCost == null
                     ? null
                     : _microsText(sampleDeviceCost.$1)
@@ -240,12 +254,12 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
       unknown.add('dashboard_text_025');
     } else {
       bindings.add(DesignTextBinding('dashboard_text_025', cost));
-      final useful = read.mode == DesignContextMode.sample
+      final useful = seededWeek
           ? sampleDeviceCost == null
                 ? null
                 : _microsText(sampleDeviceCost.$2)
           : formatDashboardUsd(week.totals.usefulCost);
-      final waste = read.mode == DesignContextMode.sample
+      final waste = seededWeek
           ? sampleDeviceCost == null
                 ? null
                 : _microsText(sampleDeviceCost.$3)
@@ -266,15 +280,25 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
   CloudHouseholdEnergyTrends week,
 ) {
   if (week.dataMode != 'sample' && week.dataMode != 'mixed' ||
-      week.scope != 'whole_home_including_unattributed_load') {
+      week.scope != 'whole_home_including_unattributed_load' &&
+          week.scope != 'attributed_devices') {
     return null;
   }
+  return _seededDeviceCosts(
+    week.buckets.where(
+      (bucket) => !bucket.period.start.isAfter(week.generatedAt),
+    ),
+  );
+}
+
+(BigInt, BigInt, BigInt)? _seededDeviceCosts(
+  Iterable<CloudEnergyTrendBucket> buckets,
+) {
   var total = BigInt.zero;
   var useful = BigInt.zero;
   var waste = BigInt.zero;
   var observed = 0;
-  for (final bucket in week.buckets) {
-    if (bucket.period.start.isAfter(week.generatedAt)) continue;
+  for (final bucket in buckets) {
     final seededRows = bucket.deviceAllocations
         .where((device) => device.deviceId != null)
         .toList();

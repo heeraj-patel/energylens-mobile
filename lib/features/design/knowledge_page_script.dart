@@ -1,21 +1,16 @@
 import 'dart:convert';
 
 import 'knowledge_domain_repository.dart';
-import 'knowledge_question_catalog.dart';
 
 /// Installs all approved FAQ labels in the existing Knowledge card.
 /// Answers without matching evidence use the owner-approved fallback.
-String buildKnowledgePageScript({bool localPilot = false}) {
+String buildKnowledgePageScript() {
   final entries = KnowledgeDomainRepository.bundledCatalog.entries
       .map(
         (entry) => <String, Object>{
           'id': entry.id,
           'question': entry.question,
-          'answer':
-              entry.availability == KnowledgeCatalogAvailability.localPilot &&
-                  !localPilot
-              ? "We can't answer this right now."
-              : entry.preparedAnswer ?? "We can't answer this right now.",
+          'answer': entry.preparedAnswer ?? "We can't answer this right now.",
           'aliases': entry.aliases,
         },
       )
@@ -35,7 +30,10 @@ String buildKnowledgePageScript({bool localPilot = false}) {
         const card = document.getElementById('faq-' + (i + 1) + '-content')?.parentElement;
         if (card) {
           const entry = entries.find((item) => item.id === pilotIds[i]);
-          if (entry) card.querySelector('[data-faq-answer]').textContent = entry.answer;
+          if (entry) {
+            card.querySelector('[data-faq-answer]').textContent = entry.answer;
+            card.querySelector('[data-faq-trigger]')?.setAttribute('data-el-knowledge-id', entry.id);
+          }
           cards.set(pilotIds[i], card);
         }
       }
@@ -51,6 +49,7 @@ String buildKnowledgePageScript({bool localPilot = false}) {
         trigger.setAttribute('aria-controls', panel.id);
         trigger.setAttribute('aria-expanded', 'false');
         trigger.removeAttribute('data-el-action');
+        trigger.setAttribute('data-el-knowledge-id', entry.id);
         trigger.querySelector('.material-symbols-outlined.text-primary')?.remove();
         label.removeAttribute('data-el-bind');
         label.classList.remove('truncate');
@@ -105,8 +104,51 @@ String buildKnowledgePageScript({bool localPilot = false}) {
         event.stopImmediatePropagation();
         visible();
       }, true);
+      existing.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-el-knowledge-id]');
+        if (!trigger) return;
+        const id = trigger.getAttribute('data-el-knowledge-id');
+        if (id === 'device_cost') {
+          event.preventDefault();
+          event.stopPropagation();
+          window.EnergyLensNavigation?.postMessage('devices');
+        } else if (window.EnergyLensKnowledge) {
+          EnergyLensKnowledge.postMessage(id);
+        }
+      });
       visible();
       existing.classList.remove('hidden');
+      return true;
+    })();
+  ''';
+}
+
+/// Updates one accordion answer only while the same native page ticket exists.
+String buildKnowledgeAnswerScript({
+  required String questionId,
+  required String answer,
+  required String homeId,
+  required int generation,
+}) {
+  final payload = jsonEncode({
+    'id': questionId,
+    'answer': answer,
+    'homeId': homeId,
+    'generation': generation,
+  });
+  return '''
+    (() => {
+      const payload = $payload;
+      const context = window.__energyLensTextBindingContext;
+      if (!context || context.homeId !== payload.homeId ||
+          context.page !== 'tips_knowledge' || context.generation !== payload.generation) return false;
+      const trigger = Array.from(document.querySelectorAll('[data-el-knowledge-id]'))
+        .find((node) => node.getAttribute('data-el-knowledge-id') === payload.id);
+      const panel = trigger && document.getElementById(trigger.getAttribute('aria-controls'));
+      const target = panel?.querySelector('[data-faq-answer]');
+      if (!target) return false;
+      target.textContent = payload.answer;
+      target.style.whiteSpace = 'pre-line';
       return true;
     })();
   ''';

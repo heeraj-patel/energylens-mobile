@@ -29,6 +29,32 @@ String buildDesignNavigationScript(String page) {
         const button = event.target.closest('button');
         if (!button) return;
         const action = button.dataset.elAction;
+        if (page === 'settings' && (action === 'settings_action_edit_home' || action === 'settings_action_edit_zip')) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          send('edit_home_details');
+          return;
+        }
+        if (page === 'settings' && {
+          settings_action_edit_owner: 'edit_account_owner',
+          settings_action_edit_email: 'edit_account_email',
+          settings_action_change_password: 'change_account_password'
+        }[action]) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          send({
+            settings_action_edit_owner: 'edit_account_owner',
+            settings_action_edit_email: 'edit_account_email',
+            settings_action_change_password: 'change_account_password'
+          }[action]);
+          return;
+        }
+        if (page === 'settings' && action === 'settings_action_011') {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          send('report_preview');
+          return;
+        }
         if (page === 'settings_manage_devices' &&
             action === 'settings_manage_devices_action_005') {
           event.preventDefault();
