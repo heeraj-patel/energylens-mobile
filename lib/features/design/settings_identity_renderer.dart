@@ -54,19 +54,25 @@ class SettingsIdentityRenderer {
   const ownerEdit = document.querySelectorAll('[data-el-settings-owner-edit]')[0];
   const emailEdit = document.querySelectorAll('[data-el-settings-email-edit]')[0];
   const passwordChange = document.querySelectorAll('[data-el-settings-password-change]')[0];
+  const setVisible = (element, visible) => {
+    if (!element) return;
+    element.hidden = !visible;
+    if (visible) element.removeAttribute('hidden');
+    else element.setAttribute('hidden', '');
+  };
   if (home.length !== 1 || email.length !== 1 || postal.length !== 1 || emailRow.length !== 1 || postalRow.length !== 1 || editButtons.length !== 2) return false;
   home[0].textContent = payload.homeName;
   email[0].textContent = payload.email || '';
   postal[0].textContent = payload.postalCode || '';
   emailRow[0].hidden = false;
   postalRow[0].hidden = false;
-  editButtons.forEach(button => button.hidden = false);
+  editButtons.forEach(button => setVisible(button, true));
   if (owner && ownerRow && ownerEdit && emailEdit && passwordChange) {
     owner.textContent = payload.ownerName || '';
-    ownerRow.hidden = false;
-    ownerEdit.hidden = false;
-    emailEdit.hidden = !payload.email || !payload.localAuthSession;
-    passwordChange.hidden = !payload.localAuthSession;
+    setVisible(ownerRow, true);
+    setVisible(ownerEdit, true);
+    setVisible(emailEdit, Boolean(payload.email && payload.localAuthSession));
+    setVisible(passwordChange, Boolean(payload.localAuthSession));
   }
   return true;
 })()

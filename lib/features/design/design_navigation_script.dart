@@ -59,6 +59,9 @@ String buildDesignNavigationScript(String page) {
             action === 'settings_manage_devices_action_005') {
           event.preventDefault();
           event.stopImmediatePropagation();
+          if (typeof window.selectOnboardingMethod === 'function') {
+            window.selectOnboardingMethod('scan');
+          }
           send('discover_devices');
           return;
         }

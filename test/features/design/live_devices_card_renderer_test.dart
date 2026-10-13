@@ -271,7 +271,7 @@ assert.equal(appended[0].textContent.includes('Waste:N/A'), true);
 assert.equal(appended[1].textContent.includes('Acme F100'), true);
 assert.equal(appended[1].textContent.includes('Waste:$0.25'), true);
 const supportedWaste = Array.from(appended[1].querySelectorAll('span')).find(node => node.textContent === '$0.25');
-assert.equal(supportedWaste.classList.contains('text-[#d97706]'), true);
+assert.equal(supportedWaste.classList.contains('el-waste-ink'), true);
 assert.equal(appended[0].textContent.includes('Idle (3h)'), false);
 assert.equal(appended[0].textContent.includes('$0.68'), false);
 assert.equal(appended[0].textContent.includes('$0.35'), false);

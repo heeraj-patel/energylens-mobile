@@ -96,6 +96,18 @@ function namedRows(count) {
       '$0.10', '$' + String((index + 1) / 100).padStart(4, '0')));
 }
 
+
+test('uses the compact Devices range and pagination row', () => {
+  const html = fs.readFileSync(
+    path.join(__dirname, '../../../assets/design_pages/devices/app.html'), 'utf8');
+  assert.match(html,
+    /class="flex items-center justify-between w-full px-1">\s*<span class="font-label-md text-\[13px\][^>]*data-el-bind="devices_text_092"/);
+  assert.match(html,
+    /id="devices-pagination" class="flex items-center gap-1\.5">\s*<button id="devices-previous-page"[^>]*class="w-8 h-8/);
+  assert.match(html,
+    /id="devices-page-numbers" class="flex items-center gap-1"><\/div>/);
+});
+
 test('paginates more than two pages and exposes accessible page controls', () => {
   const page = makePage(namedRows(25));
   assert.equal(page.summary.textContent, 'Showing 1–10 of 25 devices');
@@ -125,7 +137,8 @@ test('keeps numbered pagination within the phone-width control row', () => {
   assert.deepEqual(page.pageNumbers.children.map(button => button.textContent),
     ['1', '2', '3', '4']);
   assert.ok(page.pageNumbers.children.every(button =>
-    button.className.includes('min-w-11') &&
+    button.className.includes('w-8 h-8') &&
+    button.className.includes('text-[12px]') &&
     button.attributes['aria-controls'] === 'devices-feed'));
   for (let index = 0; index < 5; index++) page.next.click();
   assert.equal(page.summary.textContent, 'Showing 51–60 of 100 devices');

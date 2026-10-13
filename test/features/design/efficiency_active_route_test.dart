@@ -169,6 +169,7 @@ class _WebController extends PlatformWebViewController {
   final channels = <String, JavaScriptChannelParams>{};
   final scripts = <String>[];
   String? asset;
+  int? capturedScrollY;
   _WebNavigation? navigation;
   void route(String value) => channels['EnergyLensNavigation']!
       .onMessageReceived(JavaScriptMessage(message: value));
@@ -195,6 +196,14 @@ class _WebController extends PlatformWebViewController {
   @override
   Future<Object> runJavaScriptReturningResult(String script) async {
     scripts.add(script);
+    if (capturedScrollY != null && script.contains('scroll_x: Math.max')) {
+      return jsonEncode({
+        'scroll_x': 0,
+        'scroll_y': capturedScrollY,
+        'fields': <String, String>{},
+        'checks': <String, bool>{},
+      });
+    }
     if (script.contains(
       "const first = document.querySelector('[data-el-bind]')",
     )) {
@@ -252,6 +261,32 @@ final chromePath = [
 ].where((path) => File(path).existsSync()).firstOrNull;
 
 void main() {
+  testWidgets('Efficiency peer tabs keep the current scroll position', (
+    tester,
+  ) async {
+    final platform = _WebPlatform();
+    WebViewPlatform.instance = platform;
+    await tester.pumpWidget(
+      const MaterialApp(home: DesignShell(localPilot: true)),
+    );
+    await tester.pumpAndSettle();
+    platform.controller.route('efficiency');
+    await tester.pumpAndSettle();
+    platform.controller.capturedScrollY = 240;
+    platform.controller.route('efficiency_away');
+    await tester.pumpAndSettle();
+    expect(
+      platform.controller.asset,
+      'assets/design_pages/efficiency_away/app.html',
+    );
+    expect(
+      platform.controller.scripts.any(
+        (script) => script == 'window.scrollTo(0, 240)',
+      ),
+      isTrue,
+    );
+  });
+
   testWidgets(
     'selected-home DesignShell injects API MTD values on all Efficiency routes',
     (tester) async {

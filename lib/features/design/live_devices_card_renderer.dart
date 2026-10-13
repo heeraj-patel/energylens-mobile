@@ -130,9 +130,9 @@ class LiveDevicesCardRenderer {
     const setState = state => {
     const stateText = state[0].toUpperCase() + state.slice(1);
     status.className = state === 'active'
-      ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#059669]/10 text-[#059669] border border-[#059669]/25'
+      ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#059669]/10 el-useful-ink border border-[#059669]/25'
       : state === 'idle'
-      ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#fffbeb] text-[#d97706] border border-[#fde68a]'
+      ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#fffbeb] el-waste-ink border border-[#fde68a]'
       : 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-surface-container-high text-on-surface-variant border border-outline-variant/50';
     const dot = document.createElement('span');
     dot.className = state === 'active' ? 'w-1 h-1 rounded-full bg-[#059669]'
@@ -143,15 +143,17 @@ class LiveDevicesCardRenderer {
     setState(initialState);
     useful.textContent = row.usefulCost ?? 'N/A';
     useful.classList.remove('text-[#059669]');
+    useful.classList.remove('el-useful-ink');
     useful.classList.remove('text-on-surface-variant');
     const usefulAmount = row.usefulCost && Number(row.usefulCost.replace(/[^0-9.]/g, ''));
-    useful.classList.add(usefulAmount > 0 ? 'text-[#059669]' : 'text-on-surface-variant');
+    useful.classList.add(usefulAmount > 0 ? 'el-useful-ink' : 'text-on-surface-variant');
     const wasteText = row.wasteCost ?? row.demoWaste;
     waste.textContent = wasteText ?? 'N/A';
     waste.classList.remove('text-[#d97706]');
+    waste.classList.remove('el-waste-ink');
     waste.classList.remove('text-on-surface-variant');
     const wasteAmount = wasteText && Number(wasteText.replace(/[^0-9.]/g, ''));
-    waste.classList.add(wasteAmount > 0 ? 'text-[#d97706]' : 'text-on-surface-variant');
+    waste.classList.add(wasteAmount > 0 ? 'el-waste-ink' : 'text-on-surface-variant');
     icon.textContent = 'devices_other';
     clone.setAttribute('data-el-live-device-id', row.id);
     clone.setAttribute('data-el-device-name', row.name);

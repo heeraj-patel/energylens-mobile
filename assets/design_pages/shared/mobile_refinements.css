@@ -1,15 +1,127 @@
 /* Keep the existing page copy and selection behavior readable on narrow phones. */
 :root {
+  --el-body-font-family: "Inter", sans-serif;
+  --el-body-font-size: 16px;
+  --el-body-line-height: 24px;
+  --el-page-title-font-family: "Oswald", sans-serif;
+  --el-page-title-font-size: 24px;
+  --el-page-title-line-height: 30px;
+  --el-page-title-font-weight: 600;
+  --el-header-home-font-size: 14px;
+  --el-header-home-line-height: 20px;
+  --el-header-page-font-size: 11px;
+  --el-header-page-line-height: 14px;
   --el-useful-ink: #047857;
   --el-waste-ink: #92400e;
+  --el-useful-graph: #059669;
+  --el-waste-graph: #d97706;
+  --el-waste-segment-night: #fde68a;
+  --el-waste-segment-away: #fbbf24;
+  --el-waste-segment-peak: #d97706;
+  --el-waste-segment-habits: #92400e;
+  --el-tab-idle-ink: #3f484e;
+  --el-tab-selected-bg: #ffffff;
+  --el-tab-selected-ink: #111b2f;
 }
 
-[data-el-bind][class*="text-[#059669]"] {
-  color: var(--el-useful-ink);
+body[class*="font-body-md"] {
+  font-family: var(--el-body-font-family);
+  font-size: var(--el-body-font-size);
+  line-height: var(--el-body-line-height);
 }
 
-[data-el-bind][class*="text-[#d97706]"] {
-  color: var(--el-waste-ink);
+.el-page-title {
+  margin: 0 !important;
+  color: #111b2f !important;
+  font-family: var(--el-page-title-font-family) !important;
+  font-size: var(--el-page-title-font-size) !important;
+  font-weight: var(--el-page-title-font-weight) !important;
+  line-height: var(--el-page-title-line-height) !important;
+  letter-spacing: -0.025em !important;
+  text-transform: uppercase;
+}
+
+.el-useful-ink,
+[class*="text-[#059669]"],
+[class*="text-[#047857]"] {
+  color: var(--el-useful-ink) !important;
+}
+
+.el-waste-ink,
+[class*="text-[#d97706]"],
+[class*="text-[#92400e]"] {
+  color: var(--el-waste-ink) !important;
+}
+
+.el-useful-segment {
+  background-color: var(--el-useful-graph) !important;
+}
+
+.el-useful-graph {
+  background-color: var(--el-useful-graph) !important;
+  fill: var(--el-useful-graph) !important;
+}
+
+.el-waste-segment {
+  background-color: var(--el-waste-graph) !important;
+}
+
+.el-waste-graph {
+  background-color: var(--el-waste-graph) !important;
+  fill: var(--el-waste-graph) !important;
+}
+
+.el-waste-segment-night {
+  background-color: var(--el-waste-segment-night) !important;
+}
+
+.el-waste-segment-away {
+  background-color: var(--el-waste-segment-away) !important;
+}
+
+.el-waste-segment-peak {
+  background-color: var(--el-waste-segment-peak) !important;
+}
+
+.el-waste-segment-habits {
+  background-color: var(--el-waste-segment-habits) !important;
+}
+
+/* Keep existing inline chart renderers on the same palette as semantic classes. */
+[style*="background-color: #059669" i],
+[style*="background-color:#059669" i] {
+  background-color: var(--el-useful-graph) !important;
+}
+
+[style*="color: #059669" i],
+[style*="color:#059669" i] {
+  color: var(--el-useful-ink) !important;
+}
+
+[fill="#059669" i] {
+  fill: var(--el-useful-graph) !important;
+}
+
+[style*="background-color: #d97706" i],
+[style*="background-color:#d97706" i] {
+  background-color: var(--el-waste-graph) !important;
+}
+
+[style*="color: #d97706" i],
+[style*="color:#d97706" i] {
+  color: var(--el-waste-ink) !important;
+}
+
+[fill="#d97706" i] {
+  fill: var(--el-waste-graph) !important;
+}
+
+[class~="bg-[#059669]"] {
+  background-color: var(--el-useful-graph) !important;
+}
+
+[class~="bg-[#d97706]"] {
+  background-color: var(--el-waste-graph) !important;
 }
 
 [data-el-bind="dashboard_text_018"]::before {
@@ -29,6 +141,157 @@
   min-height: 44px;
 }
 
+[data-tab-target],
+[aria-label="Savings Categories"] .tab-pill,
+[id^="tab-"][id$="-btn"] {
+  min-height: 44px;
+  border-radius: .5rem !important;
+  color: var(--el-tab-idle-ink) !important;
+  font-size: 12px !important;
+  font-family: "Rubik", sans-serif !important;
+}
+
+[data-tab-target].bg-primary-container,
+[data-tab-target].bg-surface-container-lowest,
+[aria-label="Savings Categories"] .tab-pill[aria-selected="true"],
+[id^="tab-"][id$="-btn"].bg-primary,
+[id^="tab-"][id$="-btn"].bg-surface-container-lowest,
+[id^="tab-"][id$="-btn"].bg-white {
+  background-color: var(--el-tab-selected-bg) !important;
+  color: var(--el-tab-selected-ink) !important;
+  box-shadow: 0 1px 3px rgb(0 91 120 / 16%) !important;
+  font-weight: 600 !important;
+  outline: 1px solid rgb(190 200 206 / 50%) !important;
+  outline-offset: -1px !important;
+}
+
+[data-tab-target].bg-primary-container .material-symbols-outlined,
+[data-tab-target].bg-surface-container-lowest .material-symbols-outlined,
+[aria-label="Savings Categories"] .tab-pill[aria-selected="true"] .material-symbols-outlined,
+[id^="tab-"][id$="-btn"].bg-primary .material-symbols-outlined,
+[id^="tab-"][id$="-btn"].bg-surface-container-lowest .material-symbols-outlined,
+[id^="tab-"][id$="-btn"].bg-white .material-symbols-outlined {
+  color: currentColor !important;
+}
+
+.el-app-header {
+  background-color: rgb(249 249 255 / 90%) !important;
+  border-bottom: 1px solid rgb(216 226 253 / 60%) !important;
+  box-shadow: 0 2px 12px rgb(17 27 47 / 6%);
+  color: #111b2f;
+  font-family: var(--el-body-font-family) !important;
+  font-size: var(--el-body-font-size);
+  line-height: var(--el-body-line-height);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.el-app-header .font-label-md {
+  font-family: "Rubik", sans-serif !important;
+}
+
+.el-app-header button [data-el-bind] {
+  font-size: var(--el-header-home-font-size) !important;
+  line-height: var(--el-header-home-line-height) !important;
+}
+
+.el-app-header button + [data-el-bind] {
+  font-size: var(--el-header-page-font-size) !important;
+  line-height: var(--el-header-page-line-height) !important;
+}
+
+.el-app-header-icon {
+  background-color: rgb(186 230 255 / 50%) !important;
+  border: 1px solid rgb(125 211 252 / 40%) !important;
+  color: #006686 !important;
+}
+
+.el-app-profile {
+  box-shadow: 0 0 0 2px #7dd3fc !important;
+}
+
+.el-page-subtitle {
+  font-family: "Inter", sans-serif !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
+  margin-top: 4px !important;
+}
+
+.el-devices-summary-value {
+  font-size: 22px !important;
+  line-height: 28px !important;
+}
+
+.el-devices-summary-unit {
+  font-family: "Rubik", sans-serif !important;
+  font-size: 12px !important;
+  line-height: 18px !important;
+}
+
+.el-app-nav {
+  position: fixed !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  z-index: 50 !important;
+  padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+  background-color: rgb(255 255 255 / 95%) !important;
+  border-top: 1px solid rgb(226 232 240 / 80%) !important;
+  box-shadow: 0 -2px 12px rgb(17 27 47 / 6%);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+.el-app-nav > div {
+  display: flex !important;
+  justify-content: space-around !important;
+  align-items: center !important;
+  height: 64px !important;
+  padding-inline: 8px !important;
+}
+
+.el-app-tab {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 56px !important;
+  height: 48px !important;
+  gap: 2px !important;
+  text-decoration: none !important;
+  font-family: var(--el-body-font-family) !important;
+  font-size: 16px !important;
+  line-height: 24px !important;
+  color: #64748b !important;
+  font-weight: 600 !important;
+  transition: color 160ms ease;
+}
+
+.el-app-tab[aria-current="page"] {
+  color: #0284c7 !important;
+  font-weight: 700 !important;
+}
+
+.el-app-tab[aria-current="page"] .el-app-tab-icon {
+  font-weight: 700 !important;
+}
+
+.el-app-tab-icon,
+.el-app-tab-label {
+  color: currentColor !important;
+}
+
+.el-app-tab-icon {
+  font-size: 22px !important;
+  line-height: 22px !important;
+}
+
+.el-app-tab-label {
+  font-family: "Rubik", sans-serif !important;
+  font-size: 12px !important;
+  line-height: 12px !important;
+  letter-spacing: -.3px !important;
+}
+
 #status-filter-group {
   scroll-padding-inline: 1rem;
 }
@@ -39,11 +302,7 @@
 }
 
 #status-filter-group .active-chip,
-#sort-pill-group .active-sort,
-[aria-label="Savings Categories"] .tab-pill[aria-selected="true"],
-[data-tab-target].bg-surface-container-lowest,
-#tab-profile-btn.bg-white,
-#tab-devices-btn.bg-white {
+#sort-pill-group .active-sort {
   outline: 1px solid #006686;
   outline-offset: -1px;
 }
@@ -66,39 +325,12 @@
   overflow-wrap: anywhere;
 }
 
-/* Existing subpage titles remain present, with less repeated framing above content. */
-body:has([data-el-bind="efficiency_away_text_003"]) main > div > div:first-child,
-body:has([data-el-bind="efficiency_peak_rates_text_003"]) main > div > div:first-child,
-body:has([data-el-bind="efficiency_habits_text_003"]) main > div > div:first-child {
-  padding-top: 0;
-}
-
-body:has([data-el-bind="efficiency_away_text_003"]) main h1,
-body:has([data-el-bind="efficiency_peak_rates_text_003"]) main h1,
-body:has([data-el-bind="efficiency_habits_text_003"]) main h1 {
-  font-size: 1.125rem;
-  line-height: 1.3;
-}
-
 body:has([data-el-bind="perks_tips_text_003"]) main header,
 body:has([data-el-bind="tips_efficiency_text_003"]) main header,
 body:has([data-el-bind="tips_care_upgrades_text_003"]) main header,
 body:has([data-el-bind="tips_knowledge_text_003"]) main header {
   margin-top: .5rem;
   margin-bottom: .75rem;
-}
-
-body:has([data-el-bind="settings_manage_devices_text_003"]) main > div,
-body:has([data-el-bind="settings_manual_device_entry_text_003"]) main > div,
-body:has([data-el-bind="settings_photo_scan_onboarding_text_003"]) main > div {
-  padding-top: .5rem;
-}
-
-body:has([data-el-bind="settings_manage_devices_text_003"]) main h1,
-body:has([data-el-bind="settings_manual_device_entry_text_003"]) main h1,
-body:has([data-el-bind="settings_photo_scan_onboarding_text_003"]) main h1 {
-  font-size: 1.25rem;
-  line-height: 1.3;
 }
 
 /* Make names and questions wrap before an action or metric takes their space. */
@@ -119,4 +351,12 @@ body:has([data-el-bind="settings_photo_scan_onboarding_text_003"]) main h1 {
 [data-el-bind="perks_tips_text_056"] {
   font-size: 1.125rem;
   line-height: 1.3;
+}
+
+[aria-label="Savings Categories"] .tab-pill[aria-selected="true"],
+[id^="tab-"][id$="-btn"].bg-primary,
+[id^="tab-"][id$="-btn"].bg-surface-container-lowest,
+[id^="tab-"][id$="-btn"].bg-white {
+  outline: 1px solid rgb(190 200 206 / 50%) !important;
+  outline-offset: -1px !important;
 }

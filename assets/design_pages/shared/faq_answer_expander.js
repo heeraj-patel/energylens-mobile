@@ -45,7 +45,8 @@
     if (!panel) return;
     panel.classList.toggle('hidden', !open);
     trigger.setAttribute('aria-expanded', String(open));
-    trigger.querySelector('[data-faq-trigger-icon]')?.classList.toggle('rotate-180', open);
+    const icon = trigger.querySelector('[data-faq-trigger-icon]');
+    if (icon) icon.textContent = open ? 'remove' : 'add';
 
     const answer = panel.querySelector(answerSelector);
     if (!answer) return;

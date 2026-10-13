@@ -122,7 +122,7 @@ const fs = require('node:fs');
 const scripts = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')).scripts;
 for (const [page, script] of Object.entries(scripts)) {
   let clickHandler;
-  const reviews = [], photos = [], routes = [];
+  const reviews = [], photos = [], routes = [], selectedMethods = [];
   globalThis.document = {
     addEventListener(_, handler) { clickHandler = handler; },
     querySelectorAll() { return [{
@@ -139,6 +139,7 @@ for (const [page, script] of Object.entries(scripts)) {
   globalThis.EnergyLensNavigation = {postMessage(value) { routes.push(value); }};
   globalThis.EnergyLensDeviceReview = {postMessage(value) { reviews.push(JSON.parse(value)); }};
   globalThis.EnergyLensPhotoCapture = {postMessage(value) { photos.push(value); }};
+  globalThis.window = {selectOnboardingMethod(value) { selectedMethods.push(value); }};
   eval(script);
   function click(action) {
     let prevented = false, stopped = false;
@@ -171,6 +172,7 @@ for (const [page, script] of Object.entries(scripts)) {
     }
   }
   assert.deepEqual(routes, page === 'settings_manage_devices' ? ['discover_devices'] : []);
+  assert.deepEqual(selectedMethods, page === 'settings_manage_devices' ? ['scan'] : []);
 }
 ''',
         file.path,

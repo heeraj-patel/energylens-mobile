@@ -158,7 +158,7 @@ class _DesignShellState extends State<DesignShell> {
   DesignNumericBindings? _sampleDevicesBindings;
   List<DesignTextBinding>? _efficiencyBindings;
   CloudEfficiencyMonthToDate? _efficiencyChartSummary;
-  bool _efficiencyDetailsExpanded = false;
+  int? _peerTabScrollY;
   DesignPageTicket? _pageTicket;
   Timer? _tourTimer;
   int _tourIndex = 0;
@@ -247,12 +247,20 @@ class _DesignShellState extends State<DesignShell> {
   void _scheduleTourAdvance() {
     if (!widget.designTour) return;
     _tourTimer?.cancel();
-    _tourTimer = Timer(const Duration(seconds: 8), () {
-      if (!mounted || _tourIndex + 1 >= _tourOrder.length) return;
-      _tourIndex++;
-      setState(() => _page = _tourOrder[_tourIndex]);
-      _loadPage();
-    });
+    _tourTimer = Timer(
+      const Duration(
+        seconds: int.fromEnvironment(
+          'ENERGYLENS_DESIGN_TOUR_DWELL_SECONDS',
+          defaultValue: 8,
+        ),
+      ),
+      () {
+        if (!mounted || _tourIndex + 1 >= _tourOrder.length) return;
+        _tourIndex++;
+        setState(() => _page = _tourOrder[_tourIndex]);
+        unawaited(_loadPage());
+      },
+    );
   }
 
   @override
@@ -271,10 +279,6 @@ class _DesignShellState extends State<DesignShell> {
       _navigationEpoch++;
       _history.clear();
       _dashboardGranularity = 'day';
-      _efficiencyDetailsExpanded = false;
-    }
-    if (!_efficiencyPages.contains(_page)) {
-      _efficiencyDetailsExpanded = false;
     }
     _pageStates.selectHome(scope);
     _invalidatePageLoad();
@@ -311,13 +315,19 @@ class _DesignShellState extends State<DesignShell> {
       ''');
     }
     final snapshot = _pageStates.forPage(_pageStateHomeId, page);
-    if (snapshot == null) return;
-    try {
-      await _controller.runJavaScript(
-        buildDesignPageStateRestoreScript(snapshot),
-      );
-    } catch (_) {
-      // A failed restoration leaves the page usable with its default state.
+    if (snapshot != null) {
+      try {
+        await _controller.runJavaScript(
+          buildDesignPageStateRestoreScript(snapshot),
+        );
+      } catch (_) {
+        // A failed restoration leaves the page usable with its default state.
+      }
+    }
+    final peerScrollY = _peerTabScrollY;
+    _peerTabScrollY = null;
+    if (peerScrollY != null && _isCurrentPageLoad(page, generation)) {
+      await _controller.runJavaScript('window.scrollTo(0, $peerScrollY)');
     }
   }
 
@@ -327,13 +337,6 @@ class _DesignShellState extends State<DesignShell> {
     final generation = _pageLoadGeneration;
     final homeId = _pageStateHomeId;
     try {
-      if (_efficiencyPages.contains(page)) {
-        final expanded = await _controller.runJavaScriptReturningResult(
-          "document.getElementById('efficiency-details-toggle')?.getAttribute('aria-expanded') === 'true'",
-        );
-        if (!_isCurrentPageLoad(page, generation)) return;
-        _efficiencyDetailsExpanded = expanded == true;
-      }
       final result = await _controller.runJavaScriptReturningResult(
         buildDesignPageStateCaptureScript(page),
       );
@@ -622,15 +625,6 @@ class _DesignShellState extends State<DesignShell> {
         }
       } catch (_) {
         return;
-      }
-    }
-    if (_efficiencyPages.contains(page) && _efficiencyDetailsExpanded) {
-      try {
-        await _controller.runJavaScriptReturningResult(
-          "(() => { const toggle = document.getElementById('efficiency-details-toggle'); if (!toggle) return false; toggle.click(); return true; })()",
-        );
-      } catch (_) {
-        // The shared summary remains available with its default collapsed detail.
       }
     }
     if (page == 'tips_knowledge') {
@@ -1420,7 +1414,6 @@ class _DesignShellState extends State<DesignShell> {
       _invalidatePageLoad();
       _pageReads.clear();
       _dashboardGranularity = 'day';
-      _efficiencyDetailsExpanded = false;
       widget.onSignOut?.call();
       return;
     }
@@ -1431,7 +1424,6 @@ class _DesignShellState extends State<DesignShell> {
       _invalidatePageLoad();
       _pageReads.clear();
       _dashboardGranularity = 'day';
-      _efficiencyDetailsExpanded = false;
       widget.onChangeHome?.call();
       return;
     }
@@ -1536,6 +1528,12 @@ class _DesignShellState extends State<DesignShell> {
     try {
       await _capturePageState();
       if (!mounted || epoch != _navigationEpoch) return;
+      final destination = route ?? _history.last;
+      final sourceSection = _peerTabSection(_page);
+      _peerTabScrollY =
+          sourceSection != null && sourceSection == _peerTabSection(destination)
+          ? _pageStates.forPage(_pageStateHomeId, _page)?.scrollY
+          : null;
       if (route == null) {
         if (_history.isEmpty) return;
         setState(() => _page = _history.removeLast());
@@ -1549,6 +1547,14 @@ class _DesignShellState extends State<DesignShell> {
     } finally {
       _navigating = false;
     }
+  }
+
+  String? _peerTabSection(String page) {
+    if (_efficiencyPages.contains(page)) return 'efficiency';
+    if (page == 'perks_tips' || page.startsWith('tips_')) return 'tips';
+    if (page == 'settings' || page == 'settings_manage_devices')
+      return 'settings';
+    return null;
   }
 
   Future<void> _installNavigation() async {

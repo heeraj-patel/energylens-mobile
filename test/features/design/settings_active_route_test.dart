@@ -325,9 +325,24 @@ void main() {
       platform.controller.scripts.any(
         (script) =>
             script.contains('data-el-settings-edit') &&
-            script.contains('button.hidden = false'),
+            script.contains('setVisible(button, true)'),
       ),
       isTrue,
+    );
+    platform.controller.route('settings_manage_devices');
+    await tester.pumpAndSettle();
+    expect(
+      platform.controller.asset,
+      'assets/design_pages/settings_manage_devices/app.html',
+    );
+    platform.controller.route('settings');
+    await tester.pumpAndSettle();
+    expect(platform.controller.asset, 'assets/design_pages/settings/app.html');
+    expect(
+      platform.controller.scripts
+          .where((script) => script.contains('setVisible(button, true)'))
+          .length,
+      greaterThanOrEqualTo(2),
     );
     platform.controller.route('edit_home_details');
     await tester.pumpAndSettle();

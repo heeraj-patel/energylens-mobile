@@ -12,7 +12,11 @@ import 'package:flutter_test/flutter_test.dart';
 const _homeId = '11111111-1111-4111-8111-111111111111';
 const _accountId = 'owner-account';
 
-SettingsDomainSnapshot _snapshot({String? email, String? ownerName, String postalCode = '60601'}) {
+SettingsDomainSnapshot _snapshot({
+  String? email,
+  String? ownerName,
+  String postalCode = '60601',
+}) {
   final home = CloudHome(
     id: _homeId,
     name: 'Selected Home',
@@ -98,7 +102,8 @@ const html = process.argv[1];
 const expected = JSON.parse(Buffer.from(process.argv[2], 'base64').toString());
 const nodes = Object.fromEntries(['settings_text_010', 'settings_text_016', 'settings_text_019'].map(id => [id, {textContent: 'packaged sample'}]));
 const rows = {'email': {hidden: true}, 'postal': {hidden: true}};
-const editButtons = [{hidden: true}, {hidden: true}];
+const visibilityNode = hidden => ({hidden, removeAttribute() { this.hidden = false; }, setAttribute() { this.hidden = true; }});
+const editButtons = [visibilityNode(true), visibilityNode(true)];
 const window = {__energyLensTextBindingContext: expected.context};
 const document = {querySelectorAll(selector) {
   if (selector.includes('settings_text_010')) return [nodes.settings_text_010];
@@ -148,8 +153,9 @@ const vm = require('node:vm');
 const html = process.argv[1];
 const nodes = Object.fromEntries(['settings_text_010', 'settings_text_016', 'settings_text_019'].map(id => [id, {textContent: ''}]));
 const rows = {email: {hidden: true}, postal: {hidden: true}};
-const editButtons = [{hidden: true}, {hidden: true}];
-const profileNodes = {owner: {textContent: ''}, ownerRow: {hidden: true}, ownerEdit: {hidden: true}, emailEdit: {hidden: true}, passwordChange: {hidden: true}};
+const visibilityNode = hidden => ({hidden, removeAttribute() { this.hidden = false; }, setAttribute() { this.hidden = true; }});
+const editButtons = [visibilityNode(true), visibilityNode(true)];
+const profileNodes = {owner: {textContent: ''}, ownerRow: visibilityNode(true), ownerEdit: visibilityNode(true), emailEdit: visibilityNode(true), passwordChange: visibilityNode(true)};
 const window = {__energyLensTextBindingContext: {homeId: '11111111-1111-4111-8111-111111111111', page: 'settings', generation: 8}};
 const document = {querySelectorAll(selector) {
   if (selector.includes('settings_text_010')) return [nodes.settings_text_010];
@@ -165,7 +171,8 @@ const document = {querySelectorAll(selector) {
   if (selector.includes('data-el-settings-password-change')) return [profileNodes.passwordChange];
   return [];
 }};
-assert.equal(vm.runInNewContext(html, {window, document, TextDecoder, Uint8Array, atob: value => Buffer.from(value, 'base64').toString('binary')}), true);
+const run = () => vm.runInNewContext(html, {window, document, TextDecoder, Uint8Array, atob: value => Buffer.from(value, 'base64').toString('binary')});
+assert.equal(run(), true);
 assert.equal(nodes.settings_text_010.textContent, 'Selected Home');
 assert.equal(nodes.settings_text_016.textContent, 'owner@example.com');
 assert.equal(nodes.settings_text_019.textContent, '60601');
@@ -174,6 +181,14 @@ assert.equal(rows.postal.hidden, false);
 assert.equal(editButtons.every(button => button.hidden === false), true);
 assert.equal(profileNodes.owner.textContent, 'Alex Miller');
 assert.equal(profileNodes.ownerRow.hidden, false);
+assert.equal(profileNodes.ownerEdit.hidden, false);
+assert.equal(profileNodes.emailEdit.hidden, false);
+assert.equal(profileNodes.passwordChange.hidden, false);
+// Returning from another Settings page reloads the packaged hidden attributes before identity hydration.
+editButtons.forEach(button => { button.hidden = true; });
+for (const control of [profileNodes.ownerRow, profileNodes.ownerEdit, profileNodes.emailEdit, profileNodes.passwordChange]) control.hidden = true;
+assert.equal(run(), true);
+assert.equal(editButtons.every(button => button.hidden === false), true);
 assert.equal(profileNodes.ownerEdit.hidden, false);
 assert.equal(profileNodes.emailEdit.hidden, false);
 assert.equal(profileNodes.passwordChange.hidden, false);

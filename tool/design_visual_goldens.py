@@ -118,7 +118,7 @@ def filename(index: int, page: str) -> str:
     return f"{index:02d}-{page}.png"
 
 
-def capture(device: str, output: Path, app: Path) -> None:
+def capture(device: str, output: Path, app: Path, dwell_seconds: int = 8) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     staging = output.with_name(output.name + ".capture_tmp")
     if staging.exists():
@@ -146,7 +146,7 @@ def capture(device: str, output: Path, app: Path) -> None:
             run("xcrun", "simctl", "io", device, "screenshot", str(path))
             try:
                 validate_label(ocr, path, page)
-                if "the miller home" not in visible_text(ocr, path):
+                if "themillerhome" not in visible_text(ocr, path).replace(" ", ""):
                     raise SystemExit(f"{path.name}: shared header is not visible yet")
                 break
             except SystemExit:
@@ -162,7 +162,7 @@ def capture(device: str, output: Path, app: Path) -> None:
         "source": "iPhone 16 Pro simulator, iOS 18.6, static local pilot design tour",
         "build_mode": "simulator_debug_only",
         "capture": {
-            "advance_after_page_load_seconds": 8,
+            "advance_after_page_load_seconds": dwell_seconds,
             "label_validation": "macOS Vision OCR",
             "status_time": "9:41",
         },
@@ -239,13 +239,14 @@ def main() -> None:
     capture_cmd.add_argument("--device", required=True, help="Booted simulator UDID")
     capture_cmd.add_argument("--out", type=Path, required=True)
     capture_cmd.add_argument("--app", type=Path, default=ROOT / "build/ios/iphonesimulator/Runner.app")
+    capture_cmd.add_argument("--tour-dwell-seconds", type=int, default=8)
     compare_cmd = sub.add_parser("compare")
     compare_cmd.add_argument("--baseline", type=Path, required=True)
     compare_cmd.add_argument("--actual", type=Path, required=True)
     compare_cmd.add_argument("--max-changed-fraction", type=float, default=0.005)
     args = parser.parse_args()
     if args.command == "capture":
-        capture(args.device, args.out, args.app)
+        capture(args.device, args.out, args.app, args.tour_dwell_seconds)
     else:
         if not 0 <= args.max_changed_fraction <= 1:
             parser.error("threshold must be between 0 and 1")

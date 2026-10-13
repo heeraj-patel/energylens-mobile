@@ -139,7 +139,9 @@ Settings fields use a pale surface, fine outline, compact label, and 8px corners
 
 The fixed five-part bottom bar uses Material Symbols icons and short labels. Unselected entries are muted; the selected entry is blue and bolder. The top header uses a compact icon or section label at left and contextual action at right. Preserve the safe areas and source proportions.
 
-The fourteen packaged pages mount their outer header and five-tab bar through `assets/design_pages/shared/chrome.js`. Each page supplies its approved home name, section label, icon and action IDs, binding IDs, and active destination. The shared tab renderer uses five section theme entries for the source-specific surface, selected and unselected text, icon, and label classes. Keep those theme entries aligned with the approved source pages when changing chrome; page content and `code.html` remain separate references.
+The fourteen packaged pages mount their outer header and five-tab bar through `assets/design_pages/shared/chrome.js`. Each page supplies its approved home name, section label, icon and action IDs, binding IDs, and active destination. The shared header and tab bar use one visual treatment on every page. Only the current destination and page-specific content change; page content and `code.html` remain separate references.
+
+`assets/design_pages/shared/mobile_refinements.css` owns the common body and page-title typography, header and bottom-tab theme, segmented selectors, and semantic useful/waste colors. Text ink and graph fills use separate tokens to keep small labels legible while preserving the chart palette. Reuse these classes in packaged pages and runtime-rendered content.
 
 ## Do's and Don'ts
 

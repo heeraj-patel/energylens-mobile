@@ -31,6 +31,11 @@ void main() {
       wasteTotal: '\$0.30',
     );
     final script = DashboardChartRenderer(gate).script(ticket, chart)!;
+    final sharedStyles = await File(
+      'assets/design_pages/shared/mobile_refinements.css',
+    ).readAsString();
+    expect(sharedStyles, contains('.el-useful-graph'));
+    expect(sharedStyles, contains('.el-waste-graph'));
     final file = await File(
       '${Directory.systemTemp.path}/energylens-dashboard-chart-${DateTime.now().microsecondsSinceEpoch}.json',
     ).writeAsString(jsonEncode({'script': script, 'homeId': home}));
@@ -64,8 +69,8 @@ globalThis.document = {
 assert.equal(eval(script), true);
 assert.equal(svg.children.length, 2);
 assert.deepEqual(svg.children.map(group => group.children.at(-1).textContent), ['Mon', 'Tue']);
-assert.equal(svg.children[0].children[0].attrs.fill, '#059669');
-assert.equal(svg.children[0].children[1].attrs.fill, '#d97706');
+assert.equal(svg.children[0].children[0].attrs.class, 'el-useful-graph');
+assert.equal(svg.children[0].children[1].attrs.class, 'el-waste-graph');
 assert.equal(buttons[0].state['bg-white'], true);
 assert.equal(buttons[1].state['bg-white'], false);
 window.__energyLensDashboardRequestedPeriod = 'month';

@@ -230,16 +230,12 @@ void main() {
         expect(summary, sharedSummary, reason: pageId);
         expect(summary, contains('>Identified Opportunity</span>'));
         expect(summary, contains('>Optimal Base</span>'));
-        expect(html, contains('id="efficiency-details-toggle"'));
-        expect(html, contains('id="efficiency-details"'));
+        expect(html, isNot(contains('id="efficiency-details-toggle"')));
         expect(
           html,
-          contains(
-            pageId == 'efficiency'
-                ? '<script src="controls.js"></script>'
-                : '<script src="../efficiency/controls.js"></script>',
-          ),
+          contains('<div id="efficiency-details" class="space-y-space-md">'),
         );
+        expect(html, isNot(contains('efficiency/controls.js')));
         final belowTabs = html.substring(tabsStart);
         expect(belowTabs, isNot(contains('>Identified Opportunity<')));
         expect(belowTabs, isNot(contains('>Optimal Base<')));
@@ -247,7 +243,7 @@ void main() {
       }
     });
 
-    test('Efficiency opportunity amounts use the approved brown and tips are text only', () async {
+    test('Efficiency opportunity amounts use shared waste ink and tips are text only', () async {
       const pages = [
         'efficiency',
         'efficiency_away',
@@ -261,13 +257,13 @@ void main() {
         expect(
           html,
           contains(
-            'class="text-[#92400e]" data-el-bind="${pageId}_text_006">\$18.60',
+            'class="el-waste-ink" data-el-bind="${pageId}_text_006">\$18.60',
           ),
           reason: pageId,
         );
         expect(
           RegExp(
-            r'<span class="[^"]*bg-amber-100 text-\[#92400e\][^"]*" data-el-bind="[^"]+">\+?\$[^<]+</span>',
+            r'<span class="[^"]*bg-amber-100 el-waste-ink[^"]*" data-el-bind="[^"]+">\+?\$[^<]+</span>',
           ).allMatches(html),
           isNotEmpty,
           reason: pageId,

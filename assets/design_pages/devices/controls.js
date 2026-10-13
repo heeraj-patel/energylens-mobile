@@ -88,7 +88,7 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = String(page);
-      button.className = 'min-w-11 min-h-11 rounded-lg border flex items-center justify-center font-label-md text-[13px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ' +
+      button.className = 'w-8 h-8 rounded-lg border flex items-center justify-center font-label-md text-[12px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ' +
         (page === currentPage
           ? 'bg-secondary-container border-secondary-container text-on-secondary-container'
           : 'bg-surface-container-lowest border-outline-variant/60 text-on-surface');
