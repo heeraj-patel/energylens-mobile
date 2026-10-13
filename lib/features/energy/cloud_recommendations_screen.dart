@@ -8,6 +8,24 @@ import '../identify/cloud_usage_questions_screen.dart';
 import 'cloud_intervention_screen.dart';
 import 'cloud_electricity_rate_screen.dart';
 
+String? _reviewedAnnualSavings(CloudRecommendation action) {
+  final amount = action.savingsAmount;
+  if (action.state != 'active' ||
+      amount == null ||
+      action.savingsPeriod != 'year' ||
+      action.savingsCurrency != 'USD' ||
+      action.savingsBasis != 'reviewed_action_scenario' ||
+      action.scenarioRefs.isEmpty) {
+    return null;
+  }
+
+  final parts = amount.split('.');
+  final cents = parts.length == 1
+      ? '00'
+      : parts[1].padRight(2, '0').substring(0, 2);
+  return '\$${parts[0]}.$cents';
+}
+
 class CloudRecommendationsScreen extends StatefulWidget {
   const CloudRecommendationsScreen({
     super.key,
@@ -155,11 +173,21 @@ class _CloudRecommendationsScreenState
                             const SizedBox(height: 8),
                             Text(action.explanation),
                             const SizedBox(height: 8),
-                            if (action.state == 'active')
-                              Text(
-                                'Based on ${action.evidenceCount} current evidence references. No savings amount has been calculated.',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              )
+                            if (action.state == 'active') ...[
+                              if (_reviewedAnnualSavings(action)
+                                  case final savings?) ...[
+                                Text('Estimated savings: $savings per year'),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Based on ${action.evidenceCount} current evidence references.',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ] else
+                                Text(
+                                  'Based on ${action.evidenceCount} current evidence references. No savings amount has been calculated.',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                            ]
                             else
                               const Text(
                                 'This action has not been matched to enough current appliance evidence yet.',

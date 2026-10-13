@@ -22,7 +22,7 @@
     if (card.hasAttribute('data-el-live-device-id') ||
         card.hasAttribute('data-el-seeded-device-id')) {
       return {card, name: card.getAttribute('data-el-device-name') || '',
-        state: null,
+        state: card.getAttribute('data-el-device-state'),
         usage: money(card.getAttribute('data-el-usage-cost') || ''),
         waste: money(card.getAttribute('data-el-waste-cost') || '')};
     }

@@ -44,7 +44,7 @@ void main() {
     );
   });
 
-  test('measured energy does not replace unsupported card cost or state', () {
+  test('measured energy does not invent card cost or Active state', () {
     const renderer = LiveDevicesCardRenderer();
     final script = renderer.appendScript(
       projection: _projection(homeA, [
@@ -73,15 +73,17 @@ void main() {
         'name': 'Saved Device',
         'identity': '',
         'usageCost': null,
+        'usefulCost': null,
         'wasteCost': null,
         'demoWaste': null,
+        'state': 'standby',
       },
     ]);
     expect(script, isNot(contains('energyWh')));
     expect(script, isNot(contains('coveredSeconds')));
   });
 
-  test('keeps real Useful unknown while rendering supported Waste cost', () {
+  test('renders supported real Useful and Waste costs', () {
     const renderer = LiveDevicesCardRenderer();
     final script = renderer.appendScript(
       projection: _projection(homeA, [
@@ -89,6 +91,7 @@ void main() {
           applianceId: 'appliance-1',
           name: 'Washer',
           measuredBucket: null,
+          usefulCost: '\$0.75',
           wasteCost: '\$0.25',
         ),
       ]),
@@ -100,8 +103,9 @@ void main() {
     final payload = jsonDecode(
       utf8.decode(base64Decode(encodedPayload)),
     ) as Map<String, dynamic>;
+    expect(payload['rows'][0]['usefulCost'], '\$0.75');
     expect(payload['rows'][0]['wasteCost'], '\$0.25');
-    expect(script, contains("useful.textContent = 'N/A'"));
+    expect(script, contains("useful.textContent = row.usefulCost ?? 'N/A'"));
     expect(script, contains("waste.textContent = wasteText ?? 'N/A'"));
   });
 
@@ -146,31 +150,37 @@ void main() {
           'name': 'Lamp',
           'identity': 'Acme L1',
           'usageCost': null,
+          'usefulCost': null,
           'wasteCost': null,
           'demoWaste': '\$0.0008',
+          'state': 'standby',
         },
         {
           'id': 'tv',
           'name': 'Television',
           'identity': '',
           'usageCost': null,
+          'usefulCost': null,
           'wasteCost': null,
           'demoWaste': '\$0.08',
+          'state': 'standby',
         },
         {
           'id': 'capped',
           'name': 'Capped device',
           'identity': '',
           'usageCost': null,
+          'usefulCost': null,
           'wasteCost': null,
           'demoWaste': '\$0.000001',
+          'state': 'standby',
         },
       ]);
       expect(
         script,
-        contains("status.closest('.flex.flex-col.items-end')?.remove()"),
+        contains("clone.setAttribute('data-el-device-state', row.state)"),
       );
-      expect(script, contains("useful.textContent = 'N/A'"));
+      expect(script, contains("useful.textContent = row.usefulCost ?? 'N/A'"));
       expect(script, contains("waste.textContent = wasteText ?? 'N/A'"));
     },
   );

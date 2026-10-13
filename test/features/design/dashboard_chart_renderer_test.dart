@@ -68,6 +68,10 @@ assert.equal(svg.children[0].children[0].attrs.fill, '#059669');
 assert.equal(svg.children[0].children[1].attrs.fill, '#d97706');
 assert.equal(buttons[0].state['bg-white'], true);
 assert.equal(buttons[1].state['bg-white'], false);
+window.__energyLensDashboardRequestedPeriod = 'month';
+assert.equal(eval(script), false);
+assert.equal(svg.children.length, 2);
+window.__energyLensDashboardRequestedPeriod = 'day';
 window.__energyLensTextBindingContext.generation = 2;
 assert.equal(eval(script), false);
 ''',

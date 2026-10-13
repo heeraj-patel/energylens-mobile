@@ -5,6 +5,7 @@ import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_api/cloud_appliance_list.dart';
 import '../../core/cloud_api/cloud_interventions.dart';
 import '../../core/cloud_api/cloud_household_energy.dart';
+import '../../core/cloud_api/cloud_device_states.dart';
 import '../../core/cloud_api/cloud_metered_summary.dart';
 import '../../core/cloud_api/cloud_sensor.dart';
 
@@ -24,8 +25,15 @@ abstract interface class DevicesSampleCostSource {
   Future<CloudHouseholdEnergyTrends> sampleDayCosts(String homeId);
 }
 
+abstract interface class DevicesCurrentStateSource {
+  Future<CloudDeviceStates> deviceStates(String homeId);
+}
+
 class CloudDevicesDomainSource
-    implements DevicesDomainSource, DevicesSampleCostSource {
+    implements
+        DevicesDomainSource,
+        DevicesSampleCostSource,
+        DevicesCurrentStateSource {
   const CloudDevicesDomainSource(this.api);
   final CloudApiClient api;
 
@@ -46,6 +54,10 @@ class CloudDevicesDomainSource
   @override
   Future<CloudHouseholdEnergyTrends> sampleDayCosts(String homeId) =>
       api.householdEnergyTrends(homeId, granularity: 'day');
+
+  @override
+  Future<CloudDeviceStates> deviceStates(String homeId) =>
+      api.deviceStates(homeId);
 }
 
 /// One measured bucket, with its own time and coverage. It is not a full-day
@@ -111,6 +123,8 @@ class DevicesDomainSnapshot {
     required this.fixtureRevision,
     this.sampleMeteredSummaries = const [],
     this.sampleDayCosts,
+    this.deviceStates,
+    this.deviceStatesRequestStartedAt,
     this.isCurrent,
   });
 
@@ -128,6 +142,8 @@ class DevicesDomainSnapshot {
   /// attachments, measured usage, or household totals.
   final List<CloudMeteredSummary> sampleMeteredSummaries;
   final CloudHouseholdEnergyTrends? sampleDayCosts;
+  final CloudDeviceStates? deviceStates;
+  final DateTime? deviceStatesRequestStartedAt;
   final bool Function()? isCurrent;
   bool get isSample => dataMode == CloudApplianceDataMode.sample;
   bool get hasSeededRows => dataMode != CloudApplianceDataMode.household;
@@ -242,7 +258,7 @@ class DevicesDomainRepository {
             () => !stale(),
           );
           if (source is! DevicesSampleCostSource) {
-            return snapshot;
+            return await _withDeviceStates(homeId, snapshot, stale);
           }
           CloudHouseholdEnergyTrends? sampleCosts;
           try {
@@ -260,17 +276,21 @@ class DevicesDomainRepository {
               (sampleCosts.evidenceBasis != 'synthetic' &&
                   sampleCosts.evidenceBasis != 'mixed' &&
                   sampleCosts.evidenceBasis != 'measured')) {
-            return snapshot;
+            return await _withDeviceStates(homeId, snapshot, stale);
           }
-          return DevicesDomainSnapshot(
-            homeId: snapshot.homeId,
-            items: snapshot.items,
-            hasMoreMeteredPages: snapshot.hasMoreMeteredPages,
-            dataMode: snapshot.dataMode,
-            fixtureRevision: snapshot.fixtureRevision,
-            sampleMeteredSummaries: snapshot.sampleMeteredSummaries,
-            sampleDayCosts: sampleCosts,
-            isCurrent: snapshot.isCurrent,
+          return await _withDeviceStates(
+            homeId,
+            DevicesDomainSnapshot(
+              homeId: snapshot.homeId,
+              items: snapshot.items,
+              hasMoreMeteredPages: snapshot.hasMoreMeteredPages,
+              dataMode: snapshot.dataMode,
+              fixtureRevision: snapshot.fixtureRevision,
+              sampleMeteredSummaries: snapshot.sampleMeteredSummaries,
+              sampleDayCosts: sampleCosts,
+              isCurrent: snapshot.isCurrent,
+            ),
+            stale,
           );
         } on CloudApiException catch (error) {
           if (stale()) return null;
@@ -293,6 +313,44 @@ class DevicesDomainRepository {
       if (stale()) return null;
       rethrow;
     }
+  }
+
+  Future<DevicesDomainSnapshot?> _withDeviceStates(
+    String homeId,
+    DevicesDomainSnapshot snapshot,
+    bool Function() stale,
+  ) async {
+    if (snapshot.dataMode == CloudApplianceDataMode.sample ||
+        source is! DevicesCurrentStateSource) {
+      return snapshot;
+    }
+    CloudDeviceStates? states;
+    final requestStartedAt = DateTime.now();
+    try {
+      states = await (source as DevicesCurrentStateSource).deviceStates(homeId);
+    } catch (_) {
+      // Without current telemetry the customer state is Standby. Older daily
+      // measurements cannot establish that the device is still connected.
+      return stale() ? null : snapshot;
+    }
+    if (stale()) return null;
+    final ids = snapshot.items.map((item) => item.appliance.id).toSet();
+    if (states.homeId != homeId ||
+        states.states.any((state) => !ids.contains(state.applianceId))) {
+      throw const FormatException('Device states do not match inventory');
+    }
+    return DevicesDomainSnapshot(
+      homeId: snapshot.homeId,
+      items: snapshot.items,
+      hasMoreMeteredPages: snapshot.hasMoreMeteredPages,
+      dataMode: snapshot.dataMode,
+      fixtureRevision: snapshot.fixtureRevision,
+      sampleMeteredSummaries: snapshot.sampleMeteredSummaries,
+      sampleDayCosts: snapshot.sampleDayCosts,
+      deviceStates: states,
+      deviceStatesRequestStartedAt: requestStartedAt,
+      isCurrent: snapshot.isCurrent,
+    );
   }
 
   Future<_DeviceInventoryRead> _readInventory(String homeId) async {

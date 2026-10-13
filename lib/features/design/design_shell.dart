@@ -608,6 +608,22 @@ class _DesignShellState extends State<DesignShell> {
         // The packaged home name remains visible on script failure.
       }
     }
+    if (page == 'dashboard' &&
+        context == null &&
+        (widget.localPilot || widget.designTour)) {
+      final ticket = _bindingGate.select(_pageStateHomeId, page);
+      _pageTicket = ticket;
+      try {
+        final installed = await _controller.runJavaScriptReturningResult(
+          _bindingRenderer.installationScript(ticket)!,
+        );
+        if (installed != true || !_isCurrentPageLoad(page, generation)) {
+          return;
+        }
+      } catch (_) {
+        return;
+      }
+    }
     if (_efficiencyPages.contains(page) && _efficiencyDetailsExpanded) {
       try {
         await _controller.runJavaScriptReturningResult(
@@ -634,7 +650,6 @@ class _DesignShellState extends State<DesignShell> {
       return;
     }
     if (page == 'dashboard') {
-      if (context == null) return;
       await _applyDashboardBindings(generation);
       await _applyDashboardChart(generation);
       return;
@@ -922,27 +937,37 @@ class _DesignShellState extends State<DesignShell> {
   }
 
   Future<void> _applyDashboardChart(int generation) async {
-    final read = _pageReads.latestRead;
     final context = widget.designContextCoordinator?.context;
     final ticket = _pageTicket;
     if (!_pageReady ||
         !_isCurrentPageLoad('dashboard', generation) ||
-        read == null ||
-        read.page != 'dashboard' ||
-        read.value is! DashboardDomainSnapshot ||
-        context == null ||
-        ticket == null ||
-        read.accountId != context.accountId ||
-        read.homeId != context.homeId ||
-        !context.allowsReadMode(read.mode)) {
+        ticket == null) {
       return;
     }
-    final snapshot = read.value as DashboardDomainSnapshot;
-    final chart = DashboardChartProjection.fromSnapshot(
-      snapshot,
-      _dashboardGranularity,
-    );
-    if (chart == null) return;
+    DashboardChartProjection? chart;
+    if (context == null && (widget.localPilot || widget.designTour)) {
+      chart = DashboardChartProjection.fromDemo(_dashboardGranularity);
+    } else {
+      final read = _pageReads.latestRead;
+      if (context == null || ticket.homeId != context.homeId) {
+        return;
+      }
+      if (read != null &&
+          read.page == 'dashboard' &&
+          read.value is DashboardDomainSnapshot &&
+          read.accountId == context.accountId &&
+          read.homeId == context.homeId &&
+          context.allowsReadMode(read.mode)) {
+        chart = DashboardChartProjection.fromSnapshot(
+          read.value as DashboardDomainSnapshot,
+          _dashboardGranularity,
+        );
+      }
+      // The approved illustration keeps all three tabs usable while a Cloud
+      // period is pending or unavailable. It never derives a split from real
+      // unclassified cost, and a compatible current read replaces it.
+      chart ??= DashboardChartProjection.fromDemo(_dashboardGranularity);
+    }
     final script = _chartRenderer.script(ticket, chart);
     if (script == null) return;
     try {
@@ -1381,16 +1406,10 @@ class _DesignShellState extends State<DesignShell> {
     if (_page == 'dashboard' && route.startsWith('dashboard_period:')) {
       final granularity = route.substring('dashboard_period:'.length);
       if (const {'day', 'week', 'month'}.contains(granularity)) {
-        final read = _pageReads.latestRead;
-        if (read?.value is DashboardDomainSnapshot &&
-            DashboardChartProjection.fromSnapshot(
-                  read!.value as DashboardDomainSnapshot,
-                  granularity,
-                ) !=
-                null) {
-          _dashboardGranularity = granularity;
-          await _applyDashboardChart(_pageLoadGeneration);
-        }
+        // Keep the requested period while typed reads are still pending.
+        // _readPage applies it once the matching current-home data arrives.
+        _dashboardGranularity = granularity;
+        await _applyDashboardChart(_pageLoadGeneration);
       }
       return;
     }

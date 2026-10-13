@@ -40,10 +40,13 @@ class LiveDevicesCardRenderer {
             'name': row.name,
             'identity': '${row.manufacturer} ${row.model}'.trim(),
             'usageCost': row.usageCost,
+            'usefulCost': row.usefulCost,
             'wasteCost': row.wasteCost,
             'demoWaste': row.demoWasteMicrosPerDay == null
                 ? null
                 : '\$${_formatDemoWaste(row.demoWasteMicrosPerDay!)}',
+            'state': row.state,
+            'stateExpiresAt': row.stateExpiresAt?.millisecondsSinceEpoch,
           },
       ],
       'seededRows': [
@@ -101,8 +104,11 @@ class LiveDevicesCardRenderer {
     if (typeof row.id !== 'string' || typeof row.name !== 'string' ||
         typeof row.identity !== 'string' ||
         (row.usageCost !== null && typeof row.usageCost !== 'string') ||
+        (row.usefulCost !== null && typeof row.usefulCost !== 'string') ||
         (row.demoWaste !== null && typeof row.demoWaste !== 'string') ||
-        (row.wasteCost !== null && typeof row.wasteCost !== 'string')) return false;
+        (row.wasteCost !== null && typeof row.wasteCost !== 'string') ||
+        (row.stateExpiresAt !== null && !Number.isSafeInteger(row.stateExpiresAt)) ||
+        !['active', 'idle', 'standby'].includes(row.state)) return false;
     const clone = template.cloneNode(true);
     const name = clone.querySelector('[data-el-bind="devices_text_022"]');
     const identity = clone.querySelector('[data-el-bind="devices_text_023"]');
@@ -118,10 +124,28 @@ class LiveDevicesCardRenderer {
     }
     name.textContent = row.name;
     identity.textContent = row.identity;
-    status.closest('.flex.flex-col.items-end')?.remove();
-    useful.textContent = 'N/A';
+    const expiresAt = row.stateExpiresAt;
+    const initialState = expiresAt !== null && expiresAt <= Date.now()
+      ? 'standby' : row.state;
+    const setState = state => {
+    const stateText = state[0].toUpperCase() + state.slice(1);
+    status.className = state === 'active'
+      ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#059669]/10 text-[#059669] border border-[#059669]/25'
+      : state === 'idle'
+      ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#fffbeb] text-[#d97706] border border-[#fde68a]'
+      : 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-surface-container-high text-on-surface-variant border border-outline-variant/50';
+    const dot = document.createElement('span');
+    dot.className = state === 'active' ? 'w-1 h-1 rounded-full bg-[#059669]'
+      : state === 'idle' ? 'w-1 h-1 rounded-full bg-[#d97706]' : 'w-1 h-1 rounded-full bg-on-surface-variant';
+    status.replaceChildren(dot, document.createTextNode(stateText));
+    clone.setAttribute('data-el-device-state', state);
+    };
+    setState(initialState);
+    useful.textContent = row.usefulCost ?? 'N/A';
     useful.classList.remove('text-[#059669]');
-    useful.classList.add('text-on-surface-variant');
+    useful.classList.remove('text-on-surface-variant');
+    const usefulAmount = row.usefulCost && Number(row.usefulCost.replace(/[^0-9.]/g, ''));
+    useful.classList.add(usefulAmount > 0 ? 'text-[#059669]' : 'text-on-surface-variant');
     const wasteText = row.wasteCost ?? row.demoWaste;
     waste.textContent = wasteText ?? 'N/A';
     waste.classList.remove('text-[#d97706]');
@@ -134,6 +158,19 @@ class LiveDevicesCardRenderer {
     if (row.usageCost !== null) clone.setAttribute('data-el-usage-cost', row.usageCost);
     if (wasteText !== null) clone.setAttribute('data-el-waste-cost', wasteText);
     cards.push(clone);
+    if (initialState !== 'standby' && expiresAt !== null) {
+      const expire = () => {
+        if (window.$_contextKey !== current || !clone.isConnected) return;
+        const remaining = expiresAt - Date.now();
+        if (remaining > 0) {
+          setTimeout(expire, Math.min(remaining, 2147483647));
+          return;
+        }
+        setState('standby');
+        feed.dispatchEvent(new Event('energylens:devices-changed'));
+      };
+      setTimeout(expire, Math.max(0, expiresAt - Date.now()));
+    }
   }
   for (const node of existing) node.remove();
   for (const card of cards) feed.appendChild(card);

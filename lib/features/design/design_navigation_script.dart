@@ -88,11 +88,13 @@ String buildDesignNavigationScript(String page) {
             ['dashboard_action_004', 'dashboard_action_005', 'dashboard_action_006'].includes(action)) {
           event.preventDefault();
           event.stopImmediatePropagation();
-          send('dashboard_period:' + ({
+          const period = ({
             dashboard_action_004: 'day',
             dashboard_action_005: 'week',
             dashboard_action_006: 'month'
-          })[action]);
+          })[action];
+          window.__energyLensDashboardRequestedPeriod = period;
+          send('dashboard_period:' + period);
           return;
         }
         if (page === 'dashboard' && action === 'dashboard_action_007') {

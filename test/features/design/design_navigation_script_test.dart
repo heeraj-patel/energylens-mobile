@@ -20,6 +20,7 @@ const {script} = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
 const routes = [];
 let clickHandler;
 globalThis.document = {addEventListener(type, handler) { clickHandler = handler; }};
+globalThis.window = {};
 globalThis.EnergyLensNavigation = {postMessage(route) { routes.push(route); }};
 eval(script);
 for (const action of ['dashboard_action_004', 'dashboard_action_005', 'dashboard_action_006']) {
@@ -37,6 +38,7 @@ for (const action of ['dashboard_action_004', 'dashboard_action_005', 'dashboard
 assert.deepEqual(routes, [
   'dashboard_period:day', 'dashboard_period:week', 'dashboard_period:month'
 ]);
+assert.equal(window.__energyLensDashboardRequestedPeriod, 'month');
 ''',
         file.path,
       ]);

@@ -55,6 +55,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   String? _pairedHubId;
   bool _searched = false;
   final Set<String> _statusChecking = {};
+  final Map<String, String> _plugCheckFeedback = {};
+  final Map<String, String> _plugUpdateFeedback = {};
   String? _error;
   CloudHubClaimFlow? _claimFlow;
   bool _claimBusy = false;
@@ -448,6 +450,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     if (_statusChecking.contains(plug.id)) return;
     setState(() {
       _statusChecking.add(plug.id);
+      _plugCheckFeedback.remove(plug.id);
       _error = null;
     });
     try {
@@ -462,6 +465,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           for (final current in _saved)
             if (current.id == refreshed.id) refreshed else current,
         ];
+        final result = switch (refreshed.connectionStatus) {
+          'connected' => 'Check complete · Plug connected',
+          'disconnected' => 'Check complete · Plug disconnected',
+          'identity_changed' =>
+            'Check complete · Different plug at this address',
+          _ => null,
+        };
+        if (result != null) _plugCheckFeedback[plug.id] = result;
         if (refreshed.connectionStatus == 'identity_changed') {
           final applianceId = refreshed.connectedAppliance?.id;
           if (applianceId != null) _estimates.remove(applianceId);
@@ -470,8 +481,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     } catch (_) {
       if (mounted) {
         setState(
-          () => _error =
-              'Could not check ${plug.name}. Check the hub connection and retry.',
+          () => _plugCheckFeedback[plug.id] = 'Check failed · Try again.',
         );
       }
     } finally {
@@ -959,6 +969,46 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
   }
 
+  Future<void> _updateSavedConnection(
+    DiscoveredPlug candidate,
+    SavedPlug saved,
+  ) async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _plugUpdateFeedback.remove(saved.id);
+      _error = null;
+    });
+    try {
+      final updated = await widget.api.adopt(
+        _hub.text.trim(),
+        _token.text.trim(),
+        candidate,
+        saved.name,
+        saved.room,
+        candidate.meterStatus == 'absent',
+      );
+      if (!mounted) return;
+      setState(() {
+        _saved = [
+          for (final plug in _saved)
+            if (plug.id == updated.id) updated else plug,
+        ];
+        _plugUpdateFeedback[saved.id] = 'Plug connection updated';
+      });
+      await _syncAdoptedPlugSensors(_saved);
+      await _refreshPlugStatus(updated);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _plugUpdateFeedback[saved.id] = 'Could not update the plug connection. Check that it is still connected and try again.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   void dispose() {
     _hub.dispose();
@@ -1014,7 +1064,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   }
 
   List<Widget> _detectedResults(ThemeData theme) {
-    final savedIds = _saved.map((plug) => plug.id).toSet();
+    final savedById = {for (final plug in _saved) plug.id: plug};
+    final savedIds = savedById.keys.toSet();
     final candidates = [..._candidates]
       ..sort((left, right) {
         final savedOrder = (savedIds.contains(right.id) ? 1 : 0).compareTo(
@@ -1044,12 +1095,15 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         const SizedBox(height: 8),
         _PlugCandidateCard(
           candidate: candidate,
-          saved: savedIds.contains(candidate.id),
-          savedName: _saved
-              .where((plug) => plug.id == candidate.id)
-              .firstOrNull
-              ?.name,
-          onSave: _busy ? null : () => _adopt(candidate),
+          saved: savedById.containsKey(candidate.id),
+          savedName: savedById[candidate.id]?.name,
+          onSave: _busy
+              ? null
+              : savedById[candidate.id] == null
+              ? () => _adopt(candidate)
+              : () =>
+                    _updateSavedConnection(candidate, savedById[candidate.id]!),
+          updateFeedback: _plugUpdateFeedback[candidate.id],
         ),
       ],
     ];
@@ -1318,10 +1372,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       Text(
                         plugConnectionLabel(plug, hubConnected: _hubConnected),
                       ),
-                      Text(
-                        plugConnectionDetail(plug),
-                        style: theme.textTheme.bodySmall,
-                      ),
                       TextButton.icon(
                         onPressed: _statusChecking.contains(plug.id)
                             ? null
@@ -1340,6 +1390,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                               ? 'Checking plug…'
                               : 'Check plug connection',
                         ),
+                      ),
+                      if (_plugCheckFeedback[plug.id] case final result?)
+                        Text(result),
+                      Text(
+                        plugConnectionDetail(plug),
+                        style: theme.textTheme.bodySmall,
                       ),
                       const Divider(height: 24),
                       Text(
@@ -1438,12 +1494,14 @@ class _PlugCandidateCard extends StatelessWidget {
     required this.saved,
     required this.savedName,
     required this.onSave,
+    required this.updateFeedback,
   });
 
   final DiscoveredPlug candidate;
   final bool saved;
   final String? savedName;
   final VoidCallback? onSave;
+  final String? updateFeedback;
 
   @override
   Widget build(BuildContext context) {
@@ -1505,7 +1563,14 @@ class _PlugCandidateCard extends StatelessWidget {
                 : 'Detected for this scan · Not saved yet',
             style: theme.textTheme.bodySmall,
           ),
-          if (!saved) ...[
+          if (saved) ...[
+            const SizedBox(height: 8),
+            FilledButton(
+              onPressed: onSave,
+              child: const Text('Update plug connection'),
+            ),
+            if (updateFeedback != null) Text(updateFeedback!),
+          ] else ...[
             const SizedBox(height: 8),
             FilledButton(
               onPressed: onSave,

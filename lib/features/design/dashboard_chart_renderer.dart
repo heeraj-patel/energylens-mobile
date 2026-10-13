@@ -46,6 +46,7 @@ class DashboardChartRenderer {
   const current = window.__energyLensTextBindingContext;
   const expected = payload.context;
   if (!current || current.homeId !== expected.homeId || current.page !== expected.page || current.generation !== expected.generation) return false;
+  if (window.__energyLensDashboardRequestedPeriod && window.__energyLensDashboardRequestedPeriod !== payload.granularity) return false;
   const svg = document.querySelector('svg[data-el-chart="dashboard-trends"]');
   if (!svg || !Array.isArray(payload.bars) || payload.bars.length < 1 || payload.bars.length > 5) return false;
   const ns = 'http://www.w3.org/2000/svg';

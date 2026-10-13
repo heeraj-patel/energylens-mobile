@@ -169,9 +169,12 @@ void main() {
         costs: costs,
       ),
     );
+    expect(projection.rows[0].usefulCost, '\$0.99');
     expect(projection.rows[0].wasteCost, '\$0.25');
+    expect(projection.rows[1].usefulCost, isNull);
     expect(projection.rows[1].wasteCost, isNull);
     expect(projection.rows[1].demoWasteMicrosPerDay, 500);
+    expect(projection.rows[2].usefulCost, isNull);
     expect(projection.rows[2].wasteCost, isNull);
   });
 

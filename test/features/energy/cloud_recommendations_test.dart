@@ -67,7 +67,7 @@ Map<String, dynamic> action() => {
 };
 
 void main() {
-  test('accepts owner-scoped candidate and rejects unsupported savings', () {
+  test('accepts owner-scoped candidate and supported scenario benefit', () {
     final body = {
       'actions': [action()],
       'as_of': '2026-10-01T12:00:00Z',
@@ -88,17 +88,71 @@ void main() {
       ),
       throwsFormatException,
     );
+    final benefit = CloudRecommendation.fromJson(
+      {
+        ...action(),
+        'savings_amount': '20.00',
+        'savings_period': 'month',
+        'savings_currency': 'USD',
+        'savings_basis': 'bill_cost',
+        'scenario_refs': [
+          {
+            'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            'kind': 'baseline_alternative',
+            'revision': 2,
+          },
+        ],
+      },
+      {appliance},
+    );
+    expect(benefit.savingsAmount, '20.00');
+    expect(benefit.scenarioRefs.single['revision'], 2);
     expect(
-      () => CloudRecommendationBatch.fromJson(
-        {
-          'actions': [
-            {...action(), 'savings_amount': '20'},
-          ],
-          'as_of': body['as_of'],
-        },
+      () => CloudRecommendation.fromJson(
+        {...action(), 'savings_amount': '20.00'},
         {appliance},
       ),
       throwsFormatException,
+    );
+  });
+
+  test('binds only reviewed HTTPS scenario source URLs', () {
+    final reviewed = {
+      ...action(),
+      'savings_amount': '20.00',
+      'savings_period': 'year',
+      'savings_currency': 'USD',
+      'savings_basis': 'reviewed_action_scenario',
+      'scenario_refs': [
+        {
+          'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          'kind': 'reviewed_action_scenario',
+          'revision': 1,
+        },
+      ],
+      'source_url': 'https://manufacturer.example/eco-guide',
+    };
+    expect(
+      CloudRecommendation.fromJson(reviewed, {appliance}).sourceUrl.toString(),
+      'https://manufacturer.example/eco-guide',
+    );
+    for (final url in [
+      'http://manufacturer.example/eco-guide',
+      'https://user@manufacturer.example/eco-guide',
+    ]) {
+      final actionWithBadLink = CloudRecommendation.fromJson(
+        {...reviewed, 'source_url': url},
+        {appliance},
+      );
+      expect(actionWithBadLink.sourceUrl, isNull);
+      expect(actionWithBadLink.savingsAmount, '20.00');
+    }
+    expect(
+      CloudRecommendation.fromJson(
+        {...action(), 'source_url': reviewed['source_url']},
+        {appliance},
+      ).sourceUrl,
+      isNull,
     );
   });
 

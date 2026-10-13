@@ -33,7 +33,10 @@ class LiveDeviceRow {
     required this.measuredBucket,
     this.demoWasteMicrosPerDay,
     this.usageCost,
+    this.usefulCost,
     this.wasteCost,
+    this.state = 'standby',
+    this.stateExpiresAt,
   });
 
   final String applianceId;
@@ -45,7 +48,10 @@ class LiveDeviceRow {
   /// Display-only rate, available only after a typed final KB waste miss.
   final int? demoWasteMicrosPerDay;
   final String? usageCost;
+  final String? usefulCost;
   final String? wasteCost;
+  final String state;
+  final DateTime? stateExpiresAt;
 }
 
 class SeededDeviceRow {
@@ -106,6 +112,12 @@ LiveDevicesProjection prepareLiveDevicesProjection(DesignContextRead read) {
   final ids = <String>{};
   final rows = <LiveDeviceRow>[];
   final dailyCosts = _realDailyCosts(value);
+  final currentStates = {
+    for (final state in value.deviceStates?.states ?? const [])
+      state.applianceId: state,
+  };
+  final stateAsOf = value.deviceStates?.asOf;
+  final requestStartedAt = value.deviceStatesRequestStartedAt;
   for (final item in value.items) {
     final appliance = item.appliance;
     if (appliance.homeId.toLowerCase() != read.homeId.toLowerCase() ||
@@ -147,6 +159,17 @@ LiveDevicesProjection prepareLiveDevicesProjection(DesignContextRead read) {
       );
     }
     final dailyCost = dailyCosts[appliance.id];
+    final currentState = currentStates[appliance.id];
+    DateTime? stateExpiresAt;
+    if (currentState != null &&
+        currentState.state != 'standby' &&
+        currentState.observedAt != null &&
+        stateAsOf != null &&
+        requestStartedAt != null) {
+      final remaining = const Duration(minutes: 15) -
+          stateAsOf.difference(currentState.observedAt!);
+      stateExpiresAt = requestStartedAt.add(remaining);
+    }
     int? illustrativeWaste;
     if (read.mode == DesignContextMode.household &&
         appliance.demoDeviceId == null &&
@@ -174,8 +197,14 @@ LiveDevicesProjection prepareLiveDevicesProjection(DesignContextRead read) {
         model: appliance.fullModel,
         measuredBucket: bucket,
         usageCost: dailyCost == null ? null : _costText(dailyCost.totalMicros),
+        usefulCost: dailyCost?.usefulCost,
         wasteCost: dailyCost?.wasteCost,
         demoWasteMicrosPerDay: illustrativeWaste,
+        state: stateExpiresAt != null &&
+                !stateExpiresAt.isAfter(DateTime.now())
+            ? 'standby'
+            : currentState?.state ?? 'standby',
+        stateExpiresAt: stateExpiresAt,
       ),
     );
   }
@@ -262,7 +291,8 @@ List<SeededDeviceRow> _additionalSeededRows(DevicesDomainSnapshot snapshot) {
 }
 
 class _DailyRealCost {
-  const _DailyRealCost(this.wasteCost, this.totalMicros);
+  const _DailyRealCost(this.usefulCost, this.wasteCost, this.totalMicros);
+  final String? usefulCost;
   final String? wasteCost;
   final BigInt totalMicros;
 }
@@ -306,7 +336,7 @@ Map<String, _DailyRealCost> _realDailyCosts(DevicesDomainSnapshot snapshot) {
         (useful != null && waste != null && useful + waste > total)) {
       continue;
     }
-    rows[id] = _DailyRealCost(_costText(waste), total);
+    rows[id] = _DailyRealCost(_costText(useful), _costText(waste), total);
   }
   return rows;
 }

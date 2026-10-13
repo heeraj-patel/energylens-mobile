@@ -29,7 +29,10 @@ CloudProgram program(String id, String title) => CloudProgram(
   reviewExpiresAt: DateTime.utc(2026, 12),
 );
 
-TipsDomainSnapshot snapshot(TipsPage page) => TipsDomainSnapshot(
+TipsDomainSnapshot snapshot(
+  TipsPage page, [
+  List<CloudRecommendation>? recommendations,
+]) => TipsDomainSnapshot(
   homeId: home,
   page: page,
   programs: CloudProgramPage(
@@ -38,47 +41,131 @@ TipsDomainSnapshot snapshot(TipsPage page) => TipsDomainSnapshot(
     locationRequired: false,
     coverage: null,
   ),
-  recommendations: const [
-    CloudRecommendation(
-      ruleId: 'computer.sleep_settings',
-      applianceId: appliance,
-      state: 'candidate',
-      title: 'First action',
-      explanation: 'Find usage information.',
-      nextQuestion: 'hours_per_week',
-      evidenceCount: 0,
-    ),
-    CloudRecommendation(
-      ruleId: 'refrigerator.maintenance',
-      applianceId: appliance,
-      state: 'active',
-      title: 'Second action',
-      explanation: 'Review the manual.',
-      nextQuestion: null,
-      evidenceCount: 2,
-      tipCategory: CloudRecommendationTipCategory.care,
-    ),
-    CloudRecommendation(
-      ruleId: 'lighting.equivalent_bulb',
-      applianceId: appliance,
-      state: 'active',
-      title: 'Third action',
-      explanation: 'Review supported bulbs.',
-      nextQuestion: null,
-      evidenceCount: 2,
-      tipCategory: CloudRecommendationTipCategory.upgrade,
-    ),
-  ],
+  recommendations:
+      recommendations ??
+      const [
+        CloudRecommendation(
+          ruleId: 'computer.sleep_settings',
+          applianceId: appliance,
+          state: 'candidate',
+          title: 'First action',
+          explanation: 'Find usage information.',
+          nextQuestion: 'hours_per_week',
+          evidenceCount: 0,
+          scenarioRefs: [],
+        ),
+        CloudRecommendation(
+          ruleId: 'refrigerator.maintenance',
+          applianceId: appliance,
+          state: 'active',
+          title: 'Second action',
+          explanation: 'Review the manual.',
+          nextQuestion: null,
+          evidenceCount: 2,
+          scenarioRefs: [],
+          tipCategory: CloudRecommendationTipCategory.care,
+        ),
+        CloudRecommendation(
+          ruleId: 'lighting.equivalent_bulb',
+          applianceId: appliance,
+          state: 'active',
+          title: 'Third action',
+          explanation: 'Review supported bulbs.',
+          nextQuestion: null,
+          evidenceCount: 2,
+          scenarioRefs: [],
+          tipCategory: CloudRecommendationTipCategory.upgrade,
+        ),
+      ],
   applianceNames: const {appliance: 'Saved appliance'},
   operatingEstimates: const [],
   usageFactsByAppliance: const {},
   factsIncomplete: false,
 );
 
+CloudRecommendation reviewedRecommendation(
+  String amount, {
+  String state = 'active',
+  String ruleId = 'refrigerator.maintenance',
+  String savingsBasis = 'reviewed_action_scenario',
+  Uri? sourceUrl,
+  CloudRecommendationTipCategory tipCategory =
+      CloudRecommendationTipCategory.care,
+}) => CloudRecommendation(
+  ruleId: ruleId,
+  applianceId: appliance,
+  state: state,
+  title: 'Supported action',
+  explanation: 'Review the manual.',
+  nextQuestion: null,
+  evidenceCount: 3,
+  scenarioRefs: const [
+    {
+      'id': '33333333-3333-4333-8333-333333333333',
+      'kind': 'reviewed_action_scenario',
+      'revision': 1,
+    },
+  ],
+  savingsAmount: amount,
+  savingsPeriod: 'year',
+  savingsCurrency: 'USD',
+  savingsBasis: savingsBasis,
+  sourceUrl: sourceUrl,
+  tipCategory: tipCategory,
+);
+
 void main() {
+  test('monthly savings chip uses supported annual USD scenarios only', () {
+    expect(
+      TipsPageRenderer.savingsChipLabel(reviewedRecommendation('5.04')),
+      'Save ~\$0.42/mo',
+    );
+    expect(
+      TipsPageRenderer.savingsChipLabel(reviewedRecommendation('120')),
+      'Save ~\$10/mo',
+    );
+    expect(
+      TipsPageRenderer.savingsChipLabel(
+        reviewedRecommendation('120', state: 'accepted'),
+      ),
+      'Save ~\$10/mo',
+    );
+    expect(
+      TipsPageRenderer.savingsChipLabel(reviewedRecommendation('0.01')),
+      isNull,
+    );
+    for (final state in ['completed', 'snoozed', 'dismissed', 'superseded']) {
+      expect(
+        TipsPageRenderer.savingsChipLabel(
+          reviewedRecommendation('120', state: state),
+        ),
+        isNull,
+        reason: '$state actions keep the card but omit the savings chip',
+      );
+    }
+    expect(
+      TipsPageRenderer.savingsChipLabel(
+        reviewedRecommendation('120', savingsBasis: 'annual_energy'),
+      ),
+      isNull,
+    );
+  });
+
   test(
     'source rows keep order and fields, and reject stale page scope',
     () async {
+      final recommendations = [
+        snapshot(TipsPage.efficiency).recommendations[0],
+        reviewedRecommendation(
+          '5.04',
+          sourceUrl: Uri.parse('https://manufacturer.example/eco-guide'),
+        ),
+        reviewedRecommendation(
+          '0.01',
+          ruleId: 'lighting.equivalent_bulb',
+          tipCategory: CloudRecommendationTipCategory.upgrade,
+        ),
+      ];
       final scripts = {
         'programs': const TipsPageRenderer().script(
           const DesignPageTicket(home, 'perks_tips', 3),
@@ -86,11 +173,11 @@ void main() {
         ),
         'tips': const TipsPageRenderer().script(
           const DesignPageTicket(home, 'tips_efficiency', 3),
-          snapshot(TipsPage.efficiency),
+          snapshot(TipsPage.efficiency, recommendations),
         ),
         'care': const TipsPageRenderer().script(
           const DesignPageTicket(home, 'tips_care_upgrades', 3),
-          snapshot(TipsPage.careUpgrades),
+          snapshot(TipsPage.careUpgrades, recommendations),
         ),
       };
       final result = await Process.run('node', [
@@ -100,7 +187,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const scripts = JSON.parse(process.argv[1]);
 class Element {
-  constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.textContent = ''; }
+  constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.textContent = ''; this.className = ''; this.style = {}; }
   append(node) { this.children.push(node); }
   replaceChildren() { this.children = []; }
   setAttribute(key, value) { this.attributes[key] = value; }
@@ -122,11 +209,23 @@ assert.equal(offers[0].children[0].children[1].textContent, 'City utility');
 assert.equal(offers[0].children[0].children[2].textContent, 'Up to $40');
 assert.equal(offers[0].children[0].href, 'https://utility.example/program/one');
 const tips = render('tips_efficiency', scripts.tips);
-assert.deepEqual(tips.mount.children[1].children.map(row => row.children[0].children[0].textContent), ['First action', 'Second action', 'Third action']);
+assert.deepEqual(tips.mount.children[1].children.map(row => row.children[0].children[0].textContent || row.children[0].children[0].children[0].textContent), ['First action', 'Supported action', 'Supported action']);
 assert.equal(tips.mount.children[1].children[0].children[0].children[1].textContent, 'Saved appliance');
 assert.equal(tips.mount.children[1].children[0].children[0].children[2].textContent, 'Find usage information.');
+const efficiencyCards = tips.mount.children[1].children;
+assert.equal(efficiencyCards.length, 3);
+assert.equal(efficiencyCards[1].children[0].tag, 'div');
+assert.equal(efficiencyCards[1].children[0].children[0].children[0].href, 'https://manufacturer.example/eco-guide');
+assert.equal(efficiencyCards[1].children[0].children[0].children[0].textContent, 'Supported action');
+assert.equal(efficiencyCards[0].children[0].children[0].children.length, 0);
+assert.equal(efficiencyCards[0].children[0].children.some(child => child.textContent.startsWith('Save ~')), false);
+assert.equal(efficiencyCards[1].children[0].children[3].textContent, 'Save ~$0.42/mo');
+assert.match(efficiencyCards[1].children[0].children[3].className, /bg-secondary-container/);
+assert.equal(efficiencyCards[2].children[0].children.some(child => child.textContent.startsWith('Save ~')), false);
 const care = render('tips_care_upgrades', scripts.care);
-assert.deepEqual(care.mount.children[1].children.map(row => row.children[0].children[0].textContent), ['Second action', 'Third action']);
+assert.deepEqual(care.mount.children[1].children.map(row => row.children[0].children[0].textContent || row.children[0].children[0].children[0].textContent), ['Supported action', 'Supported action']);
+assert.equal(care.mount.children[1].children[0].children[0].children[3].textContent, 'Save ~$0.42/mo');
+assert.equal(care.mount.children[1].children.length, 2);
 assert.equal(render('perks_tips', scripts.programs, 4).accepted, false);
 assert.equal(render('tips_efficiency', scripts.programs).accepted, false);
 ''',

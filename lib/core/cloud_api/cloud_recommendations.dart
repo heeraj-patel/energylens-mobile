@@ -37,6 +37,7 @@ const _recommendationStates = {
 final _uuid = RegExp(
   r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
 );
+final _money = RegExp(r'^\d+(?:\.\d{1,6})?$');
 
 enum CloudRecommendationTipCategory { general, care, upgrade }
 
@@ -49,6 +50,12 @@ class CloudRecommendation {
     required this.explanation,
     required this.nextQuestion,
     required this.evidenceCount,
+    required this.scenarioRefs,
+    this.savingsAmount,
+    this.savingsPeriod,
+    this.savingsCurrency,
+    this.savingsBasis,
+    this.sourceUrl,
     this.tipCategory = CloudRecommendationTipCategory.general,
   });
   final String ruleId;
@@ -58,6 +65,12 @@ class CloudRecommendation {
   final String explanation;
   final String? nextQuestion;
   final int evidenceCount;
+  final List<Map<String, dynamic>> scenarioRefs;
+  final String? savingsAmount;
+  final String? savingsPeriod;
+  final String? savingsCurrency;
+  final String? savingsBasis;
+  final Uri? sourceUrl;
   final CloudRecommendationTipCategory tipCategory;
 
   factory CloudRecommendation.fromJson(
@@ -71,6 +84,23 @@ class CloudRecommendation {
     final explanation = json['explanation'];
     final next = json['next_question'];
     final refs = json['evidence_refs'];
+    final scenarioRefs = json['scenario_refs'] ?? const <dynamic>[];
+    final savingsAmount = json['savings_amount'];
+    final savingsPeriod = json['savings_period'];
+    final savingsCurrency = json['savings_currency'];
+    final savingsBasis = json['savings_basis'];
+    final sourceUrlValue = json['source_url'];
+    final parsedSourceUrl = sourceUrlValue is String
+        ? Uri.tryParse(sourceUrlValue)
+        : null;
+    final sourceUrl =
+        savingsAmount != null &&
+            savingsBasis == 'reviewed_action_scenario' &&
+            parsedSourceUrl?.scheme == 'https' &&
+            parsedSourceUrl?.host.isNotEmpty == true &&
+            parsedSourceUrl?.userInfo.isEmpty == true
+        ? parsedSourceUrl
+        : null;
     final categoryValue = json['tip_category'];
     final tipCategory = categoryValue == null
         ? CloudRecommendationTipCategory.general
@@ -106,7 +136,33 @@ class CloudRecommendation {
               ref['revision'] is! int ||
               (ref['revision'] as int) < 1,
         ) ||
-        json['savings_amount'] != null ||
+        scenarioRefs is! List ||
+        scenarioRefs.length > 12 ||
+        scenarioRefs.any(
+          (ref) =>
+              ref is! Map<String, dynamic> ||
+              ref['id'] is! String ||
+              !_uuid.hasMatch(ref['id'] as String) ||
+              ref['kind'] is! String ||
+              (ref['kind'] as String).isEmpty ||
+              ref['revision'] is! int ||
+              (ref['revision'] as int) < 1,
+        ) ||
+        (savingsAmount != null &&
+            (savingsAmount is! String || !_money.hasMatch(savingsAmount))) ||
+        (savingsAmount == null &&
+            (savingsPeriod != null ||
+                savingsCurrency != null ||
+                savingsBasis != null ||
+                scenarioRefs.isNotEmpty)) ||
+        (savingsAmount != null &&
+            (savingsPeriod is! String ||
+                savingsPeriod.isEmpty ||
+                savingsCurrency is! String ||
+                savingsCurrency != 'USD' ||
+                savingsBasis is! String ||
+                savingsBasis.isEmpty ||
+                scenarioRefs.isEmpty)) ||
         (next != null && !_nextQuestions.contains(next)) ||
         (state == 'active'
             ? next != null || refs.length < 2
@@ -123,6 +179,17 @@ class CloudRecommendation {
       explanation: explanation,
       nextQuestion: next as String?,
       evidenceCount: refs.length,
+      scenarioRefs: List.unmodifiable(
+        scenarioRefs.map(
+          (ref) =>
+              Map<String, dynamic>.unmodifiable(ref as Map<String, dynamic>),
+        ),
+      ),
+      savingsAmount: savingsAmount as String?,
+      savingsPeriod: savingsPeriod as String?,
+      savingsCurrency: savingsCurrency as String?,
+      savingsBasis: savingsBasis as String?,
+      sourceUrl: sourceUrl,
       tipCategory: tipCategory,
     );
   }

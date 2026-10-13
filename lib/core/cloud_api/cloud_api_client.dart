@@ -28,6 +28,7 @@ import 'cloud_sensor.dart';
 import 'cloud_household_energy.dart';
 import 'cloud_regional_rate.dart';
 import 'cloud_usage_facts.dart';
+import 'cloud_device_states.dart';
 
 class CloudApiException implements Exception {
   const CloudApiException(this.statusCode, this.code);
@@ -794,6 +795,16 @@ class CloudApiClient {
           .map((row) => CloudEstimate.fromJson(row as Map<String, dynamic>))
           .toList(),
       asOf: asOf,
+    );
+  }
+
+  Future<CloudDeviceStates> deviceStates(String homeId) async {
+    final response = await get(
+      '/v1/homes/${Uri.encodeComponent(homeId)}/device-states',
+    );
+    return CloudDeviceStates.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+      homeId,
     );
   }
 

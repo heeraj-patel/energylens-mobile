@@ -61,11 +61,13 @@ DashboardDomainSnapshot snapshot(
   List<Map<String, dynamic>> buckets, {
   bool Function()? isCurrent,
   String? generatedAt,
+  bool mixed = false,
 }) {
   const dayStart = '2026-10-06T00:00:00-05:00';
   const dayEnd = '2026-10-07T00:00:00-05:00';
   final dashboard = CloudHouseholdDashboard.fromJson({
     ...base(dayStart, dayEnd),
+    if (mixed) 'data_mode': 'mixed',
     'generated_at': generatedAt ?? '2026-10-06T18:00:00Z',
     'view': 'dashboard',
     'totals': allocation(),
@@ -75,6 +77,7 @@ DashboardDomainSnapshot snapshot(
   }, expectedHomeId: home);
   final hourly = CloudHouseholdEnergyTrends.fromJson({
     ...trend('hour', dayStart, dayEnd, []),
+    if (mixed) 'data_mode': 'mixed',
     'generated_at': generatedAt ?? '2026-10-06T18:00:00Z',
   }, expectedHomeId: home);
   final period = switch (granularity) {
@@ -84,6 +87,7 @@ DashboardDomainSnapshot snapshot(
   };
   final selected = CloudHouseholdEnergyTrends.fromJson({
     ...trend(granularity, period.$1, period.$2, buckets),
+    if (mixed) 'data_mode': 'mixed',
     'generated_at': generatedAt ?? '2026-10-06T18:00:00Z',
   }, expectedHomeId: home);
   return DashboardDomainSnapshot(
@@ -147,6 +151,37 @@ void main() {
       'Sep',
       'Oct',
     ]);
+  });
+
+  test('mixed chart retains demo split with separate unclassified real row', () {
+    final demoRows = [
+      for (var i = 0; i < 18; i++)
+        {
+          'device_id': 'demo-device-${(i + 1).toString().padLeft(2, '0')}',
+          'appliance_id': null,
+          'name': null,
+          'allocation': allocation(),
+        },
+    ];
+    final real = {
+      'appliance_id': '22222222-2222-4222-8222-222222222222',
+      'device_id': null,
+      'name': null,
+      'allocation': {
+        ...allocation(split: false),
+        'evidence_basis': 'measured',
+      },
+    };
+    final row = bucket(
+      '2026-10-06T00:00:00-05:00',
+      '2026-10-07T00:00:00-05:00',
+    )..['device_allocations'] = [...demoRows, real];
+    final chart = DashboardChartProjection.fromSnapshot(
+      snapshot('day', [row], mixed: true),
+      'day',
+    );
+    expect(chart?.bars.single.usefulCents, BigInt.from(1260));
+    expect(chart?.bars.single.wasteCents, BigInt.from(360));
   });
 
   test('missing split and stale context never produce a live chart', () {

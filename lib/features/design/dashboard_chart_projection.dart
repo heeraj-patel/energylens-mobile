@@ -2,6 +2,7 @@ import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../core/cloud_api/cloud_household_energy.dart';
+import 'dashboard_demo_period_costs.dart';
 import 'dashboard_domain_repository.dart';
 
 /// An evidenced useful/waste cost chart for the last five occurrences
@@ -21,6 +22,44 @@ class DashboardChartProjection {
   final String periodTotal;
   final String usefulTotal;
   final String wasteTotal;
+
+  /// Cost-only illustration for local pilot and design tour. The same axis
+  /// formatter is used for Cloud periods and the approved fixture.
+  static DashboardChartProjection fromDemo(String granularity) {
+    final location = _location('America/Chicago')!;
+    final bars = [
+      for (final bucket in DashboardDemoPeriodCosts.lastFive(granularity))
+        DashboardChartBar(
+          label: _label(
+            tz.TZDateTime(
+              location,
+              bucket.startLocalDate.year,
+              bucket.startLocalDate.month,
+              bucket.startLocalDate.day,
+            ),
+            location,
+            granularity,
+          ),
+          usefulCents: BigInt.from(bucket.usefulCents),
+          wasteCents: BigInt.from(bucket.wasteCents),
+        ),
+    ];
+    final useful = bars.fold<BigInt>(
+      BigInt.zero,
+      (sum, bar) => sum + bar.usefulCents,
+    );
+    final waste = bars.fold<BigInt>(
+      BigInt.zero,
+      (sum, bar) => sum + bar.wasteCents,
+    );
+    return DashboardChartProjection(
+      granularity: granularity,
+      bars: List.unmodifiable(bars),
+      periodTotal: _money(useful + waste),
+      usefulTotal: _money(useful),
+      wasteTotal: _money(waste),
+    );
+  }
 
   static DashboardChartProjection? fromSnapshot(
     DashboardDomainSnapshot snapshot,
@@ -133,7 +172,10 @@ class DashboardChartProjection {
 
 (BigInt, BigInt, BigInt)? _seededBucketCosts(CloudEnergyTrendBucket bucket) {
   final rows = bucket.deviceAllocations
-      .where((row) => row.deviceId != null)
+      // Mixed Cloud periods may also carry owned real-appliance rows. Those
+      // have no verified identity binding to a demo leaf and their measured
+      // unclassified cost cannot be placed in useful/waste bars.
+      .where((row) => row.deviceId != null && row.applianceId == null)
       .toList();
   if (rows.length != 18) return null;
   final ids = <String>{};
@@ -143,16 +185,18 @@ class DashboardChartProjection {
   for (final row in rows) {
     if (row.applianceId != null ||
         !ids.add(row.deviceId!) ||
-        row.allocation.evidenceBasis != 'synthetic')
+        row.allocation.evidenceBasis != 'synthetic') {
       return null;
+    }
     final rowTotal = _usdMicros(row.allocation.cost);
     final rowUseful = _usdMicros(row.allocation.usefulCost);
     final rowWaste = _usdMicros(row.allocation.wasteCost);
     if (rowTotal == null ||
         rowUseful == null ||
         rowWaste == null ||
-        rowUseful + rowWaste > rowTotal)
+        rowUseful + rowWaste > rowTotal) {
       return null;
+    }
     total += rowTotal;
     useful += rowUseful;
     waste += rowWaste;
