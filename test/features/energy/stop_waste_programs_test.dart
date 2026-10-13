@@ -58,6 +58,7 @@ Map<String, dynamic> _program(
   String kind, {
   String availability = 'open',
   String expires = '2099-01-01T00:00:00Z',
+  String? availabilityExpires,
 }) => {
   'program_id': id,
   'revision_id': '88888888-8888-4888-8888-888888888888',
@@ -75,6 +76,7 @@ Map<String, dynamic> _program(
   'source_url': 'https://example.org/$kind',
   'source_sha256': 'a' * 64,
   'review_expires_at': expires,
+  'availability_expires_at': ?availabilityExpires,
 };
 
 void main() {
@@ -132,7 +134,11 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: SingleChildScrollView(
-            child: StopWastePrograms(api: api, home: _home),
+            child: StopWastePrograms(
+              api: api,
+              home: _home,
+              now: () => DateTime.utc(2026, 10, 13, 12),
+            ),
           ),
         ),
       ),
@@ -148,18 +154,86 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const Key('stopWasteProgram-$makerId')), findsOneWidget);
-    expect(find.text('Local'), findsNWidgets(3));
+    expect(find.text('Local'), findsOneWidget);
     expect(find.text('Federal'), findsOneWidget);
     expect(find.text('Manufacturers'), findsOneWidget);
     expect(find.text('city benefit'), findsOneWidget);
     expect(find.text('city source'), findsOneWidget);
     expect(find.text('https://example.org/city'), findsOneWidget);
-    expect(find.text('county offer'), findsOneWidget);
-    expect(find.text('state offer'), findsOneWidget);
+    expect(find.text('county offer'), findsNothing);
+    expect(find.text('state offer'), findsNothing);
     await tester.tap(find.byKey(const Key('stopWasteProgram-$localId')));
     await tester.pump();
     expect(launcher.openedUrl, 'https://example.org/city');
     expect(launcher.mode, PreferredLaunchMode.externalApplication);
+    api.close();
+  });
+
+  testWidgets('cached promotion disappears at expiry boundary and after', (
+    tester,
+  ) async {
+    final expiry = DateTime.utc(2026, 10, 13, 12);
+    var now = expiry.subtract(const Duration(seconds: 1));
+    final api = CloudApiClient(
+      session: CloudSession(
+        config: const CloudAuthConfig(
+          issuer: 'https://issuer.example',
+          audience: 'energylens-cloud',
+          clientId: 'client',
+          redirectUrl: 'io.energylens.app://login-callback',
+          apiUrl: 'https://api.example',
+        ),
+        store: _Store(),
+        authenticator: _Auth(),
+      ),
+      client: MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'programs': [
+              _program(
+                '44444444-4444-4444-8444-444444444444',
+                'city',
+                expires: expiry.toIso8601String(),
+              ),
+              _program('55555555-5555-4555-8555-555555555555', 'federal'),
+              _program(
+                '66666666-6666-4666-8666-666666666666',
+                'manufacturer',
+                availabilityExpires: expiry.toIso8601String(),
+              ),
+            ],
+            'as_of': '2026-10-01T00:00:00Z',
+            'coverage': null,
+          }),
+          200,
+        ),
+      ),
+    );
+    Future<void> render() async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StopWastePrograms(api: api, home: _home, now: () => now),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await render();
+    expect(find.text('city offer'), findsOneWidget);
+    expect(find.text('federal offer'), findsOneWidget);
+    expect(find.text('manufacturer offer'), findsOneWidget);
+    now = expiry;
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('city offer'), findsNothing);
+    expect(find.text('federal offer'), findsOneWidget);
+    expect(find.text('manufacturer offer'), findsNothing);
+    now = expiry.add(const Duration(microseconds: 1));
+    await tester.pump();
+    expect(find.text('city offer'), findsNothing);
+    expect(find.text('federal offer'), findsOneWidget);
+    expect(find.text('manufacturer offer'), findsNothing);
     api.close();
   });
 }

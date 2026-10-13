@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/cloud_api/cloud_api_client.dart';
@@ -10,11 +12,13 @@ class CloudElectricityRateScreen extends StatefulWidget {
     required this.api,
     required this.home,
     this.gas = false,
+    this.now,
   });
 
   final CloudApiClient api;
   final CloudHome home;
   final bool gas;
+  final DateTime Function()? now;
 
   @override
   State<CloudElectricityRateScreen> createState() =>
@@ -22,8 +26,12 @@ class CloudElectricityRateScreen extends StatefulWidget {
 }
 
 class CloudGasRateScreen extends CloudElectricityRateScreen {
-  const CloudGasRateScreen({super.key, required super.api, required super.home})
-    : super(gas: true);
+  const CloudGasRateScreen({
+    super.key,
+    required super.api,
+    required super.home,
+    super.now,
+  }) : super(gas: true);
 }
 
 class _CloudElectricityRateScreenState
@@ -38,10 +46,28 @@ class _CloudElectricityRateScreenState
   bool _saving = false;
   String? _pendingKey;
   Map<String, dynamic>? _pendingBody;
+  Timer? _expiryTimer;
+  int _loadGeneration = 0;
 
   String get _fuelLabel => widget.gas ? 'natural gas' : 'electricity';
   String get _unit => widget.gas ? 'therm' : 'kWh';
   String get _title => widget.gas ? 'Cloud gas rate' : 'Cloud electricity rate';
+  DateTime get _now => widget.now?.call() ?? DateTime.now();
+
+  void _scheduleExpiry() {
+    _expiryTimer?.cancel();
+    final expiry = _current?.currentExpiresAt;
+    if (expiry == null || !_current!.isCurrentAt(_now)) return;
+    final remaining = expiry.difference(_now);
+    _expiryTimer = Timer(
+      remaining > const Duration(days: 1) ? const Duration(days: 1) : remaining,
+      () {
+        if (!mounted) return;
+        setState(() {});
+        _scheduleExpiry();
+      },
+    );
+  }
 
   @override
   void initState() {
@@ -56,7 +82,21 @@ class _CloudElectricityRateScreenState
   }
 
   @override
+  void didUpdateWidget(covariant CloudElectricityRateScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.api != widget.api ||
+        oldWidget.home.id != widget.home.id ||
+        oldWidget.gas != widget.gas) {
+      _expiryTimer?.cancel();
+      _load();
+    } else if (oldWidget.now != widget.now) {
+      _scheduleExpiry();
+    }
+  }
+
+  @override
   void dispose() {
+    _expiryTimer?.cancel();
     _rate.dispose();
     _sourceDate.dispose();
     _effectiveDate.dispose();
@@ -64,6 +104,8 @@ class _CloudElectricityRateScreenState
   }
 
   Future<void> _load() async {
+    _expiryTimer?.cancel();
+    final generation = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
@@ -73,15 +115,18 @@ class _CloudElectricityRateScreenState
       final tariffs = widget.gas
           ? await widget.api.gasTariffs(widget.home.id)
           : await widget.api.electricityTariffs(widget.home.id);
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() => _current = tariffs.isEmpty ? null : tariffs.single);
+        _scheduleExpiry();
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() => _error = 'Could not load this home’s $_title. Retry.');
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -147,6 +192,7 @@ class _CloudElectricityRateScreenState
         _pendingBody = null;
         _message = '$_title saved for ${widget.home.name}.';
       });
+      _scheduleExpiry();
     } on CloudApiException catch (error) {
       if (mounted) {
         setState(
@@ -188,11 +234,12 @@ class _CloudElectricityRateScreenState
               ),
               const SizedBox(height: 12),
               if (_loading) const LinearProgressIndicator(),
-              if (_current case final current?)
+              if (_current case final current? when current.isCurrentAt(_now))
                 Text(
                   'Current Cloud rate: ${current.rate} USD/$_unit · bill dated ${current.sourceAsOf.toUtc().toIso8601String().substring(0, 10)} · effective from ${current.effectiveFrom.toUtc().toIso8601String().substring(0, 10)}',
                 ),
-              if (!_loading && _current == null)
+              if (!_loading &&
+                  (_current == null || !_current!.isCurrentAt(_now)))
                 Text('No current $_title is available.'),
               TextButton(
                 onPressed: _saving ? null : _load,

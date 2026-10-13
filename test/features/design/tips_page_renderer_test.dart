@@ -11,7 +11,14 @@ import 'package:flutter_test/flutter_test.dart';
 const home = '11111111-1111-4111-8111-111111111111';
 const appliance = '22222222-2222-4222-8222-222222222222';
 
-CloudProgram program(String id, String title) => CloudProgram(
+CloudProgram program(
+  String id,
+  String title, {
+  DateTime? expiresAt,
+  DateTime? availabilityExpiresAt,
+  String availability = 'unknown',
+  List<String> reasons = const ['reviewed'],
+}) => CloudProgram(
   id: id,
   title: title,
   administratorName: 'City utility',
@@ -21,22 +28,26 @@ CloudProgram program(String id, String title) => CloudProgram(
   benefitTerms: const {},
   eligibilityTerms: const {},
   stackingTerms: const {},
-  availabilityStatus: 'unknown',
+  availabilityStatus: availability,
   status: 'unknown',
-  reasons: const ['reviewed'],
+  reasons: reasons,
   sourceUrl: Uri.parse('https://utility.example/program/$id'),
   sourceSha256: 'a' * 64,
-  reviewExpiresAt: DateTime.utc(2026, 12),
+  reviewExpiresAt: expiresAt ?? DateTime.utc(2026, 12),
+  availabilityExpiresAt: availabilityExpiresAt,
 );
 
 TipsDomainSnapshot snapshot(
   TipsPage page, [
   List<CloudRecommendation>? recommendations,
+  List<CloudProgram>? programs,
 ]) => TipsDomainSnapshot(
   homeId: home,
   page: page,
   programs: CloudProgramPage(
-    programs: [program('one', 'First offer'), program('two', 'Second offer')],
+    programs:
+        programs ??
+        [program('one', 'First offer'), program('two', 'Second offer')],
     asOf: DateTime.utc(2026, 10),
     locationRequired: false,
     coverage: null,
@@ -170,6 +181,7 @@ void main() {
         'programs': const TipsPageRenderer().script(
           const DesignPageTicket(home, 'perks_tips', 3),
           snapshot(TipsPage.perksTips),
+          now: DateTime.utc(2026, 10),
         ),
         'tips': const TipsPageRenderer().script(
           const DesignPageTicket(home, 'tips_efficiency', 3),
@@ -178,6 +190,66 @@ void main() {
         'care': const TipsPageRenderer().script(
           const DesignPageTicket(home, 'tips_care_upgrades', 3),
           snapshot(TipsPage.careUpgrades, recommendations),
+        ),
+        'boundary': const TipsPageRenderer().script(
+          const DesignPageTicket(home, 'perks_tips', 3),
+          snapshot(TipsPage.perksTips, null, [
+            program(
+              'expired',
+              'Expired promotion',
+              expiresAt: DateTime.utc(2026, 10, 13, 12),
+            ),
+            program(
+              'current',
+              'Current promotion',
+              expiresAt: DateTime.utc(2027),
+            ),
+            program(
+              'availability-ended',
+              'Ended promotion',
+              expiresAt: DateTime.utc(2027),
+              availabilityExpiresAt: DateTime.utc(2026, 10, 13, 12),
+            ),
+            program(
+              'closed',
+              'Closed promotion',
+              availability: 'closed',
+              expiresAt: DateTime.utc(2027),
+            ),
+          ]),
+          now: DateTime.utc(2026, 10, 13, 12),
+        ),
+        'after': const TipsPageRenderer().script(
+          const DesignPageTicket(home, 'perks_tips', 3),
+          snapshot(TipsPage.perksTips, null, [
+            program(
+              'expired',
+              'Expired promotion',
+              expiresAt: DateTime.utc(2026, 10, 13, 12),
+            ),
+            program(
+              'current',
+              'Current promotion',
+              expiresAt: DateTime.utc(2027),
+            ),
+          ]),
+          now: DateTime.utc(2026, 10, 13, 12, 0, 1),
+        ),
+        'mounted': const TipsPageRenderer().script(
+          const DesignPageTicket(home, 'perks_tips', 3),
+          snapshot(TipsPage.perksTips, null, [
+            program(
+              'ending',
+              'Ending promotion',
+              expiresAt: DateTime.utc(2026, 10, 13, 12),
+            ),
+            program(
+              'current',
+              'Current promotion',
+              expiresAt: DateTime.utc(2027),
+            ),
+          ]),
+          now: DateTime.utc(2026, 10, 13, 11, 59, 59),
         ),
       };
       final result = await Process.run('node', [
@@ -188,18 +260,29 @@ const vm = require('node:vm');
 const scripts = JSON.parse(process.argv[1]);
 class Element {
   constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.textContent = ''; this.className = ''; this.style = {}; }
-  append(node) { this.children.push(node); }
+  append(node) { node.parent = this; this.children.push(node); }
   replaceChildren() { this.children = []; }
   setAttribute(key, value) { this.attributes[key] = value; }
+  remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); this.parent = null; }
+  get isConnected() { return !!this.parent; }
 }
-function render(page, script, generation = 3) {
+function render(page, script, generation = 3, startMs = Date.UTC(2026, 9, 13, 11, 59, 59)) {
   const mount = new Element('mount');
+  const packaged = new Element('packaged-example');
+  const timers = [];
+  let nowMs = startMs;
   const document = {
     getElementById: id => id === ({perks_tips:'el-live-programs', tips_efficiency:'el-live-tips', tips_care_upgrades:'el-live-care'})[page] ? mount : null,
     createElement: tag => new Element(tag),
   };
-  const context = {document, window: {__energyLensTextBindingContext: {homeId:'11111111-1111-4111-8111-111111111111', page, generation}}};
-  return {accepted: vm.runInNewContext(script, context), mount};
+  const context = {document, Date: {now: () => nowMs},
+    setTimeout: (fn, delay) => timers.push({fn, at: nowMs + delay}),
+    window: {__energyLensTextBindingContext: {homeId:'11111111-1111-4111-8111-111111111111', page, generation}}};
+  const accepted = vm.runInNewContext(script, context);
+  return {accepted, mount, packaged, advanceTo: target => {
+    nowMs = target;
+    for (const timer of timers.splice(0).filter(item => item.at <= target)) timer.fn();
+  }};
 }
 const programs = render('perks_tips', scripts.programs);
 assert.equal(programs.accepted, true);
@@ -208,6 +291,16 @@ assert.deepEqual(offers.map(row => row.children[0].children[0].textContent), ['F
 assert.equal(offers[0].children[0].children[1].textContent, 'City utility');
 assert.equal(offers[0].children[0].children[2].textContent, 'Up to $40');
 assert.equal(offers[0].children[0].href, 'https://utility.example/program/one');
+const mounted = render('perks_tips', scripts.mounted);
+assert.deepEqual(mounted.mount.children[1].children.map(row => row.children[0].children[0].textContent), ['Ending promotion', 'Current promotion']);
+mounted.advanceTo(Date.UTC(2026, 9, 13, 12));
+assert.deepEqual(mounted.mount.children[1].children.map(row => row.children[0].children[0].textContent), ['Current promotion']);
+for (const key of ['boundary', 'after']) {
+  const rendered = render('perks_tips', scripts[key]);
+  assert.equal(rendered.accepted, true);
+  assert.deepEqual(rendered.mount.children[1].children.map(row => row.children[0].children[0].textContent), ['Current promotion']);
+  assert.equal(rendered.packaged.tag, 'packaged-example');
+}
 const tips = render('tips_efficiency', scripts.tips);
 assert.deepEqual(tips.mount.children[1].children.map(row => row.children[0].children[0].textContent || row.children[0].children[0].children[0].textContent), ['First action', 'Supported action', 'Supported action']);
 assert.equal(tips.mount.children[1].children[0].children[0].children[1].textContent, 'Saved appliance');

@@ -77,6 +77,7 @@ void main() {
         'wasteCost': null,
         'demoWaste': null,
         'state': 'standby',
+        'stateExpiresAt': null,
       },
     ]);
     expect(script, isNot(contains('energyWh')));
@@ -154,6 +155,7 @@ void main() {
           'wasteCost': null,
           'demoWaste': '\$0.0008',
           'state': 'standby',
+          'stateExpiresAt': null,
         },
         {
           'id': 'tv',
@@ -164,6 +166,7 @@ void main() {
           'wasteCost': null,
           'demoWaste': '\$0.08',
           'state': 'standby',
+          'stateExpiresAt': null,
         },
         {
           'id': 'capped',
@@ -174,11 +177,12 @@ void main() {
           'wasteCost': null,
           'demoWaste': '\$0.000001',
           'state': 'standby',
+          'stateExpiresAt': null,
         },
       ]);
       expect(
         script,
-        contains("clone.setAttribute('data-el-device-state', row.state)"),
+        contains("clone.setAttribute('data-el-device-state', state)"),
       );
       expect(script, contains("useful.textContent = row.usefulCost ?? 'N/A'"));
       expect(script, contains("waste.textContent = wasteText ?? 'N/A'"));

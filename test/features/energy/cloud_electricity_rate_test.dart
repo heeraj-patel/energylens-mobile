@@ -52,6 +52,114 @@ CloudApiClient _api(MockClient client) => CloudApiClient(
 );
 
 void main() {
+  testWidgets('cached utility rate disappears at effective_to boundary', (
+    tester,
+  ) async {
+    final expiry = DateTime.utc(2026, 10, 13, 12);
+    var now = expiry.subtract(const Duration(seconds: 1));
+    final api = _api(
+      MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'tariffs': [
+              {
+                'id': '22222222-2222-4222-8222-222222222222',
+                'home_id': home.id,
+                'revision': 1,
+                'fuel': 'electricity',
+                'rate': '0.15',
+                'rate_unit': 'kWh',
+                'currency': 'USD',
+                'rate_kind': 'user_tariff',
+                'source_ref': 'bill',
+                'source_as_of': '2026-10-01T00:00:00Z',
+                'is_fallback': false,
+                'effective_from': '2026-10-01T00:00:00Z',
+                'effective_to': expiry.toIso8601String(),
+              },
+            ],
+          }),
+          200,
+        ),
+      ),
+    );
+    Future<void> render() async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CloudElectricityRateScreen(
+            api: api,
+            home: home,
+            now: () => now,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await render();
+    expect(find.textContaining('Current Cloud rate: 0.15'), findsOneWidget);
+    now = expiry;
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.textContaining('Current Cloud rate: 0.15'), findsNothing);
+    expect(
+      find.text('No current Cloud electricity rate is available.'),
+      findsOneWidget,
+    );
+    now = expiry.add(const Duration(microseconds: 1));
+    await tester.pump();
+    expect(find.textContaining('Current Cloud rate: 0.15'), findsNothing);
+    api.close();
+  });
+
+  testWidgets('cached utility rate disappears at 60-day source boundary', (
+    tester,
+  ) async {
+    final source = DateTime.utc(2026, 8, 14, 12);
+    final expiry = source.add(const Duration(days: 60));
+    var now = expiry.subtract(const Duration(seconds: 1));
+    final api = _api(
+      MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'tariffs': [
+              {
+                'id': '22222222-2222-4222-8222-222222222222',
+                'home_id': home.id,
+                'revision': 1,
+                'fuel': 'electricity',
+                'rate': '0.15',
+                'rate_unit': 'kWh',
+                'currency': 'USD',
+                'rate_kind': 'official_tariff',
+                'source_ref': 'isolated source',
+                'source_as_of': source.toIso8601String(),
+                'is_fallback': false,
+                'effective_from': source.toIso8601String(),
+                'effective_to': null,
+              },
+            ],
+          }),
+          200,
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudElectricityRateScreen(api: api, home: home, now: () => now),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Current Cloud rate: 0.15'), findsOneWidget);
+    now = expiry;
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.textContaining('Current Cloud rate: 0.15'), findsNothing);
+    expect(
+      find.text('No current Cloud electricity rate is available.'),
+      findsOneWidget,
+    );
+    api.close();
+  });
+
   testWidgets('missing-rate recommendation opens this Cloud home rate', (
     tester,
   ) async {

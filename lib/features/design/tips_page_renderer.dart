@@ -43,20 +43,29 @@ class TipsPageRenderer {
     return 'Save ~\$$monthlyDollars/mo';
   }
 
-  String script(DesignPageTicket ticket, TipsDomainSnapshot snapshot) {
+  String script(
+    DesignPageTicket ticket,
+    TipsDomainSnapshot snapshot, {
+    DateTime? now,
+  }) {
+    final asOf = (now ?? DateTime.now()).toUtc();
     final payload = jsonEncode({
       'homeId': snapshot.homeId,
       'page': ticket.page,
       'generation': ticket.generation,
       'programs': [
         for (final program in snapshot.programs?.programs ?? const [])
-          {
-            'id': program.id,
-            'title': program.title,
-            'administrator': program.administratorName,
-            'benefit': program.benefitDisplay,
-            'url': program.sourceUrl.toString(),
-          },
+          if (program.isCurrentAt(asOf))
+            {
+              'id': program.id,
+              'title': program.title,
+              'administrator': program.administratorName,
+              'benefit': program.benefitDisplay,
+              'url': program.sourceUrl.toString(),
+              'expiresAt': program.displayExpiresAt
+                  .toUtc()
+                  .millisecondsSinceEpoch,
+            },
       ],
       'recommendations': [
         for (final action in snapshot.recommendations)
@@ -84,7 +93,7 @@ class TipsPageRenderer {
   const mount = document.getElementById(id);
   if (!mount) return false;
   mount.replaceChildren();
-  const rows = payload.page === 'perks_tips' ? payload.programs :
+  const rows = payload.page === 'perks_tips' ? payload.programs.filter(row => Date.now() < row.expiresAt) :
     payload.page === 'tips_care_upgrades'
       ? payload.recommendations.filter(row => row.tipCategory === 'care' || row.tipCategory === 'upgrade')
       : payload.recommendations;
@@ -96,6 +105,7 @@ class TipsPageRenderer {
   const list = document.createElement('div');
   list.className = 'flex flex-col gap-space-xs';
   mount.append(list);
+  const timedCards = [];
   for (const row of rows) {
     const card = document.createElement('article');
     card.className = 'p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm';
@@ -145,6 +155,28 @@ class TipsPageRenderer {
     }
     card.append(body);
     list.append(card);
+    if (payload.page === 'perks_tips') timedCards.push({card, expiresAt: row.expiresAt});
+  }
+  if (timedCards.length && typeof setTimeout === 'function') {
+    const pruneExpired = () => {
+      const active = window.__energyLensTextBindingContext;
+      if (!active || active.homeId !== payload.homeId ||
+          active.page !== payload.page || active.generation !== payload.generation) return;
+      const now = Date.now();
+      for (const item of timedCards) {
+        if (now >= item.expiresAt) item.card.remove();
+      }
+      const pending = timedCards.filter(item => item.card.isConnected);
+      if (!pending.length) {
+        heading.remove();
+        list.remove();
+        return;
+      }
+      const next = Math.min(...pending.map(item => item.expiresAt));
+      setTimeout(pruneExpired, Math.max(0, Math.min(next - now, 86400000)));
+    };
+    const next = Math.min(...timedCards.map(item => item.expiresAt));
+    setTimeout(pruneExpired, Math.max(0, Math.min(next - Date.now(), 86400000)));
   }
   return true;
 })()

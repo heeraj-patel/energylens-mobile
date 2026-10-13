@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -6,10 +8,16 @@ import '../../core/cloud_api/cloud_home.dart';
 import '../../core/cloud_api/cloud_programs.dart';
 
 class StopWastePrograms extends StatefulWidget {
-  const StopWastePrograms({super.key, required this.api, required this.home});
+  const StopWastePrograms({
+    super.key,
+    required this.api,
+    required this.home,
+    this.now,
+  });
 
   final CloudApiClient api;
   final CloudHome home;
+  final DateTime Function()? now;
 
   @override
   State<StopWastePrograms> createState() => _StopWasteProgramsState();
@@ -18,6 +26,35 @@ class StopWastePrograms extends StatefulWidget {
 class _StopWasteProgramsState extends State<StopWastePrograms> {
   List<CloudProgram> _programs = const [];
   int _generation = 0;
+  Timer? _expiryTimer;
+
+  void _scheduleExpiry() {
+    _expiryTimer?.cancel();
+    final now = widget.now?.call() ?? DateTime.now();
+    final upcoming =
+        _programs
+            .where((program) => program.isCurrentAt(now))
+            .map((program) => program.displayExpiresAt.difference(now))
+            .where((remaining) => !remaining.isNegative)
+            .toList()
+          ..sort();
+    if (upcoming.isEmpty) return;
+    final delay = upcoming.first;
+    _expiryTimer = Timer(
+      delay > const Duration(days: 1) ? const Duration(days: 1) : delay,
+      () {
+        if (!mounted) return;
+        setState(() {});
+        _scheduleExpiry();
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _expiryTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -30,7 +67,10 @@ class _StopWasteProgramsState extends State<StopWastePrograms> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.api != widget.api || oldWidget.home.id != widget.home.id) {
       _programs = const [];
+      _expiryTimer?.cancel();
       _load();
+    } else if (oldWidget.now != widget.now) {
+      _scheduleExpiry();
     }
   }
 
@@ -40,6 +80,7 @@ class _StopWasteProgramsState extends State<StopWastePrograms> {
       final page = await widget.api.homePrograms(widget.home.id);
       if (!mounted || generation != _generation) return;
       setState(() => _programs = page.programs);
+      _scheduleExpiry();
     } catch (_) {
       if (mounted && generation == _generation) {
         setState(() => _programs = const []);
@@ -53,7 +94,9 @@ class _StopWasteProgramsState extends State<StopWastePrograms> {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text('Programs', style: Theme.of(context).textTheme.titleLarge),
-      for (final program in _programs) ...[
+      for (final program in _programs.where(
+        (program) => program.isCurrentAt(widget.now?.call() ?? DateTime.now()),
+      )) ...[
         const SizedBox(height: 8),
         ProgramOfferCard(
           key: Key('stopWasteProgram-${program.id}'),

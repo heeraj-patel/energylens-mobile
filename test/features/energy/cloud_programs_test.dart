@@ -166,7 +166,68 @@ class _RefreshScreenApi extends _ProgramsScreenApi {
   ) async => CloudProgramRefresh.fromJson(refreshStatus('failed'));
 }
 
+class _ExpiryProgramsScreenApi extends _ProgramsScreenApi {
+  @override
+  Future<CloudProgramPage> programs(
+    String homeId,
+    String applianceId,
+    Set<String> ownedApplianceIds,
+  ) async => CloudProgramPage.fromJson(
+    page([
+      {...program(), 'availability_expires_at': '2026-10-13T12:00:00Z'},
+      {
+        ...program(),
+        'program_id': '66666666-6666-4666-8666-666666666666',
+        'title': 'Current program',
+        'review_expires_at': '2027-01-01T00:00:00Z',
+      },
+    ]),
+  );
+}
+
 void main() {
+  testWidgets('cached reviewed program card leaves at application deadline', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1500);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final expiry = DateTime.utc(2026, 10, 13, 12);
+    var now = expiry.subtract(const Duration(seconds: 1));
+    final api = _ExpiryProgramsScreenApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudProgramsScreen(
+          api: api,
+          home: const CloudHome(
+            id: home,
+            name: 'Home',
+            timezone: 'America/Chicago',
+            countryCode: 'US',
+            postalCode: '78732',
+          ),
+          now: () => now,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('programAppliance')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Washer').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Appliance program'), findsOneWidget);
+    expect(find.text('Current program'), findsOneWidget);
+    now = expiry;
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Appliance program'), findsNothing);
+    expect(find.text('Current program'), findsOneWidget);
+    now = expiry.add(const Duration(seconds: 1));
+    await tester.pump();
+    expect(find.text('Appliance program'), findsNothing);
+    api.close();
+  });
+
   test('program assessment preserves ineligible source-backed rows', () {
     final parsed = CloudProgram.fromJson({
       ...program(),
@@ -362,6 +423,18 @@ void main() {
   });
 
   test('rejects unsupported claims and malformed candidates', () {
+    final withDeadline = CloudProgramPage.fromJson(
+      page([
+        {...program(), 'availability_expires_at': '2026-10-13T12:00:00Z'},
+      ]),
+    ).programs.single;
+    expect(withDeadline.reviewExpiresAt, DateTime.utc(2026, 11, 1, 12));
+    expect(withDeadline.availabilityExpiresAt, DateTime.utc(2026, 10, 13, 12));
+    expect(withDeadline.isCurrentAt(DateTime.utc(2026, 10, 13, 12)), isFalse);
+    expect(
+      CloudProgramPage.fromJson(page()).programs.single.availabilityExpiresAt,
+      isNull,
+    );
     for (final bad in [
       {...program(), 'status': 'eligible'},
       {...program(), 'availability_status': 'awarded'},
@@ -369,6 +442,7 @@ void main() {
       {...program(), 'savings_amount': 100},
       {...program(), 'source_url': 'http://utility.example/program'},
       {...program(), 'source_sha256': 'bad'},
+      {...program(), 'availability_expires_at': 'not-a-date'},
     ]) {
       expect(
         () => CloudProgramPage.fromJson(page([bad])),

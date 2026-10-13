@@ -24,6 +24,25 @@ class CloudTariff {
   final DateTime effectiveFrom;
   final DateTime? effectiveTo;
 
+  DateTime? get currentExpiresAt {
+    final sourceExpiry = fuel == 'electricity'
+        ? sourceAsOf.toUtc().add(const Duration(days: 60))
+        : null;
+    final effectiveExpiry = effectiveTo?.toUtc();
+    if (sourceExpiry == null) return effectiveExpiry;
+    if (effectiveExpiry == null) return sourceExpiry;
+    return sourceExpiry.isBefore(effectiveExpiry)
+        ? sourceExpiry
+        : effectiveExpiry;
+  }
+
+  bool isCurrentAt(DateTime now) {
+    final instant = now.toUtc();
+    return !instant.isBefore(effectiveFrom.toUtc()) &&
+        !sourceAsOf.toUtc().isAfter(instant) &&
+        (currentExpiresAt == null || instant.isBefore(currentExpiresAt!));
+  }
+
   factory CloudTariff.fromJson(
     Map<String, dynamic> json,
     String homeId, {

@@ -9,9 +9,15 @@ import '../../core/cloud_api/cloud_home.dart';
 import '../../core/cloud_api/cloud_programs.dart';
 
 class CloudProgramsScreen extends StatefulWidget {
-  const CloudProgramsScreen({super.key, required this.api, required this.home});
+  const CloudProgramsScreen({
+    super.key,
+    required this.api,
+    required this.home,
+    this.now,
+  });
   final CloudApiClient api;
   final CloudHome home;
+  final DateTime Function()? now;
 
   @override
   State<CloudProgramsScreen> createState() => _CloudProgramsScreenState();
@@ -26,14 +32,37 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
   int _generation = 0;
   int _refreshGeneration = 0;
   Timer? _refreshTimer;
+  Timer? _expiryTimer;
   CloudProgramRefresh? _refresh;
   String? _refreshError;
   String? _pendingRefreshKey;
   bool _refreshBusy = false;
 
+  void _scheduleExpiry() {
+    _expiryTimer?.cancel();
+    final now = widget.now?.call() ?? DateTime.now();
+    final upcoming =
+        (_page?.programs ?? const <CloudProgram>[])
+            .where((program) => program.isCurrentAt(now))
+            .map((program) => program.displayExpiresAt.difference(now))
+            .toList()
+          ..sort();
+    if (upcoming.isEmpty) return;
+    final remaining = upcoming.first;
+    _expiryTimer = Timer(
+      remaining > const Duration(days: 1) ? const Duration(days: 1) : remaining,
+      () {
+        if (!mounted) return;
+        setState(() {});
+        _scheduleExpiry();
+      },
+    );
+  }
+
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _expiryTimer?.cancel();
     super.dispose();
   }
 
@@ -149,10 +178,13 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
   void didUpdateWidget(covariant CloudProgramsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.home.id != widget.home.id || oldWidget.api != widget.api) {
+      _expiryTimer?.cancel();
       _clearRefresh();
       _selectedId = null;
       _appliances = null;
       _loadInventory();
+    } else if (oldWidget.now != widget.now) {
+      _scheduleExpiry();
     }
   }
 
@@ -214,7 +246,10 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
         selectedId,
         appliances.map((item) => item.id).toSet(),
       );
-      if (mounted && generation == _generation) setState(() => _page = page);
+      if (mounted && generation == _generation) {
+        setState(() => _page = page);
+        _scheduleExpiry();
+      }
     } on CloudApiException catch (error) {
       if (mounted && generation == _generation) {
         setState(
@@ -350,7 +385,12 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
                     const Text(
                       'A home location is needed before programs can be checked. Add the location for this home and try again.',
                     ),
-                  if (!page.locationRequired && page.programs.isEmpty)
+                  if (!page.locationRequired &&
+                      !page.programs.any(
+                        (program) => program.isCurrentAt(
+                          widget.now?.call() ?? DateTime.now(),
+                        ),
+                      ))
                     const Text(
                       'No matching programs found in the reviewed sources available here. Other sources may not have been checked; eligibility remains unknown.',
                     ),
@@ -390,7 +430,11 @@ class _CloudProgramsScreenState extends State<CloudProgramsScreen> {
                       'A checked source means only that a source check ran. ZIP candidates do not confirm your utility provider or service at your address; other sources may be missing.',
                     ),
                   ],
-                  for (final program in page.programs)
+                  for (final program in page.programs.where(
+                    (program) => program.isCurrentAt(
+                      widget.now?.call() ?? DateTime.now(),
+                    ),
+                  ))
                     Card(
                       key: Key('program-${program.id}'),
                       child: Padding(

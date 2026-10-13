@@ -39,6 +39,7 @@ class CloudProgram {
     required this.sourceUrl,
     required this.sourceSha256,
     required this.reviewExpiresAt,
+    this.availabilityExpiresAt,
   });
   final String id;
   final String title;
@@ -55,6 +56,20 @@ class CloudProgram {
   final Uri sourceUrl;
   final String sourceSha256;
   final DateTime reviewExpiresAt;
+  final DateTime? availabilityExpiresAt;
+
+  DateTime get displayExpiresAt {
+    final availability = availabilityExpiresAt;
+    return availability != null && availability.isBefore(reviewExpiresAt)
+        ? availability
+        : reviewExpiresAt;
+  }
+
+  bool isCurrentAt(DateTime now) =>
+      now.toUtc().isBefore(displayExpiresAt.toUtc()) &&
+      availabilityStatus != 'closed' &&
+      !reasons.contains('expired') &&
+      !reasons.contains('source_review_expired');
 
   factory CloudProgram.fromJson(Map<String, dynamic> json) {
     const fields = {
@@ -74,12 +89,16 @@ class CloudProgram {
       'source_url',
       'source_sha256',
       'review_expires_at',
+      'availability_expires_at',
     };
     final reasons = json['reasons'];
     final uri = json['source_url'] is String
         ? Uri.tryParse(json['source_url'] as String)
         : null;
     final expiry = _instant(json['review_expires_at']);
+    final availabilityExpiry = json['availability_expires_at'] == null
+        ? null
+        : _instant(json['availability_expires_at']);
     if (json.keys.any((key) => !fields.contains(key)) ||
         json['program_id'] is! String ||
         !_uuid.hasMatch(json['program_id'] as String) ||
@@ -126,7 +145,9 @@ class CloudProgram {
         uri.userInfo.isNotEmpty ||
         json['source_sha256'] is! String ||
         !_sha256.hasMatch(json['source_sha256'] as String) ||
-        expiry == null) {
+        expiry == null ||
+        (json['availability_expires_at'] != null &&
+            availabilityExpiry == null)) {
       throw const FormatException('Invalid reviewed program candidate');
     }
     return CloudProgram(
@@ -147,6 +168,7 @@ class CloudProgram {
       sourceUrl: uri,
       sourceSha256: json['source_sha256'] as String,
       reviewExpiresAt: expiry,
+      availabilityExpiresAt: availabilityExpiry,
     );
   }
 }
