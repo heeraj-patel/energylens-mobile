@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-06T19:37:31Z",
+  "generatedAt": "2026-10-13T23:24:42Z",
   "title": "Design System: EnergyLens Glacier Energy Mobile",
   "extensions": {
     "colorMeta": {
@@ -277,11 +277,11 @@
     },
     "typographyMeta": {
       "headline-lg": {
-        "displayName": "Oswald headline",
+        "displayName": "Manrope headline",
         "purpose": "Compressed section headings and large metric emphasis."
       },
       "body-md": {
-        "displayName": "Inter body",
+        "displayName": "Source Sans 3 body",
         "purpose": "Readable energy, cost, and explanatory content."
       },
       "label-md": {
@@ -352,7 +352,7 @@
       "refersTo": "input",
       "description": "Soft inset field from Manual Device Entry.",
       "html": "<label class=\"ds-label\" for=\"ds-device\">Device Name</label><input class=\"ds-input\" id=\"ds-device\" placeholder=\"e.g. Living Room Air Conditioner\">",
-      "css": ".ds-label{display:block;margin-bottom:4px;color:#3f484e;font:500 11px/16px Rubik,sans-serif;letter-spacing:.05em;text-transform:uppercase}.ds-input{display:block;width:100%;padding:8px 12px;border:1px solid rgba(190,200,206,.3);border-radius:8px;background:#f1f3ff;color:#111b2f;font:400 12px/18px Inter,sans-serif}.ds-input:focus-visible{outline:0;border-color:#006686;box-shadow:0 0 0 2px rgba(125,211,252,.35)}.ds-input:disabled{opacity:.55}"
+      "css": ".ds-label{display:block;margin-bottom:4px;color:#3f484e;font:500 11px/16px Rubik,sans-serif;letter-spacing:.05em;text-transform:uppercase}.ds-input{display:block;width:100%;padding:8px 12px;border:1px solid rgba(190,200,206,.3);border-radius:8px;background:#f1f3ff;color:#111b2f;font:400 12px/18px \"Source Sans 3\",sans-serif}.ds-input:focus-visible{outline:0;border-color:#006686;box-shadow:0 0 0 2px rgba(125,211,252,.35)}.ds-input:disabled{opacity:.55}"
     },
     {
       "name": "Surface card",
@@ -360,7 +360,7 @@
       "refersTo": "surface-card",
       "description": "White content surface with quiet outline and shadow.",
       "html": "<div class=\"ds-card\"><strong>Energy Lens</strong><p>Useful Power</p></div>",
-      "css": ".ds-card{padding:16px;background:#fff;color:#111b2f;border:1px solid rgba(190,200,206,.4);border-radius:8px;box-shadow:0 1px 2px rgba(17,27,47,.08);font:400 16px/24px Inter,sans-serif}.ds-card strong{display:block;font:600 24px/32px Oswald,sans-serif;text-transform:uppercase}.ds-card p{margin:8px 0 0;color:#3f484e}"
+      "css": ".ds-card{padding:16px;background:#fff;color:#111b2f;border:1px solid rgba(190,200,206,.4);border-radius:8px;box-shadow:0 1px 2px rgba(17,27,47,.08);font:400 16px/24px \"Source Sans 3\",sans-serif}.ds-card strong{display:block;font:600 24px/32px Manrope,sans-serif;text-transform:uppercase}.ds-card p{margin:8px 0 0;color:#3f484e}"
     },
     {
       "name": "Inset metric",
@@ -368,7 +368,7 @@
       "refersTo": "inset-metric",
       "description": "Pale blue data tile used inside main cards.",
       "html": "<div class=\"ds-metric\"><span>Useful Power</span><strong>$6.96<small>/day</small></strong></div>",
-      "css": ".ds-metric{padding:8px;background:#f1f3ff;border:1px solid rgba(216,226,253,.6);border-radius:4px;color:#3f484e;font:500 14px/20px Rubik,sans-serif}.ds-metric strong{display:block;margin-top:4px;color:#059669;font:700 28px/32px Inter,sans-serif}.ds-metric small{font-size:14px;font-weight:400;color:#3f484e}"
+      "css": ".ds-metric{padding:8px;background:#f1f3ff;border:1px solid rgba(216,226,253,.6);border-radius:4px;color:#3f484e;font:500 14px/20px Rubik,sans-serif}.ds-metric strong{display:block;margin-top:4px;color:#059669;font:700 28px/32px \"Source Sans 3\",sans-serif}.ds-metric small{font-size:14px;font-weight:400;color:#3f484e}"
     },
     {
       "name": "Selected section tab",
@@ -391,7 +391,7 @@
     "overview": "The approved fourteen HTML pages form a light, compact mobile system. Cool white and pale blue surfaces give energy and cost information room to scan. Deep teal identifies actions and interface icons, while sky blue marks the selected bottom destination; green and warm warning colors distinguish useful use and waste in the data. The visual tone is clear, calm, and approachable.\n\nThe source pages are the authority for future mobile work. Build new work in this system, then check it against the supplied pages and actual device captures. The older emerald Flutter system, four-section navigation, and the supplied Glacier dark-glass prose describe earlier or conflicting directions. They are not the visual reference for new customer pages.",
     "keyCharacteristics": [
       "light ice-blue surfaces",
-      "Oswald headings with Inter content and Rubik labels",
+      "Manrope headings with Source Sans 3 content and Rubik labels",
       "compact cards and metric tiles",
       "five-part bottom navigation",
       "soft borders and restrained shadows"
@@ -404,7 +404,7 @@
       },
       {
         "name": "The Three-Font Rule",
-        "body": "Preserve each family's role; do not replace the pages with platform system text or use Oswald for body paragraphs.",
+        "body": "Preserve each family's role; do not replace the pages with platform system text or use Manrope for body paragraphs.",
         "section": "typography"
       },
       {

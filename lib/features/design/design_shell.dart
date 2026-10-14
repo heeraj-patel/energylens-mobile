@@ -44,6 +44,7 @@ import 'settings_domain_repository.dart';
 import 'local_pilot_device_lifecycle.dart';
 import 'local_pilot_device_review_sheet.dart';
 import 'local_settings_devices_renderer.dart';
+import 'local_pilot_settings.dart';
 import 'home_details_screen.dart';
 import 'account_profile_screen.dart';
 
@@ -171,6 +172,8 @@ class _DesignShellState extends State<DesignShell> {
   bool _navigating = false;
   int _navigationEpoch = 0;
   String? _activePageStateScope;
+  static const _localSettingsStore = LocalPilotSettingsStore();
+  late LocalPilotSettings _localSettings;
 
   String get _pageStateHomeId {
     final context = widget.designContextCoordinator?.context;
@@ -182,6 +185,11 @@ class _DesignShellState extends State<DesignShell> {
   @override
   void initState() {
     super.initState();
+    _localSettings = LocalPilotSettings(
+      homeName: widget.homeName,
+      ownerName: 'Alex Miller',
+      postalCode: '',
+    );
     _pageReads = DesignPageReadDispatcher(widget.designContextCoordinator);
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -228,7 +236,24 @@ class _DesignShellState extends State<DesignShell> {
           },
         ),
       );
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPage());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Packaged pages must not reuse WebKit responses from an older install.
+      // Clear resource caches only; preserve cookies, local storage, and profile data.
+      try {
+        await _controller.clearCache();
+      } catch (_) {
+        // Platforms without resource-cache support can still load local assets.
+      }
+      if (!mounted) return;
+      if (widget.localPilot) {
+        try {
+          _localSettings = await _localSettingsStore.load(widget.homeName);
+        } catch (_) {
+          // The pilot remains editable for this session if local storage fails.
+        }
+      }
+      if (mounted) await _loadPage();
+    });
   }
 
   @override
@@ -308,6 +333,11 @@ class _DesignShellState extends State<DesignShell> {
     _scheduleTourAdvance();
     await _onPageFinished(url);
     if (!_isCurrentPageLoad(page, generation)) return;
+    if (widget.localPilot) {
+      await _controller.runJavaScript(
+        buildLocalPilotSettingsScript(page, _localSettings),
+      );
+    }
     if (page == 'settings' && widget.localPilot) {
       await _controller.runJavaScript('''
         document.querySelector('[data-el-bind="settings_text_025"]')?.replaceChildren('Preview sample energy costs for your devices.');
@@ -351,6 +381,29 @@ class _DesignShellState extends State<DesignShell> {
       );
     } catch (_) {
       // State capture is best effort; navigation must remain available.
+    }
+  }
+
+  Future<void> _editLocalPilotSettings({required bool editOwner}) async {
+    final saved = await Navigator.of(context).push<LocalPilotSettings>(
+      MaterialPageRoute<LocalPilotSettings>(
+        builder: (_) => LocalPilotSettingsEditor(
+          settings: _localSettings,
+          editOwner: editOwner,
+        ),
+      ),
+    );
+    if (!mounted || saved == null || _page != 'settings') return;
+    try {
+      await _localSettingsStore.save(saved);
+    } catch (_) {
+      return;
+    }
+    _localSettings = saved;
+    await _loadPage();
+    if (mounted && _page == 'settings') {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Saved Successfully')));
     }
   }
 
@@ -1432,6 +1485,10 @@ class _DesignShellState extends State<DesignShell> {
       return;
     }
     if (route == 'edit_home_details') {
+      if (widget.localPilot && _page == 'settings') {
+        await _editLocalPilotSettings(editOwner: false);
+        return;
+      }
       final coordinator = widget.designContextCoordinator;
       final current = coordinator?.context;
       final api = widget.settingsApi;
@@ -1462,6 +1519,31 @@ class _DesignShellState extends State<DesignShell> {
     if (route == 'edit_account_owner' ||
         route == 'edit_account_email' ||
         route == 'change_account_password') {
+      if (widget.localPilot &&
+          route == 'edit_account_owner' &&
+          _page == 'settings') {
+        await _editLocalPilotSettings(editOwner: true);
+        return;
+      }
+      if (widget.localPilot &&
+          route == 'change_account_password' &&
+          _page == 'settings') {
+        bool stillCurrent() =>
+            mounted && widget.localPilot && _page == 'settings';
+        final saved = await Navigator.of(context).push<bool>(
+          MaterialPageRoute<bool>(
+            builder: (_) => AccountProfileScreen.localPilotPassword(
+              isCurrentAccount: stillCurrent,
+            ),
+          ),
+        );
+        if (saved == true && mounted && stillCurrent()) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Saved Successfully')));
+        }
+        return;
+      }
       final coordinator = widget.designContextCoordinator;
       final current = coordinator?.context;
       final api = widget.settingsApi;
@@ -1552,8 +1634,9 @@ class _DesignShellState extends State<DesignShell> {
   String? _peerTabSection(String page) {
     if (_efficiencyPages.contains(page)) return 'efficiency';
     if (page == 'perks_tips' || page.startsWith('tips_')) return 'tips';
-    if (page == 'settings' || page == 'settings_manage_devices')
+    if (page == 'settings' || page == 'settings_manage_devices') {
       return 'settings';
+    }
     return null;
   }
 

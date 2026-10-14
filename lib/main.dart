@@ -64,11 +64,18 @@ class EnergyLensApp extends StatelessWidget {
       );
       return ThemeData(
         useMaterial3: true,
+        fontFamily: 'Source Sans 3',
         colorScheme: scheme,
         scaffoldBackgroundColor: dark
             ? const Color(0xFF101B2D)
             : const Color(0xFFF8FAFC),
         appBarTheme: AppBarTheme(
+          titleTextStyle: TextStyle(
+            fontFamily: 'Manrope',
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: dark ? Colors.white : _ink,
+          ),
           backgroundColor: dark ? const Color(0xFF172337) : Colors.white,
           foregroundColor: dark ? Colors.white : _ink,
           surfaceTintColor: Colors.transparent,

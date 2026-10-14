@@ -77,7 +77,7 @@ class LocalSettingsDevicesRenderer {
     icon.textContent = 'devices_other';
     iconBox.appendChild(icon);
     const labels = document.createElement('div');
-    labels.className = 'min-w-0';
+    labels.className = 'min-w-0 flex-1';
     const name = document.createElement('p');
     name.className = 'font-label-md text-label-md font-medium text-on-surface truncate';
     name.textContent = row.name;
@@ -89,7 +89,7 @@ class LocalSettingsDevicesRenderer {
     if (row.removable) {
       const remove = document.createElement('button');
       remove.type = 'button';
-      remove.className = 'w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors';
+      remove.className = 'ml-auto shrink-0 w-11 h-11 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error-container/20 transition-colors';
       remove.setAttribute('aria-label', 'Remove ' + row.name);
       remove.setAttribute('data-el-delete-appliance-id', String(row.id));
       const removeIcon = document.createElement('span');

@@ -80,6 +80,7 @@ class _WebController extends PlatformWebViewController {
   final Map<String, JavaScriptChannelParams> channels = {};
   final List<String> scripts = [];
   String? asset;
+  int cacheClears = 0;
   _WebNavigation? navigation;
 
   void route(String value) => channels['EnergyLensNavigation']!
@@ -102,7 +103,18 @@ class _WebController extends PlatformWebViewController {
   }
 
   @override
+  Future<void> clearCache() async {
+    cacheClears++;
+  }
+
+  @override
   Future<void> loadFlutterAsset(String key) async {
+    expectSync(
+      cacheClears,
+      1,
+      reason:
+          'Clear stale packaged-resource caches before loading the first page',
+    );
     asset = key;
     navigation?.onFinished?.call('file:///$key');
   }

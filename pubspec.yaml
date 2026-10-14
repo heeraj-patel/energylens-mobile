@@ -88,6 +88,13 @@ flutter:
     - assets/design_pages/shared/
     - assets/design_pages/shared/fonts/
     - assets/design_pages/shared/images/
+  fonts:
+    - family: Source Sans 3
+      fonts:
+        - asset: assets/design_pages/shared/fonts/source-sans-3-variable.ttf
+    - family: Manrope
+      fonts:
+        - asset: assets/design_pages/shared/fonts/manrope-variable.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -15,7 +15,13 @@ class AccountProfileScreen extends StatefulWidget {
     required this.isCurrentAccount,
   });
 
-  final CloudApiClient api;
+  const AccountProfileScreen.localPilotPassword({
+    super.key,
+    required this.isCurrentAccount,
+  }) : api = null,
+       field = AccountProfileField.password;
+
+  final CloudApiClient? api;
   final AccountProfileField field;
   final bool Function() isCurrentAccount;
 
@@ -41,8 +47,12 @@ class _AccountProfileScreenState extends State<AccountProfileScreen> {
   }
 
   Future<void> _load() async {
+    if (widget.api == null) {
+      _loading = false;
+      return;
+    }
     try {
-      final account = await widget.api.accountProfile();
+      final account = await widget.api!.accountProfile();
       if (!mounted || !widget.isCurrentAccount()) return;
       setState(() {
         _account = account;
@@ -59,7 +69,10 @@ class _AccountProfileScreenState extends State<AccountProfileScreen> {
   }
 
   Future<void> _save() async {
-    if (_saving || _loading || !widget.isCurrentAccount() || _account == null) {
+    if (_saving ||
+        _loading ||
+        !widget.isCurrentAccount() ||
+        (widget.api != null && _account == null)) {
       return;
     }
     final name = _name.text.trim();
@@ -82,22 +95,30 @@ class _AccountProfileScreenState extends State<AccountProfileScreen> {
       _failed = false;
     });
     try {
+      if (widget.api == null) {
+        // Owner-approved pilot-only simulation; no credentials or API writes.
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        if (mounted && widget.isCurrentAccount()) {
+          Navigator.of(context).pop(true);
+        }
+        return;
+      }
       switch (widget.field) {
         case AccountProfileField.owner:
-          await widget.api.updateAccountOwner(
+          await widget.api!.updateAccountOwner(
             name,
             ifMatch: _account!.etag,
             idempotencyKey: newCloudIdempotencyKey(),
           );
         case AccountProfileField.email:
-          await widget.api.changeLocalEmail(
+          await widget.api!.changeLocalEmail(
             email,
             _currentPassword.text,
             ifMatch: _account!.etag,
             idempotencyKey: newCloudIdempotencyKey(),
           );
         case AccountProfileField.password:
-          await widget.api.changeLocalPassword(
+          await widget.api!.changeLocalPassword(
             _currentPassword.text,
             _newPassword.text,
           );
@@ -180,7 +201,12 @@ class _AccountProfileScreenState extends State<AccountProfileScreen> {
               ),
             const SizedBox(height: 24),
             FilledButton(
-              onPressed: _loading || _saving || _account == null ? null : _save,
+              onPressed:
+                  _loading ||
+                      _saving ||
+                      (widget.api != null && _account == null)
+                  ? null
+                  : _save,
               child: const Text('Save changes'),
             ),
             TextButton(

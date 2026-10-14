@@ -2,19 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLSchemes</key>
-			<array><string>io.energylens.app</string></array>
-		</dict>
-	</array>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>EnergyLens connects to your local hub to find smart plugs on your home network.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>EnergyLens uses your camera to read appliance and bulb model labels during setup.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>EnergyLens lets you choose an existing appliance-label photo to identify its model.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -35,10 +22,25 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>io.energylens.app</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>EnergyLens uses your camera to read appliance and bulb model labels during setup.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>EnergyLens connects to your local hub to find smart plugs on your home network.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>EnergyLens lets you choose an existing appliance-label photo to identify its model.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -99,3 +99,19 @@ ENERGYLENS_HUB_TOKEN="$(tailscale ssh nipatel@nipatel-solvzoom 'sed -n "s/^ENERG
 
 The simulator must be booted. The current ML Kit iOS simulator dependencies
 produce an Intel binary, so Apple Silicon Macs need Rosetta 2 to launch it.
+
+For the local pilot without a Hub URL, use the same deployment script through
+the dev-bash-scripts entry point. A simulator gets an Xcode Debug build; a
+paired iPhone gets a signed Xcode Release build. Both use
+`ENERGYLENS_LOCAL_PILOT=true`, and the iPhone install runs over Xcode's device
+connection. Use a physical iPhone only for owner-requested acceptance.
+
+```sh
+cd ../energylens-dev-bash-scripts
+./deploy-ios.sh --local-pilot --device SIMULATOR_UDID
+./deploy-ios.sh --local-pilot --iphone PHYSICAL_DEVICE_UDID
+```
+
+Pass both targets in one command to install on both after their respective
+builds. See the [deployment guide](../energylens-dev-bash-scripts/README.md)
+for signing, wireless recovery, and the direct install command.

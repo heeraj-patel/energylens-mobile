@@ -48,6 +48,38 @@ String _visibleText(String html) {
       .trim();
 }
 
+String _withApprovedPolish(String text, String pageId) {
+  if (pageId == 'dashboard') {
+    return text.replaceFirst(
+      'savings PIGGYBANK HAPPY Happy afternoon, Alex! Piggybank is looking safe & happy today 🌻',
+      'energy_savings_leaf Energylens provides customized energy savings for your house. Helping you & Globe!!',
+    );
+  }
+  if (pageId == 'tips_knowledge')
+    return text
+        .replaceFirst('Find information to most common questions.', '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  if (pageId == 'settings') {
+    return text
+        .replaceFirst(' intelligence tune', ' intelligence')
+        .replaceFirst('Manage Settings', 'tune Manage Settings')
+        .replaceFirstMapped(RegExp(r'•+'), (match) => '${match[0]} Edit');
+  }
+  if (pageId == 'efficiency' || pageId.startsWith('efficiency_')) {
+    text = text
+        .replaceFirst('touch_app Select category ', '')
+        .replaceFirst('insights Efficiency Insights', 'Efficiency Insights');
+    if (pageId == 'efficiency_away')
+      text = text.replaceFirst(
+        'Detected Away Events 3 events (38 hrs)',
+        '38 hrs',
+      );
+    return text;
+  }
+  return text;
+}
+
 String _withoutOuterChrome(String html) => html
     .replaceFirst(RegExp(r'<header\b[^>]*>.*?</header>', dotAll: true), '')
     .replaceFirst(RegExp(r'<nav\b[^>]*>.*?</nav>', dotAll: true), '');
@@ -229,6 +261,9 @@ void main() {
         sharedSummary ??= summary;
         expect(summary, sharedSummary, reason: pageId);
         expect(summary, contains('>Identified Opportunity</span>'));
+        expect(summary, isNot(contains('>insights</span>')));
+        expect(summary, contains('el-compact-page-title'));
+        expect(summary, contains('el-monthly-overview'));
         expect(summary, contains('>Optimal Base</span>'));
         expect(html, isNot(contains('id="efficiency-details-toggle"')));
         expect(
@@ -404,6 +439,9 @@ void main() {
                   .split(mockListMarker)
                   .last
                   .replaceAll('Active continuous energy telemetry', ''),
+            ).replaceFirst(
+              RegExp(r'Monitored Devices\s*\(\s*5\s*\)\s*5 of 16 circuits'),
+              'Monitored Devices',
             ),
             reason: 'Photo Scan keeps the approved mock device list',
           );
@@ -421,24 +459,27 @@ void main() {
             ),
             pageId,
           ),
-          _withoutApprovedTabSummary(
-            _visibleText(
-              _withoutApprovedDeviceSections(
-                _withoutOuterChrome(
-                  _withApprovedLabelChanges(
-                    pageId == 'efficiency'
-                        ? sourceHtml.replaceFirst(
-                            'Monthly Spend',
-                            'Month to date',
-                          )
-                        : pageId == 'dashboard'
-                        ? _withApprovedDashboardOrder(sourceHtml)
-                        : sourceHtml,
-                    pageId,
+          _withApprovedPolish(
+            _withoutApprovedTabSummary(
+              _visibleText(
+                _withoutApprovedDeviceSections(
+                  _withoutOuterChrome(
+                    _withApprovedLabelChanges(
+                      pageId == 'efficiency'
+                          ? sourceHtml.replaceFirst(
+                              'Monthly Spend',
+                              'Month to date',
+                            )
+                          : pageId == 'dashboard'
+                          ? _withApprovedDashboardOrder(sourceHtml)
+                          : sourceHtml,
+                      pageId,
+                    ),
                   ),
+                  pageId,
                 ),
-                pageId,
               ),
+              pageId,
             ),
             pageId,
           ),

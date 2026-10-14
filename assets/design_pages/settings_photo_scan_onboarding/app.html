@@ -71,10 +71,10 @@
       },
       "fontFamily": {
         "body-md": [
-          "Inter"
+          "Source Sans 3"
         ],
         "headline-lg": [
-          "Oswald"
+          "Manrope"
         ],
         "label-md": [
           "Rubik"
@@ -82,23 +82,23 @@
       },
       "fontSize": {
         "body-md": [
-          "16px",
+          "14px",
           {
-            "lineHeight": "24px",
+            "lineHeight": "21px",
             "fontWeight": "400"
           }
         ],
         "headline-lg": [
-          "32px",
+          "26px",
           {
-            "lineHeight": "40px",
+            "lineHeight": "32px",
             "fontWeight": "600"
           }
         ],
         "label-md": [
-          "14px",
+          "12px",
           {
-            "lineHeight": "20px",
+            "lineHeight": "18px",
             "fontWeight": "500"
           }
         ]
@@ -112,12 +112,14 @@
   </style>
 <link rel="stylesheet" href="../shared/fonts.css"><script src="../shared/chrome.js"></script><link rel="stylesheet" href="../shared/mobile_refinements.css"></head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen"><div id="el-header"></div><main class="flex-1 flex flex-col relative w-full pt-16 pb-20 bg-surface"><div class="flex flex-col w-full px-gutter py-space-md space-y-space-lg">
 <div class="flex items-center justify-between">
+<div class="flex items-start gap-space-sm">
+<div class="w-10 h-10 shrink-0 rounded-full bg-surface-container-high flex items-center justify-center text-primary shadow-sm border border-outline-variant/30" aria-hidden="true">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">tune</span>
+</div>
 <div>
 <h1 class="el-page-title" data-el-bind="settings_photo_scan_onboarding_text_003">Manage Settings</h1>
 <p class="el-page-subtitle text-on-surface-variant" data-el-bind="settings_photo_scan_onboarding_text_004">Profile, device setup, and home energy intelligence</p>
 </div>
-<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-primary shadow-sm border border-outline-variant/30">
-<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">tune</span>
 </div>
 </div>
 <div class="w-full bg-slate-100/80 p-1 rounded-xl border border-outline-variant/30 flex gap-1.5">
@@ -136,18 +138,14 @@
 <div class="flex items-center justify-between">
 <div>
 <h2 class="font-label-md text-body-md font-semibold text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_007">Add New Equipment</h2>
-<p class="text-xs text-on-surface-variant" data-el-bind="settings_photo_scan_onboarding_text_008">Select your preferred onboarding method</p>
 </div>
-<span class="text-[11px] font-label-md text-primary font-semibold flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-container/40" data-el-bind="settings_photo_scan_onboarding_text_009">
-<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
-        Mesh Online
-      </span>
+
 </div>
 <!-- 3 Method Selection Tabs -->
 <div class="grid grid-cols-3 gap-2">
-<button class="p-3 rounded-xl flex flex-col items-center text-center gap-1.5 transition-all shadow-sm border bg-surface-container-lowest border-outline-variant/30 hover:bg-surface-container-low group" id="method-btn-scan" onclick="selectOnboardingMethod('scan')" type="button" data-el-action="settings_photo_scan_onboarding_action_005"><div class="w-9 h-9 rounded-full bg-surface-container text-on-surface-variant flex items-center justify-center"><span class="material-symbols-outlined text-[20px]">radar</span></div><span class="font-label-md text-xs font-semibold text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_010">Auto Scan</span><span class="text-[10px] text-on-surface-variant font-medium uppercase tracking-wider" data-el-bind="settings_photo_scan_onboarding_text_011">Discovered</span></button>
-<button class="p-3 rounded-xl flex flex-col items-center text-center gap-1.5 transition-all shadow-sm border bg-white border-primary ring-2 ring-primary/20 group" id="method-btn-camera" onclick="selectOnboardingMethod('camera')" type="button" data-el-action="settings_photo_scan_onboarding_action_006"><div class="w-9 h-9 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center"><span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">photo_camera</span></div><span class="font-label-md text-xs font-semibold text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_012">Photo Scan</span><span class="text-[10px] text-primary font-medium uppercase tracking-wider" data-el-bind="settings_photo_scan_onboarding_text_013">Active</span></button>
-<button class="p-3 rounded-xl flex flex-col items-center text-center gap-1.5 transition-all shadow-sm border bg-surface-container-lowest border-outline-variant/30 hover:bg-surface-container-low group" id="method-btn-manual" onclick="selectOnboardingMethod('manual')" type="button" data-el-action="settings_photo_scan_onboarding_action_007"><div class="w-9 h-9 rounded-full bg-surface-container text-on-surface-variant flex items-center justify-center"><span class="material-symbols-outlined text-[20px]">edit_note</span></div><span class="font-label-md text-xs font-semibold text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_014">Manual Form</span><span class="text-[10px] text-on-surface-variant font-medium uppercase tracking-wider" data-el-bind="settings_photo_scan_onboarding_text_015">Custom</span></button>
+<button class="p-3 rounded-xl flex flex-col items-center text-center gap-1.5 transition-all shadow-sm border bg-surface-container-lowest border-outline-variant/30 hover:bg-surface-container-low group" id="method-btn-scan" onclick="selectOnboardingMethod('scan')" type="button" data-el-action="settings_photo_scan_onboarding_action_005"><div class="w-9 h-9 rounded-full bg-surface-container text-on-surface-variant flex items-center justify-center"><span class="material-symbols-outlined text-[20px]">radar</span></div><span class="font-label-md text-xs font-semibold text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_010">Auto Scan</span></button>
+<button class="p-3 rounded-xl flex flex-col items-center text-center gap-1.5 transition-all shadow-sm border bg-white border-primary ring-2 ring-primary/20 group" id="method-btn-camera" onclick="selectOnboardingMethod('camera')" type="button" data-el-action="settings_photo_scan_onboarding_action_006"><div class="w-9 h-9 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center"><span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">photo_camera</span></div><span class="font-label-md text-xs font-semibold text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_012">Photo Scan</span></button>
+<button class="p-3 rounded-xl flex flex-col items-center text-center gap-1.5 transition-all shadow-sm border bg-surface-container-lowest border-outline-variant/30 hover:bg-surface-container-low group" id="method-btn-manual" onclick="selectOnboardingMethod('manual')" type="button" data-el-action="settings_photo_scan_onboarding_action_007"><div class="w-9 h-9 rounded-full bg-surface-container text-on-surface-variant flex items-center justify-center"><span class="material-symbols-outlined text-[20px]">edit_note</span></div><span class="font-label-md text-xs font-semibold text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_014">Manual Form</span></button>
 </div>
 </div>
 <!-- Method 1: Discovered Devices / Scan -->
@@ -169,9 +167,9 @@
 <div class="space-y-space-sm pb-6">
 <div class="flex items-center justify-between">
 <div>
-<h2 class="font-label-md text-body-md font-semibold text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_054">Monitored Devices (<span id="configured-count" data-el-bind="settings_photo_scan_onboarding_text_055">5</span>)</h2>
+<h2 class="font-label-md text-body-md font-semibold text-on-surface" data-el-bind="settings_photo_scan_onboarding_text_054">Monitored Devices</h2>
 </div>
-<span class="text-[11px] font-label-md text-on-surface-variant" data-el-bind="settings_photo_scan_onboarding_text_057">5 of 16 circuits</span>
+
 </div>
 <div class="bg-surface-container-lowest p-space-sm rounded-xl space-y-2 shadow-sm border border-outline-variant/30" id="monitored-device-list">
 <div class="p-3 rounded-lg bg-surface-container-low/50 border border-outline-variant/20 flex items-center justify-between group">

@@ -22,20 +22,65 @@ colors:
   useful: "#059669"
 typography:
   headline-lg:
-    fontFamily: "Oswald, sans-serif"
-    fontSize: "32px"
-    fontWeight: 600
-    lineHeight: "40px"
+    fontFamily: "Manrope, sans-serif"
+    fontSize: "24px"
+    fontWeight: 800
+    lineHeight: "30px"
   body-md:
-    fontFamily: "Inter, sans-serif"
-    fontSize: "16px"
+    fontFamily: "Source Sans 3, sans-serif"
+    fontSize: "14px"
     fontWeight: 400
-    lineHeight: "24px"
+    lineHeight: "21px"
   label-md:
     fontFamily: "Rubik, sans-serif"
     fontSize: "14px"
     fontWeight: 500
     lineHeight: "20px"
+  section-heading:
+    fontFamily: "Manrope, sans-serif"
+    fontSize: "18px"
+    fontWeight: 750
+    lineHeight: "23.4px"
+  item-heading:
+    fontFamily: "Manrope, sans-serif"
+    fontSize: "16px"
+    fontWeight: 750
+    lineHeight: "20.8px"
+  minor-heading:
+    fontFamily: "Manrope, sans-serif"
+    fontSize: "15px"
+    fontWeight: 750
+    lineHeight: "19.5px"
+  compact-label:
+    fontFamily: "Rubik, sans-serif"
+    fontSize: "12px"
+    fontWeight: 500
+    lineHeight: "18px"
+  navigation-caption:
+    fontFamily: "Rubik, sans-serif"
+    fontSize: "11px"
+    fontWeight: 500
+    lineHeight: "14px"
+  summary-value:
+    fontFamily: "Rubik, sans-serif"
+    fontSize: "22px"
+    fontWeight: 700
+    lineHeight: "28px"
+  native-title:
+    fontFamily: "Manrope, sans-serif"
+    fontSize: "20px"
+    fontWeight: 700
+    lineHeight: "26px"
+  compact-page-title:
+    fontFamily: "Manrope, sans-serif"
+    fontSize: "22px"
+    fontWeight: 700
+    lineHeight: "28px"
+  overview-label:
+    fontFamily: "Rubik, sans-serif"
+    fontSize: "10px"
+    fontWeight: 500
+    lineHeight: "14px"
 rounded:
   sm: "2px"
   lg: "4px"
@@ -85,7 +130,7 @@ The approved fourteen HTML pages form a light, compact mobile system. Cool white
 
 The source pages are the authority for future mobile work. Build new work in this system, then check it against the supplied pages and actual device captures. The older emerald Flutter system, four-section navigation, and the supplied Glacier dark-glass prose describe earlier or conflicting directions. They are not the visual reference for new customer pages.
 
-**Key Characteristics:** light ice-blue surfaces; Oswald headings with Inter content and Rubik labels; compact cards and metric tiles; five-part bottom navigation; soft borders and restrained shadows.
+**Key Characteristics:** light ice-blue surfaces; Manrope headings with Source Sans 3 content and Rubik labels; compact cards and metric tiles; five-part bottom navigation; soft borders and restrained shadows.
 
 ## Colors
 
@@ -95,11 +140,13 @@ Primary deep teal drives actions and interface icons. The active bottom destinat
 
 ## Typography
 
-Oswald provides the compressed, architectural headings and large metric emphasis. Inter carries paragraphs, values, and readable detail. Rubik supplies compact labels, tabs, and controls. The approved pages bundle these fonts locally, with sans-serif fallbacks.
+Manrope carries page and section headings. Source Sans 3 carries paragraphs, form input, and supporting detail. Rubik carries compact labels, tabs, controls, and emphasized energy or cost values. These are the only three text families; Material Symbols Outlined is the icon font, not a text family. All font assets are bundled locally with sans-serif fallbacks.
 
-The declared source roles are headline (32px/40px, weight 600), body (16px/24px, weight 400), and label (14px/20px, weight 500). Individual pages use smaller and stronger utility variants for dense mobile information. Match those variants from the source page that owns the component.
+The frontmatter defines the page-title, body, and label roles. Section headings use Manrope at 18px (h2), 16px (h3), and 15px (h4), weight 750 and line height 1.3. Supporting text stays below the heading scale. Reserve the largest numeric emphasis for the primary one or two energy or cost values on a screen.
 
-**The Three-Font Rule.** Preserve each family's role; do not replace the pages with platform system text or use Oswald for body paragraphs.
+**The Three-Font Rule.** Keep headings in Manrope, readable content in Source Sans 3, and compact labels and metric emphasis in Rubik. Do not introduce another text family or use the icon font for prose.
+
+**The Shared Typography Rule.** Packaged mobile pages use the family and hierarchy tokens in `assets/design_pages/shared/mobile_refinements.css`, loaded with the shared font declarations. Native Flutter screens use the same bundled heading and body families. Historical `code.html` references retain their original source typography and are not shipped customer screens.
 
 ## Layout
 

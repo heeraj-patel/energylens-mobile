@@ -24,15 +24,16 @@ Set<String> _approvedRemovedIds(String page, String category) {
   }
   if (page == 'efficiency' && category == 'bindings') {
     return {
-      for (final n in [13, 29, 30, 32, 36])
+      for (final n in [13, 23, 29, 30, 32, 36])
         'efficiency_text_${n.toString().padLeft(3, '0')}',
     };
   }
   if (category == 'bindings' && page.startsWith('efficiency_')) {
     final removed = switch (page) {
-      'efficiency_away' => [13, 29, 30, 33, 34, 36, 40, 44],
+      'efficiency_away' => [13, 23, 29, 30, 31, 33, 34, 36, 40, 44],
       'efficiency_habits' => [
         13,
+        23,
         29,
         30,
         31,
@@ -49,6 +50,7 @@ Set<String> _approvedRemovedIds(String page, String category) {
       ],
       'efficiency_peak_rates' => [
         13,
+        23,
         29,
         30,
         31,
@@ -68,6 +70,8 @@ Set<String> _approvedRemovedIds(String page, String category) {
       for (final n in removed) '${page}_text_${n.toString().padLeft(3, '0')}',
     };
   }
+  if (page == 'tips_knowledge' && category == 'bindings')
+    return {'tips_knowledge_text_010'};
   if (page == 'settings' && category == 'bindings') {
     return {
       for (var n in [7, 8, 11, 12, 13, 14, 17, 20, 23])
@@ -89,6 +93,9 @@ Set<String> _approvedRemovedIds(String page, String category) {
   }
   if (category == 'bindings') {
     return {
+      for (final n in [8, 9, 11, 13, 15, 53, 55])
+        '${page}_text_${n.toString().padLeft(3, '0')}',
+      if (page == 'settings_photo_scan_onboarding') '${page}_text_057',
       for (var n = 17; n <= 26; n++)
         '${page}_text_${n.toString().padLeft(3, '0')}',
       if (page == 'settings_photo_scan_onboarding')

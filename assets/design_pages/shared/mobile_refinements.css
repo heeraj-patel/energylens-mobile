@@ -1,12 +1,13 @@
 /* Keep the existing page copy and selection behavior readable on narrow phones. */
 :root {
-  --el-body-font-family: "Inter", sans-serif;
-  --el-body-font-size: 16px;
-  --el-body-line-height: 24px;
-  --el-page-title-font-family: "Oswald", sans-serif;
+  --el-label-font-family: "Rubik", sans-serif;
+  --el-body-font-family: "Source Sans 3", sans-serif;
+  --el-body-font-size: 14px;
+  --el-body-line-height: 21px;
+  --el-page-title-font-family: "Manrope", sans-serif;
   --el-page-title-font-size: 24px;
   --el-page-title-line-height: 30px;
-  --el-page-title-font-weight: 600;
+  --el-page-title-font-weight: 800;
   --el-header-home-font-size: 14px;
   --el-header-home-line-height: 20px;
   --el-header-page-font-size: 11px;
@@ -24,6 +25,35 @@
   --el-tab-selected-ink: #111b2f;
 }
 
+[hidden] {
+  display: none !important;
+}
+
+/* Use the same quiet segmented control on every savings tab. */
+[aria-label="Savings Categories"] {
+  background-color: #e8edf2 !important;
+  border-color: #d6dee5 !important;
+  box-shadow: none !important;
+}
+
+/* Let each tip item sit directly in the list, like the Programs items. */
+#tab-panel-efficiency > .bg-surface-container-low,
+#tab-panel-efficiency > [class*="bg-surface-container-low"],
+#tab-panel-upgrades > [class*="bg-surface-container-low"] {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+#tab-panel-efficiency .el-tip-room,
+#tab-panel-upgrades .el-tip-room {
+  padding: .75rem !important;
+  border-radius: .75rem !important;
+  border-color: #dce3e9 !important;
+  box-shadow: 0 1px 3px rgb(17 27 47 / 6%);
+}
+
 body[class*="font-body-md"] {
   font-family: var(--el-body-font-family);
   font-size: var(--el-body-font-size);
@@ -38,7 +68,7 @@ body[class*="font-body-md"] {
   font-weight: var(--el-page-title-font-weight) !important;
   line-height: var(--el-page-title-line-height) !important;
   letter-spacing: -0.025em !important;
-  text-transform: uppercase;
+  text-transform: capitalize;
 }
 
 .el-useful-ink,
@@ -148,7 +178,7 @@ body[class*="font-body-md"] {
   border-radius: .5rem !important;
   color: var(--el-tab-idle-ink) !important;
   font-size: 12px !important;
-  font-family: "Rubik", sans-serif !important;
+  font-family: var(--el-label-font-family) !important;
 }
 
 [data-tab-target].bg-primary-container,
@@ -187,7 +217,7 @@ body[class*="font-body-md"] {
 }
 
 .el-app-header .font-label-md {
-  font-family: "Rubik", sans-serif !important;
+  font-family: var(--el-label-font-family) !important;
 }
 
 .el-app-header button [data-el-bind] {
@@ -211,7 +241,7 @@ body[class*="font-body-md"] {
 }
 
 .el-page-subtitle {
-  font-family: "Inter", sans-serif !important;
+  font-family: var(--el-body-font-family) !important;
   font-size: 14px !important;
   line-height: 20px !important;
   margin-top: 4px !important;
@@ -223,7 +253,7 @@ body[class*="font-body-md"] {
 }
 
 .el-devices-summary-unit {
-  font-family: "Rubik", sans-serif !important;
+  font-family: var(--el-label-font-family) !important;
   font-size: 12px !important;
   line-height: 18px !important;
 }
@@ -286,7 +316,7 @@ body[class*="font-body-md"] {
 }
 
 .el-app-tab-label {
-  font-family: "Rubik", sans-serif !important;
+  font-family: var(--el-label-font-family) !important;
   font-size: 12px !important;
   line-height: 12px !important;
   letter-spacing: -.3px !important;
@@ -359,4 +389,47 @@ body:has([data-el-bind="tips_knowledge_text_003"]) main header {
 [id^="tab-"][id$="-btn"].bg-white {
   outline: 1px solid rgb(190 200 206 / 50%) !important;
   outline-offset: -1px !important;
+}
+
+/* Shared hierarchy: clear headings, quieter supporting text. */
+main h2, main h3, main h4 {
+  font-family: var(--el-page-title-font-family) !important;
+  font-weight: 750 !important;
+  letter-spacing: -.02em !important;
+  line-height: 1.3 !important;
+}
+main h2 { font-size: 18px !important; }
+main h3 { font-size: 16px !important; }
+main h4 { font-size: 15px !important; }
+main p.font-body-md, main .font-body-md:not(h1):not(h2):not(h3):not(h4) {
+  font-family: var(--el-body-font-family) !important;
+}
+
+/* Keep each monitored-device removal action at the trailing edge. */
+#monitored-device-list button[aria-label^="Remove "] {
+  margin-left: auto;
+  flex-shrink: 0;
+  min-width: 44px;
+  min-height: 44px;
+}
+#monitored-device-list .group > div:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.el-compact-page-title {
+  font-size: 22px !important;
+  line-height: 28px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase;
+}
+.el-efficiency-heading > h1 { min-width: 0; }
+.el-monthly-overview {
+  flex-shrink: 0;
+  max-width: 6rem;
+  font-family: var(--el-label-font-family);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 14px;
+  text-align: right;
 }

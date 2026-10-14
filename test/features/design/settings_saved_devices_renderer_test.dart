@@ -78,6 +78,17 @@ void main() {
     });
     expect(script, isNot(contains(attack)));
     expect(script, contains('name.textContent = row.name'));
+    final labelClasses = RegExp(r"labels.className = '([^']+)'")
+        .firstMatch(script)!
+        .group(1)!
+        .split(' ');
+    final deleteClasses = RegExp(r"remove.className = '([^']+)'")
+        .firstMatch(script)!
+        .group(1)!
+        .split(' ');
+    expect(labelClasses, containsAll(['min-w-0', 'flex-1']));
+    expect(deleteClasses, containsAll(['ml-auto', 'shrink-0', 'w-11', 'h-11']));
+
     expect(
       script,
       contains(

@@ -77,12 +77,12 @@
             "space-xl": "2rem"
           },
           fontFamily: {
-            "body-md": ["Inter", "sans-serif"],
-            "headline-lg": ["Oswald", "sans-serif"],
+            "body-md": ["Source Sans 3", "sans-serif"],
+            "headline-lg": ["Manrope", "sans-serif"],
             "label-md": ["Rubik", "sans-serif"]
           },
           fontSize: {
-            "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "body-md": ["14px", { "lineHeight": "21px", "fontWeight": "400" }],
             "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "600" }],
             "label-md": ["14px", { "lineHeight": "20px", "fontWeight": "500" }]
           }
@@ -129,11 +129,9 @@
 <main class="flex-1 flex flex-col relative w-full pt-16 pb-20 bg-surface">
 <div class="flex flex-col w-full px-gutter space-y-space-md pb-space-xl">
 <!-- Top Insight Badge & Sub-header -->
-<div class="flex flex-wrap items-center justify-between gap-space-xs pt-space-sm">
-<div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary text-[24px]" style="font-variation-settings: &quot;FILL&quot; 1;">insights</span><h1 class="el-page-title" data-el-bind="efficiency_peak_rates_text_003">Efficiency Insights</h1></div>
-<div class="flex items-center gap-space-xs">
-<span class="px-space-sm py-1 rounded-full bg-surface-container-high text-primary font-label-md text-[11px] tracking-wide uppercase font-semibold border border-surface-container-highest/60" data-el-bind="efficiency_peak_rates_text_004">Monthly Overview</span>
-</div>
+<div class="el-efficiency-heading flex items-center justify-between gap-2 pt-space-sm">
+<h1 class="el-page-title el-compact-page-title" data-el-bind="efficiency_peak_rates_text_003">Efficiency Insights</h1>
+<span class="el-monthly-overview font-label-md text-primary" data-el-bind="efficiency_peak_rates_text_004">Monthly Overview</span>
 </div>
 <!-- Hero Card: Identified Opportunity $18.60 -->
 <div class="relative overflow-hidden rounded-xl bg-surface-container-lowest border border-surface-container-highest shadow-sm p-space-md space-y-space-sm">
@@ -192,7 +190,7 @@
 </div>
 <!-- Segmented Tabs Navigation -->
 <div class="space-y-space-xs pt-space-xs">
-<div class="flex items-center justify-between px-0.5"><h2 class="font-label-md text-[13px] text-on-surface font-semibold uppercase tracking-wider" data-el-bind="efficiency_peak_rates_text_022">Usage Cost by</h2><span class="font-label-md text-[11px] text-primary flex items-center gap-0.5 font-semibold" data-el-bind="efficiency_peak_rates_text_023"><span class="material-symbols-outlined text-[13px]">touch_app</span> Select category</span></div>
+<div class="flex items-center justify-between px-0.5"><h2 class="font-label-md text-[13px] text-on-surface font-semibold uppercase tracking-wider" data-el-bind="efficiency_peak_rates_text_022">Usage Cost by</h2></div>
 <div class="grid grid-cols-4 gap-1 p-1 rounded-xl bg-surface-container-high border border-surface-container-highest/60"><button class="tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface-variant hover:text-on-surface font-medium" data-tab-target="night" type="button" data-el-action="efficiency_peak_rates_action_003"><span class="material-symbols-outlined text-[16px]">bedtime</span><span class="" data-el-bind="efficiency_peak_rates_text_024">Night</span></button><button class="tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface-variant hover:text-on-surface font-medium" data-tab-target="away" type="button" data-el-action="efficiency_peak_rates_action_004"><span class="material-symbols-outlined text-[16px]">flight_takeoff</span><span class="" data-el-bind="efficiency_peak_rates_text_025">Away</span></button><button class="tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface bg-surface-container-lowest shadow-sm font-semibold" data-tab-target="peak" type="button" data-el-action="efficiency_peak_rates_action_005"><span class="material-symbols-outlined text-[16px] text-primary">electric_meter</span><span class="" data-el-bind="efficiency_peak_rates_text_026">Peak Rates</span></button><button class="tab-pill relative py-2 rounded-lg font-label-md text-[12px] tracking-tight transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-on-surface-variant hover:text-on-surface font-medium" data-tab-target="habits" type="button" data-el-action="efficiency_peak_rates_action_006"><span class="material-symbols-outlined text-[16px]">tune</span><span class="" data-el-bind="efficiency_peak_rates_text_027">Habits</span></button></div>
 </div>
 <!-- Tab Panel 1: Night Hours (Active by default) -->
