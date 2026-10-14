@@ -18,8 +18,12 @@ class LocalSettingsDevicesRenderer {
   const scope = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob('$payload'), c => c.charCodeAt(0))));
   const list = document.getElementById('monitored-device-list');
   if (!list) return false;
+  scope.fallbackRows = window.$_key?.fallbackRows ?? Array.from(list.children, row => row.cloneNode(true));
+  for (const row of scope.fallbackRows) {
+    for (const button of row.querySelectorAll('button')) button.remove();
+  }
   window.$_key = scope;
-  list.replaceChildren();
+  list.replaceChildren(...scope.fallbackRows.map(row => row.cloneNode(true)));
   const count = document.getElementById('configured-count');
   if (count) count.textContent = '';
   const circuit = count?.closest('h2')?.parentElement?.nextElementSibling;
@@ -100,7 +104,7 @@ class LocalSettingsDevicesRenderer {
     }
     cards.push(card);
   }
-  list.replaceChildren(...cards);
+  list.replaceChildren(...(cards.length ? cards : scope.fallbackRows.map(row => row.cloneNode(true))));
   const count = document.getElementById('configured-count');
   if (count) count.textContent = String(cards.length);
   for (const save of document.querySelectorAll('button[data-el-action\$="_action_020"]')) save.disabled = false;

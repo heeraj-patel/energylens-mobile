@@ -24,13 +24,15 @@ Map<String, dynamic> payload(String script) {
 void main() {
   const renderer = LocalSettingsDevicesRenderer();
 
-  test('install hides packaged rows, count, and circuit claim', () {
+  test('install retains display-only packaged rows and hides circuit claim', () {
     final script = renderer.installationScript(
       identity: 'hub-a|1',
       generation: 3,
     );
     expect(payload(script), {'identity': 'hub-a|1', 'generation': 3});
-    expect(script, contains('list.replaceChildren()'));
+    expect(script, contains('fallbackRows ?? Array.from(list.children'));
+    expect(script, contains("row.querySelectorAll('button')"));
+    expect(script, contains('list.replaceChildren(...scope.fallbackRows.map'));
     expect(script, contains("count.textContent = ''"));
     expect(script, contains('circuit.hidden = true'));
     expect(script, contains("removeAttribute('onclick')"));
@@ -67,6 +69,7 @@ void main() {
     expect(script, contains('scope.identity !== data.identity'));
     expect(script, contains('scope.generation !== data.generation'));
     expect(script, contains('String(cards.length)'));
+    expect(script, contains('cards.length ? cards : scope.fallbackRows.map'));
     expect(script, isNot(contains('innerHTML')));
   });
 
