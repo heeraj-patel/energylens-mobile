@@ -9,28 +9,46 @@ import 'package:flutter_test/flutter_test.dart';
 const home = '11111111-1111-4111-8111-111111111111';
 
 void main() {
-  test('current ticket replaces bars and selects the matching period', () async {
+  test('period changes update totals, bars, and selected control together', () async {
     final gate = DesignPageRequestGate();
     final ticket = gate.select(home, 'dashboard');
-    final chart = DashboardChartProjection(
-      granularity: 'day',
+    DashboardChartProjection chart(
+      String period,
+      String dayLabel,
+      String total,
+    ) => DashboardChartProjection(
+      granularity: period,
       bars: [
         DashboardChartBar(
-          label: 'Mon',
+          label: dayLabel,
           usefulCents: BigInt.from(70),
           wasteCents: BigInt.from(20),
         ),
-        DashboardChartBar(
-          label: 'Tue',
-          usefulCents: BigInt.from(50),
-          wasteCents: BigInt.from(10),
-        ),
       ],
-      periodTotal: '\$1.50',
-      usefulTotal: '\$1.20',
-      wasteTotal: '\$0.30',
+      periodTotal: total,
+      usefulTotal:
+          '\$${period == 'day'
+              ? '1.20'
+              : period == 'week'
+              ? '8.20'
+              : '32.20'}',
+      wasteTotal:
+          '\$${period == 'day'
+              ? '0.30'
+              : period == 'week'
+              ? '1.80'
+              : '4.80'}',
     );
-    final script = DashboardChartRenderer(gate).script(ticket, chart)!;
+    final renderer = DashboardChartRenderer(gate);
+    final scripts = [
+      for (final chart in [
+        chart('day', 'Mon', '\$1.50'),
+        chart('week', 'Week 1', '\$10.00'),
+        chart('month', 'Jan', '\$37.00'),
+        chart('day', 'Tue', '\$1.50'),
+      ])
+        renderer.script(ticket, chart)!,
+    ];
     final sharedStyles = await File(
       'assets/design_pages/shared/mobile_refinements.css',
     ).readAsString();
@@ -38,14 +56,14 @@ void main() {
     expect(sharedStyles, contains('.el-waste-graph'));
     final file = await File(
       '${Directory.systemTemp.path}/energylens-dashboard-chart-${DateTime.now().microsecondsSinceEpoch}.json',
-    ).writeAsString(jsonEncode({'script': script, 'homeId': home}));
+    ).writeAsString(jsonEncode({'scripts': scripts, 'homeId': home}));
     try {
       final result = await Process.run('node', [
         '-e',
         r'''
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const {script, homeId} = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+const {scripts, homeId} = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
 globalThis.atob = input => Buffer.from(input, 'base64').toString('binary');
 globalThis.window = {__energyLensTextBindingContext: {homeId, page: 'dashboard', generation: 1}};
 const svg = {children: [], appendChild(node) { this.children.push(node); }};
@@ -56,8 +74,15 @@ const buttons = ['004', '005', '006'].map(suffix => {
   return {dataset: {elAction: 'dashboard_action_' + suffix}, state,
     classList: {toggle(name, enabled) { state[name] = enabled; }}};
 });
+const summaries = Object.fromEntries(['025', '026', '027'].map(suffix => [
+  'dashboard_text_' + suffix, {textContent: ''}
+]));
 globalThis.document = {
-  querySelector(selector) { return selector.includes('dashboard-trends') ? svg : null; },
+  querySelector(selector) {
+    if (selector.includes('dashboard-trends')) return svg;
+    const match = selector.match(/dashboard_text_\d+/);
+    return match ? summaries[match[0]] : null;
+  },
   querySelectorAll() { return buttons; },
   createElementNS(_, name) {
     return {localName: name, attrs: {}, children: [],
@@ -66,19 +91,33 @@ globalThis.document = {
       remove() { svg.children.splice(svg.children.indexOf(this), 1); }};
   }
 };
-assert.equal(eval(script), true);
-assert.equal(svg.children.length, 2);
-assert.deepEqual(svg.children.map(group => group.children.at(-1).textContent), ['Mon', 'Tue']);
+for (const [index, period] of ['day', 'week', 'month', 'day'].entries()) {
+  window.__energyLensDashboardRequestedPeriod = period;
+  assert.equal(eval(scripts[index]), true);
+  assert.equal(svg.children.length, 1);
+  assert.equal(svg.children[0].children.at(-1).textContent, ['Mon', 'Week 1', 'Jan', 'Tue'][index]);
+  assert.deepEqual(
+    [summaries.dashboard_text_026.textContent, summaries.dashboard_text_027.textContent],
+    [
+      ['\$1.20 Useful', '\$0.30 Waste'],
+      ['\$8.20 Useful', '\$1.80 Waste'],
+      ['\$32.20 Useful', '\$4.80 Waste'],
+      ['\$1.20 Useful', '\$0.30 Waste'],
+    ][index],
+  );
+  assert.equal(buttons[['day', 'week', 'month'].indexOf(period)].state['bg-white'], true);
+}
 assert.equal(svg.children[0].children[0].attrs.class, 'el-useful-graph');
 assert.equal(svg.children[0].children[1].attrs.class, 'el-waste-graph');
-assert.equal(buttons[0].state['bg-white'], true);
-assert.equal(buttons[1].state['bg-white'], false);
+const currentSummary = ['026', '027'].map(suffix => summaries['dashboard_text_' + suffix].textContent);
 window.__energyLensDashboardRequestedPeriod = 'month';
-assert.equal(eval(script), false);
-assert.equal(svg.children.length, 2);
+assert.equal(eval(scripts[0]), false);
+assert.equal(svg.children[0].children.at(-1).textContent, 'Tue');
+assert.deepEqual(['026', '027'].map(suffix => summaries['dashboard_text_' + suffix].textContent), currentSummary);
 window.__energyLensDashboardRequestedPeriod = 'day';
 window.__energyLensTextBindingContext.generation = 2;
-assert.equal(eval(script), false);
+assert.equal(eval(scripts[0]), false);
+assert.deepEqual(['026', '027'].map(suffix => summaries['dashboard_text_' + suffix].textContent), currentSummary);
 ''',
         file.path,
       ]);

@@ -194,12 +194,25 @@ String _withApprovedDashboardOrder(String html) {
   return withoutCard.replaceRange(insertion, insertion, card);
 }
 
+String _withoutApprovedDashboardSummary(String html) => html
+    .replaceAll(
+      RegExp(
+        r'<span\b(?=[^>]*data-el-bind="dashboard_text_(?:024|025)")[^>]*>.*?</span>',
+        dotAll: true,
+      ),
+      '',
+    )
+    .replaceAll(
+      RegExp(
+        r'<div class="flex flex-col">\s*<span[^>]*>This Week Total</span>\s*<span[^>]*>\$23\.30</span>\s*</div>',
+        dotAll: true,
+      ),
+      '',
+    );
+
 String _withSourceFallbackValues(String html, String pageId) {
   final approved = <String, Map<String, (String, String)>>{
-    'dashboard': {
-      'dashboard_text_024': ('Device cost · week to date', 'This Week Total'),
-      'dashboard_text_025': ('N/A', '\$23.30'),
-    },
+    'dashboard': {},
     'devices': {
       'devices_text_006': ('\$1.96', '\$1.14'),
       'devices_text_009': ('\$6.83', '\$6.67'),
@@ -327,7 +340,23 @@ void main() {
         if (pageId == 'dashboard') {
           expect(
             _visibleText(packagedHtml),
-            contains('Device cost · week to date'),
+            isNot(contains('Device cost · week to date')),
+          );
+          expect(packagedHtml, isNot(contains('dashboard_text_024')));
+          expect(packagedHtml, isNot(contains('dashboard_text_025')));
+          final summary = packagedHtml.substring(
+            packagedHtml.indexOf('<!-- Active Summary -->'),
+            packagedHtml.indexOf('<!-- Inline SVG Split Bar Chart -->'),
+          );
+          expect(
+            summary,
+            contains('class="flex w-full items-center justify-between'),
+          );
+          expect(summary, contains('data-el-bind="dashboard_text_026"'));
+          expect(summary, contains('data-el-bind="dashboard_text_027"'));
+          expect(
+            summary.indexOf('data-el-bind="dashboard_text_026"'),
+            lessThan(summary.indexOf('data-el-bind="dashboard_text_027"')),
           );
           expect(
             packagedHtml,
@@ -471,7 +500,9 @@ void main() {
                               'Month to date',
                             )
                           : pageId == 'dashboard'
-                          ? _withApprovedDashboardOrder(sourceHtml)
+                          ? _withoutApprovedDashboardSummary(
+                              _withApprovedDashboardOrder(sourceHtml),
+                            )
                           : sourceHtml,
                       pageId,
                     ),

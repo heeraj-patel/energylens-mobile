@@ -112,25 +112,23 @@ DesignContextRead _weekRead({
 }
 
 void main() {
-  test('binds only the validated week-to-date cost and available split', () {
+  test('binds only the validated week-to-date useful and waste split', () {
     final result = prepareDesignNumericBindings(_weekRead());
     expect(result.bindings.map((row) => row.id), [
       'dashboard_text_006',
       'dashboard_text_009',
-      'dashboard_text_025',
       'dashboard_text_026',
       'dashboard_text_027',
     ]);
     expect(result.bindings.map((row) => row.text), [
       '\$1.00',
       '\$0.20',
-      '\$4.12',
       '\$3.12 Useful',
       '\$0.50 Waste',
     ]);
   });
 
-  test('weekly cost stays unavailable for absent price or wrong period', () {
+  test('weekly split stays unavailable for absent price or wrong period', () {
     for (final read in [
       _weekRead(cost: null),
       _weekRead(
@@ -140,9 +138,11 @@ void main() {
       ),
     ]) {
       final result = prepareDesignNumericBindings(read);
-      expect(result.bindings.last.id, 'dashboard_text_025');
-      expect(result.bindings.last.text, 'N/A');
-      expect(result.unknownBindingIds, contains('dashboard_text_025'));
+      expect(result.bindings.map((row) => row.id), [
+        'dashboard_text_006',
+        'dashboard_text_009',
+      ]);
+      expect(result.unknownBindingIds, isNot(contains('dashboard_text_025')));
     }
   });
 
@@ -390,7 +390,8 @@ void main() {
       final byId = {for (final row in result.bindings) row.id: row.text};
       expect(byId['dashboard_text_006'], '\$0.20');
       expect(byId['dashboard_text_009'], '\$0.40');
-      expect(byId['dashboard_text_025'], '\$0.54');
+      expect(byId['dashboard_text_026'], '\$0.18 Useful');
+      expect(byId['dashboard_text_027'], '\$0.36 Waste');
     },
   );
 

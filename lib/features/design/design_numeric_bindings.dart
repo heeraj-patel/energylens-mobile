@@ -249,11 +249,7 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
                     : _microsText(sampleDeviceCost.$1)
               : formatDashboardUsd(week.totals.cost)
         : null;
-    if (cost == null) {
-      bindings.add(const DesignTextBinding('dashboard_text_025', 'N/A'));
-      unknown.add('dashboard_text_025');
-    } else {
-      bindings.add(DesignTextBinding('dashboard_text_025', cost));
+    if (cost != null) {
       final useful = seededWeek
           ? sampleDeviceCost == null
                 ? null

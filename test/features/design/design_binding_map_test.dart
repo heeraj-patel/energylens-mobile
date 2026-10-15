@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 Set<String> _approvedRemovedIds(String page, String category) {
   if (page == 'dashboard' && category == 'bindings') {
-    return {'dashboard_text_017'};
+    return {'dashboard_text_017', 'dashboard_text_024', 'dashboard_text_025'};
   }
   if (page == 'dashboard' && category == 'actions') {
     return {'dashboard_action_002'};

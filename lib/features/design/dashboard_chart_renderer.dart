@@ -3,8 +3,9 @@ import 'dart:convert';
 import 'dashboard_chart_projection.dart';
 import 'design_page_bridge.dart';
 
-/// Updates only chart geometry and active period controls under the current
-/// Dashboard ticket. The payload contains formatted values, never API tokens.
+/// Updates the selected-period summary, chart geometry, and period controls
+/// under the current Dashboard ticket. The payload contains formatted values,
+/// never API tokens.
 class DashboardChartRenderer {
   const DashboardChartRenderer(this.gate);
   final DesignPageRequestGate gate;
@@ -29,6 +30,8 @@ class DashboardChartRenderer {
             'generation': ticket.generation,
           },
           'granularity': chart.granularity,
+          'usefulTotal': chart.usefulTotal,
+          'wasteTotal': chart.wasteTotal,
           'bars': [
             for (final bar in chart.bars)
               {
@@ -49,6 +52,12 @@ class DashboardChartRenderer {
   if (window.__energyLensDashboardRequestedPeriod && window.__energyLensDashboardRequestedPeriod !== payload.granularity) return false;
   const svg = document.querySelector('svg[data-el-chart="dashboard-trends"]');
   if (!svg || !Array.isArray(payload.bars) || payload.bars.length < 1 || payload.bars.length > 5) return false;
+  const summary = [
+    ['dashboard_text_026', payload.usefulTotal + ' Useful'],
+    ['dashboard_text_027', payload.wasteTotal + ' Waste']
+  ].map(([id, value]) => [document.querySelector('[data-el-bind="' + id + '"]'), value]);
+  if (summary.some(([node]) => !node)) return false;
+  for (const [node, value] of summary) node.textContent = value;
   const ns = 'http://www.w3.org/2000/svg';
   const element = (name, attrs, value) => {
     const node = document.createElementNS(ns, name);

@@ -276,12 +276,10 @@ void main() {
         value: snapshot,
       ),
     );
-    expect(
-      {
-        for (final row in bindings.bindings) row.id: row.text,
-      }['dashboard_text_025'],
-      '\$1.50',
-    );
+    final values = {for (final row in bindings.bindings) row.id: row.text};
+    expect(values['dashboard_text_025'], isNull);
+    expect(values['dashboard_text_026'], '\$0.90 Useful');
+    expect(values['dashboard_text_027'], '\$0.60 Waste');
     api.close();
   });
 
