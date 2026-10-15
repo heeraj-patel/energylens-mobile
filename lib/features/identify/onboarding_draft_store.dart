@@ -5,6 +5,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_api/cloud_catalog.dart';
+import '../../core/cloud_api/cloud_api_client.dart';
+import '../../core/cloud_api/cloud_home.dart';
 import 'onboarding_persistence_repository.dart';
 
 /// A single, device-local draft slot. No image, OCR text, tokens, or catalog
@@ -18,17 +20,256 @@ abstract interface class OnboardingDraftStorage {
 class SecureOnboardingDraftStorage implements OnboardingDraftStorage {
   const SecureOnboardingDraftStorage([
     this.storage = const FlutterSecureStorage(),
-  ]);
+  ]) : key = storageKey;
+  const SecureOnboardingDraftStorage.homeCreate([
+    this.storage = const FlutterSecureStorage(),
+  ]) : key = 'home_create_draft_v1';
+  const SecureOnboardingDraftStorage.activeHome([
+    this.storage = const FlutterSecureStorage(),
+  ]) : key = 'active_home_preference_v1';
+  const SecureOnboardingDraftStorage.hubClaim([
+    this.storage = const FlutterSecureStorage(),
+  ]) : key = 'hub_claim_pending_v1';
   static const storageKey = 'onboarding_draft_v1';
   final FlutterSecureStorage storage;
+  final String key;
 
   @override
-  Future<String?> read() => storage.read(key: storageKey);
+  Future<String?> read() => storage.read(key: key);
   @override
-  Future<void> write(String value) =>
-      storage.write(key: storageKey, value: value);
+  Future<void> write(String value) => storage.write(key: key, value: value);
   @override
-  Future<void> clear() => storage.delete(key: storageKey);
+  Future<void> clear() => storage.delete(key: key);
+}
+
+/// The home-create variant has an account but no home ID until Cloud confirms
+/// ownership. It shares the ordered secure slot used by appliance drafts.
+class DurableHomeCreateDrafts {
+  DurableHomeCreateDrafts(this.storage, this.api);
+  final OnboardingDraftStorage storage;
+  final CloudApiClient api;
+  String? _origin;
+  String? _profile;
+  String? _accountId;
+  int _generation = 0;
+  Future<void> _tail = Future.value();
+
+  Future<T> _ordered<T>(Future<T> Function() action) {
+    final result = _tail.then((_) => action());
+    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
+
+  Future<void> selectScope(String? origin, String? profile, String? accountId) {
+    _generation++;
+    return _ordered(() async {
+      final raw = await storage.read();
+      final record = _HomeCreateRecord.tryParse(raw);
+      if (raw != null &&
+          (record == null ||
+              record.origin != origin ||
+              record.profile != profile ||
+              record.accountId != accountId)) {
+        await storage.clear();
+      }
+      _origin = origin;
+      _profile = profile;
+      _accountId = accountId;
+    });
+  }
+
+  Future<CloudHome?> restoreAndCommit() async {
+    final generation = _generation;
+    final record = await _ordered(() async {
+      final raw = await storage.read();
+      final record = _HomeCreateRecord.tryParse(raw);
+      if (record == null) {
+        if (raw != null) await storage.clear();
+        return null;
+      }
+      return _matches(record) ? record : null;
+    });
+    if (record == null || generation != _generation) return null;
+    return _commit(record, generation);
+  }
+
+  Future<CloudHome?> stageAndCommit(CloudHomeCreate input, String key) async {
+    final generation = _generation;
+    if (_origin == null || _profile == null || _accountId == null) {
+      throw StateError('Verified account required before home creation');
+    }
+    final record = await _ordered(() async {
+      if (generation != _generation) throw StateError('Home scope changed');
+      final previous = _HomeCreateRecord.tryParse(await storage.read());
+      final candidate = _HomeCreateRecord(
+        _origin!,
+        _profile!,
+        _accountId!,
+        key,
+        input,
+      );
+      final chosen =
+          previous != null &&
+              _matches(previous) &&
+              jsonEncode(previous.input.toJson()) == jsonEncode(input.toJson())
+          ? previous
+          : candidate;
+      await storage.write(jsonEncode(chosen.toJson()));
+      return chosen;
+    });
+    if (generation != _generation) return null;
+    return _commit(record, generation);
+  }
+
+  Future<CloudHome?> _commit(_HomeCreateRecord record, int generation) async {
+    if (!_matches(record) || generation != _generation) return null;
+    final result = await api.createHome(
+      record.input,
+      idempotencyKey: record.key,
+    );
+    if (generation != _generation) return null;
+    final homes = await api.homes();
+    if (generation != _generation) return null;
+    final owned = homes.where((home) => home.id == result.id).firstOrNull;
+    if (owned == null)
+      throw const FormatException('Created home missing from owner inventory');
+    await _ordered(() async {
+      if (generation != _generation) return;
+      final current = _HomeCreateRecord.tryParse(await storage.read());
+      if (current != null && _matches(current) && current.key == record.key) {
+        await storage.clear();
+      }
+    });
+    return generation == _generation ? owned : null;
+  }
+
+  bool _matches(_HomeCreateRecord record) =>
+      record.origin == _origin &&
+      record.profile == _profile &&
+      record.accountId == _accountId;
+}
+
+class _HomeCreateRecord {
+  const _HomeCreateRecord(
+    this.origin,
+    this.profile,
+    this.accountId,
+    this.key,
+    this.input,
+  );
+  final String origin;
+  final String profile;
+  final String accountId;
+  final String key;
+  final CloudHomeCreate input;
+
+  Map<String, Object?> toJson() => {
+    'kind': 'home_create',
+    'origin': origin,
+    'profile': profile,
+    'account_id': accountId,
+    'operation_key': key,
+    'input': input.toJson(),
+  };
+
+  static _HomeCreateRecord? tryParse(String? raw) {
+    if (raw == null) return null;
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      final input = data['input'] as Map<String, dynamic>;
+      final location = input['location'] as Map<String, dynamic>;
+      final value = CloudHomeCreate.validate(
+        name: input['name'] as String,
+        timezone: input['timezone'] as String,
+        countryCode: location['country_code'] as String,
+        postalCode: location['postal_code'] as String,
+      );
+      if (data['kind'] != 'home_create' ||
+          value == null ||
+          data['origin'] is! String ||
+          data['profile'] is! String ||
+          data['account_id'] is! String ||
+          data['operation_key'] is! String)
+        return null;
+      return _HomeCreateRecord(
+        data['origin'] as String,
+        data['profile'] as String,
+        data['account_id'] as String,
+        data['operation_key'] as String,
+        value,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+class ActiveHomePreference {
+  ActiveHomePreference(this.storage);
+  final OnboardingDraftStorage storage;
+  String? _origin;
+  String? _accountId;
+  int _generation = 0;
+  Future<void> _tail = Future.value();
+
+  Future<T> _ordered<T>(Future<T> Function() action) {
+    final result = _tail.then((_) => action());
+    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
+
+  Future<void> selectScope(String? origin, String? accountId) {
+    _generation++;
+    return _ordered(() async {
+      _origin = origin;
+      _accountId = accountId;
+    });
+  }
+
+  Future<String?> restore(List<CloudHome> ownedHomes) => _ordered(() async {
+    final raw = await storage.read();
+    if (raw == null) return null;
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      final homes = data['homes'] as Map<String, dynamic>;
+      final homeId = homes[_scopeKey];
+      if (data['version'] == 1 &&
+          homeId is String &&
+          ownedHomes.any((home) => home.id == homeId)) {
+        return homeId;
+      }
+      homes.remove(_scopeKey);
+      await storage.write(jsonEncode({'version': 1, 'homes': homes}));
+      return null;
+    } catch (_) {}
+    await storage.clear();
+    return null;
+  });
+
+  Future<void> remember(CloudHome home) {
+    final generation = _generation;
+    return _ordered(() async {
+      if (generation != _generation || _origin == null || _accountId == null)
+        return;
+      Map<String, dynamic> homes = {};
+      try {
+        final raw = await storage.read();
+        if (raw != null)
+          homes =
+              (jsonDecode(raw) as Map<String, dynamic>)['homes']
+                  as Map<String, dynamic>;
+      } catch (_) {}
+      homes[_scopeKey] = home.id;
+      await storage.write(jsonEncode({'version': 1, 'homes': homes}));
+    });
+  }
+
+  Future<void> clear() {
+    _generation++;
+    return _ordered(() => storage.clear());
+  }
+
+  String get _scopeKey => '$_origin|$_accountId';
 }
 
 class PendingOnboardingDraft {
@@ -45,6 +286,8 @@ class DurableOnboardingDrafts {
   final OnboardingPersistenceRepository repository;
   String? _userId;
   String? _homeId;
+  String? _origin;
+  String? _profile;
   int _scopeGeneration = 0;
   Future<void> _tail = Future.value();
 
@@ -65,36 +308,47 @@ class DurableOnboardingDrafts {
   }
 
   /// Passing null signs out. A home or account change discards the old slot.
-  Future<void> selectScope(String? userId, String? homeId) =>
-      _ordered(() async {
-        if ((userId == null) != (homeId == null) ||
-            userId != null && !_uuid.hasMatch(userId) ||
-            homeId != null && !_uuid.hasMatch(homeId)) {
-          throw ArgumentError('Expected an authenticated account and home');
-        }
-        final raw = await storage.read();
-        final same =
-            userId != null &&
-            homeId != null &&
-            _userId == userId &&
-            _homeId == homeId;
-        if (!same && raw != null) {
-          // Preserve an existing draft only when the new authenticated scope
-          // matches its stored ownership, including on a fresh app process.
-          final record = _parse(raw);
-          if (userId == null ||
-              record == null ||
-              record.userId != userId ||
-              record.homeId != homeId ||
-              (_userId != null && (_userId != userId || _homeId != homeId))) {
-            await storage.clear();
-          }
-        }
-        if (_userId != userId || _homeId != homeId) _scopeGeneration++;
-        _userId = userId;
-        _homeId = homeId;
-        repository.selectHome(homeId);
-      });
+  Future<void> selectScope(
+    String? userId,
+    String? homeId, {
+    String? origin,
+    String? profile,
+  }) => _ordered(() async {
+    if ((userId == null) != (homeId == null) ||
+        userId != null && !_uuid.hasMatch(userId) ||
+        homeId != null && !_uuid.hasMatch(homeId)) {
+      throw ArgumentError('Expected an authenticated account and home');
+    }
+    final raw = await storage.read();
+    final same =
+        userId != null &&
+        homeId != null &&
+        _userId == userId &&
+        _homeId == homeId &&
+        _origin == (origin == null ? null : Uri.parse(origin).origin) &&
+        _profile == profile;
+    final normalizedOrigin = origin == null ? null : Uri.parse(origin).origin;
+    if (!same && raw != null) {
+      // Preserve an existing draft only when the new authenticated scope
+      // matches its stored ownership, including on a fresh app process.
+      final record = _parse(raw);
+      if (userId == null ||
+          record == null ||
+          record.userId != userId ||
+          record.homeId != homeId ||
+          record.origin != normalizedOrigin ||
+          record.profile != profile ||
+          (_userId != null && (_userId != userId || _homeId != homeId))) {
+        await storage.clear();
+      }
+    }
+    if (!same) _scopeGeneration++;
+    _userId = userId;
+    _homeId = homeId;
+    _origin = normalizedOrigin;
+    _profile = profile;
+    repository.selectHome(homeId);
+  });
 
   Future<PendingOnboardingDraft?> restore() => _ordered(() async {
     _requireScope();
@@ -103,7 +357,9 @@ class DurableOnboardingDrafts {
     final record = _parse(raw);
     if (record == null ||
         record.userId != _userId ||
-        record.homeId != _homeId) {
+        record.homeId != _homeId ||
+        record.origin != _origin ||
+        record.profile != _profile) {
       await storage.clear();
       return null;
     }
@@ -128,6 +384,8 @@ class DurableOnboardingDrafts {
     if (current == null ||
         current.userId != _userId ||
         current.homeId != _homeId ||
+        current.origin != _origin ||
+        current.profile != _profile ||
         current.key != pending.operationKey ||
         jsonEncode(current.toJson()['draft']) !=
             jsonEncode(
@@ -165,6 +423,8 @@ class DurableOnboardingDrafts {
         if (current != null &&
             current.userId == _userId &&
             current.homeId == _homeId &&
+            current.origin == _origin &&
+            current.profile == _profile &&
             current.key == pending.operationKey) {
           await storage.clear();
         }
@@ -190,13 +450,29 @@ class DurableOnboardingDrafts {
         old != null &&
             old.userId == _userId &&
             old.homeId == _homeId &&
+            old.origin == _origin &&
+            old.profile == _profile &&
             jsonEncode(old.toJson()['draft']) ==
                 jsonEncode(
-                  _Record(_userId!, _homeId!, old.key, draft).toJson()['draft'],
+                  _Record(
+                    _userId!,
+                    _homeId!,
+                    old.key,
+                    draft,
+                    origin: _origin,
+                    profile: _profile,
+                  ).toJson()['draft'],
                 )
         ? old.key
         : _newKey();
-    final record = _Record(_userId!, _homeId!, key, draft);
+    final record = _Record(
+      _userId!,
+      _homeId!,
+      key,
+      draft,
+      origin: _origin,
+      profile: _profile,
+    );
     await storage.write(jsonEncode(record.toJson()));
     return PendingOnboardingDraft(draft, key);
   }
@@ -209,11 +485,20 @@ class DurableOnboardingDrafts {
 }
 
 class _Record {
-  const _Record(this.userId, this.homeId, this.key, this.draft);
+  const _Record(
+    this.userId,
+    this.homeId,
+    this.key,
+    this.draft, {
+    this.origin,
+    this.profile,
+  });
   final String userId;
   final String homeId;
   final String key;
   final OnboardingDraft draft;
+  final String? origin;
+  final String? profile;
 
   Map<String, Object?> toJson() {
     final product = draft.reviewedProduct;
@@ -221,6 +506,8 @@ class _Record {
       'version': 1,
       'user_id': userId,
       'home_id': homeId,
+      if (origin != null) 'origin': origin,
+      if (profile != null) 'profile': profile,
       'operation_key': key,
       'draft': {
         'name': draft.name,
@@ -296,6 +583,8 @@ _Record? _parse(String raw) {
       json['home_id'] as String,
       json['operation_key'] as String,
       draft,
+      origin: json['origin'] as String?,
+      profile: json['profile'] as String?,
     );
   } catch (_) {
     return null;

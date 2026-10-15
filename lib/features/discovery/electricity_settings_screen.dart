@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../core/cloud_api/cloud_api_client.dart';
+import '../../core/cloud_api/cloud_home.dart';
+import '../../core/cloud_api/cloud_hub_claim.dart';
 import 'discovery_api.dart';
 import 'discovery_credentials.dart';
 import 'discovery_screen.dart';
@@ -10,11 +13,17 @@ class ElectricitySettingsScreen extends StatefulWidget {
     super.key,
     this.api = const DiscoveryApi(),
     this.credentials = const DiscoveryCredentials(),
+    this.cloudHome,
+    this.cloudApi,
+    this.preferenceScope,
     this.onSaved,
   });
 
   final DiscoveryApi api;
   final DiscoveryCredentials credentials;
+  final CloudHome? cloudHome;
+  final CloudApiClient? cloudApi;
+  final OwnedPairingScope? preferenceScope;
   final VoidCallback? onSaved;
 
   @override
@@ -27,11 +36,41 @@ class _ElectricitySettingsScreenState extends State<ElectricitySettingsScreen> {
   final _rate = TextEditingController();
   String? _address;
   String? _token;
+  HubOwnership? _ownership;
   ElectricitySettings? _saved;
   bool _loaded = false;
   bool _busy = false;
   String? _feedback;
   String? _error;
+  late final int? _sessionGeneration;
+  late final String? _scopeIdentity;
+
+  bool get _isCurrent =>
+      mounted &&
+      widget.cloudApi?.session.generation == _sessionGeneration &&
+      widget.preferenceScope?.identity == _scopeIdentity;
+
+  DiscoveryApi get _hubApi {
+    if (!_isCurrent) throw StateError('Account scope changed');
+    final cloud = widget.cloudApi;
+    final home = widget.cloudHome;
+    final scope = widget.preferenceScope;
+    final ownership = _ownership;
+    if (cloud == null || home == null || scope == null || ownership == null) {
+      return widget.api;
+    }
+    return widget.api.authorizedFor(
+      HubOwnerAuthorization(
+        session: cloud.session,
+        homeId: home.id,
+        isCurrent: () =>
+            _isCurrent &&
+            widget.preferenceScope?.identity == scope.identity &&
+            _ownership?.localHubId == ownership.localHubId &&
+            _ownership?.ownershipEpoch == ownership.ownershipEpoch,
+      ),
+    );
+  }
 
   bool get _pending {
     final saved = _saved;
@@ -46,28 +85,58 @@ class _ElectricitySettingsScreenState extends State<ElectricitySettingsScreen> {
   @override
   void initState() {
     super.initState();
+    _sessionGeneration = widget.cloudApi?.session.generation;
+    _scopeIdentity = widget.preferenceScope?.identity;
     _restoreAndLoad();
   }
 
   Future<void> _restoreAndLoad() async {
+    if (!_isCurrent) return;
     try {
-      final localPostal = await widget.credentials.readPostalCode();
-      final (address, token) = await widget.credentials.read();
-      if (!mounted) return;
+      final scope = widget.preferenceScope;
+      final cloud = widget.cloudApi;
+      final localPostal = widget.cloudHome != null && scope == null
+          ? null
+          : await widget.credentials.readPostalCode(scope: scope);
+      if (!_isCurrent) return;
+      String? address;
+      String? token;
+      HubOwnership? ownership;
+      final home = widget.cloudHome;
+      if (home == null) {
+        (address, token) = await widget.credentials.read();
+        if (!_isCurrent) return;
+      } else if (cloud != null && scope != null && scope.homeId == home.id) {
+        final owned = await cloud.hubs(home.id);
+        if (!_isCurrent) return;
+        if (owned.length == 1) {
+          ownership = owned.single;
+          final pairing = await widget.credentials.readOwnedPairing(
+            scope,
+            ownership,
+          );
+          if (!_isCurrent) return;
+          address = pairing?.address;
+          token = pairing?.token;
+        }
+      }
+      if (!_isCurrent) return;
       setState(() {
         _address = address;
         _token = token;
-        _postal.text = localPostal ?? '';
+        _ownership = ownership;
+        _postal.text = widget.cloudHome?.postalCode ?? localPostal ?? '';
       });
       if (address != null && token != null) await _load();
     } catch (_) {
-      if (mounted) {
+      if (_isCurrent) {
         setState(() => _error = 'Could not read saved hub settings.');
       }
     }
   }
 
   Future<void> _load() async {
+    if (!_isCurrent) return;
     final address = _address;
     final token = _token;
     if (address == null || token == null || address.isEmpty || token.isEmpty) {
@@ -84,11 +153,12 @@ class _ElectricitySettingsScreenState extends State<ElectricitySettingsScreen> {
       _feedback = null;
     });
     try {
-      final settings = await widget.api.electricitySettings(address, token);
-      if (!mounted) return;
+      final settings = await _hubApi.electricitySettings(address, token);
+      if (!_isCurrent) return;
       setState(() {
         _saved = settings;
-        _postal.text = settings.postalCode ?? '';
+        _postal.text =
+            widget.cloudHome?.postalCode ?? settings.postalCode ?? '';
         _rate.text = settings.rateUsdPerKwh?.toString() ?? '';
         _loaded = true;
         _feedback =
@@ -97,17 +167,18 @@ class _ElectricitySettingsScreenState extends State<ElectricitySettingsScreen> {
             : 'Settings loaded from this hub.';
       });
     } catch (_) {
-      if (mounted) {
+      if (_isCurrent) {
         setState(
           () => _error = 'Could not load electricity settings. Check the hub connection and try again.',
         );
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (_isCurrent) setState(() => _busy = false);
     }
   }
 
   Future<void> _save() async {
+    if (!_isCurrent) return;
     final address = _address;
     final token = _token;
     final postal = _postal.text.trim();
@@ -135,34 +206,41 @@ class _ElectricitySettingsScreenState extends State<ElectricitySettingsScreen> {
       _feedback = null;
     });
     try {
-      final settings = await widget.api.updateElectricitySettings(
+      final settings = await _hubApi.updateElectricitySettings(
         address,
         token,
         postalCode: postal.isEmpty ? null : postal,
         rateUsdPerKwh: rate,
       );
-      if (!mounted) return;
+      if (!_isCurrent) return;
       setState(() {
         _saved = settings;
-        _postal.text = settings.postalCode ?? '';
+        _postal.text =
+            widget.cloudHome?.postalCode ?? settings.postalCode ?? '';
         _rate.text = settings.rateUsdPerKwh?.toString() ?? '';
         _loaded = true;
         _feedback = 'Electricity settings saved on this hub.';
       });
-      if (settings.postalCode == null) {
-        await widget.credentials.clearPostalCode();
-      } else {
-        await widget.credentials.savePostalCode(settings.postalCode!);
+      final scope = widget.preferenceScope;
+      if (_isCurrent && (widget.cloudHome == null || scope != null)) {
+        if (settings.postalCode == null) {
+          await widget.credentials.clearPostalCode(scope: scope);
+        } else {
+          await widget.credentials.savePostalCode(
+            settings.postalCode!,
+            scope: scope,
+          );
+        }
       }
-      widget.onSaved?.call();
+      if (_isCurrent) widget.onSaved?.call();
     } catch (error) {
-      if (mounted) {
+      if (_isCurrent) {
         setState(
           () => _error = error is StateError ? error.message : 'Could not save electricity settings. Check the hub connection and try again.',
         );
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (_isCurrent) setState(() => _busy = false);
     }
   }
 
@@ -289,11 +367,15 @@ class _ElectricitySettingsScreenState extends State<ElectricitySettingsScreen> {
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
                     onPressed: () async {
+                      if (!_isCurrent) return;
                       await Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (_) => DiscoveryScreen(
                             api: widget.api,
                             credentials: widget.credentials,
+                            cloudHome: widget.cloudHome,
+                            cloudApi: widget.cloudApi,
+                            accountId: widget.preferenceScope?.accountId,
                           ),
                         ),
                       );

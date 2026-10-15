@@ -49,6 +49,20 @@ class _TestAuthenticator implements CloudAuthenticator {
 
 class _ClaimCredentials extends FakeCredentials {
   @override
+  Future<StoredPairingCredential?> readOwnedPairing(
+    OwnedPairingScope scope,
+    HubOwnership ownership,
+  ) async =>
+      ownership.localHubId == _localHubId && ownership.ownershipEpoch == 3
+      ? const StoredPairingCredential(
+          address: 'https://192.168.1.20:8787#sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          hubId: _localHubId,
+          clientId: 'client-1',
+          token: 'issued-token',
+          ownershipEpoch: 3,
+        )
+      : null;
+  @override
   Future<StoredPairingCredential?> readPairing() async =>
       const StoredPairingCredential(
         address: 'https://192.168.1.20:8787#sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -58,7 +72,20 @@ class _ClaimCredentials extends FakeCredentials {
       );
 }
 
+class _DelayedPostalCredentials extends _ClaimCredentials {
+  final started = Completer<void>();
+  final finish = Completer<String?>();
+
+  @override
+  Future<String?> readPostalCode({OwnedPairingScope? scope}) {
+    if (!started.isCompleted) started.complete();
+    return finish.future;
+  }
+}
+
 class _ClaimDiscoveryApi extends SavingApi {
+  @override
+  DiscoveryApi authorizedFor(HubOwnerAuthorization owner) => this;
   @override
   Future<void> verifyStoredPairing(StoredHubIdentity pairing) async {}
 
@@ -111,6 +138,10 @@ class _ClaimDiscoveryApi extends SavingApi {
 
 class FakeDiscoveryApi extends DiscoveryApi {
   const FakeDiscoveryApi();
+
+  @override
+  Future<bool> supportsNearbyDiscovery(String baseUrl, String token) async =>
+      false;
 
   @override
   Future<ElectricitySettings> electricitySettings(
@@ -184,10 +215,13 @@ class FakeCredentials extends DiscoveryCredentials {
   }
 
   @override
-  Future<String?> readPostalCode() async => null;
+  Future<String?> readPostalCode({OwnedPairingScope? scope}) async => null;
 
   @override
-  Future<void> savePostalCode(String postalCode) async {}
+  Future<void> savePostalCode(
+    String postalCode, {
+    OwnedPairingScope? scope,
+  }) async {}
 }
 
 class OfflinePairedCredentials extends FakeCredentials {
@@ -677,6 +711,7 @@ void main() {
               postalCode: '60601',
             ),
             cloudApi: client,
+            accountId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
           ),
         ),
       );
@@ -747,7 +782,10 @@ void main() {
             .single['appliance_id'],
         newApplianceId,
       );
-      expect(attachments.every((item) => item['sensor_id'] == _cloudSensorId), isTrue);
+      expect(
+        attachments.every((item) => item['sensor_id'] == _cloudSensorId),
+        isTrue,
+      );
 
       await tester.pumpWidget(
         MaterialApp(
@@ -763,6 +801,7 @@ void main() {
               postalCode: '60601',
             ),
             cloudApi: client,
+            accountId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
           ),
         ),
       );
@@ -792,6 +831,22 @@ void main() {
           authenticator: _TestAuthenticator(),
         ),
         client: MockClient((request) async {
+          if (request.url.path == '/v1/homes/$_cloudHomeId/hubs') {
+            return http.Response(
+              jsonEncode({
+                'hubs': [
+                  {
+                    'hub_id': _cloudHubId,
+                    'local_hub_id': _localHubId,
+                    'home_id': _cloudHomeId,
+                    'ownership_epoch': 3,
+                    'version': 1,
+                  },
+                ],
+              }),
+              200,
+            );
+          }
           if (request.method == 'POST' &&
               request.url.path == '/v1/homes/$_cloudHomeId/hub-claims') {
             return http.Response(
@@ -856,6 +911,7 @@ void main() {
               postalCode: '60601',
             ),
             cloudApi: client,
+            accountId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
           ),
         ),
       );
@@ -1427,6 +1483,134 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('No energy monitoring'), findsOneWidget);
+    },
+  );
+
+  testWidgets('settings ignores owned pairing restored after session change', (
+    tester,
+  ) async {
+    final started = Completer<void>();
+    final response = Completer<http.Response>();
+    final session = CloudSession(
+      config: _cloudConfig,
+      store: _TestTokenStore(),
+      authenticator: _TestAuthenticator(),
+    );
+    final cloud = CloudApiClient(
+      session: session,
+      client: MockClient((request) {
+        if (!started.isCompleted) started.complete();
+        return response.future;
+      }),
+    );
+    final credentials = _ClaimCredentials()
+      ..address = 'https://192.168.1.20:8787'
+      ..token = 'global-token';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ElectricitySettingsScreen(
+          credentials: credentials,
+          cloudHome: const CloudHome(
+            id: _cloudHomeId,
+            name: 'Home',
+            timezone: 'America/Chicago',
+            countryCode: 'US',
+            postalCode: '60601',
+          ),
+          cloudApi: cloud,
+          preferenceScope: OwnedPairingScope(
+            origin: _cloudConfig.apiUrl,
+            profile: 'email_password',
+            accountId: 'account-a',
+            homeId: _cloudHomeId,
+          ),
+        ),
+      ),
+    );
+    await started.future;
+    await session.selectCredentialMethod('oidc');
+    response.complete(
+      http.Response(
+        jsonEncode({
+          'hubs': [
+            {
+              'hub_id': _cloudHubId,
+              'local_hub_id': _localHubId,
+              'home_id': _cloudHomeId,
+              'ownership_epoch': 3,
+              'version': 1,
+            },
+          ],
+        }),
+        200,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final load = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'Load from hub'),
+    );
+    expect(load.onPressed, isNull);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('householdPostalCode')))
+          .controller
+          ?.text,
+      isEmpty,
+    );
+    cloud.close();
+  });
+
+  testWidgets(
+    'settings stops before ownership lookup after stale postal read',
+    (tester) async {
+      final credentials = _DelayedPostalCredentials();
+      final session = CloudSession(
+        config: _cloudConfig,
+        store: _TestTokenStore(),
+        authenticator: _TestAuthenticator(),
+      );
+      var ownershipRequests = 0;
+      final cloud = CloudApiClient(
+        session: session,
+        client: MockClient((_) async {
+          ownershipRequests++;
+          return http.Response('{"hubs":[]}', 200);
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ElectricitySettingsScreen(
+            credentials: credentials,
+            cloudHome: const CloudHome(
+              id: _cloudHomeId,
+              name: 'Home',
+              timezone: 'America/Chicago',
+              countryCode: 'US',
+              postalCode: '60601',
+            ),
+            cloudApi: cloud,
+            preferenceScope: OwnedPairingScope(
+              origin: _cloudConfig.apiUrl,
+              profile: 'email_password',
+              accountId: 'account-a',
+              homeId: _cloudHomeId,
+            ),
+          ),
+        ),
+      );
+      await credentials.started.future;
+      await session.selectCredentialMethod('oidc');
+      credentials.finish.complete('A previous account ZIP');
+      await tester.pumpAndSettle();
+      expect(ownershipRequests, 0);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('householdPostalCode')))
+            .controller
+            ?.text,
+        isEmpty,
+      );
+      cloud.close();
     },
   );
 

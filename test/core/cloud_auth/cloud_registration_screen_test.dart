@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_entry_gate.dart';
@@ -34,6 +36,19 @@ class _Registration implements CloudRegistrationService {
     verifications++;
     expect(token, 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
   }
+}
+
+class _DeferredRegistration implements CloudRegistrationService {
+  final started = Completer<void>();
+  final finish = Completer<void>();
+  @override
+  Future<void> requestRegistration(String username, String password) async {
+    started.complete();
+    await finish.future;
+  }
+
+  @override
+  Future<void> verifyEmail(String token) async {}
 }
 
 class _Store implements CloudTokenStore {
@@ -85,7 +100,7 @@ void main() {
     );
     final api = CloudApiClient(
       session: session,
-      client: MockClient((_) async => http.Response('', 500)),
+      client: MockClient((_) async => http.Response('', 404)),
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -119,7 +134,7 @@ void main() {
     );
     final api = CloudApiClient(
       session: session,
-      client: MockClient((_) async => http.Response('', 500)),
+      client: MockClient((_) async => http.Response('', 404)),
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -224,5 +239,53 @@ void main() {
     );
     expect(find.textContaining('private backend detail'), findsNothing);
     expect(find.byKey(const Key('registrationAccepted')), findsNothing);
+  });
+
+  testWidgets('canceled username signup never calls sign-in callback', (
+    tester,
+  ) async {
+    final service = _DeferredRegistration();
+    var signIns = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => CloudRegistrationScreen(
+                    service: service,
+                    usernameMode: true,
+              onUsernameRegistered: (_, _) async {
+                      signIns++;
+                    },
+                  ),
+                ),
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('registrationEmail')), 'alice');
+    await tester.enterText(
+      find.byKey(const Key('registrationPassword')),
+      'correct long password',
+    );
+    await tester.enterText(
+      find.byKey(const Key('registrationConfirm')),
+      'correct long password',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+    await tester.pump();
+    await service.started.future;
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    service.finish.complete();
+    await tester.pumpAndSettle();
+    expect(signIns, 0);
   });
 }

@@ -46,6 +46,21 @@ class _Api extends DiscoveryApi {
   bool timeoutAfterCreate = false;
   bool failDelete = false;
   Completer<SavedAppliance>? heldPost;
+  List<NearbySavedDevice> protocolDevices = const [];
+  bool failProtocolList = false;
+
+  @override
+  Future<bool> supportsNearbyDiscovery(String baseUrl, String token) async =>
+      true;
+
+  @override
+  Future<List<NearbySavedDevice>> nearbyInventory(
+    String baseUrl,
+    String token,
+  ) async {
+    if (failProtocolList) throw StateError('v2 offline');
+    return protocolDevices;
+  }
 
   @override
   Future<void> verifyStoredPairing(StoredHubIdentity pairing) async {}
@@ -103,6 +118,23 @@ void main() {
     await connect();
     api.failList = true;
     expect(await lifecycle.inventory(), isNull);
+  });
+
+  test('protocol devices survive v2 and appliance read failures', () async {
+    await connect();
+    api.protocolDevices = const [NearbySavedDevice('protocol-1', 'Den TV')];
+    final first = (await lifecycle.inventory())!;
+    expect(first.protocolDevices.single.name, 'Den TV');
+    api.failProtocolList = true;
+    expect(
+      (await lifecycle.inventory())!.protocolDevices.single.id,
+      'protocol-1',
+    );
+    api.failList = true;
+    expect(
+      (await lifecycle.inventory())!.protocolDevices.single.id,
+      'protocol-1',
+    );
   });
 
   test(

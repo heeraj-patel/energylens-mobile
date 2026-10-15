@@ -55,10 +55,14 @@ Map<String, dynamic> _body(String view, String home) => {
 };
 
 CloudHouseholdDashboard _dashboard(String home) =>
-    CloudHouseholdDashboard.fromJson(_body('dashboard', home), expectedHomeId: home);
+    CloudHouseholdDashboard.fromJson(
+      _body('dashboard', home),
+      expectedHomeId: home,
+    );
 CloudHouseholdEnergyTrends _trends(String home) =>
     CloudHouseholdEnergyTrends.fromJson(
-      _body('energy_trends', home), expectedHomeId: home,
+      _body('energy_trends', home),
+      expectedHomeId: home,
     );
 
 class _Source implements EfficiencyDomainSource {
@@ -103,31 +107,36 @@ class _Source implements EfficiencyDomainSource {
         explanation: 'Evidence-backed action',
         nextQuestion: 'schedule',
         evidenceCount: 1,
+        scenarioRefs: [],
       ),
     ], DateTime.utc(2026, 10, 6)),
   );
 }
 
 void main() {
-  test('projects observed totals and reviewed actions; leaves habits unknown', () async {
-    final adapter = EfficiencyHabitsDomainAdapter(
-      EfficiencyDomainRepository(_Source()),
-    );
-    final snapshot = await adapter.fetch(homeA);
-    expect(snapshot?.homeId, homeA);
-    expect(snapshot?.totals.cost?.amount, '4.80');
-    expect(snapshot?.recommendations.single.state, 'candidate');
-    expect(snapshot?.routineClassification, isNull);
-    expect(snapshot?.routineSavingsAmount, isNull);
-  });
+  test(
+    'projects observed totals and reviewed actions; leaves habits unknown',
+    () async {
+      final adapter = EfficiencyHabitsDomainAdapter(
+        EfficiencyDomainRepository(_Source()),
+      );
+      final snapshot = await adapter.fetch(homeA);
+      expect(snapshot?.homeId, homeA);
+      expect(snapshot?.totals.cost?.amount, '4.80');
+      expect(snapshot?.recommendations.single.state, 'candidate');
+      expect(snapshot?.routineClassification, isNull);
+      expect(snapshot?.routineSavingsAmount, isNull);
+    },
+  );
 
   test('drops an in-flight response after switching homes', () async {
     final pending = Completer<CloudHouseholdDashboard>();
     final adapter = EfficiencyHabitsDomainAdapter(
       EfficiencyDomainRepository(
-        _Source(dashboardRead: (home) => home == homeA
-            ? pending.future
-            : Future.value(_dashboard(home))),
+        _Source(
+          dashboardRead: (home) =>
+              home == homeA ? pending.future : Future.value(_dashboard(home)),
+        ),
       ),
     );
     final old = adapter.fetch(homeA);
@@ -139,9 +148,7 @@ void main() {
   test('clearing the adapter invalidates pending responses', () async {
     final pending = Completer<CloudHouseholdDashboard>();
     final adapter = EfficiencyHabitsDomainAdapter(
-      EfficiencyDomainRepository(
-        _Source(dashboardRead: (_) => pending.future),
-      ),
+      EfficiencyDomainRepository(_Source(dashboardRead: (_) => pending.future)),
     );
     final result = adapter.fetch(homeA);
     await Future<void>.delayed(Duration.zero);

@@ -16,23 +16,28 @@ class _ConnectedCredentials extends DiscoveryCredentials {
       ('https://100.115.133.73:18787', 'test');
 
   @override
-  Future<String?> readPostalCode() async => postalCode;
+  Future<String?> readPostalCode({OwnedPairingScope? scope}) async =>
+      postalCode;
 
   @override
-  Future<void> savePostalCode(String postalCode) async {
+  Future<void> savePostalCode(
+    String postalCode, {
+    OwnedPairingScope? scope,
+  }) async {
     this.postalCode = postalCode;
   }
 
   @override
-  Future<void> clearPostalCode() async {
+  Future<void> clearPostalCode({OwnedPairingScope? scope}) async {
     postalCode = null;
   }
 
   @override
-  Future<bool> readZipPromptDismissed() async => zipPromptDismissed;
+  Future<bool> readZipPromptDismissed({OwnedPairingScope? scope}) async =>
+      zipPromptDismissed;
 
   @override
-  Future<void> dismissZipPrompt() async {
+  Future<void> dismissZipPrompt({OwnedPairingScope? scope}) async {
     zipPromptDismissed = true;
   }
 }
@@ -1240,37 +1245,38 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Connect Appliance'));
       await tester.pumpAndSettle();
-    expect(find.text('Discovered device'), findsWidgets);
+      expect(find.text('Discovered device'), findsWidgets);
       expect(find.byKey(const Key('ask-delete-appliance-9')), findsNothing);
     },
   );
 
-  testWidgets('legacy home shows disconnected state without invented readings', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(const MaterialApp(home: HomeScreen()));
-    expect(find.text('Device'), findsOneWidget);
-    expect(find.text('Used today'), findsOneWidget);
+  testWidgets(
+    'legacy home shows disconnected state without invented readings',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(const MaterialApp(home: HomeScreen()));
+      expect(find.text('Device'), findsOneWidget);
+      expect(find.text('Used today'), findsOneWidget);
 
-    await tester.tap(find.text('Stop Waste'));
-    await tester.pumpAndSettle();
-    expect(find.text('Find What’s Wasting Electricity'), findsOneWidget);
-    expect(find.text('No findings yet'), findsOneWidget);
-    expect(find.text('Programs'), findsOneWidget);
+      await tester.tap(find.text('Stop Waste'));
+      await tester.pumpAndSettle();
+      expect(find.text('Find What’s Wasting Electricity'), findsOneWidget);
+      expect(find.text('No findings yet'), findsOneWidget);
+      expect(find.text('Programs'), findsOneWidget);
 
-    await tester.tap(find.text('Sleep Check'));
-    await tester.pumpAndSettle();
-    expect(find.text('Sleep score unavailable'), findsOneWidget);
+      await tester.tap(find.text('Sleep Check'));
+      await tester.pumpAndSettle();
+      expect(find.text('Sleep score unavailable'), findsOneWidget);
 
-    await tester.tap(find.text('Ask & Add'));
-    await tester.pumpAndSettle();
-    expect(find.text('Answers need your home’s data'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+      await tester.tap(find.text('Ask & Add'));
+      await tester.pumpAndSettle();
+      expect(find.text('Answers need your home’s data'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'Sleep Check reports meter coverage without classifying activity',
@@ -1333,32 +1339,19 @@ void main() {
     expect(find.text('Estimated on-time: \$0.27/month'), findsNothing);
   });
 
-  testWidgets('keeps calendar-day meter data isolated for the attached row', (
+  testWidgets('local calendar-day meter data stays on the attached row', (
     tester,
   ) async {
     final api = _TodayMeterApi();
     await tester.pumpWidget(
       MaterialApp(
-        home: HomeScreen(
-          api: api,
-          credentials: _ConnectedCredentials(),
-          cloudHome: const CloudHome(
-            id: 'home-1',
-            name: 'Home',
-            timezone: 'America/Chicago',
-            countryCode: 'US',
-            postalCode: '60601',
-          ),
-        ),
+        home: HomeScreen(api: api, credentials: _ConnectedCredentials()),
       ),
     );
     await tester.pumpAndSettle();
 
     expect(api.requests, contains(('attached-meter', 'day', null)));
-    expect(
-      api.requests,
-      contains(('attached-meter', 'today', 'America/Chicago')),
-    );
+    expect(api.requests, contains(('attached-meter', 'today', null)));
     expect(api.requests, contains(('unattached-meter', 'day', null)));
     expect(
       api.requests.where(
@@ -1383,13 +1376,6 @@ void main() {
         home: HomeScreen(
           api: _TodayMeterApi(todayCoverage: 0.8),
           credentials: _ConnectedCredentials(),
-          cloudHome: const CloudHome(
-            id: 'home-1',
-            name: 'Home',
-            timezone: 'America/Chicago',
-            countryCode: 'US',
-            postalCode: '60601',
-          ),
         ),
       ),
     );
@@ -1412,6 +1398,22 @@ void main() {
           api: api,
           credentials: _ConnectedCredentials(),
           localPilotMode: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(api.requests, contains(('attached-meter', 'today', null)));
+  });
+
+  testWidgets('authenticated Cloud home does not restore a global hub token', (
+    tester,
+  ) async {
+    final api = _TodayMeterApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          api: api,
+          credentials: _ConnectedCredentials(),
           cloudHome: const CloudHome(
             id: 'home-1',
             name: 'Home',
@@ -1423,7 +1425,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(api.requests, contains(('attached-meter', 'today', null)));
+    expect(api.requests, isEmpty);
+    expect(find.text('Two-bulb Philips Hue White lamp'), findsNothing);
   });
 
   testWidgets('identity drift invalidates calendar-day appliance metering', (
@@ -1659,72 +1662,55 @@ void main() {
     expect(find.text('Waste cost'), findsNothing);
   });
 
-  testWidgets('Power Now visibility persists and Ask & Add restores a device', (
-    tester,
-  ) async {
-    final store = _MemoryVisibilityStore();
-    final api = _ManualDevicesApi();
-    const homeA = CloudHome(
-      id: 'home-a',
-      name: 'Home A',
-      timezone: 'America/Chicago',
-      countryCode: 'US',
-      postalCode: '78732',
-    );
-    const homeB = CloudHome(
-      id: 'home-b',
-      name: 'Home B',
-      timezone: 'America/Chicago',
-      countryCode: 'US',
-      postalCode: '78732',
-    );
-    Widget app(CloudHome home) => MaterialApp(
-      home: HomeScreen(
-        api: api,
-        credentials: _ConnectedCredentials(),
-        visibilityStore: store,
-        cloudHome: home,
-      ),
-    );
+  testWidgets(
+    'local Power Now visibility persists and Ask & Add restores a device',
+    (tester) async {
+      final store = _MemoryVisibilityStore();
+      final api = _ManualDevicesApi();
+      Widget app() => MaterialApp(
+        home: HomeScreen(
+          api: api,
+          credentials: _ConnectedCredentials(),
+          visibilityStore: store,
+        ),
+      );
 
-    await tester.pumpWidget(app(homeA));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('power-now-selection-action')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('power-now-select-7')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('power-now-selection-action')));
-    await tester.pumpAndSettle();
-    expect(find.text('Desk fan'), findsNothing);
-    expect(find.text('Photo lamp'), findsOneWidget);
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('power-now-selection-action')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('power-now-select-7')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('power-now-selection-action')));
+      await tester.pumpAndSettle();
+      expect(find.text('Desk fan'), findsNothing);
+      expect(find.text('Photo lamp'), findsOneWidget);
 
-    await tester.tap(find.text('Ask & Add'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Connect Appliance'));
-    await tester.pumpAndSettle();
-    expect(find.text('Desk fan'), findsWidgets);
-    await tester.ensureVisible(find.byKey(const Key('ask-show-power-now-7')));
-    await tester.tap(find.byKey(const Key('ask-show-power-now-7')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Power Now'));
-    await tester.pumpAndSettle();
-    expect(find.text('Desk fan'), findsOneWidget);
+      await tester.tap(find.text('Ask & Add'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Connect Appliance'));
+      await tester.pumpAndSettle();
+      expect(find.text('Desk fan'), findsWidgets);
+      await tester.ensureVisible(find.byKey(const Key('ask-show-power-now-7')));
+      await tester.tap(find.byKey(const Key('ask-show-power-now-7')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Power Now'));
+      await tester.pumpAndSettle();
+      expect(find.text('Desk fan'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('power-now-selection-action')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('power-now-select-8')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('power-now-selection-action')));
-    await tester.pumpAndSettle();
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpWidget(app(homeA));
-    await tester.pumpAndSettle();
-    expect(find.text('Photo lamp'), findsNothing);
-    expect(find.text('Desk fan'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('power-now-selection-action')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('power-now-select-8')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('power-now-selection-action')));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+      expect(find.text('Photo lamp'), findsNothing);
+      expect(find.text('Desk fan'), findsOneWidget);
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpWidget(app(homeB));
-    await tester.pumpAndSettle();
-    expect(find.text('Photo lamp'), findsOneWidget);
-  });
+      expect(store.values[('https://100.115.133.73:18787', null)], contains(8));
+    },
+  );
 }

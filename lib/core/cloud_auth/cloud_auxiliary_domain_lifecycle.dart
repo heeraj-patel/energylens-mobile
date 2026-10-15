@@ -20,11 +20,15 @@ class CloudAuxiliaryDomainLifecycle {
   }) => CloudAuxiliaryDomainLifecycle._(drafts, reports, deliveries);
 
   CloudAuxiliaryDomainLifecycle._(this.drafts, this._reports, this._deliveries)
-    : archiveAction = null;
+    : archiveAction = null,
+      origin = null,
+      profile = null;
 
   factory CloudAuxiliaryDomainLifecycle.forCloudApi(
     CloudApiClient api,
   ) => CloudAuxiliaryDomainLifecycle._withArchive(
+    origin: api.session.config.apiUrl,
+    profile: () => api.session.credentialMethod,
     drafts: DurableOnboardingDrafts(
       const SecureOnboardingDraftStorage(),
       OnboardingPersistenceRepository(CloudOnboardingPersistenceSource(api)),
@@ -49,9 +53,13 @@ class CloudAuxiliaryDomainLifecycle {
     required this._reports,
     required this._deliveries,
     required this.archiveAction,
+    this.origin,
+    this.profile,
   });
 
   final DurableOnboardingDrafts drafts;
+  final String? origin;
+  final String Function()? profile;
   final ReportPreviewDomainRepository _reports;
   final ReportDeliveryDomainAdapter _deliveries;
   final Future<void> Function(
@@ -187,7 +195,12 @@ class CloudAuxiliaryDomainLifecycle {
     _reports.clear();
     _deliveries.clear();
     _reportReadScopes.clear();
-    await drafts.selectScope(accountId, homeId);
+    await drafts.selectScope(
+      accountId,
+      homeId,
+      origin: origin,
+      profile: profile?.call(),
+    );
     if (generation != _generation) return false;
     _accountId = accountId;
     _homeId = homeId;

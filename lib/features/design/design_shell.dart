@@ -615,6 +615,7 @@ class _DesignShellState extends State<DesignShell> {
           identity: inventory.identity,
           generation: generation,
           appliances: inventory.rows,
+          protocolDevices: inventory.protocolDevices,
         ),
       );
     } catch (_) {

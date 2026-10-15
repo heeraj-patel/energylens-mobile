@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -125,65 +127,94 @@ abstract interface class CloudTokenStore {
 }
 
 class SecureCloudTokenStore implements CloudTokenStore {
-  const SecureCloudTokenStore([FlutterSecureStorage? storage])
-    : _storage = storage ?? const FlutterSecureStorage();
+  SecureCloudTokenStore({
+    required String origin,
+    required String profile,
+    FlutterSecureStorage? storage,
+  }) : _storage = storage ?? const FlutterSecureStorage(),
+       _origin = Uri.parse(origin).origin,
+       _profile = profile;
   final FlutterSecureStorage _storage;
+  final String _origin;
+  String _profile;
+  Future<void> _tail = Future.value();
+  Future<T> _ordered<T>(Future<T> Function() action) {
+    final result = _tail.then((_) => action());
+    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
+
   static const _access = 'energylens.cloud.access_token';
   static const _refresh = 'energylens.cloud.refresh_token';
   static const _expiry = 'energylens.cloud.access_expiry';
   static const _provider = 'energylens.cloud.auth_provider';
   static const _refreshExpiry = 'energylens.cloud.refresh_expiry';
+  String get _scopedKey =>
+      'energylens.cloud.session.v2.${base64Url.encode(utf8.encode('$_origin|$_profile'))}';
+
+  Future<void> selectProfile(String profile) => _ordered(() async {
+    _profile = profile;
+  });
 
   @override
-  Future<CloudTokens?> read() async {
-    final access = await _storage.read(key: _access);
-    if (access == null || access.isEmpty) return null;
-    final expiry = await _storage.read(key: _expiry);
-    final refreshExpiry = await _storage.read(key: _refreshExpiry);
-    return CloudTokens(
-      accessToken: access,
-      refreshToken: await _storage.read(key: _refresh),
-      expiresAt: expiry == null ? null : DateTime.tryParse(expiry),
-      refreshExpiresAt: refreshExpiry == null
-          ? null
-          : DateTime.tryParse(refreshExpiry),
-      provider: (await _storage.read(key: _provider)) == 'local'
-          ? 'local'
-          : 'oidc',
+  Future<CloudTokens?> read() => _ordered(() async {
+    final profile = _profile;
+    final key = _scopedKey;
+    // Legacy unscoped credentials cannot establish their original API origin.
+    await _clearLegacy();
+    final raw = await _storage.read(key: key);
+    if (raw == null) return null;
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      if (data['origin'] != _origin ||
+          data['profile'] != profile ||
+          data['access'] is! String ||
+          (data['access'] as String).isEmpty ||
+          data['provider'] is! String) {
+        await _storage.delete(key: key);
+        return null;
+      }
+      return CloudTokens(
+        accessToken: data['access'] as String,
+        refreshToken: data['refresh'] as String?,
+        expiresAt: DateTime.tryParse(data['expiry'] as String? ?? ''),
+        refreshExpiresAt: DateTime.tryParse(
+          data['refresh_expiry'] as String? ?? '',
+        ),
+        provider: data['provider'] as String,
+      );
+    } catch (_) {
+      await _storage.delete(key: key);
+      return null;
+    }
+  });
+
+  @override
+  Future<void> save(CloudTokens tokens) => _ordered(() async {
+    final profile = _profile;
+    final key = _scopedKey;
+    await _storage.write(
+      key: key,
+      value: jsonEncode({
+        'origin': _origin,
+        'profile': profile,
+        'provider': tokens.provider,
+        'access': tokens.accessToken,
+        'refresh': tokens.refreshToken,
+        'expiry': tokens.expiresAt?.toUtc().toIso8601String(),
+        'refresh_expiry': tokens.refreshExpiresAt?.toUtc().toIso8601String(),
+      }),
     );
-  }
+  });
 
   @override
-  Future<void> save(CloudTokens tokens) async {
-    // An interrupted provider switch must not expose the previous bearer.
-    await _storage.delete(key: _access);
-    await _storage.write(key: _provider, value: tokens.provider);
-    if (tokens.refreshToken == null) {
-      await _storage.delete(key: _refresh);
-    } else {
-      await _storage.write(key: _refresh, value: tokens.refreshToken);
-    }
-    if (tokens.expiresAt == null) {
-      await _storage.delete(key: _expiry);
-    } else {
-      await _storage.write(
-        key: _expiry,
-        value: tokens.expiresAt!.toUtc().toIso8601String(),
-      );
-    }
-    if (tokens.refreshExpiresAt == null) {
-      await _storage.delete(key: _refreshExpiry);
-    } else {
-      await _storage.write(
-        key: _refreshExpiry,
-        value: tokens.refreshExpiresAt!.toUtc().toIso8601String(),
-      );
-    }
-    await _storage.write(key: _access, value: tokens.accessToken);
-  }
+  Future<void> clear() => _ordered(() async {
+    final key = _scopedKey;
+    await _storage.delete(key: key);
+    await _clearLegacy();
+  });
 
-  @override
-  Future<void> clear() async {
+  Future<void> _clearLegacy() async {
     await _storage.delete(key: _access);
     await _storage.delete(key: _refresh);
     await _storage.delete(key: _expiry);
@@ -277,7 +308,47 @@ class CloudSession {
   final CloudTokenStore store;
   final CloudAuthenticator authenticator;
   final LocalCloudAuthService? localAuth;
+  String credentialMethod = 'email_password';
   Future<CloudTokens?>? _refreshInFlight;
+  int? _refreshGeneration;
+  int _generation = 0;
+  bool _accepting = true;
+  Future<void> _storageTail = Future.value();
+  int get generation => _generation;
+
+  Future<void> selectCredentialMethod(String method) async {
+    if (method != 'username_password' &&
+        method != 'email_password' &&
+        method != 'oidc') {
+      throw ArgumentError.value(method, 'method');
+    }
+    if (method == credentialMethod) return;
+    final generation = ++_generation;
+    _accepting = false;
+    await _orderedWrite(() async {
+      if (generation != _generation) return;
+      if (store is SecureCloudTokenStore) {
+        await (store as SecureCloudTokenStore).selectProfile(method);
+      }
+      credentialMethod = method;
+      _accepting = true;
+    });
+  }
+
+  Future<void> _orderedWrite(Future<void> Function() action) {
+    final result = _storageTail.then((_) => action());
+    _storageTail = result.catchError((Object _) {});
+    return result;
+  }
+
+  Future<void> _saveIfCurrent(CloudTokens tokens, int generation) =>
+      _orderedWrite(() async {
+        if (generation == _generation) await store.save(tokens);
+      });
+
+  Future<void> _clearIfCurrent(int generation) => _orderedWrite(() async {
+    if (generation == _generation) await store.clear();
+  });
 
   /// Whether the stored session was created with EnergyLens local credentials.
   /// This deliberately checks the persisted token provider, not whether local
@@ -286,8 +357,10 @@ class CloudSession {
       (await store.read())?.provider == 'local';
 
   Future<String?> accessToken() async {
-    if (!config.hasCloudSignIn) return null;
+    if (!config.hasCloudSignIn || !_accepting) return null;
+    final generation = _generation;
     final tokens = await store.read();
+    if (generation != _generation || !_accepting) return null;
     if (tokens == null) return null;
     if ((tokens.provider == 'local' &&
             (!config.isLocalAuthConfigured ||
@@ -295,7 +368,7 @@ class CloudSession {
                 tokens.expiresAt == null ||
                 tokens.refreshExpiresAt == null)) ||
         (tokens.provider != 'local' && !config.isConfigured)) {
-      await store.clear();
+      await _clearIfCurrent(generation);
       return null;
     }
     if (!tokens.needsRefresh(DateTime.now())) return tokens.accessToken;
@@ -303,27 +376,42 @@ class CloudSession {
   }
 
   Future<String?> refreshAccessToken() async {
-    if (!config.hasCloudSignIn) return null;
+    if (!config.hasCloudSignIn || !_accepting) return null;
+    final generation = _generation;
     final inFlight = _refreshInFlight;
-    if (inFlight != null) return (await inFlight)?.accessToken;
+    if (inFlight != null && _refreshGeneration == generation) {
+      final token = await inFlight;
+      return generation == _generation && _accepting
+          ? token?.accessToken
+          : null;
+    }
     final refresh = _refreshTokens();
     _refreshInFlight = refresh;
+    _refreshGeneration = generation;
     try {
-      return (await refresh)?.accessToken;
+      final token = await refresh;
+      return generation == _generation && _accepting
+          ? token?.accessToken
+          : null;
     } finally {
-      _refreshInFlight = null;
+      if (identical(_refreshInFlight, refresh)) {
+        _refreshInFlight = null;
+        _refreshGeneration = null;
+      }
     }
   }
 
   Future<CloudTokens?> _refreshTokens() async {
+    final generation = _generation;
     final current = await store.read();
+    if (generation != _generation) return null;
     final refreshToken = current?.refreshToken;
     if (refreshToken == null ||
         refreshToken.isEmpty ||
         (current?.provider == 'local' &&
             (current!.refreshExpiresAt == null ||
                 !DateTime.now().isBefore(current.refreshExpiresAt!)))) {
-      await store.clear();
+      await _clearIfCurrent(generation);
       return null;
     }
     try {
@@ -333,10 +421,10 @@ class CloudSession {
       if (tokens.provider != current.provider) {
         throw const FormatException('Auth provider changed during refresh');
       }
-      await store.save(tokens);
-      return tokens;
+      await _saveIfCurrent(tokens, generation);
+      return generation == _generation ? tokens : null;
     } catch (_) {
-      await store.clear();
+      await _clearIfCurrent(generation);
       return null;
     }
   }
@@ -345,32 +433,45 @@ class CloudSession {
     if (!config.isConfigured) {
       throw StateError('Cloud sign-in is not configured');
     }
-    await store.save(await authenticator.signIn(config));
+    final generation = ++_generation;
+    _accepting = false;
+    await _clearIfCurrent(generation);
+    final tokens = await authenticator.signIn(config);
+    await _saveIfCurrent(tokens, generation);
+    if (generation != _generation) throw StateError('Sign-in scope changed');
+    _accepting = true;
   }
 
   Future<void> signInLocal(String email, String password) async {
     if (!config.isLocalAuthConfigured || localAuth == null) {
       throw StateError('Local Cloud sign-in is not configured');
     }
+    final generation = ++_generation;
+    _accepting = false;
+    await _clearIfCurrent(generation);
     final tokens = await localAuth!.login(email, password);
     if (tokens.provider != 'local') {
       throw const FormatException('Invalid local session');
     }
-    await store.save(tokens);
+    await _saveIfCurrent(tokens, generation);
+    if (generation != _generation) throw StateError('Sign-in scope changed');
+    _accepting = true;
   }
 
   Future<void> signOut() async {
-    final tokens = await store.read();
-    try {
-      if (tokens?.provider == 'local' && tokens?.refreshToken != null) {
-        try {
-          await localAuth?.logout(tokens!.refreshToken!);
-        } catch (_) {
-          // Clear the device session even if remote logout is unreachable.
-        }
-      }
-    } finally {
+    _generation++;
+    _accepting = false;
+    CloudTokens? tokens;
+    await _orderedWrite(() async {
+      tokens = await store.read();
       await store.clear();
+    });
+    if (tokens?.provider == 'local' && tokens?.refreshToken != null) {
+      try {
+        await localAuth?.logout(tokens!.refreshToken!);
+      } catch (_) {
+        // Local access is already invalid, even when remote revoke fails.
+      }
     }
   }
 }

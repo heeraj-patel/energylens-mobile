@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../cloud_auth/cloud_auth.dart';
+import '../cloud_auth/cloud_local_auth.dart';
 import '../cloud_auth/cloud_dev_tls.dart';
 import 'cloud_home.dart';
 import 'cloud_appliance.dart';
@@ -43,12 +44,16 @@ class CloudAccount {
     required this.id,
     required this.email,
     required this.emailVerified,
+    this.authMethod,
+    this.username,
     this.displayName,
     this.profileVersion,
   });
   final String id;
   final String? email;
   final bool emailVerified;
+  final String? authMethod;
+  final String? username;
   final String? displayName;
   final int? profileVersion;
 
@@ -62,6 +67,8 @@ class CloudAccount {
       id: id,
       email: json['email'] as String?,
       emailVerified: verified,
+      authMethod: json['auth_method'] as String?,
+      username: json['username'] as String?,
       displayName: json['display_name'] as String?,
       profileVersion: json['profile_version'] as int?,
     );
@@ -74,6 +81,23 @@ class CloudApiClient {
     : _client = client ?? cloudHttpClient(session.config);
   final CloudSession session;
   final http.Client _client;
+
+  Future<CloudAuthCapabilities?> authCapabilities() async {
+    final origin = Uri.parse(session.config.apiUrl);
+    final response = await _client
+        .get(
+          origin.resolve('/v1/auth/config'),
+          headers: const {'Accept': 'application/json'},
+        )
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode == 404) return null;
+    if (response.statusCode != 200)
+      throw CloudApiException(response.statusCode, 'auth_config_unavailable');
+    final body = jsonDecode(response.body);
+    if (body is! Map<String, dynamic>)
+      throw const FormatException('Invalid Cloud auth capabilities');
+    return CloudAuthCapabilities.fromJson(body, session.config);
+  }
 
   Future<CloudVersioned<CloudHome>> home(String homeId) async {
     final response = await get('/v1/homes/${Uri.encodeComponent(homeId)}');
@@ -1530,6 +1554,7 @@ class CloudApiClient {
     String? idempotencyKey,
     String? ifMatch,
   }) async {
+    final sessionGeneration = session.generation;
     if (!session.config.hasCloudSignIn) {
       throw StateError('Cloud API is not configured');
     }
@@ -1542,8 +1567,13 @@ class CloudApiClient {
     }
     final uri = base.resolve(path);
     final token = await session.accessToken();
-    if (token == null) throw const CloudApiException(401, 'not_authenticated');
+    if (token == null || sessionGeneration != session.generation) {
+      throw const CloudApiException(401, 'not_authenticated');
+    }
     Future<http.Response> send(String bearer) async {
+      if (sessionGeneration != session.generation) {
+        throw const CloudApiException(401, 'not_authenticated');
+      }
       final request = http.Request(method, uri)
         ..headers['Authorization'] = 'Bearer $bearer';
       if (jsonBody != null) {
@@ -1558,9 +1588,17 @@ class CloudApiClient {
     }
 
     var body = await send(token);
+    if (sessionGeneration != session.generation) {
+      throw const CloudApiException(401, 'not_authenticated');
+    }
     if (body.statusCode == 401) {
       final fresh = await session.refreshAccessToken();
-      if (fresh != null) body = await send(fresh);
+      if (fresh != null && sessionGeneration == session.generation) {
+        body = await send(fresh);
+      }
+    }
+    if (sessionGeneration != session.generation) {
+      throw const CloudApiException(401, 'not_authenticated');
     }
     if (body.statusCode < 200 || body.statusCode >= 300) {
       String code = 'http_${body.statusCode}';

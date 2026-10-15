@@ -10,6 +10,67 @@ class CloudLocalAuthException implements Exception {
   final int statusCode;
 }
 
+class CloudAuthCapabilities {
+  const CloudAuthCapabilities({
+    required this.method,
+    required this.registrationEnabled,
+    required this.emailVerificationRequired,
+    required this.passwordRecoveryEnabled,
+    required this.sessionLogoutRevokesAccess,
+  });
+
+  final String method;
+  final bool registrationEnabled;
+  final bool emailVerificationRequired;
+  final bool passwordRecoveryEnabled;
+  final bool sessionLogoutRevokesAccess;
+
+  static CloudAuthCapabilities fromJson(
+    Map<String, dynamic> data,
+    CloudAuthConfig build,
+  ) {
+    final methods = data['methods'];
+    if (data['schema_version'] != 1 ||
+        methods is! List ||
+        methods.isEmpty ||
+        methods.any(
+          (m) =>
+              m is! String ||
+              !{'username_password', 'email_password', 'oidc'}.contains(m),
+        ) ||
+        methods.toSet().length != methods.length ||
+        data['registration_enabled'] is! bool ||
+        data['email_verification_required'] is! bool ||
+        data['password_recovery_enabled'] is! bool ||
+        data['session_logout_revokes_access'] is! bool) {
+      throw const FormatException('Invalid Cloud auth capabilities');
+    }
+    final chosen =
+        methods.contains('username_password') && build.isLocalAuthConfigured
+        ? 'username_password'
+        : methods.contains('email_password') && build.isLocalAuthConfigured
+        ? 'email_password'
+        : methods.contains('oidc') && build.isConfigured
+        ? 'oidc'
+        : null;
+    if (chosen == null)
+      throw const FormatException('Unsupported Cloud auth capabilities');
+    if (chosen == 'username_password' &&
+        (data['email_verification_required'] != false ||
+            data['password_recovery_enabled'] != false ||
+            data['session_logout_revokes_access'] != true)) {
+      throw const FormatException('Invalid username auth capabilities');
+    }
+    return CloudAuthCapabilities(
+      method: chosen,
+      registrationEnabled: data['registration_enabled'] as bool,
+      emailVerificationRequired: data['email_verification_required'] as bool,
+      passwordRecoveryEnabled: data['password_recovery_enabled'] as bool,
+      sessionLogoutRevokesAccess: data['session_logout_revokes_access'] as bool,
+    );
+  }
+}
+
 /// Public first-party auth routes. The server returns 404 while its gate is off.
 class CloudLocalAuthClient implements LocalCloudAuthService {
   CloudLocalAuthClient({
@@ -38,6 +99,23 @@ class CloudLocalAuthClient implements LocalCloudAuthService {
 
   final String baseUrl;
   final http.Client _client;
+  String credentialMethod = 'email_password';
+
+  Future<CloudAuthCapabilities?> capabilities(CloudAuthConfig build) async {
+    final response = await _client
+        .get(
+          Uri.parse(baseUrl).resolve('/v1/auth/config'),
+          headers: const {'Accept': 'application/json'},
+        )
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode == 404) return null;
+    if (response.statusCode != 200)
+      throw CloudLocalAuthException(response.statusCode);
+    final body = jsonDecode(response.body);
+    if (body is! Map<String, dynamic>)
+      throw const FormatException('Invalid Cloud auth capabilities');
+    return CloudAuthCapabilities.fromJson(body, build);
+  }
 
   void close() => _client.close();
 
@@ -64,7 +142,10 @@ class CloudLocalAuthClient implements LocalCloudAuthService {
 
   @override
   Future<void> requestRegistration(String email, String password) async {
-    await _post('registration', {'email': email, 'password': password}, 202);
+    await _post('registration', {
+      credentialMethod == 'username_password' ? 'username' : 'email': email,
+      'password': password,
+    }, credentialMethod == 'username_password' ? 201 : 202);
   }
 
   @override
@@ -74,7 +155,10 @@ class CloudLocalAuthClient implements LocalCloudAuthService {
 
   @override
   Future<CloudTokens> login(String email, String password) async => _tokens(
-    await _post('login', {'email': email, 'password': password}, 200),
+    await _post('login', {
+      credentialMethod == 'username_password' ? 'username' : 'email': email,
+      'password': password,
+    }, 200),
   );
 
   @override

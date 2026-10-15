@@ -34,6 +34,7 @@ CloudRecommendation recommendation({String id = applianceId}) =>
       explanation: 'Reviewed explanation',
       nextQuestion: null,
       evidenceCount: 2,
+      scenarioRefs: [],
     );
 
 CloudEstimate estimate({String id = applianceId}) => CloudEstimate(
@@ -146,6 +147,7 @@ void main() {
         explanation: 'Reviewed explanation',
         nextQuestion: null,
         evidenceCount: 2,
+        scenarioRefs: [],
       ),
     ];
     final result = await TipsDomainRepository(source)
@@ -172,6 +174,7 @@ void main() {
           explanation: 'More information needed',
           nextQuestion: 'confirm_model',
           evidenceCount: 0,
+          scenarioRefs: [],
         ),
         recommendation(),
         const CloudRecommendation(
@@ -182,6 +185,7 @@ void main() {
           explanation: 'Reviewed explanation',
           nextQuestion: null,
           evidenceCount: 2,
+          scenarioRefs: [],
         ),
       ];
     final repository = TipsDomainRepository(source);

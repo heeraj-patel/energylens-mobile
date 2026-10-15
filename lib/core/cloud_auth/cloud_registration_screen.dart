@@ -13,10 +13,17 @@ class CloudRegistrationScreen extends StatefulWidget {
     super.key,
     required this.service,
     this.linkOrigin = '',
+    this.usernameMode = false,
+    this.onUsernameRegistered,
+    this.isCurrent,
   });
 
   final CloudRegistrationService service;
   final String linkOrigin;
+  final bool usernameMode;
+  final Future<void> Function(String username, String password)?
+  onUsernameRegistered;
+  final bool Function()? isCurrent;
 
   @override
   State<CloudRegistrationScreen> createState() =>
@@ -44,18 +51,28 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
 
   Future<void> _register() async {
     if (_busy) return;
-    final email = _email.text.trim();
+    final email = widget.usernameMode
+        ? _email.text.replaceAll(RegExp(r'^ +| +$'), '').toLowerCase()
+        : _email.text.trim();
     final password = _password.text;
     final passwordBytes = utf8.encode(password);
-    if (email.length > 254 ||
-        !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email) ||
-        password.runes.length < 12 ||
+    final validIdentifier = widget.usernameMode
+        ? RegExp(r'^[a-z0-9][a-z0-9._-]{2,63}$').hasMatch(email)
+        : email.length <= 254 &&
+              RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email);
+    if (!validIdentifier ||
+        (widget.usernameMode
+            ? passwordBytes.length < 12
+            : password.runes.length < 12) ||
         passwordBytes.length > 1024 ||
         password.codeUnits.contains(0) ||
         password != _confirm.text) {
       setState(
-        () => _error = 'Enter a valid email and matching password of at least 12 characters.',
+        () =>
+            _error = widget.usernameMode ? 'Check your username and password.' : 'Enter a valid email and matching password of at least 12 characters.',
       );
+      _password.clear();
+      _confirm.clear();
       return;
     }
     setState(() {
@@ -64,8 +81,24 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
     });
     try {
       await widget.service.requestRegistration(email, password);
+      if (!mounted || widget.isCurrent?.call() == false) return;
       _password.clear();
       _confirm.clear();
+      if (widget.usernameMode && widget.onUsernameRegistered != null) {
+        try {
+          await widget.onUsernameRegistered!(email, password);
+          if (mounted) Navigator.of(context).pop();
+          return;
+        } catch (_) {
+          if (mounted) {
+            setState(
+              () => _error =
+                  'Account created. Sign in with your username to continue.',
+            );
+          }
+          return;
+        }
+      }
       if (mounted) setState(() => _accepted = true);
     } on CloudLocalAuthException catch (error) {
       if (mounted) {
@@ -80,7 +113,11 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
         setState(() => _error = 'Could not submit the request. Try again.');
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        _password.clear();
+        _confirm.clear();
+        setState(() => _busy = false);
+      }
     }
   }
 
@@ -115,6 +152,8 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
         );
       }
     } finally {
+      _password.clear();
+      _confirm.clear();
       if (mounted) setState(() => _busy = false);
     }
   }
@@ -157,8 +196,10 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
             padding: const EdgeInsets.all(24),
             children: [
               if (!_accepted) ...[
-                const Text(
-                  'Enter an email and password to request an EnergyLens account. If the request can proceed, check your email for verification instructions.',
+                Text(
+                  widget.usernameMode
+                      ? 'Choose a username and password to create your EnergyLens account.'
+                      : 'Enter an email and password to request an EnergyLens account. If the request can proceed, check your email for verification instructions.',
                 ),
                 const SizedBox(height: 16),
                 AutofillGroup(
@@ -168,9 +209,15 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
                         key: const Key('registrationEmail'),
                         controller: _email,
                         enabled: !_busy,
-                        autofillHints: const [AutofillHints.email],
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(labelText: 'Email'),
+                        autofillHints: widget.usernameMode
+                            ? const [AutofillHints.username]
+                            : const [AutofillHints.email],
+                        keyboardType: widget.usernameMode
+                            ? TextInputType.text
+                            : TextInputType.emailAddress,
+                        decoration: InputDecoration(
+                          labelText: widget.usernameMode ? 'Username' : 'Email',
+                        ),
                       ),
                       const SizedBox(height: 12),
                       TextField(
@@ -199,7 +246,9 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
                 const SizedBox(height: 16),
                 FilledButton(
                   onPressed: _busy ? null : _register,
-                  child: const Text('Request account'),
+                  child: Text(
+                    widget.usernameMode ? 'Create account' : 'Request account',
+                  ),
                 ),
               ] else ...[
                 const Text(

@@ -183,6 +183,34 @@ class _Adapters implements DesignContextAdapters {
 }
 
 void main() {
+  testWidgets('local Settings device management opens discovery', (
+    tester,
+  ) async {
+    final platform = _WebPlatform();
+    WebViewPlatform.instance = platform;
+    var discoveryOpens = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DesignShell(
+          localPilot: true,
+          onDiscoverDevices: () async => discoveryOpens++,
+        ),
+      ),
+    );
+    await tester.pump();
+    platform.controller.route('settings');
+    await tester.pumpAndSettle();
+    platform.controller.route('settings_manage_devices');
+    await tester.pumpAndSettle();
+    expect(
+      platform.controller.asset,
+      'assets/design_pages/settings_manage_devices/app.html',
+    );
+    platform.controller.route('discover_devices');
+    await tester.pumpAndSettle();
+    expect(discoveryOpens, 1);
+  });
+
   testWidgets('Settings routes to local preview without delivery controls', (
     tester,
   ) async {

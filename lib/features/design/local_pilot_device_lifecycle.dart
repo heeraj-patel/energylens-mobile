@@ -4,9 +4,14 @@ import '../discovery/discovery_credentials.dart';
 enum LocalWriteStatus { confirmed, unresolved, failed }
 
 class LocalInventory {
-  const LocalInventory(this.identity, this.rows);
+  const LocalInventory(
+    this.identity,
+    this.rows, {
+    this.protocolDevices = const [],
+  });
   final String identity;
   final List<SavedAppliance> rows;
+  final List<NearbySavedDevice> protocolDevices;
 }
 
 class LocalWriteResult {
@@ -44,6 +49,7 @@ class LocalPilotDeviceLifecycle {
   final DiscoveryApi api;
   final DiscoveryCredentials credentials;
   String? _lastCredential;
+  LocalInventory? _lastInventory;
   int _revision = 0;
 
   Future<_HubCredential?> _credential() async {
@@ -52,6 +58,7 @@ class LocalPilotDeviceLifecycle {
       if (_lastCredential != null) {
         _lastCredential = null;
         _revision++;
+        _lastInventory = null;
       }
       return null;
     }
@@ -68,6 +75,7 @@ class LocalPilotDeviceLifecycle {
     if (_lastCredential != key) {
       _lastCredential = key;
       _revision++;
+      _lastInventory = null;
     }
     return _HubCredential(
       address,
@@ -86,13 +94,41 @@ class LocalPilotDeviceLifecycle {
   }
 
   Future<LocalInventory?> inventory() async {
+    _HubCredential? credential;
     try {
-      final credential = await _credential();
+      credential = await _credential();
       if (credential == null) return null;
       final rows = await api.appliances(credential.address, credential.token);
+      var protocolDevices = _lastInventory?.identity == credential.identity
+          ? _lastInventory!.protocolDevices
+          : const <NearbySavedDevice>[];
+      try {
+        if (await api.supportsNearbyDiscovery(
+          credential.address,
+          credential.token,
+        )) {
+          protocolDevices = await api.nearbyInventory(
+            credential.address,
+            credential.token,
+          );
+        }
+      } catch (_) {
+        // A v2 outage must not hide existing manual/photo rows.
+      }
       if (!await _isCurrent(credential)) return null;
-      return LocalInventory(credential.identity, List.unmodifiable(rows));
+      final inventory = LocalInventory(
+        credential.identity,
+        List.unmodifiable(rows),
+        protocolDevices: List.unmodifiable(protocolDevices),
+      );
+      _lastInventory = inventory;
+      return inventory;
     } catch (_) {
+      if (credential != null &&
+          _lastInventory?.identity == credential.identity &&
+          await _isCurrent(credential)) {
+        return _lastInventory;
+      }
       return null;
     }
   }

@@ -252,6 +252,7 @@ void main() {
           explanation: 'Evidence',
           nextQuestion: 'hours_per_week',
           evidenceCount: 0,
+          scenarioRefs: [],
         ),
       ], DateTime.utc(2026, 10, 6)),
     );

@@ -3,6 +3,7 @@ import 'package:flutter_appauth/flutter_appauth.dart';
 
 import '../cloud_api/cloud_api_client.dart';
 import '../cloud_api/cloud_home.dart';
+import '../cloud_api/cloud_hub_claim_flow.dart';
 import '../../features/design/design_context_coordinator.dart';
 import 'cloud_auxiliary_domain_lifecycle.dart';
 import 'cloud_home_entry.dart';
@@ -11,6 +12,7 @@ import 'cloud_preferences_screen.dart';
 import 'cloud_registration_screen.dart';
 import 'cloud_local_auth.dart';
 import 'cloud_recovery_screen.dart';
+import '../../features/identify/onboarding_draft_store.dart';
 
 class CloudEntryGate extends StatefulWidget {
   const CloudEntryGate({
@@ -23,6 +25,8 @@ class CloudEntryGate extends StatefulWidget {
     this.registrationService,
     this.designContextCoordinator,
     this.auxiliaryDomainLifecycle,
+    this.homeCreateStorage,
+    this.activeHomeStorage,
   });
   final Widget Function(
     CloudHome? selectedHome,
@@ -56,6 +60,8 @@ class CloudEntryGate extends StatefulWidget {
   final CloudSession? session;
   final CloudApiClient? api;
   final CloudRegistrationService? registrationService;
+  final OnboardingDraftStorage? homeCreateStorage;
+  final OnboardingDraftStorage? activeHomeStorage;
 
   /// Receives only account and home IDs verified through this gate's Cloud API.
   final DesignContextCoordinator? designContextCoordinator;
@@ -70,6 +76,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   late final CloudApiClient _api;
   late final DesignContextCoordinator _designContextCoordinator;
   late final CloudAuxiliaryDomainLifecycle _auxiliaryDomainLifecycle;
+  late final DurableHomeCreateDrafts _homeCreateDrafts;
+  late final ActiveHomePreference _activeHomePreference;
   CloudLocalAuthClient? _ownedLocalAuth;
   final _localEmail = TextEditingController();
   final _localPassword = TextEditingController();
@@ -81,16 +89,23 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   CloudHome? _selectedHome;
   String? _homeListError;
   bool _homeLoading = false;
+  bool _allowRememberedRestore = true;
+  bool _capabilitiesReady = false;
+  CloudAuthCapabilities? _capabilities;
   String? _verifiedAccountId;
   int _lifecycleEpoch = 0;
 
   void _invalidateDesignContext() {
     _lifecycleEpoch++;
+    _busy = false;
     _verifiedAccountId = null;
     _selectedHome = null;
     _homes = const [];
     _designContextCoordinator.signOut();
     _auxiliaryDomainLifecycle.clear().ignore();
+    CloudHubClaimFlow.invalidatePendingClaims().ignore();
+    _homeCreateDrafts.selectScope(null, null, null).ignore();
+    _activeHomePreference.selectScope(null, null).ignore();
   }
 
   @override
@@ -107,11 +122,23 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         widget.session ??
         CloudSession(
           config: config,
-          store: const SecureCloudTokenStore(),
+          store: SecureCloudTokenStore(
+            origin: config.apiUrl,
+            profile: 'email_password',
+          ),
           authenticator: const AppAuthCloudAuthenticator(),
           localAuth: _ownedLocalAuth,
         );
     _api = widget.api ?? CloudApiClient(session: _session);
+    _homeCreateDrafts = DurableHomeCreateDrafts(
+      widget.homeCreateStorage ??
+          const SecureOnboardingDraftStorage.homeCreate(),
+      _api,
+    );
+    _activeHomePreference = ActiveHomePreference(
+      widget.activeHomeStorage ??
+          const SecureOnboardingDraftStorage.activeHome(),
+    );
     _designContextCoordinator =
         widget.designContextCoordinator ??
         DesignContextCoordinator.forCloudApi(_api);
@@ -132,19 +159,35 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   }
 
   Future<void> _restore() async {
+    final epoch = _lifecycleEpoch;
     if (!_session.config.hasCloudSignIn) {
       if (mounted) setState(() => _busy = false);
       return;
     }
     try {
+      final capabilities = await _api.authCapabilities();
+      if (!mounted || epoch != _lifecycleEpoch) return;
+      final method =
+          capabilities?.method ??
+          (_session.config.isLocalAuthConfigured ? 'email_password' : 'oidc');
+      await _session.selectCredentialMethod(method);
+      if (!mounted || epoch != _lifecycleEpoch) return;
+      if (_session.localAuth is CloudLocalAuthClient) {
+        (_session.localAuth! as CloudLocalAuthClient).credentialMethod = method;
+      }
+      if (!mounted) return;
+      setState(() {
+        _capabilities = capabilities;
+        _capabilitiesReady = true;
+      });
       final token = await _session.accessToken();
       if (token != null) await _validate();
     } catch (_) {
-      if (mounted) {
-        setState(() => _message = 'Could not restore the cloud session.');
+      if (mounted && epoch == _lifecycleEpoch) {
+        setState(() => _message = 'Could not load sign-in options. Try again.');
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && epoch == _lifecycleEpoch) setState(() => _busy = false);
     }
   }
 
@@ -153,12 +196,22 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     try {
       final account = await _api.me();
       if (!mounted || epoch != _lifecycleEpoch) return;
-      if (!account.emailVerified) {
+      final usernameMode = _session.credentialMethod == 'username_password';
+      final identityValid = usernameMode
+          ? account.authMethod == 'username_password' &&
+                account.username != null &&
+                account.username!.isNotEmpty
+          : account.emailVerified &&
+                (account.authMethod == null ||
+                    account.authMethod == _session.credentialMethod);
+      if (!identityValid) {
         _invalidateDesignContext();
         if (mounted) {
           setState(() {
             _authenticated = false;
-            _message = 'Verify your email address before continuing.';
+            _message = usernameMode
+                ? 'Check your username and password.'
+                : 'Verify your email address before continuing.';
           });
         }
         return;
@@ -166,6 +219,15 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       final preferences = await _api.accountPreferences();
       if (!mounted || epoch != _lifecycleEpoch) return;
       _verifiedAccountId = account.id;
+      _allowRememberedRestore = true;
+      final origin = Uri.parse(_session.config.apiUrl).origin;
+      await _homeCreateDrafts.selectScope(
+        origin,
+        _session.credentialMethod,
+        account.id,
+      );
+      await _activeHomePreference.selectScope(origin, account.id);
+      if (!mounted || epoch != _lifecycleEpoch) return;
       if (mounted) {
         setState(() {
           _authenticated = true;
@@ -206,11 +268,27 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     try {
       final homes = await _api.homes();
       if (!mounted || epoch != _lifecycleEpoch) return;
+      final resumed = await _homeCreateDrafts.restoreAndCommit();
+      if (!mounted || epoch != _lifecycleEpoch) return;
+      final ownedHomes =
+          resumed == null || homes.any((home) => home.id == resumed.id)
+          ? homes
+          : [...homes, resumed];
+      final remembered = await _activeHomePreference.restore(ownedHomes);
+      if (!mounted || epoch != _lifecycleEpoch) return;
       if (mounted) {
         setState(() {
-          _homes = homes;
+          _homes = ownedHomes;
           _homeListError = null;
         });
+      }
+      if (_allowRememberedRestore &&
+          remembered != null &&
+          _selectedHome == null) {
+        final home = ownedHomes
+            .where((item) => item.id == remembered)
+            .firstOrNull;
+        if (home != null) await _selectHome(home);
       }
     } on CloudApiException catch (error) {
       if (!mounted || epoch != _lifecycleEpoch) return;
@@ -260,7 +338,9 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   Future<CloudHome> _createHome(CloudHomeCreate input, String key) async {
     final epoch = _lifecycleEpoch;
     try {
-      final home = await _api.createHome(input, idempotencyKey: key);
+      final home = await _homeCreateDrafts.stageAndCommit(input, key);
+      if (home == null)
+        throw StateError('Cloud account changed during home creation');
       if (!mounted || epoch != _lifecycleEpoch || _verifiedAccountId == null) {
         throw StateError('Cloud account changed during home creation');
       }
@@ -309,36 +389,46 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       _auxiliaryDomainLifecycle.clear().ignore();
     }
     if (!mounted || epoch != _lifecycleEpoch) return;
+    await _activeHomePreference.remember(home);
+    if (!mounted || epoch != _lifecycleEpoch) return;
+    _allowRememberedRestore = true;
     setState(() => _selectedHome = home);
   }
 
   Future<void> _signIn() async {
     _invalidateDesignContext();
+    final epoch = _lifecycleEpoch;
     setState(() {
       _busy = true;
       _message = null;
     });
     try {
-      await _session.signIn();
+      final login = _session.signIn();
+      final sessionGeneration = _session.generation;
+      await login;
+      if (!mounted ||
+          epoch != _lifecycleEpoch ||
+          sessionGeneration != _session.generation)
+        return;
       await _validate();
     } on FlutterAppAuthUserCancelledException {
-      if (mounted) {
+      if (mounted && epoch == _lifecycleEpoch) {
         setState(() => _message = 'Sign-in cancelled. Tap Sign in when ready.');
       }
     } on FlutterAppAuthPlatformException {
-      if (mounted) {
+      if (mounted && epoch == _lifecycleEpoch) {
         setState(
           () => _message = 'Could not start secure sign-in. Check your connection or app configuration.',
         );
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && epoch == _lifecycleEpoch) {
         setState(
           () => _message = 'Could not complete Cloud sign-in. Try again or ask for help with app configuration.',
         );
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && epoch == _lifecycleEpoch) setState(() => _busy = false);
     }
   }
 
@@ -346,7 +436,11 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     final email = _localEmail.text.trim();
     final password = _localPassword.text;
     if (email.isEmpty || password.isEmpty) {
-      setState(() => _message = 'Enter your email and password.');
+      setState(
+        () => _message = _session.credentialMethod == 'username_password'
+            ? 'Check your username and password.'
+            : 'Enter your email and password.',
+      );
       return;
     }
     setState(() {
@@ -354,35 +448,47 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       _busy = true;
       _message = null;
     });
+    final epoch = _lifecycleEpoch;
     try {
-      await _session.signInLocal(email, password);
+      final login = _session.signInLocal(email, password);
+      final sessionGeneration = _session.generation;
+      await login;
+      if (!mounted ||
+          epoch != _lifecycleEpoch ||
+          sessionGeneration != _session.generation)
+        return;
       await _validate();
     } on CloudLocalAuthException catch (error) {
-      if (mounted) {
+      if (mounted && epoch == _lifecycleEpoch) {
         setState(
           () => _message = switch (error.statusCode) {
-            404 => 'Email sign-in is not available on this Cloud server.',
+            404 =>
+              _session.credentialMethod == 'username_password'
+                  ? 'Could not load sign-in options. Try again.'
+                  : 'Email sign-in is not available on this Cloud server.',
             401 => 'Could not sign in. Check your details and try again.',
-            _ => 'Email sign-in is temporarily unavailable. Try again later.',
+            _ =>
+              _session.credentialMethod == 'username_password'
+                  ? 'Could not sign in. Check your details and try again.'
+                  : 'Email sign-in is temporarily unavailable. Try again later.',
           },
         );
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && epoch == _lifecycleEpoch) {
         setState(
           () =>
               _message = 'Could not sign in. Check your details and try again.',
         );
       }
     } finally {
-      _localPassword.clear();
-      if (mounted) setState(() => _busy = false);
+      if (_localPassword.text == password) _localPassword.clear();
+      if (mounted && epoch == _lifecycleEpoch) setState(() => _busy = false);
     }
   }
 
   Future<void> _signOut() async {
     _invalidateDesignContext();
-    await _session.signOut();
     if (mounted) {
       setState(() {
         _authenticated = false;
@@ -391,6 +497,22 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         _homes = const [];
       });
     }
+    await _session.signOut();
+  }
+
+  Future<void> _registerAndSignIn(String username, String password) async {
+    _invalidateDesignContext();
+    final epoch = _lifecycleEpoch;
+    final login = _session.signInLocal(username, password);
+    final sessionGeneration = _session.generation;
+    await login;
+    if (!mounted ||
+        epoch != _lifecycleEpoch ||
+        sessionGeneration != _session.generation) {
+      throw StateError('Sign-in scope changed');
+    }
+    await _validate();
+    if (!_authenticated) throw StateError('Account validation failed');
   }
 
   @override
@@ -424,6 +546,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
 
         void changeHome() {
           _lifecycleEpoch++;
+          CloudHubClaimFlow.invalidatePendingClaims().ignore();
+          _allowRememberedRestore = false;
           _designContextCoordinator.signOut();
           _auxiliaryDomainLifecycle.clear().ignore();
           setState(() => _selectedHome = null);
@@ -491,21 +615,36 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                   const SizedBox(height: 20),
                   if (_busy)
                     const CircularProgressIndicator()
-                  else if (_session.config.isConfigured)
+                  else if (_capabilitiesReady &&
+                      _session.credentialMethod == 'oidc' &&
+                      _session.config.isConfigured)
                     FilledButton(
                       onPressed: _signIn,
                       child: const Text('Sign in'),
                     ),
                   if (!_busy &&
+                      _capabilitiesReady &&
                       _session.config.isLocalAuthConfigured &&
-                      _session.localAuth != null) ...[
+                      _session.localAuth != null &&
+                      _session.credentialMethod != 'oidc') ...[
                     const SizedBox(height: 8),
                     TextField(
                       key: const Key('localSignInEmail'),
                       controller: _localEmail,
-                      keyboardType: TextInputType.emailAddress,
-                      autofillHints: const [AutofillHints.email],
-                      decoration: const InputDecoration(labelText: 'Email'),
+                      keyboardType:
+                          _session.credentialMethod == 'username_password'
+                          ? TextInputType.text
+                          : TextInputType.emailAddress,
+                      autofillHints:
+                          _session.credentialMethod == 'username_password'
+                          ? const [AutofillHints.username]
+                          : const [AutofillHints.email],
+                      decoration: InputDecoration(
+                        labelText:
+                            _session.credentialMethod == 'username_password'
+                            ? 'Username'
+                            : 'Email',
+                      ),
                     ),
                     TextField(
                       key: const Key('localSignInPassword'),
@@ -517,9 +656,15 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                     const SizedBox(height: 8),
                     FilledButton(
                       onPressed: _signInLocal,
-                      child: const Text('Sign in with email'),
+                      child: Text(
+                        _session.credentialMethod == 'username_password'
+                            ? 'Sign in with username'
+                            : 'Sign in with email',
+                      ),
                     ),
-                    if (!_session.config.isDevAuthConfigured)
+                    if (!_session.config.isDevAuthConfigured &&
+                        _session.credentialMethod == 'email_password' &&
+                        (_capabilities?.passwordRecoveryEnabled ?? true))
                       TextButton(
                         onPressed: () => Navigator.of(context).push(
                           MaterialPageRoute<void>(
@@ -533,22 +678,36 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                       ),
                   ],
                   if (!_busy &&
+                      _capabilitiesReady &&
+                      (_capabilities?.registrationEnabled ?? true) &&
                       (widget.registrationService != null ||
                           (!_session.config.isDevAuthConfigured &&
                               _session.config.isLocalAuthConfigured &&
                               _session.localAuth != null))) ...[
                     const SizedBox(height: 8),
                     TextButton(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => CloudRegistrationScreen(
-                            service:
-                                widget.registrationService ??
-                                _session.localAuth!,
-                            linkOrigin: _session.config.localAuthLinkOrigin,
+                      onPressed: () {
+                        final epoch = _lifecycleEpoch;
+                        final sessionGeneration = _session.generation;
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => CloudRegistrationScreen(
+                              service:
+                                  widget.registrationService ??
+                                  _session.localAuth!,
+                              linkOrigin: _session.config.localAuthLinkOrigin,
+                              usernameMode:
+                                  _session.credentialMethod ==
+                                  'username_password',
+                              onUsernameRegistered: _registerAndSignIn,
+                              isCurrent: () =>
+                                  mounted &&
+                                  epoch == _lifecycleEpoch &&
+                                  sessionGeneration == _session.generation,
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                       child: const Text('Create account'),
                     ),
                   ],

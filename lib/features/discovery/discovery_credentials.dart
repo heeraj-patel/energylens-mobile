@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'discovery_api.dart';
+import '../../core/cloud_api/cloud_hub_claim.dart';
 
 /// Pilot hub credentials kept in platform-protected storage between launches.
 class DiscoveryCredentials {
@@ -60,6 +61,7 @@ class DiscoveryCredentials {
     required String hubId,
     required String clientId,
     required String token,
+    int? ownershipEpoch,
   }) async {
     if (HubEndpoint.parse(address).pin == null) {
       throw const FormatException('A certificate pin is required for pairing.');
@@ -74,6 +76,7 @@ class DiscoveryCredentials {
         'hub_id': hubId,
         'client_id': clientId,
         'token': token,
+        if (ownershipEpoch != null) 'ownership_epoch': ownershipEpoch,
       }),
     );
     await storage.delete('energylens.hub.address');
@@ -91,6 +94,7 @@ class DiscoveryCredentials {
       hubId: claim.hubId,
       clientId: claim.clientId,
       token: claim.token,
+      ownershipEpoch: claim.ownershipEpoch,
     );
     return claim;
   }
@@ -105,26 +109,107 @@ class DiscoveryCredentials {
         hubId: json['hub_id'] as String,
         clientId: json['client_id'] as String,
         token: json['token'] as String,
+        ownershipEpoch: json['ownership_epoch'] as int?,
       );
     } on Object {
       return null;
     }
   }
 
-  Future<String?> readPostalCode() =>
-      storage.read('energylens.household.postal_code');
+  /// Authenticated records are separate from legacy local-pilot credentials.
+  /// The caller must obtain [ownership] from the current owner's Cloud API.
+  Future<StoredPairingCredential?> readOwnedPairing(
+    OwnedPairingScope scope,
+    HubOwnership ownership,
+  ) async {
+    if (ownership.homeId != scope.homeId) return null;
+    final raw = await storage.read(scope.keyFor(ownership));
+    if (raw == null) return null;
+    try {
+      final value = jsonDecode(raw) as Map<String, dynamic>;
+      if (value['scope'] != scope.identity ||
+          value['hub_id'] != ownership.localHubId ||
+          value['ownership_epoch'] != ownership.ownershipEpoch)
+        return null;
+      final credential = StoredPairingCredential(
+        address: value['address'] as String,
+        hubId: value['hub_id'] as String,
+        clientId: value['client_id'] as String,
+        token: value['token'] as String,
+        ownershipEpoch: value['ownership_epoch'] as int,
+      );
+      if (HubEndpoint.parse(credential.address).pin == null ||
+          credential.token.isEmpty ||
+          credential.clientId.isEmpty)
+        return null;
+      return credential;
+    } catch (_) {
+      await storage.delete(scope.keyFor(ownership));
+      return null;
+    }
+  }
 
-  Future<void> savePostalCode(String postalCode) =>
-      storage.write('energylens.household.postal_code', postalCode);
+  /// Promote only a newly paired token carrying the verified ownership epoch.
+  Future<bool> saveOwnedPairing(
+    OwnedPairingScope scope,
+    HubOwnership ownership,
+  ) async {
+    final pairing = await readPairing();
+    if (pairing == null ||
+        ownership.homeId != scope.homeId ||
+        pairing.hubId != ownership.localHubId ||
+        pairing.ownershipEpoch != ownership.ownershipEpoch)
+      return false;
+    await storage.write(
+      scope.keyFor(ownership),
+      jsonEncode({
+        'scope': scope.identity,
+        'address': pairing.address,
+        'hub_id': pairing.hubId,
+        'client_id': pairing.clientId,
+        'token': pairing.token,
+        'ownership_epoch': pairing.ownershipEpoch,
+      }),
+    );
+    await storage.delete(_pairingStorageKey);
+    return true;
+  }
 
-  Future<void> clearPostalCode() =>
-      storage.delete('energylens.household.postal_code');
+  String _preferenceKey(String name, OwnedPairingScope? scope) => scope == null
+      ? 'energylens.household.$name'
+      : 'energylens.household.v2.${base64Url.encode(utf8.encode(scope.identity))}.$name';
 
-  Future<bool> readZipPromptDismissed() async =>
-      await storage.read('energylens.household.zip_prompt_dismissed') == 'true';
+  Future<String?> readPostalCode({OwnedPairingScope? scope}) =>
+      storage.read(_preferenceKey('postal_code', scope));
 
-  Future<void> dismissZipPrompt() =>
-      storage.write('energylens.household.zip_prompt_dismissed', 'true');
+  Future<void> savePostalCode(String postalCode, {OwnedPairingScope? scope}) =>
+      storage.write(_preferenceKey('postal_code', scope), postalCode);
+
+  Future<void> clearPostalCode({OwnedPairingScope? scope}) =>
+      storage.delete(_preferenceKey('postal_code', scope));
+
+  Future<bool> readZipPromptDismissed({OwnedPairingScope? scope}) async =>
+      await storage.read(_preferenceKey('zip_prompt_dismissed', scope)) ==
+      'true';
+
+  Future<void> dismissZipPrompt({OwnedPairingScope? scope}) =>
+      storage.write(_preferenceKey('zip_prompt_dismissed', scope), 'true');
+}
+
+class OwnedPairingScope {
+  OwnedPairingScope({
+    required String origin,
+    required this.profile,
+    required this.accountId,
+    required this.homeId,
+  }) : origin = Uri.parse(origin).origin;
+  final String origin;
+  final String profile;
+  final String accountId;
+  final String homeId;
+  String get identity => '$origin|$profile|$accountId|$homeId';
+  String keyFor(HubOwnership ownership) =>
+      'energylens.hub.pairing.v2.${base64Url.encode(utf8.encode('$identity|${ownership.localHubId}|${ownership.ownershipEpoch}'))}';
 }
 
 abstract interface class SecureKeyValueStore {
@@ -154,10 +239,12 @@ class StoredPairingCredential {
     required this.hubId,
     required this.clientId,
     required this.token,
+    this.ownershipEpoch,
   });
 
   final String address;
   final String hubId;
   final String clientId;
   final String token;
+  final int? ownershipEpoch;
 }

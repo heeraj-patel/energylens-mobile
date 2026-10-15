@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 
 import '../../core/cloud_api/cloud_hub_claim.dart';
+import '../../core/cloud_auth/cloud_auth.dart';
 
 class PairingDetails {
   const PairingDetails._({
@@ -62,11 +63,13 @@ class PairingClaim {
     required this.hubId,
     required this.clientId,
     required this.token,
+    this.ownershipEpoch,
   });
 
   final String hubId;
   final String clientId;
   final String token;
+  final int? ownershipEpoch;
 }
 
 class PairingException implements Exception {
@@ -226,6 +229,241 @@ class DiscoveredPlug {
   final String? hardwareVersion;
   final String? firmwareVersion;
   final bool? relayOn;
+}
+
+/// A temporary discovery result. Identity and energy capability are independent
+/// of network address, so this DTO does not inherit the legacy plug shape.
+class NearbyDeviceCandidate {
+  const NearbyDeviceCandidate({
+    required this.id,
+    required this.scanId,
+    required this.expiresAtMs,
+    required this.requiresAction,
+    required this.addresses,
+    this.sources = const [],
+    required this.capabilities,
+    this.manufacturer,
+    this.model,
+    this.category,
+    this.name,
+    this.reasonCode,
+  });
+
+  factory NearbyDeviceCandidate.fromJson(Map<String, dynamic> json) =>
+      NearbyDeviceCandidate(
+        id: json['candidate_id'] as String,
+        scanId: json['scan_id'] as String,
+        expiresAtMs: json['expires_at_ms'] as int,
+        manufacturer: json['manufacturer'] as String?,
+        model: json['model'] as String?,
+        category: json['category'] as String?,
+        name: json['name'] as String?,
+        requiresAction: json['requires_action'] as bool,
+        reasonCode: json['reason_code'] as String?,
+        addresses: (json['addresses'] as List<dynamic>)
+            .map(
+              (value) =>
+                  NearbyDeviceAddress.fromJson(value as Map<String, dynamic>),
+            )
+            .toList(growable: false),
+        sources: (json['sources'] as List<dynamic>).cast<String>(),
+        capabilities: (json['capabilities'] as List<dynamic>)
+            .map(
+              (value) => NearbyDeviceCapability.fromJson(
+                value as Map<String, dynamic>,
+              ),
+            )
+            .toList(growable: false),
+      );
+
+  final String id;
+  final String scanId;
+  final int expiresAtMs;
+  final String? manufacturer;
+  final String? model;
+  final String? category;
+  final String? name;
+  final bool requiresAction;
+  final String? reasonCode;
+  final List<NearbyDeviceAddress> addresses;
+  final List<String> sources;
+  final List<NearbyDeviceCapability> capabilities;
+
+  String get displayName {
+    final value = name?.trim().isNotEmpty == true
+        ? name!.trim()
+        : model?.trim();
+    return value == null || value.isEmpty ? 'Unnamed device' : value;
+  }
+
+  bool get canAdopt =>
+      !requiresAction && DateTime.now().millisecondsSinceEpoch < expiresAtMs;
+
+  String? get manualProtocol {
+    for (final source in sources) {
+      if (const {'kasa', 'shelly_gen2', 'tasmota'}.contains(source)) {
+        return source;
+      }
+    }
+    return null;
+  }
+
+  String? get manualIpv4 => addresses
+      .where((address) => address.kind == 'ipv4')
+      .map((address) => address.value)
+      .firstOrNull;
+}
+
+class NearbyDeviceAddress {
+  const NearbyDeviceAddress(this.kind, this.value, this.interfaceName);
+
+  factory NearbyDeviceAddress.fromJson(Map<String, dynamic> json) =>
+      NearbyDeviceAddress(
+        json['kind'] as String,
+        json['value'] as String,
+        json['interface'] as String?,
+      );
+
+  final String kind;
+  final String value;
+  final String? interfaceName;
+}
+
+class NearbyDeviceCapability {
+  const NearbyDeviceCapability(this.name, this.supportState);
+
+  factory NearbyDeviceCapability.fromJson(Map<String, dynamic> json) =>
+      NearbyDeviceCapability(
+        json['name'] as String,
+        json['support_state'] as String,
+      );
+
+  final String name;
+  final String supportState;
+}
+
+class NearbyScan {
+  const NearbyScan({
+    required this.id,
+    required this.state,
+    required this.expiresAtMs,
+    this.candidates = const [],
+    this.nextCursor,
+  });
+
+  factory NearbyScan.fromJson(Map<String, dynamic> json) => NearbyScan(
+    id: json['scan_id'] as String,
+    state: json['state'] as String,
+    expiresAtMs: json['expires_at_ms'] as int,
+    candidates: ((json['candidates'] as List<dynamic>?) ?? const [])
+        .map(
+          (value) =>
+              NearbyDeviceCandidate.fromJson(value as Map<String, dynamic>),
+        )
+        .toList(growable: false),
+    nextCursor: json['next_cursor'] as String?,
+  );
+
+  final String id;
+  final String state;
+  final int expiresAtMs;
+  final List<NearbyDeviceCandidate> candidates;
+  final String? nextCursor;
+  bool get isTerminal =>
+      const {'complete', 'partial', 'failed', 'cancelled'}.contains(state);
+}
+
+class NearbySavedDevice {
+  const NearbySavedDevice(
+    this.id,
+    this.name, {
+    this.manufacturer,
+    this.model,
+    this.endpoints = const [],
+    this.bindings = const [],
+  });
+
+  factory NearbySavedDevice.fromJson(Map<String, dynamic> json) =>
+      NearbySavedDevice(
+        json['id'] as String,
+        json['name'] as String,
+        manufacturer: json['manufacturer'] as String?,
+        model: json['model'] as String?,
+        endpoints: ((json['endpoints'] as List<dynamic>?) ?? const [])
+            .map(
+              (item) =>
+                  NearbyDeviceEndpoint.fromJson(item as Map<String, dynamic>),
+            )
+            .toList(growable: false),
+        bindings: ((json['bindings'] as List<dynamic>?) ?? const [])
+            .map(
+              (item) =>
+                  NearbyDeviceBinding.fromJson(item as Map<String, dynamic>),
+            )
+            .toList(growable: false),
+      );
+
+  final String id;
+  final String name;
+  final String? manufacturer;
+  final String? model;
+  final List<NearbyDeviceEndpoint> endpoints;
+  final List<NearbyDeviceBinding> bindings;
+}
+
+class NearbyDeviceEndpoint {
+  const NearbyDeviceEndpoint(
+    this.id,
+    this.componentId,
+    this.measurementScope,
+    this.parentEndpointId,
+    this.capabilities,
+  );
+
+  factory NearbyDeviceEndpoint.fromJson(Map<String, dynamic> json) =>
+      NearbyDeviceEndpoint(
+        json['id'] as String,
+        json['component_id'] as String,
+        json['measurement_scope'] as String,
+        json['parent_endpoint_id'] as String?,
+        (json['capabilities'] as List<dynamic>)
+            .map(
+              (item) =>
+                  NearbyDeviceCapability.fromJson(item as Map<String, dynamic>),
+            )
+            .toList(growable: false),
+      );
+
+  final String id;
+  final String componentId;
+  final String measurementScope;
+  final String? parentEndpointId;
+  final List<NearbyDeviceCapability> capabilities;
+}
+
+class NearbyDeviceBinding {
+  const NearbyDeviceBinding(
+    this.id,
+    this.protocol,
+    this.adapterInstanceId,
+    this.securityDomainId,
+    this.nativeDeviceId,
+  );
+
+  factory NearbyDeviceBinding.fromJson(Map<String, dynamic> json) =>
+      NearbyDeviceBinding(
+        json['id'] as String,
+        json['protocol'] as String,
+        json['adapter_instance_id'] as String,
+        json['security_domain_id'] as String,
+        json['native_device_id'] as String,
+      );
+
+  final String id;
+  final String protocol;
+  final String adapterInstanceId;
+  final String securityDomainId;
+  final String nativeDeviceId;
 }
 
 class SavedPlug {
@@ -861,9 +1099,95 @@ class ApplianceUsageProfile {
 }
 
 class DiscoveryApi {
-  const DiscoveryApi({this.pairingTransport = const IoPairingTransport()});
+  const DiscoveryApi({
+    this.pairingTransport = const IoPairingTransport(),
+    this.ownerAuthorization,
+  });
 
   final PairingTransport pairingTransport;
+  final HubOwnerAuthorization? ownerAuthorization;
+
+  DiscoveryApi authorizedFor(HubOwnerAuthorization owner) => DiscoveryApi(
+    pairingTransport: pairingTransport,
+    ownerAuthorization: owner,
+  );
+
+  /// A 404 means an older Hub. Other failures must remain visible instead of
+  /// silently changing the user's scan to the legacy plug-only path.
+  Future<bool> supportsNearbyDiscovery(String baseUrl, String token) async {
+    try {
+      final response = await _request(baseUrl, token, '/v2/adapters', 'GET');
+      if (response is! Map<String, dynamic> || response['version'] != 2) {
+        throw const FormatException('Unsupported Hub adapter version.');
+      }
+      return true;
+    } on _V2UnavailableException {
+      return false;
+    }
+  }
+
+  Future<NearbyScan> startNearbyScan(String baseUrl, String token) async {
+    final response = await _post(baseUrl, token, '/v2/discovery/scans', {});
+    return NearbyScan.fromJson(response);
+  }
+
+  Future<NearbyScan> nearbyScan(
+    String baseUrl,
+    String token,
+    String scanId, {
+    String? cursor,
+  }) async {
+    final response = await _request(
+      baseUrl,
+      token,
+      '/v2/discovery/scans/${Uri.encodeComponent(scanId)}',
+      'GET',
+      null,
+      cursor == null ? null : {'cursor': cursor},
+    );
+    return NearbyScan.fromJson(response as Map<String, dynamic>);
+  }
+
+  Future<NearbyScan> cancelNearbyScan(
+    String baseUrl,
+    String token,
+    String scanId,
+  ) async {
+    final response = await _post(
+      baseUrl,
+      token,
+      '/v2/discovery/scans/${Uri.encodeComponent(scanId)}/cancel',
+      {},
+    );
+    return NearbyScan.fromJson(response);
+  }
+
+  Future<List<NearbySavedDevice>> nearbyInventory(
+    String baseUrl,
+    String token,
+  ) async {
+    final response = await _request(baseUrl, token, '/v2/devices', 'GET');
+    return (response as List<dynamic>)
+        .map((item) => NearbySavedDevice.fromJson(item as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
+  Future<NearbySavedDevice> adoptNearby(
+    String baseUrl,
+    String token,
+    NearbyDeviceCandidate candidate,
+    String name,
+  ) async {
+    if (!candidate.canAdopt) {
+      throw StateError('Candidate requires setup or a new scan.');
+    }
+    final response = await _post(baseUrl, token, '/v2/devices', {
+      'candidate_id': candidate.id,
+      'name': name,
+      'room': '',
+    });
+    return NearbySavedDevice.fromJson(response);
+  }
 
   Future<HubClaimProof> claimProof(
     HubClaimChallenge challenge, {
@@ -951,7 +1275,16 @@ class DiscoveryApi {
         token.isEmpty) {
       throw const PairingException('The hub returned no client token.');
     }
-    return PairingClaim(hubId: details.hubId, clientId: clientId, token: token);
+    final epoch = claimJson['ownership_epoch'];
+    if (epoch != null && (epoch is! int || epoch < 0)) {
+      throw const PairingException('The hub returned no client token.');
+    }
+    return PairingClaim(
+      hubId: details.hubId,
+      clientId: clientId,
+      token: token,
+      ownershipEpoch: epoch as int?,
+    );
   }
 
   static Map<String, dynamic> _decodePairingResponse(
@@ -1338,6 +1671,15 @@ class DiscoveryApi {
     Map<String, dynamic>? body,
     Map<String, String>? query,
   ]) async {
+    final owner = ownerAuthorization;
+    final sessionGeneration = owner?.session.generation;
+    final ownerToken = owner == null ? null : await owner.session.accessToken();
+    if (owner != null &&
+        (ownerToken == null ||
+            owner.session.generation != sessionGeneration ||
+            !owner.isCurrent())) {
+      throw StateError('Hub owner authorization is no longer current');
+    }
     final endpoint = HubEndpoint.parse(baseUrl);
     // An empty trust store makes the pin callback run even for CA-trusted
     // certificates. Without a pin, HttpClient uses platform CA validation.
@@ -1365,6 +1707,17 @@ class DiscoveryApi {
           .timeout(const Duration(seconds: 5));
       request.followRedirects = false;
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      if (owner != null) {
+        if (owner.session.generation != sessionGeneration ||
+            !owner.isCurrent()) {
+          throw StateError('Hub owner authorization changed');
+        }
+        request.headers.set(
+          'X-EnergyLens-Owner-Authorization',
+          'Bearer $ownerToken',
+        );
+        request.headers.set('X-EnergyLens-Home-ID', owner.homeId);
+      }
       if (body != null) {
         request.headers.contentType = ContentType.json;
         request.write(jsonEncode(body));
@@ -1373,8 +1726,18 @@ class DiscoveryApi {
         const Duration(seconds: 20),
       );
       final text = await utf8.decoder.bind(response).join();
+      if (owner != null &&
+          (owner.session.generation != sessionGeneration ||
+              !owner.isCurrent())) {
+        throw StateError('Hub owner authorization changed');
+      }
+      if (response.statusCode == 404 && path.startsWith('/v2/')) {
+        throw const _V2UnavailableException();
+      }
       final decoded = jsonDecode(text);
-      if (response.statusCode != 200) {
+      if (response.statusCode != 200 &&
+          response.statusCode != 202 &&
+          response.statusCode != 201) {
         final error = decoded is Map<String, dynamic>
             ? decoded['error'] as Map<String, dynamic>?
             : null;
@@ -1385,6 +1748,21 @@ class DiscoveryApi {
       client.close(force: true);
     }
   }
+}
+
+class HubOwnerAuthorization {
+  const HubOwnerAuthorization({
+    required this.session,
+    required this.homeId,
+    required this.isCurrent,
+  });
+  final CloudSession session;
+  final String homeId;
+  final bool Function() isCurrent;
+}
+
+class _V2UnavailableException implements Exception {
+  const _V2UnavailableException();
 }
 
 class StoredHubIdentity {

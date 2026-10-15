@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:energylens_mobile/features/discovery/discovery_api.dart';
 import 'package:energylens_mobile/features/discovery/discovery_credentials.dart';
 import 'package:energylens_mobile/features/discovery/hub_pairing_screen.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_hub_claim.dart';
 
 const _address =
     'https://192.168.1.20:18787#sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -66,6 +67,84 @@ PairingDetails _details() => PairingDetails.fromJson({
 });
 
 void main() {
+  test('owned pairing requires matching owner, hub and epoch', () async {
+    final store = _MemorySecureStore();
+    final credentials = DiscoveryCredentials(storage: store);
+    await credentials.savePairing(
+      address: _address,
+      hubId: 'hub-1',
+      clientId: 'app:test',
+      token: 'claimed-token',
+      ownershipEpoch: 3,
+    );
+    final scope = OwnedPairingScope(
+      origin: 'https://api.example/',
+      profile: 'username_password',
+      accountId: 'account-a',
+      homeId: 'home-a',
+    );
+    const owner = HubOwnership(
+      hubId: 'cloud-hub',
+      localHubId: 'hub-1',
+      homeId: 'home-a',
+      ownershipEpoch: 3,
+      version: 1,
+    );
+    expect(await credentials.saveOwnedPairing(scope, owner), isTrue);
+    expect(
+      (await credentials.readOwnedPairing(scope, owner))?.token,
+      'claimed-token',
+    );
+    expect(await credentials.readPairing(), isNull);
+    expect(
+      await credentials.readOwnedPairing(
+        OwnedPairingScope(
+          origin: 'https://api.example',
+          profile: 'username_password',
+          accountId: 'account-b',
+          homeId: 'home-a',
+        ),
+        owner,
+      ),
+      isNull,
+    );
+    expect(
+      await credentials.readOwnedPairing(
+        scope,
+        const HubOwnership(
+          hubId: 'cloud-hub',
+          localHubId: 'hub-1',
+          homeId: 'home-a',
+          ownershipEpoch: 4,
+          version: 2,
+        ),
+      ),
+      isNull,
+    );
+  });
+
+  test('household preferences stay within verified owner and home', () async {
+    final credentials = DiscoveryCredentials(storage: _MemorySecureStore());
+    final first = OwnedPairingScope(
+      origin: 'https://api.example',
+      profile: 'username_password',
+      accountId: 'account-a',
+      homeId: 'home-a',
+    );
+    final second = OwnedPairingScope(
+      origin: 'https://api.example',
+      profile: 'username_password',
+      accountId: 'account-b',
+      homeId: 'home-b',
+    );
+    await credentials.savePostalCode('60601', scope: first);
+    await credentials.dismissZipPrompt(scope: first);
+    expect(await credentials.readPostalCode(scope: first), '60601');
+    expect(await credentials.readPostalCode(scope: second), isNull);
+    expect(await credentials.readPostalCode(), isNull);
+    expect(await credentials.readZipPromptDismissed(scope: second), isFalse);
+  });
+
   test('parses operator JSON and manual pairing fields', () {
     final details = _details();
     expect(details.address, _address);

@@ -182,6 +182,7 @@ class EnergyLensApp extends StatelessWidget {
                             autoScan: true,
                             cloudHome: cloudHome,
                             cloudApi: cloudApi,
+                            accountId: accountId,
                           ),
                         ),
                       );
@@ -221,6 +222,7 @@ class HomeScreen extends StatefulWidget {
     this.onCloudChangeHome,
     this.cloudHome,
     this.cloudApi,
+    this.accountId,
     this.localPilotMode = false,
     this.visibilityStore = const PowerNowVisibilityStore(),
   });
@@ -234,6 +236,7 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback? onCloudChangeHome;
   final CloudHome? cloudHome;
   final CloudApiClient? cloudApi;
+  final String? accountId;
   final bool localPilotMode;
   final PowerNowVisibilityStore visibilityStore;
 
@@ -259,6 +262,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   (String, String?)? _visibilityScope;
   Future<void> _visibilityWrite = Future.value();
   int _visibilityRevision = 0;
+
+  OwnedPairingScope? get _householdPreferenceScope {
+    final cloud = widget.cloudApi;
+    final home = widget.cloudHome;
+    final account = widget.accountId;
+    if (cloud == null || home == null || account == null) return null;
+    return OwnedPairingScope(
+      origin: cloud.session.config.apiUrl,
+      profile: cloud.session.credentialMethod,
+      accountId: account,
+      homeId: home.id,
+    );
+  }
 
   void _setPowerNowVisible(int applianceId, bool visible) {
     final scope = _visibilityScope;
@@ -304,6 +320,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _refreshHub() async {
     final generation = ++_refreshGeneration;
+    // Legacy local-pilot credentials have no verified Cloud owner scope.
+    if (widget.cloudHome != null) {
+      if (mounted) setState(() => _hubConnected = false);
+      return;
+    }
     try {
       final (address, token) = await widget.credentials.read();
       if (address == null || token == null) {
@@ -420,7 +441,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   ) async {
     try {
       final settings = await widget.api.electricitySettings(address, token);
-      final dismissed = await widget.credentials.readZipPromptDismissed();
+      final scope = _householdPreferenceScope;
+      final dismissed = widget.cloudHome != null && scope == null
+          ? false
+          : await widget.credentials.readZipPromptDismissed(scope: scope);
       if (mounted && generation == _refreshGeneration) {
         setState(() {
           _householdSettings = settings;
@@ -438,7 +462,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _dismissZipPrompt() async {
     setState(() => _zipPromptDismissed = true);
     try {
-      await widget.credentials.dismissZipPrompt();
+      final scope = _householdPreferenceScope;
+      if (widget.cloudHome == null || scope != null) {
+        await widget.credentials.dismissZipPrompt(scope: scope);
+      }
     } catch (_) {
       // The current screen still honors the dismissal.
     }
@@ -747,6 +774,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         builder: (_) => ElectricitySettingsScreen(
           api: widget.api,
           credentials: widget.credentials,
+          cloudHome: widget.cloudHome,
+          cloudApi: widget.cloudApi,
+          preferenceScope: _householdPreferenceScope,
           onSaved: _refreshHub,
         ),
       ),

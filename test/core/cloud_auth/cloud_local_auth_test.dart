@@ -233,7 +233,12 @@ void main() {
     );
     final api = CloudApiClient(
       session: session,
-      client: MockClient((_) async => http.Response('', 500)),
+      client: MockClient(
+        (request) async => http.Response(
+          '',
+          request.url.path == '/v1/auth/config' ? 404 : 500,
+        ),
+      ),
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -286,7 +291,12 @@ void main() {
     );
     final api = CloudApiClient(
       session: session,
-      client: MockClient((_) async => http.Response('', 500)),
+      client: MockClient(
+        (request) async => http.Response(
+          '',
+          request.url.path == '/v1/auth/config' ? 404 : 500,
+        ),
+      ),
     );
     await tester.pumpWidget(
       MaterialApp(

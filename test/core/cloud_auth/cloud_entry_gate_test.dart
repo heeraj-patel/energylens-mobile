@@ -92,6 +92,8 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config')
+          return http.Response('', 404);
         if (request.url.path == '/v1/me') {
           return http.Response(
             '{"id":"$verifiedAccountId","email":null,"email_verified":true}',
@@ -124,6 +126,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: CloudEntryGate(
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
           session: session,
           api: api,
           designContextCoordinator: coordinator,
@@ -217,11 +221,18 @@ void main() {
       );
       final api = CloudApiClient(
         session: session,
-        client: MockClient((_) async => http.Response('', 500)),
+        client: MockClient(
+          (request) async => http.Response(
+            '',
+            request.url.path == '/v1/auth/config' ? 404 : 500,
+          ),
+        ),
       );
       await tester.pumpWidget(
         MaterialApp(
           home: CloudEntryGate(
+            homeCreateStorage: MemoryDraftStorage(),
+            activeHomeStorage: MemoryDraftStorage(),
             session: session,
             api: api,
             homeBuilder: (_, _, _, _) => const Text('Private Home'),
@@ -251,6 +262,8 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config')
+          return http.Response('', 404);
         switch (request.url.path) {
           case '/v1/me':
             return http.Response(
@@ -281,6 +294,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: CloudEntryGate(
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
           session: session,
           api: api,
           homeBuilder: (_, _, _, _) => const Text('Private Home'),
@@ -332,6 +347,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: CloudEntryGate(
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
           session: session,
           api: api,
           homeBuilder: (_, _, _, _) => const Text('Private Home'),
@@ -359,6 +376,8 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config')
+          return http.Response('', 404);
         if (request.url.path == '/v1/me/preferences') {
           return http.Response(
             '{"version":1,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}',
@@ -381,6 +400,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: CloudEntryGate(
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
           session: session,
           api: api,
           homeBuilder: (_, signOut, _, _) => Scaffold(
@@ -416,6 +437,8 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config')
+          return http.Response('', 404);
         if (request.url.path == '/v1/me/preferences') {
           return http.Response(
             '{"version":1,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}',
@@ -435,6 +458,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: CloudEntryGate(
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
           session: session,
           api: api,
           homeBuilder: (_, _, _, _) => const Text('Private Home'),
@@ -461,6 +486,8 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config')
+          return http.Response('', 404);
         if (request.url.path == '/v1/me/preferences') {
           return http.Response(
             '{"version":1,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}',
@@ -486,6 +513,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: CloudEntryGate(
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
           session: session,
           api: api,
           homeBuilder: (_, _, _, _) => const Text('Private Home'),
@@ -515,15 +544,19 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient(
-        (_) async => http.Response(
-          '{"id":"account-1","email":"a@example.com","email_verified":false}',
-          200,
-        ),
+        (request) async => request.url.path == '/v1/auth/config'
+            ? http.Response('', 404)
+            : http.Response(
+                '{"id":"account-1","email":"a@example.com","email_verified":false}',
+                200,
+              ),
       ),
     );
     await tester.pumpWidget(
       MaterialApp(
         home: CloudEntryGate(
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
           session: session,
           api: api,
           homeBuilder: (_, _, _, _) => const Text('Private Home'),
@@ -553,6 +586,8 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config')
+          return http.Response('', 404);
         if (request.url.path == '/v1/me') {
           return http.Response(
             '{"id":"$verifiedAccountId","email":null,"email_verified":true}',
@@ -585,6 +620,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: CloudEntryGate(
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
           session: session,
           api: api,
           designContextCoordinator: coordinator,
@@ -655,6 +692,8 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config')
+          return http.Response('', 404);
         if (request.url.path == '/v1/me') {
           return http.Response(
             '{"id":"account-1","email":null,"email_verified":true}',
@@ -674,6 +713,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: CloudEntryGate(
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
           session: session,
           api: api,
           designContextCoordinator: coordinator,
@@ -704,6 +745,8 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config')
+          return http.Response('', 404);
         if (request.url.path == '/v1/me') {
           return http.Response(
             '{"id":"account-1","email":null,"email_verified":true}',
@@ -723,6 +766,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: CloudEntryGate(
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
           session: session,
           api: api,
           designContextCoordinator: coordinator,

@@ -34,7 +34,7 @@ Program source card on the local Hub Stop Waste screen while its October 12,
 never merged into the Cloud home feed. Its immutable source hash and expiry
 are recorded in `lib/features/energy/local_pilot_programs.dart`.
 
-Release builds require these `--dart-define` values: `ENERGYLENS_OIDC_ISSUER`
+For OIDC sign-in, Release builds require these `--dart-define` values: `ENERGYLENS_OIDC_ISSUER`
 (HTTPS), `ENERGYLENS_OIDC_AUDIENCE`, `ENERGYLENS_OIDC_CLIENT_ID`,
 `ENERGYLENS_OIDC_REDIRECT_URL=io.energylens.app://login-callback`, and
 `ENERGYLENS_CLOUD_API_URL` (HTTPS origin). Register that callback with the OIDC
@@ -52,9 +52,30 @@ an unchanged retry after an uncertain response reuses the key. Cloud errors do
 not open local Home. The selected cloud home is labeled in Home, while local
 hub devices remain separate until claim and sync trust routes are verified.
 The cloud account and home routes must be live before a configured build can
-complete this entry flow. Cloud bearer tokens are stored
-separately from the existing local hub pairing credentials. Sign-out clears only
-cloud tokens; local hub TLS and pairing continue to use their existing trust path.
+complete this entry flow. Cloud bearer tokens and Hub pairing credentials use
+separate secure records. Sign-out clears the active Cloud session and detaches
+authenticated Hub access. Pairing restored for a Cloud home must match its
+verified account, home, Hub and ownership epoch; legacy local-pilot pairing
+does not authorize an authenticated home.
+
+## Local username authentication
+
+Start the Cloud API with `RUNTIME_ENV=local` using the
+[existing local launcher and private configuration](../energylens-dev-bash-scripts/README.md).
+For the authenticated Mobile build, set `ENERGYLENS_LOCAL_PILOT=false`,
+`ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED=true`, and the configured HTTPS
+`ENERGYLENS_CLOUD_API_URL` through `--dart-define`. Trust the configured server
+certificate on the intended client; do not disable TLS verification. OIDC and
+email-link settings are unnecessary for this profile.
+
+The API's `/v1/auth/config` must advertise username authentication. Registration
+then signs in and verifies `/v1/me`; username accounts do not need email
+verification. Accept the existing disclosure explicitly, then create or select
+an owned home. Pending home creation retains its idempotency key across an
+uncertain response or restart. Changing home keeps the login and replaces the
+home context; signing into another account loads only that account's homes.
+If capability loading fails, check API reachability, certificate trust and
+server runtime configuration before retrying.
 
 ## First-party email authentication (default off)
 

@@ -61,6 +61,10 @@ class SettingsDomainSnapshot {
   final List<CloudAppliance> appliances;
 
   String? get email => account.email;
+  String? get identity => account.authMethod == 'username_password'
+      ? account.username
+      : account.email;
+  bool get usernameIdentity => account.authMethod == 'username_password';
   bool get emailVerified => account.emailVerified;
   String get homeName => home.name;
   String get postalCode => home.postalCode;

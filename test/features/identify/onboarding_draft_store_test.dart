@@ -1,9 +1,32 @@
 import 'dart:convert';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
+import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:energylens_mobile/features/identify/onboarding_draft_store.dart';
 import 'package:energylens_mobile/features/identify/onboarding_persistence_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+
+class _TokenStore implements CloudTokenStore {
+  @override
+  Future<void> clear() async {}
+  @override
+  Future<CloudTokens?> read() async => const CloudTokens(accessToken: 'token');
+  @override
+  Future<void> save(CloudTokens value) async {}
+}
+
+class _Auth implements CloudAuthenticator {
+  @override
+  Future<CloudTokens> signIn(CloudAuthConfig config) async =>
+      const CloudTokens(accessToken: 'token');
+  @override
+  Future<CloudTokens> refresh(CloudAuthConfig config, String token) async =>
+      const CloudTokens(accessToken: 'token');
+}
 
 const userA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const userB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -80,6 +103,77 @@ DurableOnboardingDrafts manager(MemoryStorage storage, Source source) =>
 
 void main() {
   test(
+    'lost home POST response resumes with persisted key and owner readback',
+    () async {
+      const key = '11111111-1111-4111-8111-111111111111';
+      final storage = MemoryStorage();
+      final seenKeys = <String?>[];
+      var lost = true;
+      final api = CloudApiClient(
+        session: CloudSession(
+          config: const CloudAuthConfig(
+            issuer: 'https://issuer.example',
+            audience: 'cloud',
+            clientId: 'client',
+            redirectUrl: 'io.energylens.app://login-callback',
+            apiUrl: 'https://api.example',
+          ),
+          store: _TokenStore(),
+          authenticator: _Auth(),
+        ),
+        client: MockClient((request) async {
+          if (request.method == 'POST') {
+            seenKeys.add(request.headers['Idempotency-Key']);
+            if (lost) {
+              lost = false;
+              throw StateError('response lost');
+            }
+          }
+          final row = {
+            'id': homeA,
+            'name': 'Home',
+            'timezone': 'America/Chicago',
+            'location': {'country_code': 'US', 'postal_code': '60601'},
+          };
+          return http.Response(
+            jsonEncode(
+              request.method == 'GET'
+                  ? {
+                      'homes': [row],
+                    }
+                  : row,
+            ),
+            200,
+          );
+        }),
+      );
+      final input = CloudHomeCreate.validate(
+        name: 'Home',
+        timezone: 'America/Chicago',
+        countryCode: 'US',
+        postalCode: '60601',
+      )!;
+      final first = DurableHomeCreateDrafts(storage, api);
+      await first.selectScope(
+        'https://api.example',
+        'username_password',
+        userA,
+      );
+      await expectLater(first.stageAndCommit(input, key), throwsStateError);
+      final resumed = DurableHomeCreateDrafts(storage, api);
+      await resumed.selectScope(
+        'https://api.example',
+        'username_password',
+        userA,
+      );
+      expect((await resumed.restoreAndCommit())?.id, homeA);
+      expect(seenKeys, [key, key]);
+      expect(storage.value, isNull);
+      api.close();
+    },
+  );
+
+  test(
     'restart and uncertain response reuse key then clear after readback',
     () async {
       final storage = MemoryStorage();
@@ -116,30 +210,33 @@ void main() {
     await Future.wait([store.save(draft), store.save(draft)]);
     expect(source.creates, 1);
   });
-  test('missing inventory readback keeps draft and retry key after restart', () async {
-    final storage = MemoryStorage();
-    final source = Source()..omitFromInventory = true;
-    final first = manager(storage, source);
-    await first.selectScope(userA, homeA);
-    final pending = await first.stage(draft);
-    await expectLater(
-      first.commit(pending, explicitlyApproved: true),
-      throwsFormatException,
-    );
-    expect((await first.restore())!.operationKey, pending.operationKey);
+  test(
+    'missing inventory readback keeps draft and retry key after restart',
+    () async {
+      final storage = MemoryStorage();
+      final source = Source()..omitFromInventory = true;
+      final first = manager(storage, source);
+      await first.selectScope(userA, homeA);
+      final pending = await first.stage(draft);
+      await expectLater(
+        first.commit(pending, explicitlyApproved: true),
+        throwsFormatException,
+      );
+      expect((await first.restore())!.operationKey, pending.operationKey);
 
-    source.omitFromInventory = false;
-    final restarted = manager(storage, source);
-    await restarted.selectScope(userA, homeA);
-    final restored = (await restarted.restore())!;
-    expect(restored.operationKey, pending.operationKey);
-    expect(
-      (await restarted.commit(restored, explicitlyApproved: true))?.id,
-      applianceId,
-    );
-    expect(source.keys, [pending.operationKey, pending.operationKey]);
-    expect(await restarted.restore(), isNull);
-  });
+      source.omitFromInventory = false;
+      final restarted = manager(storage, source);
+      await restarted.selectScope(userA, homeA);
+      final restored = (await restarted.restore())!;
+      expect(restored.operationKey, pending.operationKey);
+      expect(
+        (await restarted.commit(restored, explicitlyApproved: true))?.id,
+        applianceId,
+      );
+      expect(source.keys, [pending.operationKey, pending.operationKey]);
+      expect(await restarted.restore(), isNull);
+    },
+  );
   test('exact draft identity controls key reuse and explicit commit', () async {
     final source = Source();
     final store = manager(MemoryStorage(), source);

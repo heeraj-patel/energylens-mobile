@@ -83,11 +83,14 @@ if [[ "$local_pilot" == true ]]; then
   fi
   flutter build ios --config-only --release "${build_args[@]}"
   if ((${#device_ids[@]} > 0)); then
+    simulator_derived_data="$repo_dir/build/xcode-simulator"
     xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner \
       -configuration Debug -sdk iphonesimulator \
       -destination 'generic/platform=iOS Simulator' \
-      ARCHS=x86_64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
-    app_path="$repo_dir/build/ios/Debug-iphonesimulator/Runner.app"
+      -derivedDataPath "$simulator_derived_data" \
+      ARCHS=x86_64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO \
+      ENABLE_MODULE_VERIFIER=NO build
+    app_path="$simulator_derived_data/Build/Products/Debug-iphonesimulator/Runner.app"
     [[ -d "$app_path" ]] || { echo "Simulator app missing: $app_path" >&2; exit 1; }
     if lipo -archs "$app_path/Runner" | grep -q x86_64; then
       arch -x86_64 /usr/bin/true >/dev/null 2>&1 || {

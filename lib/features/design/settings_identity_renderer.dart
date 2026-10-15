@@ -22,7 +22,7 @@ class SettingsIdentityRenderer {
       return null;
     }
 
-    final email = _visibleValue(snapshot.email);
+    final identity = _visibleValue(snapshot.identity);
     final postalCode = _visibleValue(snapshot.postalCode);
     final payload = base64Encode(
       utf8.encode(
@@ -32,7 +32,10 @@ class SettingsIdentityRenderer {
           'generation': ticket.generation,
           'homeName': snapshot.home.name,
           'ownerName': _visibleValue(snapshot.account.displayName),
-          'email': email,
+          'identity': identity,
+          'email': _visibleValue(snapshot.email),
+          'identityLabel': snapshot.usernameIdentity ? 'Username' : 'Email ID',
+          'usernameIdentity': snapshot.usernameIdentity,
           'postalCode': postalCode,
           'localAuthSession': localAuthSession,
         }),
@@ -45,6 +48,7 @@ class SettingsIdentityRenderer {
   if (!current || current.homeId !== payload.homeId || current.page !== payload.page || current.generation !== payload.generation) return false;
   const home = document.querySelectorAll('[data-el-bind="settings_text_010"]');
   const email = document.querySelectorAll('[data-el-bind="settings_text_016"]');
+  const identityLabel = document.querySelectorAll('[data-el-bind="settings_text_015"]');
   const postal = document.querySelectorAll('[data-el-bind="settings_text_019"]');
   const emailRow = document.querySelectorAll('[data-el-settings-email-row]');
   const postalRow = document.querySelectorAll('[data-el-settings-postal-row]');
@@ -62,7 +66,8 @@ class SettingsIdentityRenderer {
   };
   if (home.length !== 1 || email.length !== 1 || postal.length !== 1 || emailRow.length !== 1 || postalRow.length !== 1 || editButtons.length !== 2) return false;
   home[0].textContent = payload.homeName;
-  email[0].textContent = payload.email || '';
+  email[0].textContent = payload.identity || '';
+  if (identityLabel.length === 1) identityLabel[0].textContent = payload.identityLabel;
   postal[0].textContent = payload.postalCode || '';
   emailRow[0].hidden = false;
   postalRow[0].hidden = false;
@@ -71,7 +76,7 @@ class SettingsIdentityRenderer {
     owner.textContent = payload.ownerName || '';
     setVisible(ownerRow, true);
     setVisible(ownerEdit, true);
-    setVisible(emailEdit, Boolean(payload.email && payload.localAuthSession));
+    setVisible(emailEdit, Boolean(payload.identity && payload.localAuthSession && !payload.usernameIdentity));
     setVisible(passwordChange, Boolean(payload.localAuthSession));
   }
   return true;

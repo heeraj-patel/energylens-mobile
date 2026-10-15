@@ -20,10 +20,13 @@ class FakeCredentials extends DiscoveryCredentials {
   Future<void> save(String address, String token) async {}
 
   @override
-  Future<String?> readPostalCode() async => null;
+  Future<String?> readPostalCode({OwnedPairingScope? scope}) async => null;
 
   @override
-  Future<void> savePostalCode(String postalCode) async {}
+  Future<void> savePostalCode(
+    String postalCode, {
+    OwnedPairingScope? scope,
+  }) async {}
 }
 
 const _cloudHome = CloudHome(

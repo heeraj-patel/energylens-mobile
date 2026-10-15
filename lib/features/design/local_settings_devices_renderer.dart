@@ -39,19 +39,36 @@ class LocalSettingsDevicesRenderer {
     required String identity,
     required int generation,
     required List<SavedAppliance> appliances,
+    List<NearbySavedDevice> protocolDevices = const [],
   }) {
     final ids = <int>{};
+    final protocolIds = <String>{};
     final rows = <Map<String, Object?>>[];
     for (final row in appliances) {
       if (row.id <= 0) throw const FormatException('Invalid Hub appliance ID');
       if (!ids.add(row.id)) continue;
       rows.add({
         'id': row.id,
+        'protocolId': null,
         'name': row.name,
         'manufacturer': row.manufacturer,
         'model': row.model,
         'removable':
             row.onboardingMethod == 'manual' || row.onboardingMethod == 'photo',
+      });
+    }
+    for (final device in protocolDevices) {
+      if (device.id.isEmpty) {
+        throw const FormatException('Invalid Hub device ID');
+      }
+      if (!protocolIds.add(device.id)) continue;
+      rows.add({
+        'id': null,
+        'protocolId': device.id,
+        'name': device.name.trim().isEmpty ? 'Unnamed device' : device.name,
+        'manufacturer': device.manufacturer ?? '',
+        'model': device.model ?? '',
+        'removable': false,
       });
     }
     final payload = _encode({
@@ -68,12 +85,14 @@ class LocalSettingsDevicesRenderer {
   if (!list) return false;
   const cards = [];
   for (const row of data.rows) {
-    if (!Number.isSafeInteger(row.id) || row.id <= 0 ||
+    if (!((Number.isSafeInteger(row.id) && row.id > 0 && row.protocolId === null) ||
+          (row.id === null && typeof row.protocolId === 'string' && row.protocolId.length > 0)) ||
         typeof row.name !== 'string' || typeof row.manufacturer !== 'string' ||
         typeof row.model !== 'string' || typeof row.removable !== 'boolean') return false;
     const card = document.createElement('div');
     card.className = 'p-3 rounded-lg bg-surface-container-low/50 border border-outline-variant/20 flex items-center gap-3';
-    card.setAttribute('data-el-local-appliance-id', String(row.id));
+    card.setAttribute(row.protocolId === null ? 'data-el-local-appliance-id' : 'data-el-local-protocol-device-id',
+      row.protocolId === null ? String(row.id) : row.protocolId);
     const iconBox = document.createElement('div');
     iconBox.className = 'w-9 h-9 rounded-lg bg-secondary-container/40 flex items-center justify-center text-secondary shrink-0';
     const icon = document.createElement('span');

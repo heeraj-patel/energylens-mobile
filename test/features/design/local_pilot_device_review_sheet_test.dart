@@ -26,6 +26,10 @@ class _Api extends DiscoveryApi {
   Completer<SavedAppliance>? heldPost;
 
   @override
+  Future<bool> supportsNearbyDiscovery(String baseUrl, String token) async =>
+      false;
+
+  @override
   Future<List<SavedAppliance>> appliances(String address, String token) async {
     if (failRead) throw StateError('offline');
     return List.of(rows);

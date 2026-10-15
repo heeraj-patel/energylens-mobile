@@ -24,19 +24,25 @@ Map<String, dynamic> payload(String script) {
 void main() {
   const renderer = LocalSettingsDevicesRenderer();
 
-  test('install retains display-only packaged rows and hides circuit claim', () {
-    final script = renderer.installationScript(
-      identity: 'hub-a|1',
-      generation: 3,
-    );
-    expect(payload(script), {'identity': 'hub-a|1', 'generation': 3});
-    expect(script, contains('fallbackRows ?? Array.from(list.children'));
-    expect(script, contains("row.querySelectorAll('button')"));
-    expect(script, contains('list.replaceChildren(...scope.fallbackRows.map'));
-    expect(script, contains("count.textContent = ''"));
-    expect(script, contains('circuit.hidden = true'));
-    expect(script, contains("removeAttribute('onclick')"));
-  });
+  test(
+    'install retains display-only packaged rows and hides circuit claim',
+    () {
+      final script = renderer.installationScript(
+        identity: 'hub-a|1',
+        generation: 3,
+      );
+      expect(payload(script), {'identity': 'hub-a|1', 'generation': 3});
+      expect(script, contains('fallbackRows ?? Array.from(list.children'));
+      expect(script, contains("row.querySelectorAll('button')"));
+      expect(
+        script,
+        contains('list.replaceChildren(...scope.fallbackRows.map'),
+      );
+      expect(script, contains("count.textContent = ''"));
+      expect(script, contains('circuit.hidden = true'));
+      expect(script, contains("removeAttribute('onclick')"));
+    },
+  );
 
   test('real rows are deduplicated and only manual/photo are removable', () {
     const attack = '<img src=x onerror=alert(1)>';
@@ -82,5 +88,21 @@ void main() {
       ),
       throwsFormatException,
     );
+  });
+
+  test('protocol inventory joins monitored rows without delete control', () {
+    final script = renderer.updateScript(
+      identity: 'hub-a|1',
+      generation: 3,
+      appliances: [row(7)],
+      protocolDevices: const [
+        NearbySavedDevice('device-1', 'Den TV', manufacturer: 'Example'),
+      ],
+    );
+    final rows = payload(script)['rows'] as List<dynamic>;
+    expect(rows.length, 2);
+    expect(rows.last['protocolId'], 'device-1');
+    expect(rows.last['removable'], false);
+    expect(script, contains('data-el-local-protocol-device-id'));
   });
 }
