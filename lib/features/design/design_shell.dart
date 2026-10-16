@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -1333,6 +1334,18 @@ class _DesignShellState extends State<DesignShell> {
                 context!.accountId,
                 context.homeId,
               ))) {
+        return;
+      }
+      if (kDebugMode) debugPrint('Photo OCR ($source) recognised: "$text"');
+      if (widget.localPilot &&
+          (_localInventory == null || widget.localDeviceLifecycle == null)) {
+        if (mounted) {
+          ScaffoldMessenger.of(this.context).showSnackBar(
+            const SnackBar(
+              content: Text('Scan complete. A paired hub is needed to use it.'),
+            ),
+          );
+        }
         return;
       }
       await _reviewDevice(
