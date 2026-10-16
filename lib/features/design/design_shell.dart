@@ -1343,6 +1343,16 @@ class _DesignShellState extends State<DesignShell> {
         }),
         fromPhoto: true,
       );
+    } on CameraPermissionDeniedException {
+      if (mounted) {
+        ScaffoldMessenger.of(this.context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Camera access was denied. Allow it in settings or choose a photo.',
+            ),
+          ),
+        );
+      }
     } catch (_) {
       // Picker cancellation or unavailable native capture leaves the page as is.
     } finally {
