@@ -93,12 +93,14 @@ class HubOwnership {
     required this.homeId,
     required this.ownershipEpoch,
     required this.version,
+    this.connection,
   });
   final String hubId;
   final String localHubId;
   final String homeId;
   final int ownershipEpoch;
   final int version;
+  final HubConnection? connection;
 
   factory HubOwnership.fromJson(Map<String, dynamic> json) {
     if (json['hub_id'] is! String ||
@@ -114,6 +116,48 @@ class HubOwnership {
       homeId: json['home_id'] as String,
       ownershipEpoch: json['ownership_epoch'] as int,
       version: json['version'] as int,
+      connection: HubConnection.tryParse(json['connection']),
+    );
+  }
+}
+
+/// Short-lived endpoint trust published by the current Hub over Cloud mTLS.
+class HubConnection {
+  const HubConnection({
+    required this.httpsOrigin,
+    required this.certificateSha256,
+    required this.expiresAt,
+  });
+
+  final String httpsOrigin;
+  final String certificateSha256;
+  final DateTime expiresAt;
+
+  bool get isFresh => expiresAt.isAfter(DateTime.now().toUtc());
+
+  static HubConnection? tryParse(Object? value) {
+    if (value is! Map<String, dynamic>) return null;
+    final origin = value['https_origin'];
+    final pin = value['certificate_sha256'];
+    final expiry = value['expires_at'];
+    if (origin is! String || pin is! String || expiry is! String) return null;
+    final uri = Uri.tryParse(origin);
+    final expiresAt = DateTime.tryParse(expiry);
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment ||
+        (uri.path.isNotEmpty && uri.path != '/') ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(pin) ||
+        expiresAt == null ||
+        !expiresAt.isUtc) {
+      return null;
+    }
+    return HubConnection(
+      httpsOrigin: origin,
+      certificateSha256: pin,
+      expiresAt: expiresAt,
     );
   }
 }

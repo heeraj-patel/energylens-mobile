@@ -180,6 +180,69 @@ class _ClaimDiscoveryApi extends SavingApi {
   );
 }
 
+class _AutoPairDiscoveryApi extends _ClaimDiscoveryApi {
+  int claims = 0;
+  int scans = 0;
+  int savedReads = 0;
+  String? rejectionCode;
+  bool rejectAllPairings = false;
+  Future<void> Function()? beforeClaimResponse;
+
+  _AutoPairDiscoveryApi() {
+    plug = const SavedPlug(
+      id: 'saved-plug',
+      ip: '192.168.1.42',
+      model: 'HS103',
+      name: 'Saved office plug',
+      room: 'Office',
+      meterStatus: 'absent',
+      lastVerifiedAt: 100,
+    );
+  }
+
+  @override
+  Future<PairingClaim> claimOwnedPairing(
+    HubOwnership ownership, {
+    required String clientId,
+    required HubOwnerAuthorization owner,
+  }) async {
+    claims++;
+    await beforeClaimResponse?.call();
+    return PairingClaim(
+      hubId: ownership.localHubId,
+      clientId: clientId,
+      token: 'auto-paired-token',
+      ownershipEpoch: ownership.ownershipEpoch,
+    );
+  }
+
+  @override
+  Future<List<DiscoveredPlug>> scan(String baseUrl, String token) async {
+    scans++;
+    return [];
+  }
+
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async {
+    savedReads++;
+    if (rejectionCode != null &&
+        (token == 'stale-token' || rejectAllPairings)) {
+      throw HubRequestException(401, rejectionCode, 'Rejected');
+    }
+    return super.saved(baseUrl, token);
+  }
+}
+
+class _AutoPairStore implements SecureKeyValueStore {
+  final values = <String, String>{};
+  @override
+  Future<String?> read(String key) async => values[key];
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
+  @override
+  Future<void> delete(String key) async => values.remove(key);
+}
+
 class FakeDiscoveryApi extends DiscoveryApi {
   const FakeDiscoveryApi();
 
@@ -620,6 +683,129 @@ class PeriodRaceApi extends DeviceDetailApi {
 }
 
 void main() {
+  for (final scenario in [
+    'clean',
+    'session-change',
+    'revoked',
+    'invalid-session',
+    'still-revoked',
+  ]) {
+    final switchSession = scenario == 'session-change';
+    testWidgets('Auto-scan owner pairing: $scenario', (tester) async {
+      final api = _AutoPairDiscoveryApi();
+      final store = _AutoPairStore();
+      final session = CloudSession(
+        config: _cloudConfig,
+        store: _TestTokenStore(),
+        authenticator: _TestAuthenticator(),
+      );
+      final cloud = CloudApiClient(
+        session: session,
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/hubs')) {
+            return http.Response(
+              jsonEncode({
+                'hubs': [
+                  {
+                    'hub_id': _cloudHubId,
+                    'local_hub_id': _localHubId,
+                    'home_id': _cloudHomeId,
+                    'ownership_epoch': 3,
+                    'version': 1,
+                    'connection': {
+                      'https_origin': 'https://192.168.1.20:18787',
+                      'certificate_sha256': 'a' * 64,
+                      'expires_at': DateTime.now()
+                          .toUtc()
+                          .add(const Duration(minutes: 5))
+                          .toIso8601String(),
+                    },
+                  },
+                ],
+              }),
+              200,
+            );
+          }
+          return http.Response('{"sensors":[]}', 200);
+        }),
+      );
+      if (['revoked', 'invalid-session', 'still-revoked'].contains(scenario)) {
+        api.rejectionCode = scenario == 'invalid-session'
+            ? 'unauthorized'
+            : 'requires_pairing';
+        api.rejectAllPairings = scenario == 'still-revoked';
+        await DiscoveryCredentials(storage: store).storeOwnedPairing(
+          OwnedPairingScope(
+            origin: _cloudConfig.apiUrl,
+            profile: session.credentialMethod,
+            accountId: 'account-a',
+            homeId: _cloudHomeId,
+          ),
+          const HubOwnership(
+            hubId: _cloudHubId,
+            localHubId: _localHubId,
+            homeId: _cloudHomeId,
+            ownershipEpoch: 3,
+            version: 1,
+          ),
+          const StoredPairingCredential(
+            address: 'https://192.168.1.20:18787#sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            hubId: _localHubId,
+            clientId: 'old-client',
+            token: 'stale-token',
+            ownershipEpoch: 3,
+          ),
+        );
+      }
+      if (switchSession)
+        api.beforeClaimResponse = () =>
+            session.selectCredentialMethod('username_password');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(
+            api: api,
+            credentials: DiscoveryCredentials(storage: store),
+            autoScan: true,
+            cloudApi: cloud,
+            accountId: 'account-a',
+            cloudHome: const CloudHome(
+              id: _cloudHomeId,
+              name: 'Selected home',
+              timezone: 'America/Chicago',
+              countryCode: 'US',
+              postalCode: '60601',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(api.claims, scenario == 'invalid-session' ? 0 : 1);
+      if (switchSession) {
+        expect(api.scans, 0);
+        expect(
+          store.values.values.any((v) => v.contains('auto-paired-token')),
+          isFalse,
+        );
+        expect(find.text('Hub connected'), findsNothing);
+      } else if (scenario == 'invalid-session' || scenario == 'still-revoked') {
+        expect(api.scans, 0);
+        expect(api.savedReads, scenario == 'invalid-session' ? 1 : 2);
+        expect(find.text('Hub connected'), findsNothing);
+      } else {
+        expect(api.scans, 1);
+        expect(find.text('Hub connected'), findsOneWidget);
+        await tester.scrollUntilVisible(find.text('Saved office plug'), 300);
+        expect(find.text('Saved office plug'), findsOneWidget);
+        expect(
+          store.values.values.any((v) => v.contains('auto-paired-token')),
+          isTrue,
+        );
+        expect(store.values.containsKey('energylens.hub.pairing'), isFalse);
+      }
+      expect(find.byKey(const Key('operatorPairingJson')), findsNothing);
+      cloud.close();
+    });
+  }
   testWidgets(
     'auto scan waits for selection and attaches only a chosen Cloud appliance',
     (tester) async {
@@ -957,45 +1143,46 @@ void main() {
     },
   );
 
-  testWidgets('first claim ignores a legacy pairing after account scope change', (
-    tester,
-  ) async {
-    final pending = Completer<StoredPairingCredential?>();
-    final credentials = _FirstClaimCredentials(pendingLegacy: pending);
-    final api = _FirstClaimApi();
-    final cloud = CloudApiClient(
-      session: CloudSession(
-        config: _cloudConfig,
-        store: _TestTokenStore(),
-        authenticator: _TestAuthenticator(),
-      ),
-      client: MockClient((_) async => http.Response('{"hubs":[]}', 200)),
-    );
-    Widget screen(String accountId) => MaterialApp(
-      home: DiscoveryScreen(
-        api: api,
-        credentials: credentials,
-        cloudHome: const CloudHome(
-          id: _cloudHomeId,
-          name: 'Selected home',
-          timezone: 'America/Chicago',
-          countryCode: 'US',
-          postalCode: '60601',
+  testWidgets(
+    'first claim ignores a legacy pairing after account scope change',
+    (tester) async {
+      final pending = Completer<StoredPairingCredential?>();
+      final credentials = _FirstClaimCredentials(pendingLegacy: pending);
+      final api = _FirstClaimApi();
+      final cloud = CloudApiClient(
+        session: CloudSession(
+          config: _cloudConfig,
+          store: _TestTokenStore(),
+          authenticator: _TestAuthenticator(),
         ),
-        cloudApi: cloud,
-        accountId: accountId,
-      ),
-    );
-    await tester.pumpWidget(screen('account-a'));
-    await tester.pump();
-    await tester.pumpWidget(screen('account-b'));
-    pending.complete(_FirstClaimCredentials.legacyPairing);
-    await tester.pumpAndSettle();
-    expect(find.text('Link paired hub to home'), findsNothing);
-    expect(api.identityChecks, 0);
-    expect(api.customerReads, 0);
-    cloud.close();
-  });
+        client: MockClient((_) async => http.Response('{"hubs":[]}', 200)),
+      );
+      Widget screen(String accountId) => MaterialApp(
+        home: DiscoveryScreen(
+          api: api,
+          credentials: credentials,
+          cloudHome: const CloudHome(
+            id: _cloudHomeId,
+            name: 'Selected home',
+            timezone: 'America/Chicago',
+            countryCode: 'US',
+            postalCode: '60601',
+          ),
+          cloudApi: cloud,
+          accountId: accountId,
+        ),
+      );
+      await tester.pumpWidget(screen('account-a'));
+      await tester.pump();
+      await tester.pumpWidget(screen('account-b'));
+      pending.complete(_FirstClaimCredentials.legacyPairing);
+      await tester.pumpAndSettle();
+      expect(find.text('Link paired hub to home'), findsNothing);
+      expect(api.identityChecks, 0);
+      expect(api.customerReads, 0);
+      cloud.close();
+    },
+  );
 
   testWidgets('first claim ignores a legacy pairing after session change', (
     tester,
@@ -2055,9 +2242,13 @@ void main() {
         .ancestor(of: find.text('Dyson AM07'), matching: find.byType(Column))
         .first;
     expect(
-      tester.widget<Text>(
-        find.descendant(of: attachedSection, matching: find.byType(Text)).first,
-      ).data,
+      tester
+          .widget<Text>(
+            find
+                .descendant(of: attachedSection, matching: find.byType(Text))
+                .first,
+          )
+          .data,
       'Dyson AM07',
     );
     expect(find.text('Living room fan'), findsOneWidget);

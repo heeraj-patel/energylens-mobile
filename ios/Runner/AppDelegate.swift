@@ -17,10 +17,23 @@ import UIKit
         return false
       }
     }
+    if CommandLine.arguments.contains("--energylens-reset-owned-hub-pairing") {
+      do {
+        let deleted = try Self.clearSecureStorageItems(accountPrefix: "energylens.hub.pairing.v2.")
+        NSLog("EnergyLens one-shot owned Hub pairing reset completed; removed %d entries.", deleted)
+      } catch {
+        NSLog("EnergyLens one-shot owned Hub pairing reset failed; stopping launch: %@", String(describing: error))
+        return false
+      }
+    }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
   private static func clearCloudSignInKeychainItems() throws -> Int {
+    try clearSecureStorageItems(accountPrefix: "energylens.cloud.")
+  }
+
+  private static func clearSecureStorageItems(accountPrefix prefix: String) throws -> Int {
     let service = "flutter_secure_storage_service"
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
@@ -38,7 +51,7 @@ import UIKit
     var deleted = 0
     for item in items {
       guard let account = item[kSecAttrAccount as String] as? String,
-            account.hasPrefix("energylens.cloud.") else {
+            account.hasPrefix(prefix) else {
         continue
       }
       let deleteQuery: [String: Any] = [

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -160,19 +161,57 @@ class DiscoveryCredentials {
         pairing.hubId != ownership.localHubId ||
         pairing.ownershipEpoch != ownership.ownershipEpoch)
       return false;
-    await storage.write(
-      scope.keyFor(ownership),
-      jsonEncode({
-        'scope': scope.identity,
-        'address': pairing.address,
-        'hub_id': pairing.hubId,
-        'client_id': pairing.clientId,
-        'token': pairing.token,
-        'ownership_epoch': pairing.ownershipEpoch,
-      }),
-    );
+    await storeOwnedPairing(scope, ownership, pairing);
     await storage.delete(_pairingStorageKey);
     return true;
+  }
+
+  /// Store an owner-authorized claim directly in its account/home/epoch scope.
+  Future<void> storeOwnedPairing(
+    OwnedPairingScope scope,
+    HubOwnership ownership,
+    StoredPairingCredential pairing, {
+    bool Function()? isCurrent,
+  }) async {
+    if (ownership.homeId != scope.homeId ||
+        pairing.hubId != ownership.localHubId ||
+        pairing.ownershipEpoch != ownership.ownershipEpoch ||
+        pairing.clientId.isEmpty ||
+        pairing.token.isEmpty ||
+        HubEndpoint.parse(pairing.address).pin == null) {
+      throw StateError('Invalid owned Hub pairing');
+    }
+    if (isCurrent != null && !isCurrent()) {
+      throw StateError('Hub owner authorization changed');
+    }
+    final value = jsonEncode({
+      'scope': scope.identity,
+      'address': pairing.address,
+      'hub_id': pairing.hubId,
+      'client_id': pairing.clientId,
+      'token': pairing.token,
+      'ownership_epoch': pairing.ownershipEpoch,
+    });
+    final key = scope.keyFor(ownership);
+    await storage.write(key, value);
+    if (isCurrent != null && !isCurrent()) {
+      if (await storage.read(key) == value) await storage.delete(key);
+      throw StateError('Hub owner authorization changed');
+    }
+  }
+
+  Future<String> ownedClientId(
+    OwnedPairingScope scope,
+    HubOwnership ownership,
+  ) async {
+    final key = '${scope.keyFor(ownership)}.client_id';
+    final existing = await storage.read(key);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final random = Random.secure();
+    final id =
+        'energylens-mobile-${List.generate(16, (_) => random.nextInt(256)).map((byte) => byte.toRadixString(16).padLeft(2, '0')).join()}';
+    await storage.write(key, id);
+    return id;
   }
 
   String _preferenceKey(String name, OwnedPairingScope? scope) => scope == null

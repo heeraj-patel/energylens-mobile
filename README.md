@@ -173,3 +173,21 @@ cd ../energylens-dev-bash-scripts
 Pass both targets in one command to install on both after their respective
 builds. See the [deployment guide](../energylens-dev-bash-scripts/README.md)
 for signing, wireless recovery, and the direct install command.
+
+## Native owned-Hub auto-pair acceptance
+
+The `RunnerUITests/DiscoveryNavigationUITests/testCloudSessionAutoPairsOwnedHubAndShowsSavedPlug`
+test verifies automatic pairing for an existing Cloud session, then checks that
+the Kitchen Mixer Plug KS8 (`KP115(US)`) appears in Auto Scan and the monitored
+device list. It does not sign in or accept operator pairing JSON. Set
+`ENERGYLENS_TEST_REUSE_SESSION=1`,
+`ENERGYLENS_TEST_RESET_OWNED_PAIRING=1`, and
+`ENERGYLENS_TEST_USERNAME` only in the private `RunnerUITests` environment of
+a temporary `.xctestrun` copy. This test does not need a password. Keep the
+temporary test-run file mode 0600 and remove it after the run.
+
+The reset flag clears only Keychain accounts with the
+`energylens.hub.pairing.v2.` prefix, including their scoped client IDs. It
+preserves the Cloud login, legacy pairing records, and unrelated secure
+storage. The test skips unless both explicit test flags are enabled, then
+launches with `--energylens-reset-owned-hub-pairing`.

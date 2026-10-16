@@ -138,6 +138,110 @@ final class DiscoveryNavigationUITests: XCTestCase {
     add(settingsEvidence)
   }
 
+  func testCloudSessionAutoPairsOwnedHubAndShowsSavedPlug() throws {
+    continueAfterFailure = false
+    guard
+      ProcessInfo.processInfo.environment["ENERGYLENS_TEST_REUSE_SESSION"] == "1",
+      ProcessInfo.processInfo.environment["ENERGYLENS_TEST_RESET_OWNED_PAIRING"] == "1",
+      let username = ProcessInfo.processInfo.environment["ENERGYLENS_TEST_USERNAME"],
+      !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
+      throw XCTSkip("An existing Cloud session and the scoped owned-pairing reset were not enabled.")
+    }
+
+    let app = XCUIApplication(bundleIdentifier: "io.energylens.energylensMobile")
+    addUIInterruptionMonitor(withDescription: "Local Network permission") { alert in
+      guard alert.buttons["Allow"].exists else { return false }
+      alert.buttons["Allow"].tap()
+      return true
+    }
+    app.launchArguments = ["--energylens-reset-owned-hub-pairing"]
+    app.launch()
+
+    let usernameField = app.textFields["Username"]
+    let settings = app.links
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Settings"))
+      .firstMatch
+    let chooseHome = app.staticTexts["Choose a home"]
+    let routeReady = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in chooseHome.exists || settings.exists },
+      object: app)
+    XCTAssertEqual(XCTWaiter.wait(for: [routeReady], timeout: 180), .completed,
+                   "The existing Cloud session did not restore a home")
+    XCTAssertFalse(usernameField.exists, "The acceptance test unexpectedly reached sign-in")
+
+    let demoHome = app.buttons
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", "niksim"))
+      .firstMatch
+    if chooseHome.exists {
+      let selectionRoute = XCTNSPredicateExpectation(
+        predicate: NSPredicate { _, _ in demoHome.exists || settings.exists },
+        object: app)
+      XCTAssertEqual(XCTWaiter.wait(for: [selectionRoute], timeout: 60), .completed)
+    }
+    if demoHome.exists && !settings.exists { demoHome.tap() }
+    XCTAssertTrue(settings.waitForExistence(timeout: 120))
+    let settingsFrame = settings.frame
+    app.coordinate(
+      withNormalizedOffset: CGVector(
+        dx: (settingsFrame.midX - app.frame.minX) / app.frame.width,
+        dy: (settingsFrame.midY - app.frame.minY) / app.frame.height)).tap()
+
+    let accountIdentity = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label == %@", username))
+      .firstMatch
+    XCTAssertTrue(accountIdentity.waitForExistence(timeout: 60),
+                  "The reused Cloud session did not belong to the expected account")
+    let manageDevices = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Manage Devices"))
+      .firstMatch
+    XCTAssertTrue(manageDevices.waitForExistence(timeout: 60))
+    manageDevices.tap()
+    let autoScan = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Auto Scan"))
+      .firstMatch
+    XCTAssertTrue(autoScan.waitForExistence(timeout: 60))
+    autoScan.tap()
+
+    XCTAssertTrue(app.staticTexts["Find a smart plug"].waitForExistence(timeout: 60),
+                  "Auto Scan did not open the native discovery screen")
+    XCTAssertFalse(app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label == %@", "Paste hub pairing JSON"))
+      .firstMatch.exists, "Automatic owner pairing opened the operator JSON form")
+    let connected = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label == %@", "Hub connected"))
+      .firstMatch
+    XCTAssertTrue(connected.waitForExistence(timeout: 120),
+                  "The current owned Hub pairing did not connect automatically")
+    XCTAssertTrue(app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Cloud home: niksim"))
+      .firstMatch.exists, "The automatic pairing was not scoped to the selected Cloud home")
+
+    let saved = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Kitchen Mixer Plug"))
+      .firstMatch
+    for _ in 0..<5 {
+      if saved.exists { break }
+      app.swipeUp()
+    }
+    XCTAssertTrue(saved.waitForExistence(timeout: 90), "Saved KS8 plug was not visible")
+    XCTAssertTrue(app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", "KP115(US)"))
+      .firstMatch.exists, "Saved plug model KP115(US) was not visible")
+    let evidence = XCTAttachment(screenshot: app.screenshot())
+    evidence.name = "Auto-paired owned Hub with saved KS8 plug"
+    evidence.lifetime = .keepAlways
+    add(evidence)
+
+    let back = app.buttons["Back"]
+    XCTAssertTrue(back.exists, "Discovery back navigation was unavailable")
+    back.tap()
+    XCTAssertTrue(app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Kitchen Mixer Plug"))
+      .firstMatch.waitForExistence(timeout: 90),
+      "Saved KS8 plug did not appear in the monitored devices list")
+  }
+
   func testCloudSignInStartsQuietlyAndShowsSafeFailure() {
     continueAfterFailure = false
     let app = XCUIApplication(bundleIdentifier: "io.energylens.energylensMobile")
@@ -272,6 +376,12 @@ final class DiscoveryNavigationUITests: XCTestCase {
     profile.lifetime = .keepAlways
     add(profile)
 
+    // Acceptance setup may establish one legitimate local Cloud session for
+    // later strict-reuse tests. The default path still exercises sign-out.
+    if ProcessInfo.processInfo.environment["ENERGYLENS_TEST_PRESERVE_SESSION"] == "1" {
+      return
+    }
+
     let signOut = app.descendants(matching: .any)
       .matching(NSPredicate(format: "label CONTAINS[c] %@", "Sign Out"))
       .firstMatch
@@ -313,7 +423,12 @@ final class DiscoveryNavigationUITests: XCTestCase {
 
     let settings = labeled("Settings")
     XCTAssertTrue(settings.waitForExistence(timeout: 90), "Settings navigation did not render")
-    settings.tap()
+    let settingsFrame = settings.frame
+    let settingsCenter = app.coordinate(
+      withNormalizedOffset: CGVector(
+        dx: (settingsFrame.midX - app.frame.minX) / app.frame.width,
+        dy: (settingsFrame.midY - app.frame.minY) / app.frame.height))
+    settingsCenter.tap()
 
     let manageDevices = labeled("Manage Devices")
     XCTAssertTrue(manageDevices.waitForExistence(timeout: 30), "Manage Devices did not render")
@@ -323,7 +438,12 @@ final class DiscoveryNavigationUITests: XCTestCase {
     XCTAssertTrue(autoScan.waitForExistence(timeout: 30), "Auto Scan did not render")
     autoScan.tap()
 
-    XCTAssertTrue(labeled("Nearby devices").waitForExistence(timeout: 30))
-    XCTAssertTrue(labeled("Add").exists)
+    XCTAssertTrue(labeled("Find a smart plug").waitForExistence(timeout: 30))
+    let results = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in
+        labeled("Detected plugs").exists || labeled("Nearby devices").exists
+      },
+      object: app)
+    XCTAssertEqual(XCTWaiter.wait(for: [results], timeout: 30), .completed)
   }
 }

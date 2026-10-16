@@ -385,27 +385,103 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             cloud.session.generation == sessionGeneration;
         final ownerships = await cloud.hubs(scope.homeId);
         if (!current()) return;
+        Future<StoredPairingCredential?> automaticallyPair(
+          HubOwnership ownership,
+        ) async {
+          final connection = ownership.connection;
+          if (connection == null || !connection.isFresh || !current()) {
+            return null;
+          }
+          try {
+            final clientId = await widget.credentials.ownedClientId(
+              scope,
+              ownership,
+            );
+            if (!current()) return null;
+            final claim = await widget.api.claimOwnedPairing(
+              ownership,
+              clientId: clientId,
+              owner: HubOwnerAuthorization(
+                session: cloud.session,
+                homeId: scope.homeId,
+                isCurrent: current,
+              ),
+            );
+            if (!current()) return null;
+            final pairing = StoredPairingCredential(
+              address:
+                  '${connection.httpsOrigin}#sha256=${connection.certificateSha256}',
+              hubId: claim.hubId,
+              clientId: claim.clientId,
+              token: claim.token,
+              ownershipEpoch: claim.ownershipEpoch,
+            );
+            await widget.credentials.storeOwnedPairing(
+              scope,
+              ownership,
+              pairing,
+              isCurrent: current,
+            );
+            return pairing;
+          } catch (_) {
+            if (!current()) return null;
+            // One unreachable owned Hub must not prevent another from
+            // restoring. The existing manual pairing remains available.
+            return null;
+          }
+        }
+
         for (final ownership in ownerships) {
-          final pairing = await widget.credentials.readOwnedPairing(
+          var pairing = await widget.credentials.readOwnedPairing(
             scope,
             ownership,
           );
           if (!current()) return;
-          if (pairing == null) continue;
-          await widget.api.verifyStoredPairing(
-            StoredHubIdentity(address: pairing.address, hubId: pairing.hubId),
-          );
+          if (ownership.homeId != scope.homeId) continue;
+          if (pairing != null) {
+            try {
+              await widget.api.verifyStoredPairing(
+                StoredHubIdentity(
+                  address: pairing.address,
+                  hubId: pairing.hubId,
+                ),
+              );
+            } catch (_) {
+              // A current directory publication can repair an address or pin
+              // change without trusting anything learned from the LAN.
+              pairing = null;
+            }
+          }
           if (!current()) return;
+          final automaticallyPaired = pairing == null;
+          if (pairing == null) pairing = await automaticallyPair(ownership);
+          if (!current()) return;
+          if (pairing == null) continue;
+          final restoredPairing = pairing;
           _cloudOwnership = ownership;
-          _pairedOwnershipEpoch = pairing.ownershipEpoch;
+          _pairedOwnershipEpoch = restoredPairing.ownershipEpoch;
           setState(() {
             _paired = true;
-            _pairedHubId = pairing.hubId;
-            _hub.text = pairing.address;
-            _token.text = pairing.token;
+            _pairedHubId = restoredPairing.hubId;
+            _hub.text = restoredPairing.address;
+            _token.text = restoredPairing.token;
           });
-          await _loadSaved();
-          if (widget.autoScan) await _search();
+          final requiresPairing = await _loadSaved();
+          if (!current()) return;
+          if (requiresPairing && !automaticallyPaired) {
+            final repaired = await automaticallyPair(ownership);
+            if (!current()) return;
+            if (repaired != null) {
+              setState(() {
+                _pairedHubId = repaired.hubId;
+                _pairedOwnershipEpoch = repaired.ownershipEpoch;
+                _hub.text = repaired.address;
+                _token.text = repaired.token;
+              });
+              await _loadSaved();
+            }
+          }
+          if (current() && _hubConnected && widget.autoScan) await _search();
           return;
         }
         if (ownerships.isEmpty) {
@@ -493,8 +569,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
   }
 
-  Future<void> _loadSaved() async {
-    if (!_canUseHubCustomerApi) return;
+  Future<bool> _loadSaved() async {
+    if (!_canUseHubCustomerApi) return false;
+    var requiresPairing = false;
     try {
       final plugs = await _hubApi.saved(_hub.text.trim(), _token.text.trim());
       if (mounted) {
@@ -524,7 +601,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           }
         }
       }
-    } catch (_) {
+    } catch (error) {
+      requiresPairing = error is HubRequestException && error.requiresPairing;
       if (mounted) {
         setState(() {
           _hubConnected = false;
@@ -533,8 +611,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         });
       }
     } finally {
-      await _loadNearbySaved();
+      if (!requiresPairing) await _loadNearbySaved();
     }
+    return requiresPairing;
   }
 
   Future<void> _loadNearbySaved() async {

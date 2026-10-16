@@ -80,6 +80,14 @@ class PairingException implements Exception {
   String toString() => message;
 }
 
+class HubRequestException extends StateError {
+  HubRequestException(this.statusCode, this.code, String message)
+    : super(message);
+  final int statusCode;
+  final String? code;
+  bool get requiresPairing => statusCode == 401 && code == 'requires_pairing';
+}
+
 class PairingHttpResponse {
   const PairingHttpResponse({required this.statusCode, required this.body});
 
@@ -1287,6 +1295,67 @@ class DiscoveryApi {
     );
   }
 
+  /// Cloud-authenticated endpoint metadata is the trust anchor. Check the pin
+  /// and local identity before obtaining or sending the owner's Cloud JWT.
+  Future<PairingClaim> claimOwnedPairing(
+    HubOwnership ownership, {
+    required String clientId,
+    required HubOwnerAuthorization owner,
+  }) async {
+    final connection = ownership.connection;
+    final generation = owner.session.generation;
+    bool current() =>
+        owner.isCurrent() &&
+        owner.session.generation == generation &&
+        ownership.homeId == owner.homeId &&
+        connection != null &&
+        connection.isFresh;
+    if (!current() || ownership.ownershipEpoch < 2 || clientId.isEmpty) {
+      throw StateError('Hub owner authorization is no longer current');
+    }
+    final address =
+        '${connection!.httpsOrigin}#sha256=${connection.certificateSha256}';
+    final endpoint = HubEndpoint.parse(address);
+    if (endpoint.pin == null) throw StateError('Missing Hub certificate pin');
+    await verifyStoredPairing(
+      StoredHubIdentity(address: address, hubId: ownership.localHubId),
+    );
+    if (!current()) throw StateError('Hub owner authorization changed');
+    final token = await owner.session.accessToken();
+    if (token == null || !current()) {
+      throw StateError('Hub owner authorization changed');
+    }
+    final response = await pairingTransport.send(
+      address,
+      '/v1/pairing/owner-claim',
+      'POST',
+      bearerToken: token,
+      body: {
+        'cloud_hub_id': ownership.hubId,
+        'hub_id': ownership.localHubId,
+        'home_id': ownership.homeId,
+        'ownership_epoch': ownership.ownershipEpoch,
+        'client_id': clientId,
+      },
+    );
+    if (!current()) throw StateError('Hub owner authorization changed');
+    final json = _decodePairingResponse(response);
+    if (json['hub_id'] != ownership.localHubId ||
+        json['client_id'] != clientId ||
+        json['ownership_epoch'] != ownership.ownershipEpoch ||
+        json['token_type'] != 'Bearer' ||
+        json['token'] is! String ||
+        (json['token'] as String).isEmpty) {
+      throw StateError('Invalid owned Hub pairing response');
+    }
+    return PairingClaim(
+      hubId: ownership.localHubId,
+      clientId: clientId,
+      token: json['token'] as String,
+      ownershipEpoch: ownership.ownershipEpoch,
+    );
+  }
+
   static Map<String, dynamic> _decodePairingResponse(
     PairingHttpResponse response,
   ) {
@@ -1741,7 +1810,11 @@ class DiscoveryApi {
         final error = decoded is Map<String, dynamic>
             ? decoded['error'] as Map<String, dynamic>?
             : null;
-        throw StateError(error?['message'] as String? ?? 'Hub request failed');
+        throw HubRequestException(
+          response.statusCode,
+          error?['code'] as String?,
+          error?['message'] as String? ?? 'Hub request failed',
+        );
       }
       return decoded;
     } finally {
