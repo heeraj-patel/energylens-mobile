@@ -71,7 +71,12 @@ void main() {
     session = (await lifecycle.beginSave((await lifecycle.inventory())!))!;
   });
 
-  Future<void> showReview(WidgetTester tester, String method) async {
+  Future<void> showReview(
+    WidgetTester tester,
+    String method, {
+    String manufacturer = 'Example',
+    String model = 'Unlisted-100',
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -85,8 +90,8 @@ void main() {
                   onboardingMethod: method,
                   initialCategory: 'refrigerator',
                   name: 'Kitchen Refrigerator',
-                  manufacturer: '',
-                  model: '',
+                  manufacturer: manufacturer,
+                  model: model,
                 ),
               ),
               child: const Text('Open'),
@@ -120,11 +125,34 @@ void main() {
       expect(api.inputs.single.name, 'Edited device');
       expect(api.inputs.single.onboardingMethod, method);
       expect(api.inputs.single.room, '');
-      expect(api.inputs.single.manufacturer, '');
-      expect(api.inputs.single.model, '');
+      expect(api.inputs.single.manufacturer, 'Example');
+      expect(api.inputs.single.model, 'Unlisted-100');
       expect(find.byKey(const Key('reviewEnergySource')), findsNothing);
     });
   }
+
+  testWidgets('incomplete identity keeps Save disabled', (tester) async {
+    await showReview(tester, 'manual');
+    final save = find.byKey(const Key('localReviewSave'));
+    for (final fieldAndValue in [
+      (const Key('localReviewManufacturer'), ''),
+      (const Key('localReviewManufacturer'), '   '),
+      (const Key('localReviewModel'), ''),
+      (const Key('localReviewModel'), '   '),
+    ]) {
+      await tester.enterText(find.byKey(fieldAndValue.$1), fieldAndValue.$2);
+      await tester.pump();
+      expect(tester.widget<FilledButton>(save).onPressed, isNull);
+      await tester.enterText(
+        find.byKey(fieldAndValue.$1),
+        fieldAndValue.$1 == const Key('localReviewManufacturer')
+            ? 'Example'
+            : 'Unlisted-100',
+      );
+      await tester.pump();
+    }
+    expect(api.inputs, isEmpty);
+  });
 
   testWidgets('failed readback keeps edited draft and prevents second POST', (
     tester,

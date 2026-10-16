@@ -8,10 +8,12 @@ class LocalInventory {
     this.identity,
     this.rows, {
     this.protocolDevices = const [],
+    this.savedPlugs = const [],
   });
   final String identity;
   final List<SavedAppliance> rows;
   final List<NearbySavedDevice> protocolDevices;
+  final List<SavedPlug> savedPlugs;
 }
 
 class LocalWriteResult {
@@ -102,6 +104,14 @@ class LocalPilotDeviceLifecycle {
       var protocolDevices = _lastInventory?.identity == credential.identity
           ? _lastInventory!.protocolDevices
           : const <NearbySavedDevice>[];
+      var savedPlugs = _lastInventory?.identity == credential.identity
+          ? _lastInventory!.savedPlugs
+          : const <SavedPlug>[];
+      try {
+        savedPlugs = await api.saved(credential.address, credential.token);
+      } catch (_) {
+        // A legacy plug endpoint outage must not hide appliance inventory.
+      }
       try {
         if (await api.supportsNearbyDiscovery(
           credential.address,
@@ -120,6 +130,7 @@ class LocalPilotDeviceLifecycle {
         credential.identity,
         List.unmodifiable(rows),
         protocolDevices: List.unmodifiable(protocolDevices),
+        savedPlugs: List.unmodifiable(savedPlugs),
       );
       _lastInventory = inventory;
       return inventory;

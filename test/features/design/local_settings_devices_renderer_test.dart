@@ -16,6 +16,16 @@ SavedAppliance row(int id, {String method = 'manual', String name = 'Lamp'}) =>
       onboardingMethod: method,
     );
 
+const plug = SavedPlug(
+  id: 'plug-1',
+  ip: '192.0.2.1',
+  model: 'KS8',
+  name: 'Kitchen Mixer Plug KS8',
+  room: 'Kitchen',
+  meterStatus: 'available',
+  lastVerifiedAt: 0,
+);
+
 Map<String, dynamic> payload(String script) {
   final encoded = RegExp("atob\\('([^']+)'\\)").firstMatch(script)!.group(1)!;
   return jsonDecode(utf8.decode(base64Decode(encoded))) as Map<String, dynamic>;
@@ -104,5 +114,24 @@ void main() {
     expect(rows.last['protocolId'], 'device-1');
     expect(rows.last['removable'], false);
     expect(script, contains('data-el-local-protocol-device-id'));
+  });
+
+  test('saved plugs join inventory and deduplicate equivalent nearby IDs', () {
+    final script = renderer.updateScript(
+      identity: 'hub-a|1',
+      generation: 3,
+      appliances: const [],
+      savedPlugs: const [plug],
+      protocolDevices: const [
+        NearbySavedDevice('plug-1', 'Nearby duplicate'),
+        NearbySavedDevice('device-2', 'Den TV'),
+      ],
+    );
+    final rows = payload(script)['rows'] as List<dynamic>;
+    expect(rows, hasLength(2));
+    expect(rows.first['protocolId'], 'plug-1');
+    expect(rows.first['name'], 'Kitchen Mixer Plug KS8');
+    expect(rows.first['removable'], false);
+    expect(rows.last['protocolId'], 'device-2');
   });
 }

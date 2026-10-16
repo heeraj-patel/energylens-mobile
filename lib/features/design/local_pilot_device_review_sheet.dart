@@ -44,6 +44,8 @@ class _LocalPilotDeviceReviewSheetState
   bool get _valid =>
       _name.text.trim().isNotEmpty &&
       _withinLimit(_name.text) &&
+      _manufacturer.text.trim().isNotEmpty &&
+      _model.text.trim().isNotEmpty &&
       _withinLimit(_manufacturer.text) &&
       _withinLimit(_model.text) &&
       _category != null;

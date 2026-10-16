@@ -711,6 +711,11 @@ void main() {
       find.byKey(const Key('applianceName')),
       'Office computer',
     );
+    await scrollTo(tester, find.byKey(const Key('applianceManufacturer')));
+    await tester.enterText(
+      find.byKey(const Key('applianceManufacturer')),
+      'Example',
+    );
     await scrollTo(tester, find.byKey(const Key('applianceModel')));
     await tester.enterText(find.byKey(const Key('applianceModel')), 'ABC1234');
     await scrollTo(tester, find.byKey(const Key('saveAppliance')));
@@ -775,6 +780,54 @@ void main() {
     expect(find.text('No appliances saved on this hub yet.'), findsOneWidget);
   });
 
+  testWidgets('local save stays disabled for incomplete make or model', (
+    tester,
+  ) async {
+    final api = FakeApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ApplianceOnboardingScreen(
+          method: 'manual',
+          api: api,
+          credentials: FakeCredentials(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await scrollTo(tester, find.byKey(const Key('applianceName')));
+    await tester.enterText(find.byKey(const Key('applianceName')), 'Desk lamp');
+    await scrollTo(tester, find.byKey(const Key('applianceManufacturer')));
+    await tester.enterText(
+      find.byKey(const Key('applianceManufacturer')),
+      'Example',
+    );
+    await scrollTo(tester, find.byKey(const Key('applianceModel')));
+    await tester.enterText(
+      find.byKey(const Key('applianceModel')),
+      'Unknown-1',
+    );
+
+    final save = find.byKey(const Key('saveAppliance'));
+    for (final fieldAndValue in [
+      (const Key('applianceManufacturer'), ''),
+      (const Key('applianceManufacturer'), '   '),
+      (const Key('applianceModel'), ''),
+      (const Key('applianceModel'), '   '),
+    ]) {
+      await tester.enterText(find.byKey(fieldAndValue.$1), fieldAndValue.$2);
+      await tester.pump();
+      expect(tester.widget<FilledButton>(save).onPressed, isNull);
+      await tester.enterText(
+        find.byKey(fieldAndValue.$1),
+        fieldAndValue.$1 == const Key('applianceManufacturer')
+            ? 'Example'
+            : 'Unknown-1',
+      );
+      await tester.pump();
+    }
+    expect(api.rows, isEmpty);
+  });
+
   testWidgets('standalone save returns the saved appliance to its caller', (
     tester,
   ) async {
@@ -816,6 +869,16 @@ void main() {
     await tester.pumpAndSettle();
     await scrollTo(tester, find.byKey(const Key('applianceName')));
     await tester.enterText(find.byKey(const Key('applianceName')), 'Desk lamp');
+    await scrollTo(tester, find.byKey(const Key('applianceManufacturer')));
+    await tester.enterText(
+      find.byKey(const Key('applianceManufacturer')),
+      'Example',
+    );
+    await scrollTo(tester, find.byKey(const Key('applianceModel')));
+    await tester.enterText(
+      find.byKey(const Key('applianceModel')),
+      'Unlisted-100',
+    );
     await scrollTo(tester, find.byKey(const Key('checkModelBeforeSave')));
     await tester.tap(find.byKey(const Key('checkModelBeforeSave')));
     await tester.pumpAndSettle();
@@ -865,6 +928,16 @@ void main() {
     await tester.pumpAndSettle();
     await scrollTo(tester, find.byKey(const Key('applianceName')));
     await tester.enterText(find.byKey(const Key('applianceName')), 'Desk lamp');
+    await scrollTo(tester, find.byKey(const Key('applianceManufacturer')));
+    await tester.enterText(
+      find.byKey(const Key('applianceManufacturer')),
+      'Example',
+    );
+    await scrollTo(tester, find.byKey(const Key('applianceModel')));
+    await tester.enterText(
+      find.byKey(const Key('applianceModel')),
+      'Unlisted-100',
+    );
     await scrollTo(tester, find.byKey(const Key('checkModelBeforeSave')));
     await tester.tap(find.byKey(const Key('checkModelBeforeSave')));
     await tester.pumpAndSettle();
@@ -1450,6 +1523,16 @@ void main() {
     await tester.enterText(find.byKey(const Key('combinedBulbWatts')), '19');
     await scrollTo(tester, find.byKey(const Key('applianceHours')));
     await tester.enterText(find.byKey(const Key('applianceHours')), '21');
+    await scrollTo(tester, find.byKey(const Key('applianceManufacturer')));
+    await tester.enterText(
+      find.byKey(const Key('applianceManufacturer')),
+      'Example',
+    );
+    await scrollTo(tester, find.byKey(const Key('applianceModel')));
+    await tester.enterText(
+      find.byKey(const Key('applianceModel')),
+      'Unlisted-100',
+    );
     await scrollTo(
       tester,
       find.byKey(const Key('checkModelBeforeSave')),

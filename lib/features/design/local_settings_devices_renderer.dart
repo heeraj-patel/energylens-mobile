@@ -40,6 +40,7 @@ class LocalSettingsDevicesRenderer {
     required int generation,
     required List<SavedAppliance> appliances,
     List<NearbySavedDevice> protocolDevices = const [],
+    List<SavedPlug> savedPlugs = const [],
   }) {
     final ids = <int>{};
     final protocolIds = <String>{};
@@ -55,6 +56,20 @@ class LocalSettingsDevicesRenderer {
         'model': row.model,
         'removable':
             row.onboardingMethod == 'manual' || row.onboardingMethod == 'photo',
+      });
+    }
+    for (final plug in savedPlugs) {
+      if (plug.id.isEmpty) {
+        throw const FormatException('Invalid Hub plug ID');
+      }
+      if (!protocolIds.add(plug.id)) continue;
+      rows.add({
+        'id': null,
+        'protocolId': plug.id,
+        'name': plug.name.trim().isEmpty ? 'Unnamed device' : plug.name,
+        'manufacturer': '',
+        'model': plug.model,
+        'removable': false,
       });
     }
     for (final device in protocolDevices) {

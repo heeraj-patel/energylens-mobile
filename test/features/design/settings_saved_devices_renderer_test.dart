@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
 import 'package:energylens_mobile/features/design/settings_saved_devices_renderer.dart';
+import 'package:energylens_mobile/features/design/cloud_saved_plug_inventory.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const homeA = '11111111-1111-4111-8111-111111111111';
@@ -129,6 +130,40 @@ void main() {
     ]);
     expect(script, contains('if (row.persisted)'));
     expect(script, contains("typeof row.persisted !== 'boolean'"));
+  });
+
+  test('saved Hub plugs reuse monitored cards without an archive action', () {
+    final script = renderer.appendScript(
+      homeId: homeA,
+      generation: 6,
+      appliances: const [],
+      savedPlugs: const [
+        CloudSavedPlug(
+          id: 'hub-a|plug-8',
+          name: 'Kitchehn Mixer Plug KS8',
+          model: 'KS8',
+        ),
+        CloudSavedPlug(id: 'hub-a|plug-8', name: 'Duplicate', model: 'KS8'),
+      ],
+    );
+    expect(payloadOf(script)['rows'], [
+      {
+        'id': 'hub-a|plug-8',
+        'name': 'Kitchehn Mixer Plug KS8',
+        'brand': '',
+        'model': 'KS8',
+        'fuel': '',
+        'variant': '',
+        'persisted': false,
+        'plug': true,
+      },
+    ]);
+    expect(script, contains("'data-el-saved-plug-id'"));
+    expect(
+      script,
+      contains("list.querySelectorAll('[data-el-saved-plug-id]')"),
+    );
+    expect(script, contains('!row.plug &&'));
   });
 
   test('rejects cross-home rows and guards stale script generations', () {

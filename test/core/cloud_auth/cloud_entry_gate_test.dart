@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_entry_gate.dart';
+import 'package:energylens_mobile/core/cloud_auth/cloud_local_auth.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import 'package:energylens_mobile/features/design/design_context_coordinator.dart';
 import 'package:energylens_mobile/features/design/report_preview_domain_repository.dart';
@@ -80,6 +82,244 @@ String ownedHomes([String second = secondHomeId]) =>
     '{"homes":[{"id":"$firstHomeId","name":"First home","timezone":"America/Chicago","location":{"country_code":"US","postal_code":"60601"}},{"id":"$second","name":"Second home","timezone":"America/Chicago","location":{"country_code":"US","postal_code":"60601"}}]}';
 
 void main() {
+  testWidgets('default gate renders the form with missing build config', (
+    tester,
+  ) async {
+    expect(CloudAuthConfig.fromEnvironment().hasCloudSignIn, isFalse);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          homeBuilder: (_, _, _, _) => const Text('Private Home'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Username'), findsOneWidget);
+    expect(find.text('Password'), findsOneWidget);
+    expect(find.text('Submit'), findsOneWidget);
+    await tester.tap(find.text('Submit'));
+    await tester.pumpAndSettle();
+    expect(find.text('Internal error, Try again later'), findsOneWidget);
+  });
+
+  testWidgets('invalid development pin cannot start a request', (tester) async {
+    const invalidPin = CloudAuthConfig(
+      issuer: '',
+      audience: '',
+      clientId: '',
+      redirectUrl: '',
+      apiUrl: 'https://api.example',
+      localAuthEnabled: true,
+      devCertificateSha256: 'invalid-pin',
+    );
+    final session = CloudSession(
+      config: invalidPin,
+      store: Store()..tokens = null,
+      authenticator: Auth(),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          session: session,
+          homeBuilder: (_, _, _, _) => const Text('Private Home'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Username'), findsOneWidget);
+    await tester.tap(find.text('Submit'));
+    await tester.pumpAndSettle();
+    expect(find.text('Internal error, Try again later'), findsOneWidget);
+  });
+
+  testWidgets(
+    'missing Cloud config keeps the form and fails locally on Submit',
+    (tester) async {
+      const missing = CloudAuthConfig(
+        issuer: '',
+        audience: '',
+        clientId: '',
+        redirectUrl: '',
+        apiUrl: '',
+      );
+      final session = CloudSession(
+        config: missing,
+        store: Store()..tokens = null,
+        authenticator: Auth(),
+      );
+      var requests = 0;
+      final api = CloudApiClient(
+        session: session,
+        client: MockClient((_) async {
+          requests++;
+          return http.Response('', 500);
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CloudEntryGate(
+            session: session,
+            api: api,
+            homeBuilder: (_, _, _, _) => const Text('Private Home'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Username'), findsOneWidget);
+      expect(find.text('Password'), findsOneWidget);
+      expect(find.text('Submit'), findsOneWidget);
+      expect(find.text('Internal error, Try again later'), findsNothing);
+      await tester.tap(find.text('Submit'));
+      await tester.pumpAndSettle();
+      expect(find.text('Internal error, Try again later'), findsOneWidget);
+      expect(requests, 0);
+      api.close();
+    },
+  );
+
+  testWidgets('capability outage is silent until Submit and retries', (
+    tester,
+  ) async {
+    const localConfig = CloudAuthConfig(
+      issuer: '',
+      audience: '',
+      clientId: '',
+      redirectUrl: '',
+      apiUrl: 'https://api.example',
+      localAuthEnabled: true,
+    );
+    final local = CloudLocalAuthClient(
+      baseUrl: localConfig.apiUrl,
+      client: MockClient((_) async => http.Response('', 401)),
+    );
+    final session = CloudSession(
+      config: localConfig,
+      store: Store()..tokens = null,
+      authenticator: Auth(),
+      localAuth: local,
+    );
+    var capabilities = 0;
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config') {
+          capabilities++;
+          throw const SocketException('offline');
+        }
+        return http.Response('', 500);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          session: session,
+          api: api,
+          homeBuilder: (_, _, _, _) => const Text('Private Home'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(capabilities, 1);
+    expect(find.text('Username'), findsOneWidget);
+    expect(find.text('Internal error, Try again later'), findsNothing);
+    await tester.tap(find.text('Submit'));
+    await tester.pumpAndSettle();
+    expect(capabilities, 2);
+    final error = tester.widget<Text>(
+      find.text('Internal error, Try again later'),
+    );
+    expect(
+      error.style?.color,
+      Theme.of(tester.element(find.text('Submit'))).colorScheme.error,
+    );
+    expect(
+      error.style?.fontSize,
+      Theme.of(tester.element(find.text('Submit')))
+          .textTheme
+          .bodySmall
+          ?.fontSize,
+    );
+    await tester.enterText(find.byKey(const Key('localSignInEmail')), 'nik');
+    await tester.pump();
+    expect(find.text('Internal error, Try again later'), findsNothing);
+    api.close();
+    local.close();
+  });
+
+  testWidgets('recovered username capability keeps the entered identity', (
+    tester,
+  ) async {
+    const localConfig = CloudAuthConfig(
+      issuer: '',
+      audience: '',
+      clientId: '',
+      redirectUrl: '',
+      apiUrl: 'https://api.example',
+      localAuthEnabled: true,
+    );
+    http.Request? login;
+    final local = CloudLocalAuthClient(
+      baseUrl: localConfig.apiUrl,
+      client: MockClient((request) async {
+        login = request;
+        return http.Response('', 401);
+      }),
+    );
+    final session = CloudSession(
+      config: localConfig,
+      store: Store()..tokens = null,
+      authenticator: Auth(),
+      localAuth: local,
+    );
+    var capabilities = 0;
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config') {
+          capabilities++;
+          return capabilities == 1
+              ? http.Response('', 500)
+              : http.Response(
+                  '{"schema_version":1,"methods":["username_password"],"registration_enabled":false,"email_verification_required":false,"password_recovery_enabled":false,"session_logout_revokes_access":true}',
+                  200,
+                );
+        }
+        return http.Response('', 500);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          session: session,
+          api: api,
+          homeBuilder: (_, _, _, _) => const Text('Private Home'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('localSignInEmail')), 'nik');
+    await tester.enterText(
+      find.byKey(const Key('localSignInPassword')),
+      'wrong',
+    );
+    await tester.tap(find.text('Submit'));
+    await tester.pumpAndSettle();
+    expect(capabilities, 2);
+    expect(session.credentialMethod, 'username_password');
+    expect(login?.body, contains('"username":"nik"'));
+    expect(find.text('Internal error, Try again later'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('localSignInEmail')))
+          .controller
+          ?.text,
+      'nik',
+    );
+    api.close();
+    local.close();
+  });
   testWidgets('native design builder receives gate-owned verified lifecycle', (
     tester,
   ) async {
@@ -92,8 +332,9 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
-        if (request.url.path == '/v1/auth/config')
+        if (request.url.path == '/v1/auth/config') {
           return http.Response('', 404);
+        }
         if (request.url.path == '/v1/me') {
           return http.Response(
             '{"id":"$verifiedAccountId","email":null,"email_verified":true}',
@@ -185,32 +426,29 @@ void main() {
     await tester.tap(find.text('Sign out selected home'));
     expect(coordinator.context, isNull);
     await tester.pumpAndSettle();
-    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.text('Submit'), findsOneWidget);
     api.close();
   });
 
-  testWidgets('sign-in reports user cancellation separately from failures', (
+  testWidgets('sign-in leaves cancellation quiet and reports failures', (
     tester,
   ) async {
-    final failures = <(Object, String)>[
+    final failures = <(Object, String?)>[
       (
         FlutterAppAuthUserCancelledException(
           code: 'user_cancelled',
           platformErrorDetails: FlutterAppAuthPlatformErrorDetails(),
         ),
-        'Sign-in cancelled. Tap Sign in when ready.',
+        null,
       ),
       (
         FlutterAppAuthPlatformException(
           code: 'discovery_failed',
           platformErrorDetails: FlutterAppAuthPlatformErrorDetails(),
         ),
-        'Could not start secure sign-in. Check your connection or app configuration.',
+        'Internal error, Try again later',
       ),
-      (
-        StateError('unavailable'),
-        'Could not complete Cloud sign-in. Try again or ask for help with app configuration.',
-      ),
+      (StateError('unavailable'), 'Internal error, Try again later'),
     ];
     for (final (failure, message) in failures) {
       final store = Store()..tokens = null;
@@ -240,9 +478,12 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Sign in'));
+      await tester.tap(find.text('Submit'));
       await tester.pumpAndSettle();
-      expect(find.text(message), findsOneWidget);
+      expect(
+        find.text('Internal error, Try again later'),
+        message == null ? findsNothing : findsOneWidget,
+      );
       expect(store.tokens, isNull);
       api.close();
       await tester.pumpWidget(const SizedBox.shrink());
@@ -262,8 +503,9 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
-        if (request.url.path == '/v1/auth/config')
+        if (request.url.path == '/v1/auth/config') {
           return http.Response('', 404);
+        }
         switch (request.url.path) {
           case '/v1/me':
             return http.Response(
@@ -357,10 +599,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Private Home'), findsNothing);
-    expect(
-      find.text('Cloud account service is not available yet.'),
-      findsOneWidget,
-    );
+    expect(find.text('Username'), findsOneWidget);
+    expect(find.text('Password'), findsOneWidget);
+    expect(find.text('Submit'), findsOneWidget);
+    expect(find.text('Internal error, Try again later'), findsNothing);
     api.close();
   });
 
@@ -376,8 +618,9 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
-        if (request.url.path == '/v1/auth/config')
+        if (request.url.path == '/v1/auth/config') {
           return http.Response('', 404);
+        }
         if (request.url.path == '/v1/me/preferences') {
           return http.Response(
             '{"version":1,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}',
@@ -422,7 +665,7 @@ void main() {
     await tester.tap(find.text('Private Home'));
     await tester.pumpAndSettle();
     expect(store.tokens, isNull);
-    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.text('Submit'), findsOneWidget);
     api.close();
   });
 
@@ -437,8 +680,9 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
-        if (request.url.path == '/v1/auth/config')
+        if (request.url.path == '/v1/auth/config') {
           return http.Response('', 404);
+        }
         if (request.url.path == '/v1/me/preferences') {
           return http.Response(
             '{"version":1,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}',
@@ -486,8 +730,9 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
-        if (request.url.path == '/v1/auth/config')
+        if (request.url.path == '/v1/auth/config') {
           return http.Response('', 404);
+        }
         if (request.url.path == '/v1/me/preferences') {
           return http.Response(
             '{"version":1,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}',
@@ -586,8 +831,9 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
-        if (request.url.path == '/v1/auth/config')
+        if (request.url.path == '/v1/auth/config') {
           return http.Response('', 404);
+        }
         if (request.url.path == '/v1/me') {
           return http.Response(
             '{"id":"$verifiedAccountId","email":null,"email_verified":true}',
@@ -692,8 +938,9 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
-        if (request.url.path == '/v1/auth/config')
+        if (request.url.path == '/v1/auth/config') {
           return http.Response('', 404);
+        }
         if (request.url.path == '/v1/me') {
           return http.Response(
             '{"id":"account-1","email":null,"email_verified":true}',
@@ -745,8 +992,9 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
-        if (request.url.path == '/v1/auth/config')
+        if (request.url.path == '/v1/auth/config') {
           return http.Response('', 404);
+        }
         if (request.url.path == '/v1/me') {
           return http.Response(
             '{"id":"account-1","email":null,"email_verified":true}',

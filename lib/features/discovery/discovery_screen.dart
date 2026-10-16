@@ -19,6 +19,13 @@ import 'hub_pairing_screen.dart';
 import '../identify/appliance_onboarding_screen.dart';
 import 'device_energy_detail_screen.dart';
 
+String? _makeModelIdentity(String? manufacturer, String? model) {
+  final make = manufacturer?.trim() ?? '';
+  final fullModel = model?.trim() ?? '';
+  if (make.isEmpty || fullModel.isEmpty) return null;
+  return '$make $fullModel';
+}
+
 /// Local discovery, adoption, and readback from the pilot hub.
 class DiscoveryScreen extends StatefulWidget {
   const DiscoveryScreen({
@@ -77,6 +84,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   String? _claimMessage;
   HubOwnership? _cloudOwnership;
   int? _pairedOwnershipEpoch;
+
+  bool get _canUseHubCustomerApi =>
+      widget.cloudHome == null ||
+      (_cloudOwnership != null &&
+          _pairedOwnershipEpoch == _cloudOwnership!.ownershipEpoch);
 
   OwnedPairingScope? get _pairingScope {
     final cloud = widget.cloudApi;
@@ -366,13 +378,24 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         final cloud = widget.cloudApi;
         final scope = _pairingScope;
         if (cloud == null || scope == null) return;
+        final sessionGeneration = cloud.session.generation;
+        bool current() =>
+            mounted &&
+            _pairingScope?.identity == scope.identity &&
+            cloud.session.generation == sessionGeneration;
         final ownerships = await cloud.hubs(scope.homeId);
+        if (!current()) return;
         for (final ownership in ownerships) {
           final pairing = await widget.credentials.readOwnedPairing(
             scope,
             ownership,
           );
-          if (pairing == null || !mounted) continue;
+          if (!current()) return;
+          if (pairing == null) continue;
+          await widget.api.verifyStoredPairing(
+            StoredHubIdentity(address: pairing.address, hubId: pairing.hubId),
+          );
+          if (!current()) return;
           _cloudOwnership = ownership;
           _pairedOwnershipEpoch = pairing.ownershipEpoch;
           setState(() {
@@ -381,12 +404,26 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             _hub.text = pairing.address;
             _token.text = pairing.token;
           });
-          await _hubApi.verifyStoredPairing(
-            StoredHubIdentity(address: pairing.address, hubId: pairing.hubId),
-          );
           await _loadSaved();
           if (widget.autoScan) await _search();
           return;
+        }
+        if (ownerships.isEmpty) {
+          // A first claim needs the bootstrap pairing, but it cannot read
+          // household inventory before Cloud ownership is established.
+          final pairing = await widget.credentials.readPairing();
+          if (!current() || pairing == null) return;
+          await widget.api.verifyStoredPairing(
+            StoredHubIdentity(address: pairing.address, hubId: pairing.hubId),
+          );
+          if (!current()) return;
+          setState(() {
+            _paired = true;
+            _pairedHubId = pairing.hubId;
+            _pairedOwnershipEpoch = null;
+            _hub.text = pairing.address;
+            _token.text = pairing.token;
+          });
         }
         return;
       }
@@ -457,6 +494,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   }
 
   Future<void> _loadSaved() async {
+    if (!_canUseHubCustomerApi) return;
     try {
       final plugs = await _hubApi.saved(_hub.text.trim(), _token.text.trim());
       if (mounted) {
@@ -635,6 +673,73 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  String? _attachedApplianceIdentity(SavedPlug plug) {
+    final cloudAppliance = _cloudAttached[plug.id];
+    if (cloudAppliance != null) {
+      return _makeModelIdentity(cloudAppliance.brand, cloudAppliance.fullModel);
+    }
+    final appliance = plug.connectedAppliance;
+    if (appliance == null) return null;
+    return _makeModelIdentity(appliance.manufacturer, appliance.model);
+  }
+
+  Widget _attachedApplianceSection(SavedPlug plug, ThemeData theme) {
+    final identity = _attachedApplianceIdentity(plug);
+    if (identity == null) return const SizedBox.shrink();
+
+    final cloudAppliance = _cloudAttached[plug.id];
+    final appliance = plug.connectedAppliance;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 24),
+        Text(identity, style: theme.textTheme.labelLarge),
+        if (cloudAppliance != null) ...[
+          Text(cloudAppliance.name, style: theme.textTheme.titleMedium),
+          Text(cloudAppliance.category),
+        ] else if (appliance != null) ...[
+          Text(appliance.name, style: theme.textTheme.titleMedium),
+          Text(appliance.category),
+          const Text('Connected load · No live readings'),
+          if (plug.connectionStatus == 'identity_changed')
+            const Text('Estimate hidden until this plug is verified.')
+          else if (_estimates[appliance.id] case final estimate?)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                energyRateDescription(estimate),
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          if (plug.connectionStatus != 'identity_changed') ...[
+            if (_estimates[appliance.id]?.evidence case final source?) ...[
+              Text(
+                _estimates[appliance.id]!.estimatedCostUsd == null
+                    ? 'Estimated monthly energy: ${_estimates[appliance.id]!.estimatedKwh!.toStringAsFixed(1)} kWh'
+                    : 'Estimated monthly cost: \$${_estimates[appliance.id]!.estimatedCostUsd!.toStringAsFixed(2)} · ${_estimates[appliance.id]!.estimatedKwh!.toStringAsFixed(1)} kWh',
+              ),
+              TextButton.icon(
+                onPressed: () => _showSource(source, _estimates[appliance.id]!),
+                icon: Icon(
+                  source.sourceKind == 'energy_star' ||
+                          source.sourceKind == 'epa_exact'
+                      ? Icons.verified_outlined
+                      : Icons.info_outline,
+                ),
+                label: Text(energySourceLabel(source)),
+              ),
+            ] else
+              const Text('Estimate unavailable · Exact model/source needed'),
+          ],
+          TextButton(
+            onPressed: _busy ? null : () => _checkConnectedEnergy(appliance),
+            child: const Text('Check energy data or update cost'),
+          ),
+        ],
+      ],
+    );
   }
 
   void _showSource(EnergyEvidence source, EnergyEstimate estimate) {
@@ -1136,7 +1241,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   }
 
   Future<void> _search({bool manual = false}) async {
-    if (_busy) return;
+    if (_busy || !_canUseHubCustomerApi) return;
     int? nearbyEpoch;
     setState(() {
       _busy = true;
@@ -1560,7 +1665,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             ],
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: _busy ? null : () => _search(),
+              onPressed: _busy || !_canUseHubCustomerApi
+                  ? null
+                  : () => _search(),
               icon: const Icon(Icons.radar),
               label: const Text('Scan for plugs'),
             ),
@@ -1621,7 +1728,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               ),
               const SizedBox(height: 8),
               OutlinedButton(
-                onPressed: _busy ? null : () => _search(manual: true),
+                onPressed: _busy || !_canUseHubCustomerApi
+                    ? null
+                    : () => _search(manual: true),
                 child: const Text('Check this IP address'),
               ),
             ],
@@ -1682,23 +1791,25 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             ? 'No energy monitoring'
                             : 'Meter status: ${plug.meterStatus}',
                       ),
-                      TextButton.icon(
-                        onPressed: () => Navigator.of(context).push<void>(
-                          MaterialPageRoute<void>(
-                            builder: (_) => DeviceEnergyDetailScreen(
-                              plug: plug,
-                              api: widget.api,
-                              hubAddress: _hub.text.trim(),
-                              token: _token.text.trim(),
-                              estimate: plug.connectedAppliance == null
-                                  ? null
-                                  : _estimates[plug.connectedAppliance!.id],
+                      if (plug.connectedAppliance == null ||
+                          _attachedApplianceIdentity(plug) != null)
+                        TextButton.icon(
+                          onPressed: () => Navigator.of(context).push<void>(
+                            MaterialPageRoute<void>(
+                              builder: (_) => DeviceEnergyDetailScreen(
+                                plug: plug,
+                                api: widget.api,
+                                hubAddress: _hub.text.trim(),
+                                token: _token.text.trim(),
+                                estimate: plug.connectedAppliance == null
+                                    ? null
+                                    : _estimates[plug.connectedAppliance!.id],
+                              ),
                             ),
                           ),
+                          icon: const Icon(Icons.electric_meter_outlined),
+                          label: const Text('View energy details'),
                         ),
-                        icon: const Icon(Icons.electric_meter_outlined),
-                        label: const Text('View energy details'),
-                      ),
                       Text(
                         plugConnectionLabel(plug, hubConnected: _hubConnected),
                       ),
@@ -1727,81 +1838,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         plugConnectionDetail(plug),
                         style: theme.textTheme.bodySmall,
                       ),
-                      const Divider(height: 24),
-                      Text(
-                        'Connected appliance or lamp',
-                        style: theme.textTheme.labelLarge,
-                      ),
-                      if (_cloudAttached[plug.id]
-                          case final cloudAppliance?) ...[
-                        Text(
-                          cloudAppliance.name,
-                          style: theme.textTheme.titleMedium,
-                        ),
-                        Text(
-                          '${cloudAppliance.category} · ${cloudAppliance.fullModel}',
-                        ),
-                      ] else if (plug.connectedAppliance
-                          case final appliance?) ...[
-                        Text(
-                          appliance.name,
-                          style: theme.textTheme.titleMedium,
-                        ),
-                        Text(
-                          '${appliance.category} · ${appliance.model.isEmpty ? 'Model unknown' : appliance.model}',
-                        ),
-                        const Text('Connected load · No live readings'),
-                        if (plug.connectionStatus == 'identity_changed')
-                          const Text(
-                            'Estimate hidden until this plug is verified.',
-                          )
-                        else if (_estimates[appliance.id] case final estimate?)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              energyRateDescription(estimate),
-                              style: theme.textTheme.bodySmall,
-                            ),
-                          ),
-                        if (plug.connectionStatus != 'identity_changed') ...[
-                          if (_estimates[appliance.id]?.evidence
-                              case final source?) ...[
-                            Text(
-                              _estimates[appliance.id]!.estimatedCostUsd == null
-                                  ? 'Estimated monthly energy: ${_estimates[appliance.id]!.estimatedKwh!.toStringAsFixed(1)} kWh'
-                                  : 'Estimated monthly cost: \$${_estimates[appliance.id]!.estimatedCostUsd!.toStringAsFixed(2)} · ${_estimates[appliance.id]!.estimatedKwh!.toStringAsFixed(1)} kWh',
-                            ),
-                            TextButton.icon(
-                              onPressed: () => _showSource(
-                                source,
-                                _estimates[appliance.id]!,
-                              ),
-                              icon: Icon(
-                                source.sourceKind == 'energy_star' ||
-                                        source.sourceKind == 'epa_exact'
-                                    ? Icons.verified_outlined
-                                    : Icons.info_outline,
-                              ),
-                              label: Text(energySourceLabel(source)),
-                            ),
-                          ] else
-                            const Text(
-                              'Estimate unavailable · Exact model/source needed',
-                            ),
-                        ],
-                        TextButton(
-                          onPressed: _busy
-                              ? null
-                              : () => _checkConnectedEnergy(appliance),
-                          child: const Text('Check energy data or update cost'),
-                        ),
-                      ] else
-                        const Text('Not identified yet · Estimate unavailable'),
+                      _attachedApplianceSection(plug, theme),
                       TextButton(
                         onPressed: _busy ? null : () => _connectAppliance(plug),
                         child: Text(
-                          plug.connectedAppliance == null &&
-                                  !_cloudAttached.containsKey(plug.id)
+                          _attachedApplianceIdentity(plug) == null
                               ? 'Identify connected appliance'
                               : 'Change connected appliance',
                         ),

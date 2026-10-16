@@ -17,6 +17,43 @@ flutter test
 flutter run
 ```
 
+## Repository-local configuration
+
+Copy `.env-example` to `.env-local`, fill in the settings for the intended
+profile, and run `chmod 600 .env-local`. The local file is ignored by Git.
+`scripts/deploy-ios-simulator.sh` loads it automatically; `--env-file PATH`
+selects another file. Public build settings are passed to Flutter; account
+passwords and server secrets belong in server configuration and are never
+compiled into Mobile.
+
+Use `--local-pilot` for the account-free preview. To use sign-in and sign-out,
+configure the HTTPS Cloud API and its authentication profile, then run:
+
+```sh
+scripts/deploy-ios-simulator.sh --cloud --device SIMULATOR_UDID
+```
+
+For owner-requested physical acceptance, replace `--device SIMULATOR_UDID`
+with `--iphone PHYSICAL_DEVICE_UDID`; this uses the existing signed Release
+workflow. The Cloud API and certificate trust must be reachable on that device.
+Add `--build-only` to prepare and verify the selected build without installing.
+For a direct Flutter launch, export the file first and pass the public settings
+as `--dart-define` values using the profile instructions below.
+
+To force a fresh Cloud sign-in after reinstall, launch the installed app once
+with `--energylens-reset-sign-in`. This one-shot startup option deletes only
+Flutter secure-storage Keychain entries whose account starts with
+`energylens.cloud.`; it preserves Hub pairing and unrelated Keychain entries.
+On a connected iPhone, use:
+
+```sh
+xcrun devicectl device process launch --terminate-existing --device PHYSICAL_DEVICE_UDID io.energylens.energylensMobile --energylens-reset-sign-in
+```
+
+Confirm the launch log reports that the reset completed. Reinstalling alone
+does not clear iOS Keychain credentials; the app then starts normally and
+requires Cloud sign-in again.
+
 ## Cloud sign-in build configuration
 
 Stop Waste loads household and appliance-matching programs from the Cloud

@@ -752,6 +752,9 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       await _attachSavedAppliance();
       return;
     }
+    if (_manufacturer.text.trim().isEmpty || _model.text.trim().isEmpty) {
+      return;
+    }
     final hubAddress = _hub.text.trim();
     final hubToken = _token.text.trim();
     final plugId = _selectedPlugId;
@@ -1663,7 +1666,14 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             const SizedBox(height: 16),
             FilledButton(
               key: const Key('saveAppliance'),
-              onPressed: _busy ? null : _save,
+              onPressed:
+                  _busy ||
+                      (!_cloudOnly &&
+                          _pendingAttachment == null &&
+                          (_manufacturer.text.trim().isEmpty ||
+                              _model.text.trim().isEmpty))
+                  ? null
+                  : _save,
               child: Text(
                 _busy
                     ? 'Saving…'

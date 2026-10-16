@@ -72,6 +72,50 @@ class _ClaimCredentials extends FakeCredentials {
       );
 }
 
+class _FirstClaimCredentials extends FakeCredentials {
+  _FirstClaimCredentials({this.pendingLegacy});
+  final Completer<StoredPairingCredential?>? pendingLegacy;
+  StoredPairingCredential? ownedPairing;
+  static const legacyPairing = StoredPairingCredential(
+    address: 'https://192.168.1.20:8787#sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    hubId: _localHubId,
+    clientId: 'client-1',
+    token: 'bootstrap-token',
+  );
+
+  @override
+  Future<StoredPairingCredential?> readPairing() =>
+      pendingLegacy?.future ?? Future.value(legacyPairing);
+
+  @override
+  Future<StoredPairingCredential?> readOwnedPairing(
+    OwnedPairingScope scope,
+    HubOwnership ownership,
+  ) async => ownedPairing;
+}
+
+class _FirstClaimApi extends _ClaimDiscoveryApi {
+  int customerReads = 0;
+  int identityChecks = 0;
+
+  @override
+  Future<void> verifyStoredPairing(StoredHubIdentity pairing) async {
+    identityChecks++;
+  }
+
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async {
+    customerReads++;
+    return const [];
+  }
+
+  @override
+  Future<bool> supportsNearbyDiscovery(String baseUrl, String token) async {
+    customerReads++;
+    return false;
+  }
+}
+
 class _DelayedPostalCredentials extends _ClaimCredentials {
   final started = Completer<void>();
   final finish = Completer<String?>();
@@ -355,6 +399,25 @@ class SavingApi extends FakeDiscoveryApi {
     estimateCalls++;
     return const EnergyEstimate(status: 'no_estimate', reason: 'not_checked');
   }
+}
+
+class _FixtureApplianceApi extends SavingApi {
+  _FixtureApplianceApi({required String manufacturer, required String model})
+    : _appliance = SavedAppliance(
+        id: 8,
+        name: 'Living room fan',
+        room: 'Living room',
+        category: 'fan',
+        manufacturer: manufacturer,
+        model: model,
+        loadKind: 'appliance',
+        onboardingMethod: 'manual',
+      );
+
+  final SavedAppliance _appliance;
+
+  @override
+  SavedAppliance get appliance => _appliance;
 }
 
 class FailingSettingsApi extends SavingApi {
@@ -740,6 +803,8 @@ void main() {
       await tester.tap(find.text('Desk lamp · lighting'));
       await tester.pumpAndSettle();
       expect(attachmentCreates, 1);
+      expect(find.text('Example L123'), findsOneWidget);
+      expect(find.text('Desk lamp'), findsWidgets);
 
       await tester.ensureVisible(find.text('Change connected appliance'));
       await tester.pumpAndSettle();
@@ -807,6 +872,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Office computer'), findsWidgets);
+      expect(find.text('Example C123'), findsOneWidget);
       await tester.ensureVisible(find.text('Change connected appliance'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Change connected appliance'));
@@ -816,6 +882,162 @@ void main() {
       expect(attachmentCreates, 2);
     },
   );
+
+  testWidgets(
+    'first Cloud home exposes only the link, then restores an owned pairing',
+    (tester) async {
+      final api = _FirstClaimApi();
+      final credentials = _FirstClaimCredentials();
+      var owned = false;
+      final cloud = CloudApiClient(
+        session: CloudSession(
+          config: _cloudConfig,
+          store: _TestTokenStore(),
+          authenticator: _TestAuthenticator(),
+        ),
+        client: MockClient((request) async {
+          if (request.url.path == '/v1/homes/$_cloudHomeId/hubs') {
+            return http.Response(
+              jsonEncode({
+                'hubs': owned
+                    ? [
+                        {
+                          'hub_id': _cloudHubId,
+                          'local_hub_id': _localHubId,
+                          'home_id': _cloudHomeId,
+                          'ownership_epoch': 2,
+                          'version': 1,
+                        },
+                      ]
+                    : [],
+              }),
+              200,
+            );
+          }
+          return http.Response('{}', 404);
+        }),
+      );
+      Widget screen() => MaterialApp(
+        home: DiscoveryScreen(
+          key: UniqueKey(),
+          api: api,
+          credentials: credentials,
+          cloudHome: const CloudHome(
+            id: _cloudHomeId,
+            name: 'Selected home',
+            timezone: 'America/Chicago',
+            countryCode: 'US',
+            postalCode: '60601',
+          ),
+          cloudApi: cloud,
+          accountId: 'account-a',
+        ),
+      );
+
+      await tester.pumpWidget(screen());
+      await tester.pumpAndSettle();
+      expect(find.text('Link paired hub to home'), findsOneWidget);
+      expect(api.identityChecks, 1);
+      expect(api.customerReads, 0);
+      expect(find.text('Hub connected'), findsNothing);
+
+      // The existing claim flow establishes ownership and a fresh pairing.
+      owned = true;
+      credentials.ownedPairing = const StoredPairingCredential(
+        address: 'https://192.168.1.20:8787#sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        hubId: _localHubId,
+        clientId: 'client-2',
+        token: 'claimed-token',
+        ownershipEpoch: 2,
+      );
+      await tester.pumpWidget(screen());
+      await tester.pumpAndSettle();
+      expect(api.customerReads, greaterThan(0));
+      cloud.close();
+    },
+  );
+
+  testWidgets('first claim ignores a legacy pairing after account scope change', (
+    tester,
+  ) async {
+    final pending = Completer<StoredPairingCredential?>();
+    final credentials = _FirstClaimCredentials(pendingLegacy: pending);
+    final api = _FirstClaimApi();
+    final cloud = CloudApiClient(
+      session: CloudSession(
+        config: _cloudConfig,
+        store: _TestTokenStore(),
+        authenticator: _TestAuthenticator(),
+      ),
+      client: MockClient((_) async => http.Response('{"hubs":[]}', 200)),
+    );
+    Widget screen(String accountId) => MaterialApp(
+      home: DiscoveryScreen(
+        api: api,
+        credentials: credentials,
+        cloudHome: const CloudHome(
+          id: _cloudHomeId,
+          name: 'Selected home',
+          timezone: 'America/Chicago',
+          countryCode: 'US',
+          postalCode: '60601',
+        ),
+        cloudApi: cloud,
+        accountId: accountId,
+      ),
+    );
+    await tester.pumpWidget(screen('account-a'));
+    await tester.pump();
+    await tester.pumpWidget(screen('account-b'));
+    pending.complete(_FirstClaimCredentials.legacyPairing);
+    await tester.pumpAndSettle();
+    expect(find.text('Link paired hub to home'), findsNothing);
+    expect(api.identityChecks, 0);
+    expect(api.customerReads, 0);
+    cloud.close();
+  });
+
+  testWidgets('first claim ignores a legacy pairing after session change', (
+    tester,
+  ) async {
+    final pending = Completer<StoredPairingCredential?>();
+    final credentials = _FirstClaimCredentials(pendingLegacy: pending);
+    final api = _FirstClaimApi();
+    final session = CloudSession(
+      config: _cloudConfig,
+      store: _TestTokenStore(),
+      authenticator: _TestAuthenticator(),
+    );
+    final cloud = CloudApiClient(
+      session: session,
+      client: MockClient((_) async => http.Response('{"hubs":[]}', 200)),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(
+          api: api,
+          credentials: credentials,
+          cloudHome: const CloudHome(
+            id: _cloudHomeId,
+            name: 'Selected home',
+            timezone: 'America/Chicago',
+            countryCode: 'US',
+            postalCode: '60601',
+          ),
+          cloudApi: cloud,
+          accountId: 'account-a',
+        ),
+      ),
+    );
+    await tester.pump();
+    await session.selectCredentialMethod('oidc');
+    pending.complete(_FirstClaimCredentials.legacyPairing);
+    await tester.pumpAndSettle();
+    expect(find.text('Link paired hub to home'), findsNothing);
+    expect(api.identityChecks, 0);
+    expect(api.customerReads, 0);
+    cloud.close();
+  });
 
   testWidgets(
     'adopting a verified plug registers and reads back its Cloud sensor',
@@ -1702,10 +1924,8 @@ void main() {
     );
     expect(find.text('Smart plug · Saved'), findsOneWidget);
     expect(find.text('No energy monitoring'), findsOneWidget);
-    expect(
-      find.text('Not identified yet · Estimate unavailable'),
-      findsOneWidget,
-    );
+    expect(find.text('Connected appliance or lamp'), findsNothing);
+    expect(find.text('Identify connected appliance'), findsOneWidget);
   });
 
   testWidgets('links a saved appliance to the plug without making it a meter', (
@@ -1747,9 +1967,107 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('Desk lamp'), findsOneWidget);
+    expect(find.text('Example L123'), findsOneWidget);
     expect(find.text('Connected load · No live readings'), findsOneWidget);
     expect(find.text('No energy monitoring'), findsOneWidget);
     expect(find.text('Change connected appliance'), findsOneWidget);
+  });
+
+  testWidgets('hides saved attachment when make or model is missing', (
+    tester,
+  ) async {
+    for (final identity in [('', 'AM07'), ('Dyson', '')]) {
+      final api = _FixtureApplianceApi(
+        manufacturer: identity.$1,
+        model: identity.$2,
+      );
+      api.plug = SavedPlug(
+        id: 'plug-1',
+        ip: '192.168.1.42',
+        model: 'HS103',
+        name: 'Living room plug',
+        room: 'Living room',
+        meterStatus: 'absent',
+        lastVerifiedAt: 100,
+        connectedAppliance: api.appliance,
+      );
+      final credentials = FakeCredentials()
+        ..address = 'https://192.168.1.20:8787'
+        ..token = 'test-token';
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(api: api, credentials: credentials),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Smart plug · Saved'),
+        220,
+        scrollable: find.byType(Scrollable).first,
+      );
+
+      expect(find.text('Identify connected appliance'), findsOneWidget);
+      expect(find.text('Change connected appliance'), findsNothing);
+      expect(find.text('Living room fan'), findsNothing);
+      expect(find.text('fan'), findsNothing);
+      expect(find.textContaining('Estimate unavailable'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
+  testWidgets('shows saved make and model after restart without an estimate', (
+    tester,
+  ) async {
+    final api = _FixtureApplianceApi(manufacturer: 'Dyson', model: 'AM07');
+    api.plug = SavedPlug(
+      id: 'plug-1',
+      ip: '192.168.1.42',
+      model: 'HS103',
+      name: 'Living room plug',
+      room: 'Living room',
+      meterStatus: 'absent',
+      lastVerifiedAt: 100,
+      connectedAppliance: api.appliance,
+    );
+    final credentials = FakeCredentials()
+      ..address = 'https://192.168.1.20:8787'
+      ..token = 'test-token';
+
+    Future<void> showScreen() async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(api: api, credentials: credentials),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Smart plug · Saved'),
+        220,
+        scrollable: find.byType(Scrollable).first,
+      );
+    }
+
+    await showScreen();
+    expect(api.estimateCalls, 1);
+    expect(find.text('Dyson AM07'), findsOneWidget);
+    final attachedSection = find
+        .ancestor(of: find.text('Dyson AM07'), matching: find.byType(Column))
+        .first;
+    expect(
+      tester.widget<Text>(
+        find.descendant(of: attachedSection, matching: find.byType(Text)).first,
+      ).data,
+      'Dyson AM07',
+    );
+    expect(find.text('Living room fan'), findsOneWidget);
+    expect(find.textContaining('Estimate unavailable'), findsOneWidget);
+    expect(find.text('Change connected appliance'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await showScreen();
+    expect(find.text('Dyson AM07'), findsOneWidget);
+    expect(find.text('Connected appliance or lamp'), findsNothing);
   });
 
   testWidgets('retains paired hub and retry when offline on restart', (

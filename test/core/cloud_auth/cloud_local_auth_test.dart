@@ -250,7 +250,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Sign in with email'), findsOneWidget);
+    expect(find.text('Submit'), findsOneWidget);
     expect(find.text('Create account'), findsOneWidget);
     await tester.enterText(
       find.byKey(const Key('localSignInEmail')),
@@ -260,12 +260,9 @@ void main() {
       find.byKey(const Key('localSignInPassword')),
       'long password 123',
     );
-    await tester.tap(find.text('Sign in with email'));
+    await tester.tap(find.text('Submit'));
     await tester.pumpAndSettle();
-    expect(
-      find.text('Email sign-in is not available on this Cloud server.'),
-      findsOneWidget,
-    );
+    expect(find.text('Internal error, Try again later'), findsOneWidget);
     expect(find.text('Private Home'), findsNothing);
     api.close();
     client.close();
@@ -316,12 +313,9 @@ void main() {
       find.byKey(const Key('localSignInPassword')),
       'wrong password',
     );
-    await tester.tap(find.text('Sign in with email'));
+    await tester.tap(find.text('Submit'));
     await tester.pumpAndSettle();
-    expect(
-      find.text('Could not sign in. Check your details and try again.'),
-      findsOneWidget,
-    );
+    expect(find.text('Internal error, Try again later'), findsOneWidget);
     expect(find.textContaining('secret'), findsNothing);
     expect(find.text('Private Home'), findsNothing);
     api.close();

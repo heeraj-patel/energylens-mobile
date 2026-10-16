@@ -112,7 +112,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.text('Submit'), findsOneWidget);
     expect(find.text('Create account'), findsNothing);
     expect(store.saves, 0);
     api.close();

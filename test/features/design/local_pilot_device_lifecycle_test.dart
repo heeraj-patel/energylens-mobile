@@ -48,6 +48,14 @@ class _Api extends DiscoveryApi {
   Completer<SavedAppliance>? heldPost;
   List<NearbySavedDevice> protocolDevices = const [];
   bool failProtocolList = false;
+  List<SavedPlug> plugs = const [];
+  bool failSavedPlugs = false;
+
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async {
+    if (failSavedPlugs) throw StateError('legacy devices offline');
+    return plugs;
+  }
 
   @override
   Future<bool> supportsNearbyDiscovery(String baseUrl, String token) async =>
@@ -135,6 +143,48 @@ void main() {
       (await lifecycle.inventory())!.protocolDevices.single.id,
       'protocol-1',
     );
+  });
+
+  test(
+    'saved plugs are included and retained when their endpoint is offline',
+    () async {
+      await connect();
+      api.plugs = [
+        const SavedPlug(
+          id: 'plug-1',
+          ip: '192.0.2.1',
+          model: 'KS8',
+          name: 'Kitchen Mixer Plug',
+          room: 'Kitchen',
+          meterStatus: 'available',
+          lastVerifiedAt: 0,
+        ),
+      ];
+      expect((await lifecycle.inventory())!.savedPlugs.single.id, 'plug-1');
+      api.plugs = const [];
+      api.failSavedPlugs = true;
+      expect((await lifecycle.inventory())!.savedPlugs.single.id, 'plug-1');
+    },
+  );
+
+  test('saved plug cache is scoped to the active credential', () async {
+    await connect();
+    api.plugs = [
+      const SavedPlug(
+        id: 'plug-1',
+        ip: '192.0.2.1',
+        model: 'KS8',
+        name: 'Kitchen Mixer Plug',
+        room: 'Kitchen',
+        meterStatus: 'available',
+        lastVerifiedAt: 0,
+      ),
+    ];
+    expect((await lifecycle.inventory())!.savedPlugs.single.id, 'plug-1');
+
+    await credentials.save('https://127.0.0.1:18788', 'other-token');
+    api.plugs = const [];
+    expect((await lifecycle.inventory())!.savedPlugs, isEmpty);
   });
 
   test(

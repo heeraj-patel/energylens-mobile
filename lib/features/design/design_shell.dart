@@ -39,6 +39,7 @@ import 'knowledge_domain_repository.dart';
 import 'tips_domain_repository.dart';
 import 'tips_page_renderer.dart';
 import 'settings_saved_devices_renderer.dart';
+import 'cloud_saved_plug_inventory.dart';
 import 'settings_identity_renderer.dart';
 import 'settings_domain_repository.dart';
 import 'local_pilot_device_lifecycle.dart';
@@ -124,6 +125,7 @@ class _DesignShellState extends State<DesignShell> {
   late final DesignPageReadDispatcher _pageReads;
   static const _liveDevicesRenderer = LiveDevicesCardRenderer();
   static const _settingsSavedRenderer = SettingsSavedDevicesRenderer();
+  static const _cloudSavedPlugInventory = CloudSavedPlugInventory();
   static const _localSettingsRenderer = LocalSettingsDevicesRenderer();
   static const _settingsIdentityRenderer = SettingsIdentityRenderer();
   static const _tipsRenderer = TipsPageRenderer();
@@ -152,6 +154,8 @@ class _DesignShellState extends State<DesignShell> {
   bool _pageReady = false;
   LiveDevicesProjection? _devicesProjection;
   List<CloudAppliance>? _savedAppliances;
+  List<CloudSavedPlug> _savedPlugs = const [];
+  String? _savedInventoryScope;
   LocalInventory? _localInventory;
   String? _renderedLocalIdentity;
   final Set<int> _deletingLocalIds = <int>{};
@@ -555,10 +559,43 @@ class _DesignShellState extends State<DesignShell> {
         return;
       }
       _savedAppliances = rows;
+      _savedPlugs = const [];
+      _savedInventoryScope = _cloudSavedScope(
+        context.accountId,
+        context.homeId,
+      );
       await _applySavedAppliances(page, generation);
+      final cloud = widget.settingsApi;
+      if (cloud == null) return;
+      try {
+        final plugs = await _cloudSavedPlugInventory.read(
+          cloud: cloud,
+          accountId: context.accountId,
+          homeId: context.homeId,
+          isCurrent: () =>
+              _isCurrentPageLoad(page, generation) &&
+              identical(widget.designContextCoordinator?.context, context) &&
+              lifecycle.isVerifiedScope(context.accountId, context.homeId),
+        );
+        if (_isCurrentPageLoad(page, generation) &&
+            identical(widget.designContextCoordinator?.context, context) &&
+            _savedInventoryScope ==
+                _cloudSavedScope(context.accountId, context.homeId)) {
+          _savedPlugs = plugs;
+          await _applySavedAppliances(page, generation);
+        }
+      } catch (_) {
+        // Cloud appliances remain visible if the owned Hub is unavailable.
+      }
     } catch (_) {
       // A failed inventory read never creates a saved row from a draft.
     }
+  }
+
+  String? _cloudSavedScope(String accountId, String homeId) {
+    final session = widget.settingsApi?.session;
+    if (session == null) return null;
+    return '${session.config.apiUrl}|${session.credentialMethod}|$accountId|$homeId|${session.generation}';
   }
 
   Future<void> _refreshLocalInventory(String page, int generation) async {
@@ -616,6 +653,7 @@ class _DesignShellState extends State<DesignShell> {
           generation: generation,
           appliances: inventory.rows,
           protocolDevices: inventory.protocolDevices,
+          savedPlugs: inventory.savedPlugs,
         ),
       );
     } catch (_) {
@@ -1124,6 +1162,8 @@ class _DesignShellState extends State<DesignShell> {
         rows == null ||
         context == null ||
         context.mode != DesignContextMode.household ||
+        _savedInventoryScope !=
+            _cloudSavedScope(context.accountId, context.homeId) ||
         lifecycle?.isVerifiedScope(context.accountId, context.homeId) != true) {
       return;
     }
@@ -1133,6 +1173,7 @@ class _DesignShellState extends State<DesignShell> {
           homeId: context.homeId,
           generation: generation,
           appliances: rows,
+          savedPlugs: _savedPlugs,
         ),
       );
     } catch (_) {

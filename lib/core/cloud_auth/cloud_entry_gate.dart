@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
+import 'package:http/http.dart' as http;
 
 import '../cloud_api/cloud_api_client.dart';
 import '../cloud_api/cloud_home.dart';
@@ -13,6 +14,26 @@ import 'cloud_registration_screen.dart';
 import 'cloud_local_auth.dart';
 import 'cloud_recovery_screen.dart';
 import '../../features/identify/onboarding_draft_store.dart';
+
+class _UnavailableCloudTokenStore implements CloudTokenStore {
+  @override
+  Future<CloudTokens?> read() async => null;
+
+  @override
+  Future<void> save(CloudTokens value) async {}
+
+  @override
+  Future<void> clear() async {}
+}
+
+bool _isClientConfigUsable(CloudAuthConfig config) {
+  final pin = config.devCertificateSha256;
+  return config.hasCloudSignIn &&
+      config.hasValidApiUrl &&
+      (pin.isEmpty ||
+          (config.isDevAuthConfigured &&
+              RegExp(r'^[0-9a-f]{64}$').hasMatch(pin)));
+}
 
 class CloudEntryGate extends StatefulWidget {
   const CloudEntryGate({
@@ -92,8 +113,12 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   bool _allowRememberedRestore = true;
   bool _capabilitiesReady = false;
   CloudAuthCapabilities? _capabilities;
+  bool _submitAttempted = false;
+  bool _submitError = false;
   String? _verifiedAccountId;
   int _lifecycleEpoch = 0;
+
+  bool get _clientConfigUsable => _isClientConfigUsable(_session.config);
 
   void _invalidateDesignContext() {
     _lifecycleEpoch++;
@@ -111,8 +136,11 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   @override
   void initState() {
     super.initState();
+    _localEmail.addListener(_clearSubmitErrorOnEdit);
+    _localPassword.addListener(_clearSubmitErrorOnEdit);
     final config = CloudAuthConfig.fromEnvironment();
-    if (widget.session == null && config.isLocalAuthConfigured) {
+    final usable = _isClientConfigUsable(config);
+    if (widget.session == null && usable && config.isLocalAuthConfigured) {
       _ownedLocalAuth = CloudLocalAuthClient(
         baseUrl: config.apiUrl,
         config: config,
@@ -122,14 +150,21 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         widget.session ??
         CloudSession(
           config: config,
-          store: SecureCloudTokenStore(
-            origin: config.apiUrl,
-            profile: 'email_password',
-          ),
+          store: usable
+              ? SecureCloudTokenStore(
+                  origin: config.apiUrl,
+                  profile: 'email_password',
+                )
+              : _UnavailableCloudTokenStore(),
           authenticator: const AppAuthCloudAuthenticator(),
           localAuth: _ownedLocalAuth,
         );
-    _api = widget.api ?? CloudApiClient(session: _session);
+    _api =
+        widget.api ??
+        CloudApiClient(
+          session: _session,
+          client: _clientConfigUsable ? null : http.Client(),
+        );
     _homeCreateDrafts = DurableHomeCreateDrafts(
       widget.homeCreateStorage ??
           const SecureOnboardingDraftStorage.homeCreate(),
@@ -158,34 +193,41 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     super.dispose();
   }
 
+  void _clearSubmitErrorOnEdit() {
+    if (_submitError && mounted) setState(() => _submitError = false);
+  }
+
+  Future<void> _loadCapabilities(int epoch) async {
+    final capabilities = await _api.authCapabilities();
+    if (!mounted || epoch != _lifecycleEpoch) return;
+    final method =
+        capabilities?.method ??
+        (_session.config.isLocalAuthConfigured ? 'email_password' : 'oidc');
+    await _session.selectCredentialMethod(method);
+    if (!mounted || epoch != _lifecycleEpoch) return;
+    if (_session.localAuth is CloudLocalAuthClient) {
+      (_session.localAuth! as CloudLocalAuthClient).credentialMethod = method;
+    }
+    if (!mounted) return;
+    setState(() {
+      _capabilities = capabilities;
+      _capabilitiesReady = true;
+    });
+  }
+
   Future<void> _restore() async {
     final epoch = _lifecycleEpoch;
-    if (!_session.config.hasCloudSignIn) {
+    if (!_clientConfigUsable) {
       if (mounted) setState(() => _busy = false);
       return;
     }
     try {
-      final capabilities = await _api.authCapabilities();
+      await _loadCapabilities(epoch);
       if (!mounted || epoch != _lifecycleEpoch) return;
-      final method =
-          capabilities?.method ??
-          (_session.config.isLocalAuthConfigured ? 'email_password' : 'oidc');
-      await _session.selectCredentialMethod(method);
-      if (!mounted || epoch != _lifecycleEpoch) return;
-      if (_session.localAuth is CloudLocalAuthClient) {
-        (_session.localAuth! as CloudLocalAuthClient).credentialMethod = method;
-      }
-      if (!mounted) return;
-      setState(() {
-        _capabilities = capabilities;
-        _capabilitiesReady = true;
-      });
       final token = await _session.accessToken();
       if (token != null) await _validate();
     } catch (_) {
-      if (mounted && epoch == _lifecycleEpoch) {
-        setState(() => _message = 'Could not load sign-in options. Try again.');
-      }
+      // Startup discovery is retried on Submit; keep the form usable.
     } finally {
       if (mounted && epoch == _lifecycleEpoch) setState(() => _busy = false);
     }
@@ -209,9 +251,14 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         if (mounted) {
           setState(() {
             _authenticated = false;
-            _message = usernameMode
-                ? 'Check your username and password.'
-                : 'Verify your email address before continuing.';
+            if (_submitAttempted) {
+              _submitError = true;
+              _message = null;
+            } else {
+              _message = usernameMode
+                  ? 'Check your username and password.'
+                  : 'Verify your email address before continuing.';
+            }
           });
         }
         return;
@@ -233,6 +280,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
           _authenticated = true;
           _historyAccepted = preferences.value.historyAccepted;
           _message = null;
+          _submitError = false;
+          _submitAttempted = false;
         });
       }
       if (preferences.value.historyAccepted) await _loadHomes();
@@ -245,9 +294,10 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       if (mounted) {
         setState(() {
           _authenticated = false;
-          _message = error.statusCode == 404
-              ? 'Cloud account service is not available yet.'
-              : 'Could not verify the cloud account (${error.code}).';
+          if (_submitAttempted) {
+            _submitError = true;
+            _message = null;
+          }
         });
       }
     } catch (_) {
@@ -256,7 +306,10 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       if (mounted) {
         setState(() {
           _authenticated = false;
-          _message = 'Could not reach the cloud account service.';
+          if (_submitAttempted) {
+            _submitError = true;
+            _message = null;
+          }
         });
       }
     }
@@ -339,8 +392,9 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     final epoch = _lifecycleEpoch;
     try {
       final home = await _homeCreateDrafts.stageAndCommit(input, key);
-      if (home == null)
+      if (home == null) {
         throw StateError('Cloud account changed during home creation');
+      }
       if (!mounted || epoch != _lifecycleEpoch || _verifiedAccountId == null) {
         throw StateError('Cloud account changed during home creation');
       }
@@ -401,6 +455,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     setState(() {
       _busy = true;
       _message = null;
+      _submitError = false;
     });
     try {
       final login = _session.signIn();
@@ -408,24 +463,21 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       await login;
       if (!mounted ||
           epoch != _lifecycleEpoch ||
-          sessionGeneration != _session.generation)
+          sessionGeneration != _session.generation) {
         return;
+      }
       await _validate();
     } on FlutterAppAuthUserCancelledException {
       if (mounted && epoch == _lifecycleEpoch) {
-        setState(() => _message = 'Sign-in cancelled. Tap Sign in when ready.');
+        setState(() => _message = null);
       }
     } on FlutterAppAuthPlatformException {
       if (mounted && epoch == _lifecycleEpoch) {
-        setState(
-          () => _message = 'Could not start secure sign-in. Check your connection or app configuration.',
-        );
+        setState(() => _submitError = true);
       }
     } catch (_) {
       if (mounted && epoch == _lifecycleEpoch) {
-        setState(
-          () => _message = 'Could not complete Cloud sign-in. Try again or ask for help with app configuration.',
-        );
+        setState(() => _submitError = true);
       }
     } finally {
       if (mounted && epoch == _lifecycleEpoch) setState(() => _busy = false);
@@ -436,17 +488,14 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     final email = _localEmail.text.trim();
     final password = _localPassword.text;
     if (email.isEmpty || password.isEmpty) {
-      setState(
-        () => _message = _session.credentialMethod == 'username_password'
-            ? 'Check your username and password.'
-            : 'Enter your email and password.',
-      );
+      setState(() => _submitError = true);
       return;
     }
     setState(() {
       _invalidateDesignContext();
       _busy = true;
       _message = null;
+      _submitError = false;
     });
     final epoch = _lifecycleEpoch;
     try {
@@ -455,35 +504,61 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       await login;
       if (!mounted ||
           epoch != _lifecycleEpoch ||
-          sessionGeneration != _session.generation)
+          sessionGeneration != _session.generation) {
         return;
+      }
       await _validate();
-    } on CloudLocalAuthException catch (error) {
+    } on CloudLocalAuthException {
       if (mounted && epoch == _lifecycleEpoch) {
-        setState(
-          () => _message = switch (error.statusCode) {
-            404 =>
-              _session.credentialMethod == 'username_password'
-                  ? 'Could not load sign-in options. Try again.'
-                  : 'Email sign-in is not available on this Cloud server.',
-            401 => 'Could not sign in. Check your details and try again.',
-            _ =>
-              _session.credentialMethod == 'username_password'
-                  ? 'Could not sign in. Check your details and try again.'
-                  : 'Email sign-in is temporarily unavailable. Try again later.',
-          },
-        );
+        setState(() => _submitError = true);
       }
     } catch (_) {
       if (mounted && epoch == _lifecycleEpoch) {
-        setState(
-          () =>
-              _message = 'Could not sign in. Check your details and try again.',
-        );
+        setState(() => _submitError = true);
       }
     } finally {
+      final failed = _submitError;
       if (_localPassword.text == password) _localPassword.clear();
+      if (failed) _submitError = true;
       if (mounted && epoch == _lifecycleEpoch) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _submit() async {
+    if (_busy) return;
+    _submitAttempted = true;
+    setState(() {
+      _submitError = false;
+      _message = null;
+    });
+    if (!_clientConfigUsable) {
+      setState(() => _submitError = true);
+      return;
+    }
+    if (!_capabilitiesReady) {
+      final epoch = _lifecycleEpoch;
+      setState(() => _busy = true);
+      try {
+        await _loadCapabilities(epoch);
+      } catch (_) {
+        if (mounted && epoch == _lifecycleEpoch) {
+          setState(() => _submitError = true);
+        }
+        return;
+      } finally {
+        if (mounted && epoch == _lifecycleEpoch) {
+          setState(() => _busy = false);
+        }
+      }
+      if (!mounted || epoch != _lifecycleEpoch) return;
+    }
+    if (_session.credentialMethod == 'oidc') {
+      await _signIn();
+    } else if (_session.config.isLocalAuthConfigured &&
+        _session.localAuth != null) {
+      await _signInLocal();
+    } else {
+      setState(() => _submitError = true);
     }
   }
 
@@ -517,13 +592,6 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
 
   @override
   Widget build(BuildContext context) {
-    if (_session.config.allowLocalPreview) {
-      return Banner(
-        message: 'LOCAL PREVIEW',
-        location: BannerLocation.topEnd,
-        child: widget.homeBuilder(null, null, null, _api),
-      );
-    }
     if (_authenticated) {
       if (!_historyAccepted) {
         return CloudPreferencesScreen(
@@ -585,133 +653,132 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     }
     return Scaffold(
       body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Padding(
-              padding: const EdgeInsets.all(28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.bolt, size: 48),
-                  const SizedBox(height: 16),
-                  Text(
-                    'EnergyLens',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _session.config.hasCloudSignIn
-                        ? 'Sign in to your account to continue.'
-                        : _session.config.hasPlaceholderEndpoint
-                        ? 'This build uses placeholder Cloud settings. Install a Release build configured with a real OIDC issuer, public client ID, and Cloud API URL.'
-                        : 'Cloud sign-in is not configured for this build.',
-                    textAlign: TextAlign.center,
-                  ),
-                  if (_message != null) ...[
-                    const SizedBox(height: 12),
-                    Text(_message!, textAlign: TextAlign.center),
-                  ],
-                  const SizedBox(height: 20),
-                  if (_busy)
-                    const CircularProgressIndicator()
-                  else if (_capabilitiesReady &&
-                      _session.credentialMethod == 'oidc' &&
-                      _session.config.isConfigured)
-                    FilledButton(
-                      onPressed: _signIn,
-                      child: const Text('Sign in'),
-                    ),
-                  if (!_busy &&
-                      _capabilitiesReady &&
-                      _session.config.isLocalAuthConfigured &&
-                      _session.localAuth != null &&
-                      _session.credentialMethod != 'oidc') ...[
-                    const SizedBox(height: 8),
-                    TextField(
-                      key: const Key('localSignInEmail'),
-                      controller: _localEmail,
-                      keyboardType:
-                          _session.credentialMethod == 'username_password'
-                          ? TextInputType.text
-                          : TextInputType.emailAddress,
-                      autofillHints:
-                          _session.credentialMethod == 'username_password'
-                          ? const [AutofillHints.username]
-                          : const [AutofillHints.email],
-                      decoration: InputDecoration(
-                        labelText:
-                            _session.credentialMethod == 'username_password'
-                            ? 'Username'
-                            : 'Email',
-                      ),
-                    ),
-                    TextField(
-                      key: const Key('localSignInPassword'),
-                      controller: _localPassword,
-                      obscureText: true,
-                      autofillHints: const [AutofillHints.password],
-                      decoration: const InputDecoration(labelText: 'Password'),
-                    ),
-                    const SizedBox(height: 8),
-                    FilledButton(
-                      onPressed: _signInLocal,
-                      child: Text(
-                        _session.credentialMethod == 'username_password'
-                            ? 'Sign in with username'
-                            : 'Sign in with email',
-                      ),
-                    ),
-                    if (!_session.config.isDevAuthConfigured &&
-                        _session.credentialMethod == 'email_password' &&
-                        (_capabilities?.passwordRecoveryEnabled ?? true))
-                      TextButton(
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => CloudRecoveryScreen(
-                              service: _session.localAuth!,
-                              linkOrigin: _session.config.localAuthLinkOrigin,
-                            ),
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Padding(
+                    padding: const EdgeInsets.all(28),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.bolt, size: 48),
+                        const SizedBox(height: 16),
+                        Text(
+                          'EnergyLens',
+                          style: Theme.of(context).textTheme.headlineMedium,
+                        ),
+                        const SizedBox(height: 20),
+                        TextField(
+                          key: const Key('localSignInEmail'),
+                          controller: _localEmail,
+                          keyboardType:
+                              _session.credentialMethod == 'email_password'
+                              ? TextInputType.emailAddress
+                              : TextInputType.text,
+                          autofillHints: const [AutofillHints.username],
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'Username',
                           ),
                         ),
-                        child: const Text('Forgot password?'),
-                      ),
-                  ],
-                  if (!_busy &&
-                      _capabilitiesReady &&
-                      (_capabilities?.registrationEnabled ?? true) &&
-                      (widget.registrationService != null ||
-                          (!_session.config.isDevAuthConfigured &&
-                              _session.config.isLocalAuthConfigured &&
-                              _session.localAuth != null))) ...[
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: () {
-                        final epoch = _lifecycleEpoch;
-                        final sessionGeneration = _session.generation;
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => CloudRegistrationScreen(
-                              service:
-                                  widget.registrationService ??
-                                  _session.localAuth!,
-                              linkOrigin: _session.config.localAuthLinkOrigin,
-                              usernameMode:
-                                  _session.credentialMethod ==
-                                  'username_password',
-                              onUsernameRegistered: _registerAndSignIn,
-                              isCurrent: () =>
-                                  mounted &&
-                                  epoch == _lifecycleEpoch &&
-                                  sessionGeneration == _session.generation,
+                        TextField(
+                          key: const Key('localSignInPassword'),
+                          controller: _localPassword,
+                          obscureText: true,
+                          autofillHints: const [AutofillHints.password],
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => _submit(),
+                          decoration: const InputDecoration(
+                            labelText: 'Password',
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        FilledButton(
+                          onPressed: _busy ? null : _submit,
+                          child: const Text('Submit'),
+                        ),
+                        if (_submitError) ...[
+                          const SizedBox(height: 8),
+                          Semantics(
+                            liveRegion: true,
+                            child: Text(
+                              'Internal error, Try again later',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
                             ),
                           ),
-                        );
-                      },
-                      child: const Text('Create account'),
+                        ] else if (_message != null) ...[
+                          const SizedBox(height: 8),
+                          Text(_message!, textAlign: TextAlign.center),
+                        ],
+                        if (!_busy &&
+                            _capabilitiesReady &&
+                            _session.config.isLocalAuthConfigured &&
+                            _session.localAuth != null &&
+                            _session.credentialMethod != 'oidc') ...[
+                          if (!_session.config.isDevAuthConfigured &&
+                              _session.credentialMethod == 'email_password' &&
+                              (_capabilities?.passwordRecoveryEnabled ?? true))
+                            TextButton(
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => CloudRecoveryScreen(
+                                    service: _session.localAuth!,
+                                    linkOrigin:
+                                        _session.config.localAuthLinkOrigin,
+                                  ),
+                                ),
+                              ),
+                              child: const Text('Forgot password?'),
+                            ),
+                        ],
+                        if (!_busy &&
+                            _capabilitiesReady &&
+                            (_capabilities?.registrationEnabled ?? true) &&
+                            (widget.registrationService != null ||
+                                (!_session.config.isDevAuthConfigured &&
+                                    _session.config.isLocalAuthConfigured &&
+                                    _session.localAuth != null))) ...[
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () {
+                              final epoch = _lifecycleEpoch;
+                              final sessionGeneration = _session.generation;
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => CloudRegistrationScreen(
+                                    service:
+                                        widget.registrationService ??
+                                        _session.localAuth!,
+                                    linkOrigin:
+                                        _session.config.localAuthLinkOrigin,
+                                    usernameMode:
+                                        _session.credentialMethod ==
+                                        'username_password',
+                                    onUsernameRegistered: _registerAndSignIn,
+                                    isCurrent: () =>
+                                        mounted &&
+                                        epoch == _lifecycleEpoch &&
+                                        sessionGeneration ==
+                                            _session.generation,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: const Text('Create account'),
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
-                ],
+                  ),
+                ),
               ),
             ),
           ),

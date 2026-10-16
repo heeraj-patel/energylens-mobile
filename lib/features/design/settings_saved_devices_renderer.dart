@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../../core/cloud_api/cloud_appliance.dart';
+import 'cloud_saved_plug_inventory.dart';
 
 /// Adds verified-home inventory to the three Settings device-entry assets.
 /// The packaged rows stay intact; appended rows make no telemetry claim.
@@ -27,6 +28,7 @@ class SettingsSavedDevicesRenderer {
     required String homeId,
     required int generation,
     required List<CloudAppliance> appliances,
+    List<CloudSavedPlug> savedPlugs = const [],
   }) {
     final ids = <String>{};
     final rows = <Map<String, Object?>>[];
@@ -51,6 +53,23 @@ class SettingsSavedDevicesRenderer {
         'persisted': appliance.demoDeviceId == null,
       });
     }
+    final plugIds = <String>{};
+    for (final plug in savedPlugs) {
+      if (plug.id.isEmpty || plug.name.trim().isEmpty) {
+        throw const FormatException('Invalid Settings plug identity');
+      }
+      if (!plugIds.add(plug.id)) continue;
+      rows.add({
+        'id': plug.id,
+        'name': plug.name,
+        'brand': '',
+        'model': plug.model,
+        'fuel': '',
+        'variant': '',
+        'persisted': false,
+        'plug': true,
+      });
+    }
     final payload = _encode({
       'homeId': homeId,
       'generation': generation,
@@ -68,10 +87,11 @@ class SettingsSavedDevicesRenderer {
     if (typeof row.id !== 'string' || typeof row.name !== 'string' ||
         typeof row.brand !== 'string' || typeof row.model !== 'string' ||
         typeof row.fuel !== 'string' || typeof row.variant !== 'string' ||
-        typeof row.persisted !== 'boolean') return false;
+        typeof row.persisted !== 'boolean' ||
+        (row.plug !== undefined && typeof row.plug !== 'boolean')) return false;
     const card = document.createElement('div');
     card.className = 'p-3 rounded-lg bg-surface-container-low/50 border border-outline-variant/20 flex items-center gap-3';
-    card.setAttribute('data-el-saved-appliance-id', row.id);
+    card.setAttribute(row.plug ? 'data-el-saved-plug-id' : 'data-el-saved-appliance-id', row.id);
     const iconBox = document.createElement('div');
     iconBox.className = 'w-9 h-9 rounded-lg bg-secondary-container/40 flex items-center justify-center text-secondary shrink-0';
     const icon = document.createElement('span');
@@ -103,6 +123,7 @@ class SettingsSavedDevicesRenderer {
     cards.push(card);
   }
   for (const card of list.querySelectorAll('[data-el-saved-appliance-id]')) card.remove();
+  for (const card of list.querySelectorAll('[data-el-saved-plug-id]')) card.remove();
   for (const card of cards) list.appendChild(card);
   const count = document.getElementById('configured-count');
   if (count) count.textContent = String(list.children.length);
@@ -111,7 +132,7 @@ class SettingsSavedDevicesRenderer {
   for (const candidate of document.querySelectorAll('[data-el-discovered-candidate]')) {
     if (!['data-el-brand', 'data-el-model', 'data-el-fuel', 'data-el-variant']
         .every(field => candidate.hasAttribute(field))) continue;
-    if (payload.rows.some(row =>
+    if (payload.rows.some(row => !row.plug &&
         candidate.getAttribute('data-el-brand') === row.brand &&
         candidate.getAttribute('data-el-model') === row.model &&
         candidate.getAttribute('data-el-fuel') === row.fuel &&
