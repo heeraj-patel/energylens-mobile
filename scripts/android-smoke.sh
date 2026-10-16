@@ -16,8 +16,9 @@ Usage:
   scripts/android-smoke.sh --serial SERIAL --out DIR
 
 Runs against a device that already has the app installed. Launches the app,
-checks it stays alive in portrait and landscape and after a cold restart, and
-writes launch-portrait.png, launch-landscape.png, launch-time.txt, logcat.txt
+checks it stays alive in both orientations and after a cold restart, and
+writes launch-portrait.png, launch-landscape.png (named by real
+orientation), launch-time.txt, logcat.txt
 and device.txt to DIR. Exits 1 when a check fails or logcat shows a
 FATAL EXCEPTION, an ANR in io.energylens, or a Flutter EXCEPTION CAUGHT BY block.
 EOF_USAGE
@@ -57,19 +58,33 @@ cold_launch() {
   adb -s "$serial" shell am start -W -n "$app_activity" | tr -d '\r' | awk '/^TotalTime:/ { print $2 }'
 }
 
+# Captures the screen and names it launch-portrait.png or launch-landscape.png
+# by its real size, since natural orientation differs between phones and tablets.
+snap() {
+  local tmp="$out_dir/.screen.png" w h
+  adb -s "$serial" exec-out screencap -p >"$tmp"
+  read -r w h < <(od -An -tu1 -j16 -N8 "$tmp" | awk '{ print $3 * 256 + $4, $7 * 256 + $8 }')
+  if ((w > h)); then mv "$tmp" "$out_dir/launch-landscape.png"; echo landscape
+  else mv "$tmp" "$out_dir/launch-portrait.png"; echo portrait; fi
+}
+
+auto_rotate="$(adb -s "$serial" shell settings get system accelerometer_rotation | tr -d '\r')"
+adb -s "$serial" shell settings put system accelerometer_rotation 0
+adb -s "$serial" shell settings put system user_rotation 0
 adb -s "$serial" logcat -c
 total_time="$(cold_launch)"
 echo "TotalTime: ${total_time:-unknown} ms" | tee "$out_dir/launch-time.txt"
 sleep "$launch_wait"
 check_alive 'after launch'
-adb -s "$serial" exec-out screencap -p >"$out_dir/launch-portrait.png"
+first="$(snap)"
 
-adb -s "$serial" shell settings put system accelerometer_rotation 0
 adb -s "$serial" shell settings put system user_rotation 1
 sleep "$rotate_wait"
-check_alive 'in landscape'
-adb -s "$serial" exec-out screencap -p >"$out_dir/launch-landscape.png"
+check_alive 'after rotation'
+second="$(snap)"
+[[ "$first" != "$second" ]] || failures+=("rotation did not change orientation (both $first)")
 adb -s "$serial" shell settings put system user_rotation 0
+[[ "$auto_rotate" != 1 ]] || adb -s "$serial" shell settings put system accelerometer_rotation 1
 
 cold_launch >/dev/null
 sleep "$rotate_wait"
