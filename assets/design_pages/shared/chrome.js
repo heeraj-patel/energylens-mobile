@@ -48,4 +48,16 @@
   };
 
   window.EnergyLensChrome = Object.freeze({ mount });
+
+  // Moves the selected look to the clicked category pill within its own group.
+  window.selectTypePill = (pill) => {
+    const group = pill.closest('[role="group"]') || pill.parentElement;
+    const on = ['bg-primary-container', 'text-on-primary-container', 'font-semibold'];
+    const off = ['bg-surface-container-low', 'text-on-surface-variant', 'hover:text-on-surface'];
+    group.querySelectorAll('.type-pill').forEach((item) => {
+      const selected = item === pill;
+      item.classList.remove(...(selected ? off : on));
+      item.classList.add(...(selected ? on : off));
+    });
+  };
 })();
