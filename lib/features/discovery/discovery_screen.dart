@@ -89,7 +89,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   bool _cloudHubOwned = false;
 
   static const _hubAccessMessage =
-      'This phone doesn’t have permission to use your hub yet.';
+      'This device doesn’t have permission to use your hub yet.';
 
   void _debugLog(String message) {
     if (kDebugMode) debugPrint('[hub] $message');
@@ -1778,6 +1778,18 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               icon: const Icon(Icons.radar),
               label: const Text('Scan for plugs'),
             ),
+            if (_error == _hubAccessMessage ||
+                (_error == null &&
+                    _restoreDone &&
+                    _cloudHubOwned &&
+                    !_canUseHubCustomerApi)) ...[
+              const SizedBox(height: 8),
+              Text(
+                _hubAccessMessage,
+                key: const Key('hubAccessMessage'),
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+            ],
             ..._detectedResults(theme),
             const SizedBox(height: 14),
             TextButton.icon(
@@ -1852,18 +1864,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 ),
               ),
             ],
-            if (_error != null) ...[
+            if (_error != null && _error != _hubAccessMessage) ...[
               const SizedBox(height: 16),
               Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
-            ] else if (_restoreDone &&
-                _cloudHubOwned &&
-                !_canUseHubCustomerApi) ...[
-              const SizedBox(height: 16),
-              Text(
-                _hubAccessMessage,
-                key: const Key('hubAccessMessage'),
-                style: TextStyle(color: theme.colorScheme.error),
-              ),
             ],
             const SizedBox(height: 24),
             Row(
