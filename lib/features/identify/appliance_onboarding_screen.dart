@@ -126,6 +126,8 @@ class ApplianceOnboardingScreen extends StatefulWidget {
     this.plugId,
     this.api = const DiscoveryApi(),
     this.credentials = const DiscoveryCredentials(),
+    this.hubAddress,
+    this.hubToken,
     this.capture = const PhotoCaptureService(),
     this.cloudHome,
     this.cloudApi,
@@ -136,6 +138,8 @@ class ApplianceOnboardingScreen extends StatefulWidget {
   final String? plugId;
   final DiscoveryApi api;
   final DiscoveryCredentials credentials;
+  final String? hubAddress;
+  final String? hubToken;
   final PhotoCaptureService capture;
   final CloudHome? cloudHome;
   final CloudApiClient? cloudApi;
@@ -238,11 +242,23 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     if (_canSelectSavedPlug) unawaited(_loadSavedPlugs());
   }
 
+  Future<(String?, String?)> _readHub() async {
+    final address = widget.hubAddress;
+    final token = widget.hubToken;
+    if (address != null &&
+        address.isNotEmpty &&
+        token != null &&
+        token.isNotEmpty) {
+      return (address, token);
+    }
+    return widget.credentials.read();
+  }
+
   Future<void> _loadSavedPlugs() async {
     if (_savedPlugsLoading) return;
     setState(() => _savedPlugsLoading = true);
     try {
-      final (address, token) = await widget.credentials.read();
+      final (address, token) = await _readHub();
       if (address == null || token == null) {
         if (mounted) setState(() => _savedPlugs = const []);
         return;
@@ -291,7 +307,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
 
   Future<void> _restore() async {
     try {
-      final (address, token) = await widget.credentials.read();
+      final (address, token) = await _readHub();
       if (!mounted) return;
       if (address != null) _hub.text = address;
       if (token != null) _token.text = token;

@@ -452,7 +452,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           } catch (error) {
             _debugLog('auto-pair failed: ${_describeHubError(error)}');
             if (!current()) return null;
-            if (error is HubRequestException && error.statusCode == 403) {
+            if ((error is HubRequestException && error.statusCode == 403) ||
+                (error is PairingException && error.statusCode == 403)) {
               _hubRefusedAccess = true;
             }
             // One unreachable owned Hub must not prevent another from
@@ -1072,6 +1073,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             method: choice,
             cloudHome: home,
             cloudApi: cloud,
+            api: _hubApi,
+            credentials: widget.credentials,
+            hubAddress: _hub.text.trim(),
+            hubToken: _token.text.trim(),
           ),
         ),
       );

@@ -73,8 +73,9 @@ class PairingClaim {
 }
 
 class PairingException implements Exception {
-  const PairingException(this.message);
+  const PairingException(this.message, {this.statusCode});
   final String message;
+  final int? statusCode;
 
   @override
   String toString() => message;
@@ -1371,6 +1372,7 @@ class DiscoveryApi {
             ? (decoded['error'] as Map)['message'] as String? ??
                   'Hub pairing failed.'
             : 'Hub pairing failed.',
+        statusCode: response.statusCode,
       );
     }
     if (decoded is! Map<String, dynamic>) {

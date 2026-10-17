@@ -10,6 +10,7 @@ import 'package:energylens_mobile/features/discovery/discovery_credentials.dart'
 import 'package:energylens_mobile/features/discovery/discovery_screen.dart';
 import 'package:energylens_mobile/features/discovery/electricity_settings_screen.dart';
 import 'package:energylens_mobile/features/discovery/device_energy_detail_screen.dart';
+import 'package:energylens_mobile/features/identify/appliance_onboarding_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -232,6 +233,44 @@ class _AutoPairDiscoveryApi extends _ClaimDiscoveryApi {
       throw HubRequestException(401, rejectionCode, 'Rejected');
     }
     return super.saved(baseUrl, token);
+  }
+}
+
+class _ForbiddenPairingTransport implements PairingTransport {
+  @override
+  Future<PairingHttpResponse> send(
+    String address,
+    String path,
+    String method, {
+    Map<String, dynamic>? body,
+    String? bearerToken,
+  }) async {
+    if (path == '/healthz') {
+      return PairingHttpResponse(
+        statusCode: 200,
+        body: jsonEncode({'hub_id': _localHubId}),
+      );
+    }
+    return PairingHttpResponse(
+      statusCode: 403,
+      body: jsonEncode({
+        'error': {'message': 'Owner access refused.'},
+      }),
+    );
+  }
+}
+
+class _RealClaimDiscoveryApi extends _AutoPairDiscoveryApi {
+  final _real = DiscoveryApi(pairingTransport: _ForbiddenPairingTransport());
+
+  @override
+  Future<PairingClaim> claimOwnedPairing(
+    HubOwnership ownership, {
+    required String clientId,
+    required HubOwnerAuthorization owner,
+  }) {
+    claims++;
+    return _real.claimOwnedPairing(ownership, clientId: clientId, owner: owner);
   }
 }
 
@@ -855,9 +894,11 @@ void main() {
     testWidgets('Hub access message for auto-pair failure: $scenario', (
       tester,
     ) async {
-      final api = _AutoPairDiscoveryApi();
+      final api = scenario == 'forbidden'
+          ? _RealClaimDiscoveryApi()
+          : _AutoPairDiscoveryApi();
       if (scenario == 'forbidden') {
-        api.claimError = HubRequestException(403, 'forbidden', 'Forbidden');
+        // The real claim path decodes the 403 from the fake transport.
       } else if (scenario == 'unreachable') {
         api.claimError = StateError('hub unreachable');
       }
@@ -2477,6 +2518,90 @@ void main() {
       expect(find.textContaining('Could not load meter history'), findsNothing);
       expect(find.text('Observed day, covered time only'), findsOneWidget);
       expect(api.reads, ['$_cloudHomeId:saved-plug']);
+      cloud.close();
+    },
+  );
+  testWidgets(
+    'Cloud appliance onboarding gets the owner-authorized hub client',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      final api = _OwnerHeaderApi();
+      final cloud = CloudApiClient(
+        session: CloudSession(
+          config: _cloudConfig,
+          store: _TestTokenStore(),
+          authenticator: _TestAuthenticator(),
+        ),
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/hubs')) {
+            return http.Response(
+              jsonEncode({
+                'hubs': [
+                  {
+                    'hub_id': _cloudHubId,
+                    'local_hub_id': _localHubId,
+                    'home_id': _cloudHomeId,
+                    'ownership_epoch': 3,
+                    'version': 1,
+                    'connection': {
+                      'https_origin': 'https://192.168.1.20:18787',
+                      'certificate_sha256': 'a' * 64,
+                      'expires_at': DateTime.now()
+                          .toUtc()
+                          .add(const Duration(minutes: 5))
+                          .toIso8601String(),
+                    },
+                  },
+                ],
+              }),
+              200,
+            );
+          }
+          if (request.url.path == '/v1/homes/$_cloudHomeId/appliances') {
+            return http.Response(jsonEncode({'appliances': []}), 200);
+          }
+          return http.Response('{"sensors":[]}', 200);
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(
+            api: api,
+            credentials: DiscoveryCredentials(storage: _AutoPairStore()),
+            autoScan: true,
+            cloudApi: cloud,
+            accountId: 'account-a',
+            cloudHome: const CloudHome(
+              id: _cloudHomeId,
+              name: 'Selected home',
+              timezone: 'America/Chicago',
+              countryCode: 'US',
+              postalCode: '60601',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Identify connected appliance'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('Identify connected appliance'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Enter a new appliance'));
+      await tester.pumpAndSettle();
+      final screen = tester.widget<ApplianceOnboardingScreen>(
+        find.byType(ApplianceOnboardingScreen),
+      );
+      expect((screen.api as _OwnerHeaderApi).owner?.homeId, _cloudHomeId);
+      expect(
+        screen.hubAddress,
+        startsWith('https://192.168.1.20:18787#sha256='),
+      );
+      expect(screen.hubToken, 'auto-paired-token');
       cloud.close();
     },
   );
