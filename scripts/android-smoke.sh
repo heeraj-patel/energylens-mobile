@@ -69,6 +69,13 @@ snap() {
 }
 
 auto_rotate="$(adb -s "$serial" shell settings get system accelerometer_rotation | tr -d '\r')"
+restore_auto_rotate() {
+  if [[ "$auto_rotate" == 1 ]]; then
+    adb -s "$serial" shell settings put system accelerometer_rotation 1 || true
+    auto_rotate=0
+  fi
+}
+trap restore_auto_rotate EXIT
 adb -s "$serial" shell settings put system accelerometer_rotation 0
 adb -s "$serial" shell settings put system user_rotation 0
 adb -s "$serial" logcat -c
@@ -84,7 +91,7 @@ check_alive 'after rotation'
 second="$(snap)"
 [[ "$first" != "$second" ]] || failures+=("rotation did not change orientation (both $first)")
 adb -s "$serial" shell settings put system user_rotation 0
-[[ "$auto_rotate" != 1 ]] || adb -s "$serial" shell settings put system accelerometer_rotation 1
+restore_auto_rotate
 
 cold_launch >/dev/null
 sleep "$rotate_wait"
@@ -104,7 +111,7 @@ grep -q '══╡ EXCEPTION CAUGHT BY' "$out_dir/logcat.txt" && failures+=('log
 } >"$out_dir/device.txt"
 
 if ((${#failures[@]} > 0)); then
-  printf 'FAIL %s: %s\n' "$serial" "${failures[@]}" >&2
+  for failure in "${failures[@]}"; do printf 'FAIL %s: %s\n' "$serial" "$failure" >&2; done
   exit 1
 fi
 echo "PASS $serial: TotalTime ${total_time:-unknown} ms, evidence in $out_dir"

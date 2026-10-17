@@ -123,7 +123,7 @@ fi
 
 if [[ "$local_pilot" == true || "$cloud_auth" == true ]]; then
   [[ -z "$hub_url" ]] || { echo '--hub-url cannot be combined with --local-pilot.' >&2; exit 2; }
-  ((${#emulator_ids[@]} + ${#physical_ids[@]} > 0)) || { echo 'Pass at least one --emulator or --physical.' >&2; exit 2; }
+  [[ "$build_only" == true ]] || ((${#emulator_ids[@]} + ${#physical_ids[@]} > 0)) || { echo 'Pass at least one --emulator or --physical.' >&2; exit 2; }
 else
   hub_url_pattern='^https://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+(#sha256=[0-9a-f]{64})?$'
   [[ "$hub_url" =~ $hub_url_pattern ]] || {
@@ -131,7 +131,7 @@ else
     exit 2
   }
   ((${#physical_ids[@]} == 0)) || { echo '--physical requires --local-pilot or --cloud.' >&2; exit 2; }
-  ((${#emulator_ids[@]} > 0)) || { echo 'Pass at least one --emulator.' >&2; exit 2; }
+  [[ "$build_only" == true ]] || ((${#emulator_ids[@]} > 0)) || { echo 'Pass at least one --emulator.' >&2; exit 2; }
   [[ "$release" == false ]] || { echo '--release requires --local-pilot or --cloud.' >&2; exit 2; }
 fi
 for port in ${reverse_ports[@]+"${reverse_ports[@]}"}; do
@@ -180,8 +180,8 @@ for id in ${emulator_ids[@]+"${emulator_ids[@]}"}; do
   if [[ "$id" =~ ^emulator-[0-9]+$ ]]; then
     serial="$id"
   elif ! serial="$(find_emulator_serial "$id")"; then
-    nohup emulator -avd "$id" -no-snapshot-save -camera-back virtualscene \
-      -camera-front emulated >"$repo_dir/build/android-emulator-$id.log" 2>&1 &
+    nohup emulator -avd "$id" -no-snapshot-save -gpu swiftshader_indirect \
+      -camera-back virtualscene -camera-front emulated >"$repo_dir/build/android-emulator-$id.log" 2>&1 &
     deadline=$((SECONDS + boot_timeout))
     until serial="$(find_emulator_serial "$id")"; do
       ((SECONDS < deadline)) || { echo "Emulator $id did not appear within ${boot_timeout}s." >&2; exit 1; }
