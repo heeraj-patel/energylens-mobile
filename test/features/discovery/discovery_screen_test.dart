@@ -187,6 +187,7 @@ class _AutoPairDiscoveryApi extends _ClaimDiscoveryApi {
   String? rejectionCode;
   bool rejectAllPairings = false;
   Future<void> Function()? beforeClaimResponse;
+  Object? claimError;
 
   _AutoPairDiscoveryApi() {
     plug = const SavedPlug(
@@ -208,6 +209,7 @@ class _AutoPairDiscoveryApi extends _ClaimDiscoveryApi {
   }) async {
     claims++;
     await beforeClaimResponse?.call();
+    if (claimError != null) throw claimError!;
     return PairingClaim(
       hubId: ownership.localHubId,
       clientId: clientId,
@@ -846,6 +848,84 @@ void main() {
         expect(store.values.containsKey('energylens.hub.pairing'), isFalse);
       }
       expect(find.byKey(const Key('operatorPairingJson')), findsNothing);
+      cloud.close();
+    });
+  }
+  for (final scenario in ['forbidden', 'unreachable', 'no-hint']) {
+    testWidgets('Hub access message for auto-pair failure: $scenario', (
+      tester,
+    ) async {
+      final api = _AutoPairDiscoveryApi();
+      if (scenario == 'forbidden') {
+        api.claimError = HubRequestException(403, 'forbidden', 'Forbidden');
+      } else if (scenario == 'unreachable') {
+        api.claimError = StateError('hub unreachable');
+      }
+      final cloud = CloudApiClient(
+        session: CloudSession(
+          config: _cloudConfig,
+          store: _TestTokenStore(),
+          authenticator: _TestAuthenticator(),
+        ),
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/hubs')) {
+            return http.Response(
+              jsonEncode({
+                'hubs': [
+                  {
+                    'hub_id': _cloudHubId,
+                    'local_hub_id': _localHubId,
+                    'home_id': _cloudHomeId,
+                    'ownership_epoch': 3,
+                    'version': 1,
+                    if (scenario != 'no-hint')
+                      'connection': {
+                        'https_origin': 'https://192.168.1.20:18787',
+                        'certificate_sha256': 'a' * 64,
+                        'expires_at': DateTime.now()
+                            .toUtc()
+                            .add(const Duration(minutes: 5))
+                            .toIso8601String(),
+                      },
+                  },
+                ],
+              }),
+              200,
+            );
+          }
+          return http.Response('{"sensors":[]}', 200);
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(
+            api: api,
+            credentials: DiscoveryCredentials(storage: _AutoPairStore()),
+            autoScan: true,
+            cloudApi: cloud,
+            accountId: 'account-a',
+            cloudHome: const CloudHome(
+              id: _cloudHomeId,
+              name: 'Selected home',
+              timezone: 'America/Chicago',
+              countryCode: 'US',
+              postalCode: '60601',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('hubAccessMessage')),
+        scenario == 'forbidden' ? findsOneWidget : findsNothing,
+      );
+      expect(
+        find.text(
+          'Could not restore the hub connection. Pair again or retry.',
+          skipOffstage: false,
+        ),
+        scenario == 'forbidden' ? findsNothing : findsOneWidget,
+      );
       cloud.close();
     });
   }

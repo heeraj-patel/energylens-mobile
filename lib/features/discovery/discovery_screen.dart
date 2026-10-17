@@ -87,6 +87,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   int? _pairedOwnershipEpoch;
   bool _restoreDone = false;
   bool _cloudHubOwned = false;
+  bool _hubRefusedAccess = false;
 
   static const _hubAccessMessage =
       'This device doesn’t have permission to use your hub yet.';
@@ -401,6 +402,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         final ownerships = await cloud.hubs(scope.homeId);
         if (!current()) return;
         _cloudHubOwned = ownerships.any((o) => o.homeId == scope.homeId);
+        _hubRefusedAccess = false;
         Future<StoredPairingCredential?> automaticallyPair(
           HubOwnership ownership,
         ) async {
@@ -445,10 +447,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               pairing,
               isCurrent: current,
             );
+            _hubRefusedAccess = false;
             return pairing;
           } catch (error) {
             _debugLog('auto-pair failed: ${_describeHubError(error)}');
             if (!current()) return null;
+            if (error is HubRequestException && error.statusCode == 403) {
+              _hubRefusedAccess = true;
+            }
             // One unreachable owned Hub must not prevent another from
             // restoring. The existing manual pairing remains available.
             return null;
@@ -507,6 +513,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           }
           if (current() && _hubConnected && widget.autoScan) await _search();
           return;
+        }
+        if (_cloudHubOwned && !_paired && !_hubRefusedAccess) {
+          setState(
+            () => _error =
+                'Could not restore the hub connection. Pair again or retry.',
+          );
         }
         if (ownerships.isEmpty) {
           // A first claim needs the bootstrap pairing, but it cannot read
@@ -1782,6 +1794,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 (_error == null &&
                     _restoreDone &&
                     _cloudHubOwned &&
+                    _hubRefusedAccess &&
                     !_canUseHubCustomerApi)) ...[
               const SizedBox(height: 8),
               Text(
