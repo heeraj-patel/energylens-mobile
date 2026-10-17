@@ -682,6 +682,49 @@ class PeriodRaceApi extends DeviceDetailApi {
   }
 }
 
+class _OwnerHeaderApi extends _AutoPairDiscoveryApi {
+  _OwnerHeaderApi({this.owner, List<String>? reads}) : reads = reads ?? [];
+  final HubOwnerAuthorization? owner;
+  final List<String> reads;
+
+  @override
+  DiscoveryApi authorizedFor(HubOwnerAuthorization owner) =>
+      _OwnerHeaderApi(owner: owner, reads: reads)..plug = plug;
+
+  @override
+  Future<DeviceEnergy> deviceEnergy(
+    String baseUrl,
+    String token,
+    String plugId, {
+    String period = 'day',
+    String? timezone,
+    String? postalCode,
+    double? rateUsdPerKwh,
+  }) async {
+    if (owner == null) {
+      throw HubRequestException(
+        403,
+        'forbidden',
+        'Home authorization is required',
+      );
+    }
+    reads.add('${owner!.homeId}:$plugId');
+    return const DeviceEnergy(
+      status: 'measured',
+      period: 'day',
+      totalKwh: 0.2,
+      coverageFraction: 0.5,
+      coveredSecs: 43200,
+      latestWatts: null,
+      observedCostUsd: 0.04,
+      rateSourceLabel: 'Your electricity rate',
+      rateUsdPerKwh: 0.2,
+      rateSource: 'user',
+      readingCount: 2,
+    );
+  }
+}
+
 void main() {
   for (final scenario in [
     'clean',
@@ -2282,4 +2325,79 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.checks, 2);
   });
+
+  testWidgets(
+    'energy details use the owner-authorized hub client in Cloud mode',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      final api = _OwnerHeaderApi();
+      final store = _AutoPairStore();
+      final cloud = CloudApiClient(
+        session: CloudSession(
+          config: _cloudConfig,
+          store: _TestTokenStore(),
+          authenticator: _TestAuthenticator(),
+        ),
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/hubs')) {
+            return http.Response(
+              jsonEncode({
+                'hubs': [
+                  {
+                    'hub_id': _cloudHubId,
+                    'local_hub_id': _localHubId,
+                    'home_id': _cloudHomeId,
+                    'ownership_epoch': 3,
+                    'version': 1,
+                    'connection': {
+                      'https_origin': 'https://192.168.1.20:18787',
+                      'certificate_sha256': 'a' * 64,
+                      'expires_at': DateTime.now()
+                          .toUtc()
+                          .add(const Duration(minutes: 5))
+                          .toIso8601String(),
+                    },
+                  },
+                ],
+              }),
+              200,
+            );
+          }
+          return http.Response('{"sensors":[]}', 200);
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(
+            api: api,
+            credentials: DiscoveryCredentials(storage: store),
+            autoScan: true,
+            cloudApi: cloud,
+            accountId: 'account-a',
+            cloudHome: const CloudHome(
+              id: _cloudHomeId,
+              name: 'Selected home',
+              timezone: 'America/Chicago',
+              countryCode: 'US',
+              postalCode: '60601',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('View energy details').first,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('View energy details').first);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Could not load meter history'), findsNothing);
+      expect(find.text('Observed day, covered time only'), findsOneWidget);
+      expect(api.reads, ['$_cloudHomeId:saved-plug']);
+      cloud.close();
+    },
+  );
 }

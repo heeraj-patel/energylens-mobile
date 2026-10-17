@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -57,6 +58,14 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
     _loadSpec();
   }
 
+  void _debugLog(String message) {
+    if (kDebugMode) debugPrint('[hub] $message');
+  }
+
+  String _describe(Object error) => error is HubRequestException
+      ? 'HubRequestException status=${error.statusCode} code=${error.code} message="${error.message}"'
+      : error.runtimeType.toString();
+
   Future<void> _loadSpec() async {
     final appliance = widget.plug.connectedAppliance;
     if (appliance == null) return;
@@ -67,7 +76,8 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
         appliance.id,
       );
       if (mounted) setState(() => _spec = result);
-    } catch (_) {
+    } catch (error) {
+      _debugLog('applianceSpec failed: ${_describe(error)}');
       // Older hubs and unavailable sources simply have no optional rating.
     }
   }
@@ -97,7 +107,8 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
         _energy = result;
         _loading = false;
       });
-    } catch (_) {
+    } catch (error) {
+      _debugLog('deviceEnergy failed: ${_describe(error)}');
       if (!mounted ||
           requestId != _energyRequestId ||
           requestedPeriod != _period) {
@@ -133,7 +144,8 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
         _estimate = result;
         _estimateLoading = false;
       });
-    } catch (_) {
+    } catch (error) {
+      _debugLog('estimate failed: ${_describe(error)}');
       if (!mounted) return;
       setState(() {
         _estimateError = 'Could not load the appliance estimate.';

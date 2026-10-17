@@ -947,7 +947,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           builder: (_) => ApplianceOnboardingScreen(
             method: choice,
             plugId: plug.id,
-            api: widget.api,
+            api: _hubApi,
             credentials: widget.credentials,
           ),
         ),
@@ -1917,7 +1917,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             MaterialPageRoute<void>(
                               builder: (_) => DeviceEnergyDetailScreen(
                                 plug: plug,
-                                api: widget.api,
+                                api: _hubApi,
                                 hubAddress: _hub.text.trim(),
                                 token: _token.text.trim(),
                                 estimate: plug.connectedAppliance == null
