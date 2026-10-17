@@ -1,5 +1,5 @@
-/* Tablet layout: loaded only where both window dimensions are tablet-sized, so phones never match. */
-@media (min-width: 700px) and (min-height: 600px) {
+/* Tablet layout: wide windows on screens at least 600px on both sides, so phones never match and the keyboard cannot flip it. */
+@media (min-width: 700px) and (min-device-width: 600px) and (min-device-height: 600px) {
   html:root {
     --el-rail-w: 112px;
     --el-content-max: 1200px;
@@ -139,7 +139,7 @@
 }
 
 /* Reflowed columns need room: landscape-width tablets only. */
-@media (min-width: 1000px) and (min-height: 600px) {
+@media (min-width: 1000px) and (min-device-width: 600px) and (min-device-height: 600px) {
   body main > div:first-of-type {
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));

@@ -2,10 +2,10 @@
 (() => {
   'use strict';
 
-  // Tablet styles apply only when both window dimensions are tablet-sized.
+  // Tablet styles apply only on tablet-sized windows of a screen at least 600px on both sides.
   const tabletSheet = document.createElement('link');
   tabletSheet.rel = 'stylesheet';
-  tabletSheet.media = '(min-width: 700px) and (min-height: 600px)';
+  tabletSheet.media = '(min-width: 700px) and (min-device-width: 600px) and (min-device-height: 600px)';
   tabletSheet.href = new URL('tablet_layout.css', document.currentScript.src).href;
   document.head.appendChild(tabletSheet);
 

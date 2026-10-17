@@ -76,5 +76,5 @@ flutter build apk --debug --dart-define=ENERGYLENS_LOCAL_PILOT=true   # OK, buil
 - `--energylens-reset-sign-in` is handled natively in `ios/Runner/AppDelegate.swift` (CommandLine.arguments). Android `MainActivity.kt` is a bare `FlutterActivity` with no equivalent.
 - iOS simulator builds are x86_64 only (ML Kit pods); Apple Silicon needs Rosetta.
 - Android release builds are signed with the debug key (`android/app/build.gradle.kts`); physical devices get Release builds only. The app label is `EnergyLens` (`AndroidManifest.xml`). Launcher icons on both platforms are Flutter defaults.
-- The HTML pages target 390-430px phone portrait. Tablet layout is `assets/design_pages/shared/tablet_layout.css`, loaded by `shared/chrome.js`, active at `(min-width: 700px) and (min-height: 600px)`. Native Flutter screens cap content width at 420-680px.
+- The HTML pages target 390-430px phone portrait. Tablet layout is `assets/design_pages/shared/tablet_layout.css`, loaded by `shared/chrome.js`, active at `(min-width: 700px) and (min-device-width: 600px) and (min-device-height: 600px)`. Native Flutter screens cap content width at 420-680px.
 - `webview_flutter` returns `runJavaScriptReturningResult` values differently per platform; `_capturePageState` handles JSON-encoded strings, and the `installed != true` checks assume a bool.
