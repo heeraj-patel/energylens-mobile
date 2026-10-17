@@ -66,6 +66,7 @@ class SettingsIdentityRenderer {
   };
   if (home.length !== 1 || email.length !== 1 || postal.length !== 1 || emailRow.length !== 1 || postalRow.length !== 1 || editButtons.length !== 2) return false;
   home[0].textContent = payload.homeName;
+  document.querySelectorAll('[data-el-bind="settings_text_001"]').forEach(node => node.textContent = payload.homeName);
   email[0].textContent = payload.identity || '';
   if (identityLabel.length === 1) identityLabel[0].textContent = payload.identityLabel;
   postal[0].textContent = payload.postalCode || '';
