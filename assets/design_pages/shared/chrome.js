@@ -2,6 +2,13 @@
 (() => {
   'use strict';
 
+  // Tablet styles apply only when both window dimensions are tablet-sized.
+  const tabletSheet = document.createElement('link');
+  tabletSheet.rel = 'stylesheet';
+  tabletSheet.media = '(min-width: 700px) and (min-height: 600px)';
+  tabletSheet.href = new URL('tablet_layout.css', document.currentScript.src).href;
+  document.head.appendChild(tabletSheet);
+
   const destinations = ['dashboard', 'devices', 'efficiency', 'perks-and-tips', 'settings'];
   const selectedDestination = {
     dashboard: 'dashboard', devices: 'devices', efficiency: 'efficiency',
@@ -43,6 +50,8 @@
         config.tabLabels.length !== 5) {
       throw new Error('Invalid design chrome configuration');
     }
+    document.body.dataset.elTab = config.activeTab;
+    document.body.dataset.elPage = config.headerBindings[0].replace(/_text_\d+$/, '');
     document.getElementById('el-header').outerHTML = renderHeader(config);
     document.getElementById('el-footer').outerHTML = renderFooter(config);
   };

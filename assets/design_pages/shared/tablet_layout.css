@@ -1,0 +1,213 @@
+/* Tablet layout: loaded only where both window dimensions are tablet-sized, so phones never match. */
+@media (min-width: 700px) and (min-height: 600px) {
+  html:root {
+    --el-rail-w: 112px;
+    --el-content-max: 1200px;
+    --el-tablet-gutter: 24px;
+    --el-body-font-size: 18px;
+    --el-body-line-height: 27px;
+    --el-page-title-font-size: 32px;
+    --el-page-title-line-height: 40px;
+    --el-header-home-font-size: 18px;
+    --el-header-home-line-height: 24px;
+    --el-header-page-font-size: 14px;
+    --el-header-page-line-height: 18px;
+  }
+
+  /* Type scale for reading at about 1 m. Icons are scaled separately below. */
+  body .text-label-md { font-size: 16px; line-height: 22px; }
+  body .text-body-md { font-size: 18px; line-height: 27px; }
+  body .text-headline-lg { font-size: 48px; line-height: 52px; }
+  body .text-xs { font-size: 14px; line-height: 20px; }
+  body .text-sm { font-size: 16px; line-height: 24px; }
+  body .text-xl { font-size: 24px; line-height: 32px; }
+  body [class~="text-[10px]"]:not(.material-symbols-outlined),
+  body [class~="text-[11px]"]:not(.material-symbols-outlined),
+  body [class~="text-[12px]"]:not(.material-symbols-outlined) { font-size: 14px !important; line-height: 20px; }
+  body [class~="text-[13px]"]:not(.material-symbols-outlined) { font-size: 15px !important; line-height: 22px; }
+  body [class~="text-[14px]"]:not(.material-symbols-outlined) { font-size: 16px !important; line-height: 24px; }
+  body [class~="text-[15px]"]:not(.material-symbols-outlined) { font-size: 17px !important; }
+  body [class~="text-[16px]"]:not(.material-symbols-outlined) { font-size: 18px !important; }
+  body [class~="text-[17px]"]:not(.material-symbols-outlined) { font-size: 19px !important; }
+  body [class~="text-[18px]"]:not(.material-symbols-outlined) { font-size: 20px !important; }
+  body [class~="text-[20px]"]:not(.material-symbols-outlined) { font-size: 28px !important; line-height: 32px; }
+  body [class~="text-[22px]"]:not(.material-symbols-outlined) { font-size: 28px !important; line-height: 32px; }
+  body [class~="text-[24px]"]:not(.material-symbols-outlined) { font-size: 32px !important; }
+  body [class~="text-[32px]"]:not(.material-symbols-outlined) { font-size: 56px !important; line-height: 60px; }
+  body main h2 { font-size: 22px !important; }
+  body main h3 { font-size: 19px !important; }
+  body main h4 { font-size: 18px !important; }
+  body .el-devices-summary-value { font-size: 36px !important; line-height: 40px !important; }
+  body .el-devices-summary-unit { font-size: 14px !important; line-height: 20px !important; }
+  body .el-monthly-overview { font-size: 14px; line-height: 18px; max-width: 10rem; }
+  body .el-compact-page-title { font-size: 28px !important; line-height: 34px !important; }
+  body [data-el-bind="perks_tips_text_009"],
+  body [data-el-bind="perks_tips_text_019"],
+  body [data-el-bind="perks_tips_text_056"] { font-size: 20px; }
+
+  body .material-symbols-outlined.text-\[15px\],
+  body .material-symbols-outlined.text-\[16px\] { font-size: 20px; }
+  body .material-symbols-outlined.text-\[18px\] { font-size: 22px; }
+  body .material-symbols-outlined.text-\[20px\] { font-size: 24px; }
+  body .material-symbols-outlined.text-\[22px\] { font-size: 26px; }
+  body .material-symbols-outlined.text-\[26px\] { font-size: 32px; }
+
+  /* Navigation rail replaces the bottom bar; same five links, same bindings. */
+  body .el-app-nav {
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: var(--el-rail-w) !important;
+    padding-bottom: 0 !important;
+    border-top: 0 !important;
+    border-right: 1px solid rgb(226 232 240 / 80%) !important;
+    box-shadow: 2px 0 12px rgb(17 27 47 / 6%);
+  }
+  body .el-app-nav > div {
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+    gap: 8px;
+    height: 100% !important;
+    padding: calc(env(safe-area-inset-top, 0px) + 16px) 8px 16px !important;
+  }
+  body .el-app-tab {
+    position: relative;
+    width: 96px !important;
+    height: 72px !important;
+    border-radius: 8px;
+    gap: 4px !important;
+  }
+  body .el-app-tab[aria-current="page"] {
+    background-color: #f1f3ff;
+  }
+  body .el-app-tab[aria-current="page"]::before {
+    content: "";
+    position: absolute;
+    left: -8px;
+    top: 12px;
+    bottom: 12px;
+    width: 4px;
+    border-radius: 0 4px 4px 0;
+    background-color: #0284c7;
+  }
+  body .el-app-tab-icon { font-size: 28px !important; line-height: 28px !important; }
+  body .el-app-tab-label { font-size: 14px !important; line-height: 16px !important; letter-spacing: 0 !important; }
+
+  body .el-app-header {
+    left: var(--el-rail-w);
+    width: auto !important;
+    right: 0;
+  }
+  body .el-app-header > div > div {
+    max-width: var(--el-content-max);
+    margin-inline: auto;
+    padding-inline: var(--el-tablet-gutter);
+  }
+
+  body main {
+    padding-left: var(--el-rail-w);
+    padding-bottom: 0 !important;
+  }
+  body main > div:first-of-type {
+    width: 100%;
+    max-width: var(--el-content-max);
+    margin-inline: auto;
+    padding-inline: var(--el-tablet-gutter);
+    padding-bottom: var(--el-tablet-gutter);
+  }
+
+  /* Two columns for compact items once the rail leaves 650px or more. */
+  body[data-el-tab="efficiency"] .tab-panel:not(.hidden) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    align-items: start;
+  }
+  body[data-el-tab="efficiency"] .tab-panel > * { margin: 0 !important; }
+  body[data-el-tab="efficiency"] .tab-panel > :first-child { grid-column: 1 / -1; }
+
+  body[data-el-page="devices"] #devices-feed {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    align-items: start;
+  }
+  body[data-el-page="devices"] #devices-feed > * { margin: 0 !important; }
+  /* Knowledge questions: 48px touch rows with 8px between them. */
+  body[data-el-tab="tips"] div:has(> div > [data-faq-trigger]) { gap: 8px; }
+  body [data-faq-trigger] { min-height: 48px; }
+}
+
+/* Reflowed columns need room: landscape-width tablets only. */
+@media (min-width: 1000px) and (min-height: 600px) {
+  body main > div:first-of-type {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    column-gap: 24px;
+    row-gap: 24px;
+    align-items: stretch;
+    align-content: start;
+  }
+  body main > div:first-of-type > * {
+    grid-column: 1 / -1;
+    margin: 0 !important;
+    min-width: 0;
+  }
+
+  /* Dashboard: banner, then paired cards. */
+  body[data-el-page="dashboard"] main > div:first-of-type > :nth-child(n+2) { grid-column: span 3; }
+
+  /* Devices: summary beside the filters, devices in three columns. */
+  body[data-el-page="devices"] main > div:first-of-type > :nth-child(1),
+  body[data-el-page="devices"] main > div:first-of-type > :nth-child(2),
+  body[data-el-page="devices"] main > div:first-of-type > :nth-child(4),
+  body[data-el-page="devices"] main > div:first-of-type > :nth-child(5) { grid-column: span 3; }
+  body[data-el-page="devices"] #devices-list-controls { align-self: start; }
+  body[data-el-page="devices"] #devices-feed {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    align-items: start;
+  }
+  body[data-el-page="devices"] #devices-feed > * { margin: 0 !important; }
+
+  /* Efficiency: summary beside breakdown, selector and panels below. */
+  body[data-el-tab="efficiency"] main > div:first-of-type > :nth-child(2),
+  body[data-el-tab="efficiency"] main > div:first-of-type > :nth-child(3) { grid-column: span 3; }
+
+  body[data-el-tab="efficiency"] main > div:first-of-type > :nth-child(4) > .grid-cols-4 { max-width: 720px; }
+  /* Tips: sections side by side. */
+  body[data-el-tab="tips"] [aria-label="Savings Categories"] { max-width: 720px; }
+  body[data-el-tab="tips"] main > div:first-of-type > :nth-child(3) { grid-column: 1 / -1; }
+  body[data-el-tab="tips"] [id^="tab-panel-"]:not(.hidden) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+    align-items: start;
+  }
+
+  /* Settings: panels in two columns. */
+  body[data-el-tab="settings"] main > div:first-of-type > :nth-child(2) { max-width: 560px; }
+  body[data-el-tab="settings"] [id^="view-"]:not(.hidden) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+    align-items: start;
+  }
+  body[data-el-tab="settings"] [id^="view-"] > * { margin: 0 !important; }
+  body[data-el-tab="settings"] #view-devices > :first-child { grid-column: 1; grid-row: 1 / span 2; }
+  body[data-el-tab="settings"] #view-devices > :not(:first-child) { grid-column: 2; }
+
+  /* Knowledge: questions in two columns, wrapping instead of truncating. */
+  body[data-el-tab="tips"] div:not(.hidden):has(> div > [data-faq-trigger]) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 16px;
+    align-items: start;
+  }
+  body[data-el-tab="tips"] [data-faq-trigger] .truncate {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+}
