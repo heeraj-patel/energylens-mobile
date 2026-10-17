@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:crypto/crypto.dart';
 
@@ -84,6 +85,19 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   String? _claimMessage;
   HubOwnership? _cloudOwnership;
   int? _pairedOwnershipEpoch;
+  bool _restoreDone = false;
+  bool _cloudHubOwned = false;
+
+  static const _hubAccessMessage =
+      'This phone doesn’t have permission to use your hub yet.';
+
+  void _debugLog(String message) {
+    if (kDebugMode) debugPrint('[hub] $message');
+  }
+
+  String _describeHubError(Object error) => error is HubRequestException
+      ? 'HubRequestException status=${error.statusCode} code=${error.code} message="${error.message}"'
+      : error.runtimeType.toString();
 
   bool get _canUseHubCustomerApi =>
       widget.cloudHome == null ||
@@ -373,6 +387,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   }
 
   Future<void> _restore() async {
+    _restoreDone = false;
     try {
       if (widget.cloudHome != null) {
         final cloud = widget.cloudApi;
@@ -385,11 +400,19 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             cloud.session.generation == sessionGeneration;
         final ownerships = await cloud.hubs(scope.homeId);
         if (!current()) return;
+        _cloudHubOwned = ownerships.any((o) => o.homeId == scope.homeId);
         Future<StoredPairingCredential?> automaticallyPair(
           HubOwnership ownership,
         ) async {
           final connection = ownership.connection;
           if (connection == null || !connection.isFresh || !current()) {
+            _debugLog(
+              'auto-pair skipped: ${connection == null
+                  ? 'Cloud ownership has no connection hint'
+                  : !connection.isFresh
+                  ? 'connection hint is not fresh'
+                  : 'session or home changed'}',
+            );
             return null;
           }
           try {
@@ -423,7 +446,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               isCurrent: current,
             );
             return pairing;
-          } catch (_) {
+          } catch (error) {
+            _debugLog('auto-pair failed: ${_describeHubError(error)}');
             if (!current()) return null;
             // One unreachable owned Hub must not prevent another from
             // restoring. The existing manual pairing remains available.
@@ -544,6 +568,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               : 'Could not restore the hub connection. Pair again or retry.';
         });
       }
+    } finally {
+      if (mounted) setState(() => _restoreDone = true);
     }
   }
 
@@ -603,11 +629,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       }
     } catch (error) {
       requiresPairing = error is HubRequestException && error.requiresPairing;
+      _debugLog('load saved plugs failed: ${_describeHubError(error)}');
       if (mounted) {
         setState(() {
           _hubConnected = false;
-          _error =
-              'Could not load saved plugs from the hub. Check its connection.';
+          _error = error is HubRequestException && error.statusCode == 403
+              ? _hubAccessMessage
+              : 'Could not load saved plugs from the hub. Check its connection.';
         });
       }
     } finally {
@@ -1827,6 +1855,15 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             if (_error != null) ...[
               const SizedBox(height: 16),
               Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+            ] else if (_restoreDone &&
+                _cloudHubOwned &&
+                !_canUseHubCustomerApi) ...[
+              const SizedBox(height: 16),
+              Text(
+                _hubAccessMessage,
+                key: const Key('hubAccessMessage'),
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
             ],
             const SizedBox(height: 24),
             Row(
