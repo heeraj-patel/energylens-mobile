@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:http/http.dart' as http;
@@ -247,6 +248,22 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                 (account.authMethod == null ||
                     account.authMethod == _session.credentialMethod);
       if (!identityValid) {
+        if (kDebugMode) {
+          final reason = usernameMode
+              ? (account.authMethod != 'username_password'
+                    ? 'auth_method is not username_password'
+                    : 'username is missing or empty')
+              : (!account.emailVerified
+                    ? 'email is not verified'
+                    : 'auth_method does not match the credential method');
+          debugPrint(
+            '[auth] identity check failed: $reason; '
+            'credential_method=${_session.credentialMethod} '
+            'auth_method=${account.authMethod} '
+            'username_present=${account.username?.isNotEmpty ?? false} '
+            'email_verified=${account.emailVerified}',
+          );
+        }
         _invalidateDesignContext();
         if (mounted) {
           setState(() {
