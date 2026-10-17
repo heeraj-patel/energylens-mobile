@@ -191,3 +191,29 @@ The reset flag clears only Keychain accounts with the
 preserves the Cloud login, legacy pairing records, and unrelated secure
 storage. The test skips unless both explicit test flags are enabled, then
 launches with `--energylens-reset-owned-hub-pairing`.
+
+## Android
+
+Setup: Android SDK at `~/tools/android-sdk` (platform and system image API 35)
+and two AVDs, `energylens-phone` and `energylens-tablet`. Configure the build
+profile in `.env-local` as above.
+
+Build and deploy with `scripts/deploy-android.sh` (also reachable as
+`../energylens-dev-bash-scripts/deploy-android.sh`). Pick a profile with
+`--cloud`, `--local-pilot` or `--hub-url URL`, and a target with `--emulator
+AVD_OR_SERIAL` or `--physical SERIAL`. Other flags: `--release`, `--reverse
+PORT`, `--env-file PATH`, `--build-only`. Emulators get a Debug build unless
+`--release` is given; physical devices always get Release. Run one emulator at
+a time.
+
+```sh
+scripts/deploy-android.sh --cloud --emulator energylens-phone
+scripts/deploy-android.sh --cloud --physical SERIAL
+```
+
+Smoke test an installed app; it writes screenshots, launch time and logcat to
+`DIR` and exits 1 on a failed check:
+
+```sh
+scripts/android-smoke.sh --serial SERIAL --out DIR
+```

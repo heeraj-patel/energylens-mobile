@@ -19,7 +19,7 @@ Flutter app (package `energylens_mobile`) showing household and device electrici
 - `assets/design_pages/`: 14 pages; `app.html` is shipped, `code.html`/`screen.png` are byte-for-byte references. `shared/` holds chrome.js, CSS, bundled fonts.
 - `test/`: unit/widget tests mirroring `lib/`; `test/goldens/design_shell/` iOS simulator baseline (see its README). `tool/`: `design_visual_goldens.py` (iOS simulator capture/compare), `mark_design_bindings.py`.
 - `docs/`: binding-ID map (`design_page_binding_map.*`), copy inventory (`new-ui-copy-review.md`).
-- `scripts/deploy-ios-simulator.sh`: the only deploy script (iOS only).
+- `scripts/deploy-ios-simulator.sh` (iOS) and `scripts/deploy-android.sh` (Android): deploy scripts. `scripts/android-smoke.sh`: Android launch/rotation/cold-restart/logcat check.
 
 ## Build profiles and dart-defines
 All are compile-time `--dart-define`s. Template: `.env-example` -> `.env-local` (chmod 600, gitignored).
@@ -50,9 +50,10 @@ flutter build apk --debug --dart-define=ENERGYLENS_LOCAL_PILOT=true   # OK, buil
 ```
 - Single file: `flutter test test/features/discovery/pairing_test.dart`. Test run takes ~25 s; debug APK build ~2.5 min cold.
 - Debug APK is ~222 MB (arm64-v8a, armeabi-v7a, x86_64). `flutter doctor` reports some Android licenses unaccepted; the build still succeeds.
-- `flutter build apk --release` currently FAILS in R8: missing `com.google.mlkit.vision.text.{chinese,devanagari,japanese,korean}.*TextRecognizerOptions` (rules in `build/app/outputs/mapping/release/missing_rules.txt`).
+- Release builds minify with R8; rules are in `android/app/proguard-rules.pro` (ML Kit script-specific recognizers are `-dontwarn`).
 - iOS (macOS only, not run here): `scripts/deploy-ios-simulator.sh --local-pilot --device UDID`, `--cloud --device UDID`, `--hub-url 'https://IP:PORT#sha256=HEX' --device UDID`, `--iphone UDID` (signed Release), `--build-only`, `--env-file PATH`, `--team ID`. Wrapper: `../energylens-dev-bash-scripts/deploy-ios.sh`.
-- Android: build only. No deploy script, install, or launch has been verified. Local AVDs `kernel-app-phone` (pixel_7) and `kernel-app-tablet` (pixel_tablet), both API 35 google_apis x86_64; SDK platforms 34-36, build-tools 36.0.0, NDK 28.2.13676358, JDK 17 at `~/tools/jdk-17`.
+- Android: `scripts/deploy-android.sh --cloud|--local-pilot|--hub-url URL` with `--emulator AVD_OR_SERIAL`, `--physical SERIAL`, `--release`, `--reverse PORT`, `--env-file PATH`, `--build-only`; wrapper `../energylens-dev-bash-scripts/deploy-android.sh`. `scripts/android-smoke.sh --serial S --out DIR` checks an installed app.
+- Android AVDs `energylens-phone` and `energylens-tablet` (API 35, google_apis x86_64); SDK `~/tools/android-sdk`, JDK 17 at `~/tools/jdk-17`. Run one emulator at a time, with `-gpu swiftshader_indirect`.
 
 ## Conventions
 - Demo app: mock/simulated devices and data are fine and may mix with real ones. Never mock a real device's real useful power usage.
@@ -74,6 +75,6 @@ flutter build apk --debug --dart-define=ENERGYLENS_LOCAL_PILOT=true   # OK, buil
 - Hub-token handoff: the iOS script writes `{address, token}` to `<app data>/tmp/energylens-pairing.json`; `importDebugPairingFile` reads `Directory.systemTemp` only when `kDebugMode && Platform.isIOS` (discovery_credentials.dart:21), so it does nothing on Android.
 - `--energylens-reset-sign-in` is handled natively in `ios/Runner/AppDelegate.swift` (CommandLine.arguments). Android `MainActivity.kt` is a bare `FlutterActivity` with no equivalent.
 - iOS simulator builds are x86_64 only (ML Kit pods); Apple Silicon needs Rosetta.
-- Android release signing uses the debug key (`android/app/build.gradle.kts`); the app label is `energylens_mobile` and launcher icons on both platforms are Flutter defaults.
-- The HTML pages target 390-430px phone portrait and have no media queries or max-width, so on tablets the WebView stretches full width. Native Flutter screens cap content width at 420-680px.
+- Android release builds are signed with the debug key (`android/app/build.gradle.kts`); physical devices get Release builds only. The app label is `EnergyLens` (`AndroidManifest.xml`). Launcher icons on both platforms are Flutter defaults.
+- The HTML pages target 390-430px phone portrait. Tablet layout is `assets/design_pages/shared/tablet_layout.css`, loaded by `shared/chrome.js`, active at `(min-width: 700px) and (min-height: 600px)`. Native Flutter screens cap content width at 420-680px.
 - `webview_flutter` returns `runJavaScriptReturningResult` values differently per platform; `_capturePageState` handles JSON-encoded strings, and the `installed != true` checks assume a bool.
