@@ -44,8 +44,8 @@ All are compile-time `--dart-define`s. Template: `.env-example` -> `.env-local` 
 ## Commands (verified 2026-10-16 on Linux unless marked)
 ```sh
 flutter pub get
-flutter analyze          # exits 1: 23 infos + 1 warning (unused local in test/features/energy/cloud_report_preview_screen_test.dart:235)
-flutter test             # 742 pass, 1 skip (needs Chrome), 1 fail: design_binding_map_test tips_care_upgrades_text_001/002/009 missing
+flutter analyze          # exits 1: 28 issues (incl. unused local in test/features/energy/cloud_report_preview_screen_test.dart:235)
+flutter test             # 759 pass, 1 skip (needs Chrome), 1 fail: design_binding_map_test (all 14 pages carry frozen binding IDs)
 flutter build apk --debug --dart-define=ENERGYLENS_LOCAL_PILOT=true   # OK, build/app/outputs/flutter-apk/app-debug.apk
 ```
 - Single file: `flutter test test/features/discovery/pairing_test.dart`. Test run takes ~25 s; debug APK build ~2.5 min cold.
