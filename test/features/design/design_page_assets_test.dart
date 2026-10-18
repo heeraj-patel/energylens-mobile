@@ -144,7 +144,8 @@ String _withApprovedLabelChanges(String html, String pageId) {
         .replaceFirst(
           'Email report with useful cost, wastage, trends and breakdowns.',
           'Email a report for selected devices.',
-        );
+        )
+        .replaceFirst('✉ Email Report Now', 'Email Report Now');
   }
   if (const {
     'efficiency_away',
