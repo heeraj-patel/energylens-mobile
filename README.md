@@ -33,6 +33,31 @@ configure the HTTPS Cloud API and its authentication profile, then run:
 scripts/deploy-ios-simulator.sh --cloud --device SIMULATOR_UDID
 ```
 
+For the Geekom username-auth simulator profile, the Cloud API is
+`https://192.168.68.136:18092`. Its `/v1/auth/config` endpoint advertises
+`username_password`. Configure `.env-local` with
+`ENERGYLENS_LOCAL_PILOT=false`, `ENERGYLENS_CLOUD_API_URL` set to that HTTPS
+origin, `ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED=true`,
+`ENERGYLENS_CLOUD_DEV_AUTH_ENABLED=true`, `ENERGYLENS_APP_ENV=dev`, and
+`ENERGYLENS_CLOUD_DEV_CERT_SHA256=8ac41bd484dd773f16d954e4226eb2e7d7a800ed9a5c134ac5fbf430134376a6`,
+the current Cloud API leaf certificate SHA-256 pin. Recheck the leaf pin from
+the approved launch configuration whenever the Cloud certificate changes.
+Keep the file private (`chmod 600 .env-local`); never put an account password
+in it. The Hub at `https://192.168.68.136:18787` has a separate certificate
+pin and is used for device pairing. Port `18091` is a separate loopback rate
+service, not the mobile sign-in API.
+
+Build and install from the mobile repository so the script regenerates Flutter
+build configuration from the selected private environment file:
+
+```sh
+scripts/deploy-ios-simulator.sh --cloud --env-file .env-local --device SIMULATOR_UDID
+```
+
+After changing the Cloud URL, authentication flags, or certificate pin, run
+this command again before testing. The installed app keeps the values compiled
+into its previous build until it is rebuilt and reinstalled.
+
 For owner-requested physical acceptance, replace `--device SIMULATOR_UDID`
 with `--iphone PHYSICAL_DEVICE_UDID`; this uses the existing signed Release
 workflow. The Cloud API and certificate trust must be reachable on that device.
@@ -113,6 +138,52 @@ uncertain response or restart. Changing home keeps the login and replaces the
 home context; signing into another account loads only that account's homes.
 If capability loading fails, check API reachability, certificate trust and
 server runtime configuration before retrying.
+
+### Troubleshooting a Cloud sign-in error
+
+If the sign-in screen shows `Internal error, Try again later` before credentials
+are submitted, first check the Cloud API target compiled into the simulator app.
+The Cloud API is on port `18092`; the Hub on `18787` and the loopback-only rate
+service on `18091` serve different purposes. Check that the HTTPS origin in
+`.env-local` is the current Cloud API origin, that its `/v1/auth/config` returns
+HTTP 200 with `username_password`, and that the configured development pin is
+the leaf certificate pin for that Cloud API. The Hub certificate pin cannot be
+used for Cloud sign-in.
+
+The deploy script copies the selected public settings into
+`ios/Flutter/Generated.xcconfig` and then builds the app. When troubleshooting,
+decode that file's `DART_DEFINES` and confirm the compiled
+`ENERGYLENS_CLOUD_API_URL`, `ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED`,
+`ENERGYLENS_CLOUD_DEV_AUTH_ENABLED`, `ENERGYLENS_APP_ENV`, and
+`ENERGYLENS_CLOUD_DEV_CERT_SHA256` match the intended Cloud profile. Then
+rebuild and reinstall with the command above before retrying sign-in. If those
+values match and the auth-config request succeeds with verified TLS, continue
+with the entered account credentials and post-login API response. Do not work
+around a failure by disabling TLS verification or changing a valid certificate
+pin.
+
+To inspect only those compiled values without printing the whole setting line:
+
+```sh
+python3 - <<'PY'
+import base64
+from pathlib import Path
+
+line = next(line for line in Path("ios/Flutter/Generated.xcconfig").read_text().splitlines()
+            if line.startswith("DART_DEFINES="))
+shown = {
+    "ENERGYLENS_CLOUD_API_URL",
+    "ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED",
+    "ENERGYLENS_CLOUD_DEV_AUTH_ENABLED",
+    "ENERGYLENS_APP_ENV",
+    "ENERGYLENS_CLOUD_DEV_CERT_SHA256",
+}
+for item in line.split("=", 1)[1].split(","):
+    key, value = base64.b64decode(item).decode().split("=", 1)
+    if key in shown:
+        print(f"{key}={value}")
+PY
+```
 
 ## First-party email authentication (default off)
 

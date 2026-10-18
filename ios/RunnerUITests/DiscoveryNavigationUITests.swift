@@ -333,13 +333,16 @@ final class DiscoveryNavigationUITests: XCTestCase {
       .matching(NSPredicate(format: "label CONTAINS[c] %@", "Settings"))
       .firstMatch
     let routeReady = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in chooseHome.exists || settings.exists },
+      predicate: NSPredicate { _, _ in
+        chooseHome.exists || settings.exists || startupError.exists
+      },
       object: app)
     let routeResult = XCTWaiter.wait(for: [routeReady], timeout: 300)
+    XCTAssertFalse(startupError.exists, "Cloud sign-in reported a submission failure")
     XCTAssertEqual(routeResult, .completed, "Cloud sign-in did not reach a home or Settings")
     let chooserTileLabel = NSPredicate(
       format: "label CONTAINS[c] %@ AND label MATCHES[c] %@",
-      "niksim",
+      "GeekHome",
       ".*[0-9]{5}.*[A-Za-z_]+/[A-Za-z_]+.*")
     let demoHome = app.buttons
       .matching(chooserTileLabel)
@@ -409,6 +412,83 @@ final class DiscoveryNavigationUITests: XCTestCase {
     freshForm.name = "Cloud sign-in after sign-out"
     freshForm.lifetime = .keepAlways
     add(freshForm)
+  }
+
+  func testCloudSessionShowsApprovedLampInDevices() throws {
+    continueAfterFailure = false
+    guard
+      ProcessInfo.processInfo.environment["ENERGYLENS_TEST_REUSE_SESSION"] == "1",
+      let username = ProcessInfo.processInfo.environment["ENERGYLENS_TEST_USERNAME"],
+      !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
+      throw XCTSkip("An existing Cloud session and its account identity were not supplied.")
+    }
+
+    let app = XCUIApplication(bundleIdentifier: "io.energylens.energylensMobile")
+    app.launch()
+
+    func exactLabel(_ label: String) -> XCUIElement {
+      app.descendants(matching: .any)
+        .matching(NSPredicate(format: "label == %@", label)).firstMatch
+    }
+    func capture(_ name: String) {
+      let evidence = XCTAttachment(screenshot: app.screenshot())
+      evidence.name = name
+      evidence.lifetime = .keepAlways
+      add(evidence)
+    }
+    func reveal(_ element: XCUIElement) {
+      for _ in 0..<16 {
+        if element.exists && element.isHittable { return }
+        app.swipeUp()
+      }
+    }
+    func tapNavigation(_ element: XCUIElement) {
+      let frame = element.frame
+      app.coordinate(withNormalizedOffset: CGVector(
+        dx: (frame.midX - app.frame.minX) / app.frame.width,
+        dy: (frame.midY - app.frame.minY) / app.frame.height)).tap()
+    }
+
+    let settings = app.links
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Settings"))
+      .firstMatch
+    XCTAssertTrue(settings.waitForExistence(timeout: 180), "Authenticated dashboard did not render")
+    capture("Cloud authenticated cold-launch dashboard")
+    tapNavigation(settings)
+    XCTAssertTrue(exactLabel(username).waitForExistence(timeout: 90),
+                  "Reused Cloud session did not belong to the approved account")
+
+    let manageDevices = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Manage Devices"))
+      .firstMatch
+    XCTAssertTrue(manageDevices.waitForExistence(timeout: 60))
+    manageDevices.tap()
+
+    let lampName = "Philips Hue two-bulb lamp"
+    let savedLamp = exactLabel(lampName)
+    XCTAssertTrue(savedLamp.waitForExistence(timeout: 90),
+                  "Cloud appliance was absent from Manage Devices")
+    reveal(savedLamp)
+    XCTAssertTrue(savedLamp.isHittable, "Cloud appliance was outside the visible inventory")
+    // Only persisted Cloud appliances receive this control; never activate it.
+    XCTAssertTrue(app.buttons["Remove " + lampName].exists,
+                  "Lamp did not render as a persisted Cloud appliance")
+    capture("Cloud approved lamp in Manage Devices")
+
+    let devices = app.links.matching(NSPredicate(
+      format: "label CONTAINS[c] %@ AND NOT (label CONTAINS[c] %@)",
+      "Devices", "Manage")).firstMatch
+    XCTAssertTrue(devices.waitForExistence(timeout: 30), "Devices navigation was unavailable")
+    tapNavigation(devices)
+    XCTAssertTrue(exactLabel("HOME DEVICES").waitForExistence(timeout: 60),
+                  "Devices energy page did not finish navigating")
+    let deviceLamp = exactLabel(lampName)
+    XCTAssertTrue(deviceLamp.waitForExistence(timeout: 90),
+                  "Cloud appliance was absent from the Devices energy page")
+    reveal(deviceLamp)
+    XCTAssertTrue(deviceLamp.isHittable, "Cloud appliance card was outside the visible device list")
+    capture("Cloud approved lamp on Devices energy page")
   }
 
   func testLocalPilotSettingsToNearbyDevices() {
