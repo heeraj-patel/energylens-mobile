@@ -438,3 +438,10 @@ main p.font-body-md, main .font-body-md:not(h1):not(h2):not(h3):not(h4) {
   line-height: 14px;
   text-align: right;
 }
+
+/* Keep a gap between a card title and its savings badge; let the title wrap instead. */
+.flex.items-start.justify-between > span.bg-amber-100 {
+  flex-shrink: 0;
+  margin-left: .5rem;
+}
+.flex.items-start.justify-between > .flex:first-child { min-width: 0; }
