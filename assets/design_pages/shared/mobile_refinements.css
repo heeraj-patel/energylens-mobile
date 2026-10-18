@@ -216,6 +216,11 @@ body[class*="font-body-md"] {
   backdrop-filter: blur(16px);
 }
 
+/* The fixed header adds the top safe-area inset, so main must clear it too. */
+body main.pt-16 {
+  padding-top: calc(4rem + env(safe-area-inset-top, 0px));
+}
+
 .el-app-header .font-label-md {
   font-family: var(--el-label-font-family) !important;
 }
