@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:energylens_mobile/features/design/design_navigation_script.dart';
+import 'package:energylens_mobile/features/design/design_category_picker_script.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_energy_categories.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -133,7 +135,8 @@ for (const [page, script] of Object.entries(scripts)) {
     getElementById(id) {
       return {value: ({'input-device-name': 'Fridge',
                        'input-manufacturer': 'Acme',
-                       'input-model': 'A123'})[id]};
+                       'input-model': 'A123',
+                       'energy-type': 'dishwasher'})[id]};
     },
   };
   globalThis.EnergyLensNavigation = {postMessage(value) { routes.push(value); }};
@@ -164,7 +167,7 @@ for (const [page, script] of Object.entries(scripts)) {
     click(page + '_action_020');
     assert.deepEqual(reviews, [{
       name: 'Fridge', manufacturer: 'Acme', model: 'A123',
-      category: page === 'settings_manual_device_entry' ? 'refrigerator' : 'dishwasher'
+      category: 'dishwasher'
     }]);
     assert.deepEqual(photos, []);
     if (page === 'settings_manage_devices') {
@@ -183,49 +186,77 @@ for (const [page, script] of Object.entries(scripts)) {
     }
   });
 
-  test('manual category pills update the selected category used by save', () async {
-    final payload = {
-      'script': buildDesignNavigationScript('settings_manual_device_entry'),
-    };
-    final file = await File(
-      '${Directory.systemTemp.path}/energylens-manual-category-${DateTime.now().microsecondsSinceEpoch}.json',
-    ).writeAsString(jsonEncode(payload));
+  test('API category dropdown populates dependent types and posts the key', () async {
+    const categories = EnergyCategories(
+      version: 2,
+      etag: '"2"',
+      groups: [
+        EnergyCategoryGroup(
+          key: 'home',
+          label: 'Home',
+          types: [EnergyCategoryType(key: 'lighting', label: 'Lighting')],
+        ),
+        EnergyCategoryGroup(
+          key: 'kitchen',
+          label: 'Kitchen',
+          types: [EnergyCategoryType(key: 'dishwasher', label: 'Dishwasher')],
+        ),
+      ],
+    );
+    final file =
+        await File(
+          '${Directory.systemTemp.path}/energylens-category-picker-${DateTime.now().microsecondsSinceEpoch}.json',
+        ).writeAsString(
+          jsonEncode({
+            'picker': buildDesignCategoryPickerScript(categories),
+            'navigation': buildDesignNavigationScript(
+              'settings_manual_device_entry',
+            ),
+          }),
+        );
     try {
       final result = await Process.run('node', [
         '-e',
         r'''
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const script = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')).script;
+const {picker, navigation} = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+function select() { return {
+  value: '', options: [], listeners: {}, disabled: false,
+  replaceChildren(...items) { this.options = items; this.value = items[0]?.value || ''; },
+  add(item) { this.options.push(item); },
+  addEventListener(event, fn) { this.listeners[event] = fn; },
+}; }
+const group = select(), type = select(), reviews = [];
 let clickHandler;
-const reviews = [];
-const pills = ['014', '015', '016', '017', '018', '019'].map((suffix, index) => ({
-  dataset: {elAction: 'settings_manual_device_entry_action_' + suffix},
-  selected: index === 0,
-  matches(selector) { return selector === 'button.type-pill[data-el-action]'; },
-  classList: {
-    toggle(name, value) { if (name === 'bg-primary-container') pills[index].selected = value; },
-    contains(name) { return name === 'bg-primary-container' && pills[index].selected; },
-  },
-  setAttribute(name, value) { if (name === 'aria-pressed') this.pressed = value; },
-  getAttribute(name) { return name === 'aria-pressed' && this.pressed === 'true' ? 'true' : null; },
-  cloneNode() { return {textContent: '', querySelectorAll() { return []; }}; },
-}));
+globalThis.Option = class { constructor(label, value) { this.label = label; this.value = value; } };
+globalThis.window = {};
 globalThis.document = {
-  addEventListener(_, handler) { clickHandler = handler; },
-  querySelectorAll() { return pills; },
-  getElementById(id) { return {value: ({'input-device-name': 'Living Room TV', 'input-manufacturer': 'Acme', 'input-model': 'T1'})[id]}; },
+  getElementById(id) { return ({
+    'energy-category': group, 'energy-type': type,
+    'input-device-name': {value: 'Lamp'},
+    'input-manufacturer': {value: ''},
+    'input-model': {value: ''},
+  })[id]; },
+  addEventListener(event, fn) { clickHandler = fn; },
 };
 globalThis.EnergyLensDeviceReview = {postMessage(raw) { reviews.push(JSON.parse(raw)); }};
-globalThis.EnergyLensNavigation = {postMessage() { throw new Error('unexpected route'); }};
-globalThis.EnergyLensPhotoCapture = {postMessage() { throw new Error('unexpected photo'); }};
-eval(script);
-function click(button) { clickHandler({target: {closest(selector) { return selector === 'button' ? button : null; }}, preventDefault() {}, stopImmediatePropagation() {}}); }
-click(pills[2]);
-assert.equal(pills[0].selected, false);
-assert.equal(pills[2].selected, true);
-click({dataset: {elAction: 'settings_manual_device_entry_action_020'}});
-assert.equal(reviews[0].category, 'television');
+assert.equal(eval(picker), true);
+assert.deepEqual(group.options.map(item => item.label), ['Choose category', 'Home', 'Kitchen']);
+assert.equal(type.disabled, true);
+group.value = 'kitchen'; group.listeners.change();
+assert.deepEqual(type.options.map(item => item.label), ['Choose type', 'Dishwasher']);
+assert.equal(type.disabled, false);
+type.value = 'dishwasher';
+eval(navigation);
+clickHandler({
+  target: {closest(selector) { return selector === 'button' ? {dataset: {elAction: 'settings_manual_device_entry_action_020'}} : null; }},
+  preventDefault() {}, stopImmediatePropagation() {},
+});
+assert.deepEqual(reviews, [{name: 'Lamp', manufacturer: '', model: '', category: 'dishwasher'}]);
+window.energyLensSelectType('lighting');
+assert.equal(group.value, 'home');
+assert.equal(type.value, 'lighting');
 ''',
         file.path,
       ]);

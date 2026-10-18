@@ -516,6 +516,11 @@ class _Record {
         'full_model': draft.fullModel,
         'fuel': draft.fuel,
         'room': draft.room,
+        if (draft.fccId != null) 'fcc_id': draft.fccId,
+        if (draft.icId != null) 'ic_id': draft.icId,
+        if (draft.serialNumber != null) 'serial_number': draft.serialNumber,
+        if (draft.upc != null) 'upc': draft.upc,
+        if (draft.bulbLabel != null) 'bulb_label': draft.bulbLabel!.toJson(),
         if (product != null)
           'reviewed_catalog': {
             'id': product.id,
@@ -546,6 +551,25 @@ _Record? _parse(String raw) {
       if (fields[key] is! String) return null;
     }
     if (fields['room'] != null && fields['room'] is! String) return null;
+    for (final key in ['fcc_id', 'ic_id', 'serial_number', 'upc']) {
+      if (fields[key] != null && fields[key] is! String) return null;
+    }
+    BulbLabel? bulbLabel;
+    if (fields['bulb_label'] != null) {
+      final raw = fields['bulb_label'];
+      if (raw is! Map<String, dynamic> ||
+          raw['load_kind'] is! String ||
+          raw['bulb_count'] != null && raw['bulb_count'] is! int ||
+          raw['combined_input_watts'] != null &&
+          raw['combined_input_watts'] is! num) {
+        return null;
+      }
+      bulbLabel = BulbLabel(
+        loadKind: raw['load_kind'] as String,
+        bulbCount: raw['bulb_count'] as int?,
+        combinedInputWatts: (raw['combined_input_watts'] as num?)?.toDouble(),
+      );
+    }
     CloudCatalogProduct? product;
     final reviewed = fields['reviewed_catalog'];
     if (reviewed != null) {
@@ -576,6 +600,11 @@ _Record? _parse(String raw) {
       fuel: fields['fuel'] as String,
       room: fields['room'] as String?,
       reviewedProduct: product,
+      fccId: fields['fcc_id'] as String?,
+      icId: fields['ic_id'] as String?,
+      serialNumber: fields['serial_number'] as String?,
+      upc: fields['upc'] as String?,
+      bulbLabel: bulbLabel,
     );
     draft.validated();
     return _Record(

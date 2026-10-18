@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 
 import '../../core/cloud_api/cloud_hub_claim.dart';
+import '../../core/cloud_api/cloud_energy_categories.dart';
 import '../../core/cloud_auth/cloud_auth.dart';
 
 class PairingDetails {
@@ -1108,6 +1109,16 @@ class ApplianceUsageProfile {
 }
 
 class DiscoveryApi {
+  Future<EnergyCategories?> energyCategories(
+    String baseUrl,
+    String token, {
+    String? etag,
+  }) async {
+    final body = await _request(baseUrl, token, '/v1/energy-categories', 'GET');
+    final json = body as Map<String, dynamic>;
+    return EnergyCategories.fromJson(json, '"${json['version']}"');
+  }
+
   const DiscoveryApi({
     this.pairingTransport = const IoPairingTransport(),
     this.ownerAuthorization,

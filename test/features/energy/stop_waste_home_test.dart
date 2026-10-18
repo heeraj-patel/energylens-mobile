@@ -156,7 +156,7 @@ void main() {
     await tester.tap(find.byKey(const Key('stopWasteCloudEstimates')));
     await tester.pumpAndSettle();
     expect(
-      find.text('Cloud modeled estimates · Selected Home'),
+      find.text('Appliance energy'),
       findsOneWidget,
     );
     expect(paths, contains('/v1/homes/${_home.id}/estimates'));

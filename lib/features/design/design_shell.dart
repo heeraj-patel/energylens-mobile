@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/cloud_api/cloud_appliance.dart';
+import '../../core/cloud_api/cloud_energy_categories.dart';
 import '../../core/cloud_api/cloud_appliance_list.dart';
 import '../../core/cloud_api/cloud_api_client.dart';
 import '../../core/cloud_api/cloud_household_energy.dart'
@@ -25,6 +26,7 @@ import 'dashboard_domain_repository.dart';
 import 'design_context_coordinator.dart';
 import 'design_numeric_bindings.dart';
 import 'design_navigation_script.dart';
+import 'design_category_picker_script.dart';
 import 'design_page_read_dispatcher.dart';
 import 'design_page_bridge.dart';
 import 'design_page_state_script.dart';
@@ -178,6 +180,7 @@ class _DesignShellState extends State<DesignShell> {
   int _navigationEpoch = 0;
   String? _activePageStateScope;
   static const _localSettingsStore = LocalPilotSettingsStore();
+  static EnergyCategories? _sessionCategories;
   late LocalPilotSettings _localSettings;
 
   String get _pageStateHomeId {
@@ -338,6 +341,25 @@ class _DesignShellState extends State<DesignShell> {
     _scheduleTourAdvance();
     await _onPageFinished(url);
     if (!_isCurrentPageLoad(page, generation)) return;
+    if (page == 'settings_manage_devices' ||
+        page == 'settings_manual_device_entry') {
+      try {
+        final categories = widget.settingsApi != null
+            ? await widget.settingsApi!.energyCategories(
+                etag: _sessionCategories?.etag,
+              )
+            : await widget.localDeviceLifecycle?.energyCategories();
+        if (categories != null) _sessionCategories = categories;
+      } catch (_) {
+        // Keep the last list for this session when a category refresh fails.
+      }
+      if (!_isCurrentPageLoad(page, generation)) return;
+      if (_sessionCategories case final categories?) {
+        await _controller.runJavaScript(
+          buildDesignCategoryPickerScript(categories),
+        );
+      }
+    }
     if (widget.localPilot) {
       await _controller.runJavaScript(
         buildLocalPilotSettingsScript(page, _localSettings),
@@ -1268,15 +1290,16 @@ class _DesignShellState extends State<DesignShell> {
         context: this.context,
         builder: (_) => DeviceReviewSheet(
           lifecycle: lifecycle,
+          api: widget.settingsApi,
           accountId: context.accountId,
           homeId: context.homeId,
           homeName: widget.homeName,
           name: fields['name'] as String,
           manufacturer: fields['manufacturer'] as String,
           model: fields['model'] as String,
-          initialCategory: reviewCategories.contains(selectedCategory)
-              ? selectedCategory
-              : null,
+          initialCategory: selectedCategory?.isEmpty == true
+              ? null
+              : selectedCategory,
         ),
       );
       if (saved != null &&

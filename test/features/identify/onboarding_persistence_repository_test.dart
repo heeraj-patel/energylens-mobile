@@ -177,7 +177,7 @@ void main() {
     expect(source.creates, 1);
   });
 
-  test('only an exact reviewed catalog product can mark a draft exact', () {
+  test('catalog selection keeps candidate quality and edited identity', () {
     const family = CloudCatalogProduct(
       id: applianceId,
       category: 'refrigerator',
@@ -200,17 +200,19 @@ void main() {
       matchQuality: 'confirmed_exact',
       facts: [],
     );
-    expect(
-      () => const OnboardingDraft(
-        name: 'Fridge',
-        category: 'refrigerator',
-        brand: 'Acme',
-        fullModel: 'A123',
-        fuel: 'electricity',
-        reviewedProduct: family,
-      ).validated(),
-      throwsArgumentError,
-    );
+    final familyIdentity =
+        const OnboardingDraft(
+              name: 'Fridge',
+              category: 'refrigerator',
+              brand: 'Edited maker',
+              fullModel: 'Edited model',
+              fuel: 'electricity',
+              reviewedProduct: family,
+            ).validated().toJson()['identity']
+            as Map<String, dynamic>;
+    expect(familyIdentity['match_quality'], 'documented_variant_family');
+    expect(familyIdentity['brand'], 'Edited maker');
+    expect(familyIdentity['full_model'], 'Edited model');
     final identity =
         const OnboardingDraft(
               name: 'Fridge',
@@ -223,6 +225,36 @@ void main() {
             as Map<String, dynamic>;
     expect(identity['match_quality'], 'confirmed_exact');
     expect(identity['catalog_product_id'], applianceId);
+  });
+
+  test('category-only and scanned identity fields reach create payload', () {
+    final identity =
+        const OnboardingDraft(
+              name: 'Light',
+              category: 'lighting',
+              brand: '',
+              fullModel: '',
+              fuel: 'electricity',
+              fccId: 'ABC123456',
+              icId: '12345A-ABC',
+              serialNumber: 'SN123',
+              upc: '012345678905',
+              bulbLabel: BulbLabel(
+                loadKind: 'replaceable_bulb',
+                bulbCount: 2,
+                combinedInputWatts: 19,
+              ),
+            ).validated().toJson()['identity']
+            as Map<String, dynamic>;
+    expect(identity['fcc_id'], 'ABC123456');
+    expect(identity['ic_id'], '12345A-ABC');
+    expect(identity['serial_number'], 'SN123');
+    expect(identity['upc'], '012345678905');
+    expect(identity['bulb_label'], {
+      'load_kind': 'replaceable_bulb',
+      'bulb_count': 2,
+      'combined_input_watts': 19.0,
+    });
   });
 
   test(

@@ -72,21 +72,6 @@ String buildDesignNavigationScript(String page) {
           EnergyLensDeleteDevice.postMessage(savedApplianceId);
           return;
         }
-        if (page === 'settings_manual_device_entry' &&
-            button.matches?.('button.type-pill[data-el-action]') == true) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          for (const pill of document.querySelectorAll('button.type-pill[data-el-action]')) {
-            const selected = pill === button;
-            pill.classList.toggle('bg-primary-container', selected);
-            pill.classList.toggle('text-on-primary-container', selected);
-            pill.classList.toggle('font-semibold', selected);
-            pill.classList.toggle('bg-surface-container-low', !selected);
-            pill.classList.toggle('text-on-surface-variant', !selected);
-            pill.setAttribute('aria-pressed', String(selected));
-          }
-          return;
-        }
         if (page === 'dashboard' &&
             ['dashboard_action_004', 'dashboard_action_005', 'dashboard_action_006'].includes(action)) {
           event.preventDefault();
@@ -110,29 +95,11 @@ String buildDesignNavigationScript(String page) {
             action === page + '_action_020') {
           event.preventDefault();
           event.stopImmediatePropagation();
-          const selectedType = Array.from(document.querySelectorAll('button.type-pill[data-el-action]'))
-            .find((element) => element.dataset.elAction?.startsWith(page + '_action_01') &&
-              (element.classList.contains('bg-primary-container') || element.getAttribute('aria-pressed') === 'true'));
-          const categoryByAction = page === 'settings_manual_device_entry' ? {
-            [page + '_action_014']: 'air_conditioner',
-            [page + '_action_015']: 'refrigerator',
-            [page + '_action_016']: 'television',
-            [page + '_action_017']: 'computer',
-            [page + '_action_018']: 'dishwasher',
-            [page + '_action_019']: 'water_heater'
-          } : {
-            [page + '_action_014']: 'air_conditioner',
-            [page + '_action_015']: 'dishwasher',
-            [page + '_action_016']: 'television',
-            [page + '_action_017']: 'computer',
-            [page + '_action_018']: 'lighting',
-            [page + '_action_019']: 'other'
-          };
           EnergyLensDeviceReview.postMessage(JSON.stringify({
             name: document.getElementById('input-device-name')?.value || '',
             manufacturer: document.getElementById('input-manufacturer')?.value || '',
             model: document.getElementById('input-model')?.value || '',
-            category: categoryByAction[selectedType?.dataset.elAction] || ''
+            category: document.getElementById('energy-type')?.value || ''
           }));
           return;
         }

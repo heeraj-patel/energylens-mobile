@@ -123,7 +123,7 @@ Map<String, dynamic> _run(
 
 void main() {
   testWidgets(
-    'selected home renders modeled run and unavailable reason separately',
+    'selected home shows only approved energy and cost copy',
     (tester) async {
       tester.view.physicalSize = const Size(800, 1600);
       tester.view.devicePixelRatio = 1;
@@ -199,23 +199,17 @@ void main() {
         '/v1/homes/${_home.id}/appliances',
         '/v1/homes/${_home.id}/estimates',
       ]);
-      expect(find.text('Estimated operating cost'), findsOneWidget);
-      expect(find.text('Estimated useful cost'), findsOneWidget);
-      expect(find.text('10.983333 USD · 54.916667 kWh'), findsNWidgets(2));
-      expect(
-        find.textContaining('2026-10-01 to before 2026-11-01'),
-        findsNWidgets(3),
-      );
-      expect(find.textContaining('reviewed exact source'), findsNWidgets(2));
-      expect(find.textContaining('catalog fact revision 2'), findsNWidgets(2));
-      expect(find.text('Waste: not yet assessed'), findsNWidgets(3));
-      expect(
-        find.text(
-          'No reviewed energy fact is available for this exact product.',
-        ),
-        findsOneWidget,
-      );
-      expect(find.textContaining('totals are not combined'), findsOneWidget);
+      expect(find.text('Appliance energy'), findsOneWidget);
+      expect(find.text('Per month'), findsNWidgets(3));
+      expect(find.text('Energy · 54.9 kWh'), findsNWidgets(2));
+      expect(find.text('Cost · \$10.98'), findsNWidgets(2));
+      expect(find.text('Energy data is not available yet.'), findsOneWidget);
+      for (final forbidden in [
+        'source', 'reviewed', 'Evidence', 'Basis', 'revision',
+        'Waste:', 'formula', 'totals are not combined',
+      ]) {
+        expect(find.textContaining(forbidden), findsNothing);
+      }
       api.close();
     },
   );
@@ -255,8 +249,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('cloudEstimatesError')), findsOneWidget);
-    expect(find.text('Estimated operating cost'), findsNothing);
+    expect(find.text('Energy data is not available yet.'), findsOneWidget);
+    expect(find.text('Energy · 54.9 kWh'), findsNothing);
     api.close();
   });
 
@@ -283,7 +277,7 @@ void main() {
     }
   });
 
-  testWidgets('reviewed gas cycle estimate shows therms and assessed status', (
+  testWidgets('gas cycle estimate does not show unsupported energy units', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(800, 1600);
@@ -342,11 +336,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Estimated useful gas cost'), findsOneWidget);
-    expect(find.text('9.300000 USD · 7.750000 therm'), findsOneWidget);
-    expect(find.text('Waste: not yet assessed'), findsOneWidget);
-    expect(find.textContaining('totals are not combined'), findsOneWidget);
-    expect(find.text('Estimated useful cost'), findsNothing);
+    expect(find.text('Appliance energy'), findsOneWidget);
+    expect(find.text('Energy data is not available yet.'), findsOneWidget);
+    expect(find.text('Cost · \$9.30'), findsOneWidget);
+    expect(find.textContaining('therm'), findsNothing);
+    expect(find.textContaining('source'), findsNothing);
     api.close();
   });
 
@@ -396,12 +390,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('cloudEstimatesError')), findsOneWidget);
-    expect(find.text('Estimated useful gas cost'), findsNothing);
+    expect(find.text('Energy data is not available yet.'), findsOneWidget);
+    expect(find.text('Cost · \$10.98'), findsNothing);
     api.close();
   });
 
-  testWidgets('missing gas rate opens this home’s bill form and refreshes', (
+  testWidgets('missing gas rate keeps the approved empty state', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(800, 1600);
@@ -491,28 +485,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('USD/therm'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('estimateAddRate-$dryerId')));
-    await tester.pumpAndSettle();
-    expect(find.text('Cloud gas rate'), findsOneWidget);
-    final today = DateTime.now().toUtc().toIso8601String().substring(0, 10);
-    await tester.enterText(find.byKey(const Key('cloudRate')), '1.20');
-    await tester.enterText(find.byKey(const Key('cloudRateSourceDate')), today);
-    await tester.enterText(
-      find.byKey(const Key('cloudRateEffectiveDate')),
-      today,
-    );
-    await tester.ensureVisible(find.text('Save Cloud gas rate'));
-    await tester.tap(find.text('Save Cloud gas rate'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Cloud gas rate saved'), findsOneWidget);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    expect(estimateReads, 2);
-    expect(find.text('Estimated useful gas cost'), findsOneWidget);
-    expect(find.text('9.300000 USD · 7.750000 therm'), findsOneWidget);
-    expect(find.text('Waste: not yet assessed'), findsOneWidget);
-    expect(paths, contains('/v1/homes/${_home.id}/tariffs'));
+    expect(find.text('Energy data is not available yet.'), findsOneWidget);
+    expect(find.byKey(Key('estimateAddRate-$dryerId')), findsNothing);
+    expect(find.textContaining('rate'), findsNothing);
+    expect(estimateReads, 1);
+    expect(paths, isNot(contains('/v1/homes/${_home.id}/tariffs')));
     api.close();
   });
 }

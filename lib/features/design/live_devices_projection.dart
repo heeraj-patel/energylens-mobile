@@ -6,7 +6,6 @@ import 'package:timezone/timezone.dart' as tz;
 
 import 'design_context_coordinator.dart';
 import 'devices_domain_repository.dart';
-import 'demo_energy_tree.dart';
 
 /// Native-only projection. A bucket is an observation with partial coverage,
 /// not a device total, current power, cost, or operating state.
@@ -31,7 +30,6 @@ class LiveDeviceRow {
     this.manufacturer = '',
     this.model = '',
     required this.measuredBucket,
-    this.demoWasteMicrosPerDay,
     this.usageCost,
     this.usefulCost,
     this.wasteCost,
@@ -45,8 +43,6 @@ class LiveDeviceRow {
   final String model;
   final LiveDeviceMeasuredBucket? measuredBucket;
 
-  /// Display-only rate, available only after a typed final KB waste miss.
-  final int? demoWasteMicrosPerDay;
   final String? usageCost;
   final String? usefulCost;
   final String? wasteCost;
@@ -166,28 +162,10 @@ LiveDevicesProjection prepareLiveDevicesProjection(DesignContextRead read) {
         currentState.observedAt != null &&
         stateAsOf != null &&
         requestStartedAt != null) {
-      final remaining = const Duration(minutes: 15) -
+      final remaining =
+          const Duration(minutes: 15) -
           stateAsOf.difference(currentState.observedAt!);
       stateExpiresAt = requestStartedAt.add(remaining);
-    }
-    int? illustrativeWaste;
-    if (read.mode == DesignContextMode.household &&
-        appliance.demoDeviceId == null &&
-        appliance.kbWasteResult?.status ==
-            'waste_evidence_unavailable_after_kb') {
-      illustrativeWaste = switch (dummyWasteDrawForProfile(
-        appliance.category,
-      )) {
-        DummyWasteDraw.low => dummyIdleHoursPerLocalDay * 100,
-        DummyWasteDraw.high => dummyIdleHoursPerLocalDay * 10000,
-        null => null,
-      };
-      final measuredTotal = dailyCost?.totalMicros;
-      if (illustrativeWaste != null &&
-          measuredTotal != null &&
-          measuredTotal < BigInt.from(illustrativeWaste)) {
-        illustrativeWaste = measuredTotal.toInt();
-      }
     }
     rows.add(
       LiveDeviceRow(
@@ -199,9 +177,7 @@ LiveDevicesProjection prepareLiveDevicesProjection(DesignContextRead read) {
         usageCost: dailyCost == null ? null : _costText(dailyCost.totalMicros),
         usefulCost: dailyCost?.usefulCost,
         wasteCost: dailyCost?.wasteCost,
-        demoWasteMicrosPerDay: illustrativeWaste,
-        state: stateExpiresAt != null &&
-                !stateExpiresAt.isAfter(DateTime.now())
+        state: stateExpiresAt != null && !stateExpiresAt.isAfter(DateTime.now())
             ? 'standby'
             : currentState?.state ?? 'standby',
         stateExpiresAt: stateExpiresAt,

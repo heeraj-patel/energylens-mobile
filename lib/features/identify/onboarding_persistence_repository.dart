@@ -63,6 +63,11 @@ class OnboardingDraft {
     required this.fuel,
     this.room,
     this.reviewedProduct,
+    this.fccId,
+    this.icId,
+    this.serialNumber,
+    this.upc,
+    this.bulbLabel,
   });
   final String name;
   final String category;
@@ -71,6 +76,11 @@ class OnboardingDraft {
   final String fuel;
   final String? room;
   final CloudCatalogProduct? reviewedProduct;
+  final String? fccId;
+  final String? icId;
+  final String? serialNumber;
+  final String? upc;
+  final BulbLabel? bulbLabel;
 
   CloudApplianceCreate validated() {
     String requiredText(String value, String field) {
@@ -83,8 +93,21 @@ class OnboardingDraft {
 
     final normalizedName = requiredText(name, 'name');
     final normalizedCategory = requiredText(category, 'category');
-    final normalizedBrand = requiredText(brand, 'brand');
-    final normalizedModel = requiredText(fullModel, 'fullModel');
+    String optionalText(String value, String field) {
+      final trimmed = value.trim();
+      if (trimmed.length > 120) throw ArgumentError.value(value, field);
+      return trimmed;
+    }
+
+    String? optionalIdentity(String? value, String field) {
+      final trimmed = value?.trim();
+      if (trimmed == null || trimmed.isEmpty) return null;
+      if (trimmed.length > 120) throw ArgumentError.value(value, field);
+      return trimmed;
+    }
+
+    final normalizedBrand = optionalText(brand, 'brand');
+    final normalizedModel = optionalText(fullModel, 'fullModel');
     final normalizedRoom = room?.trim();
     if (normalizedRoom != null && normalizedRoom.length > 120) {
       throw ArgumentError.value(room, 'room');
@@ -98,14 +121,7 @@ class OnboardingDraft {
       throw ArgumentError.value(fuel, 'fuel');
     }
     final product = reviewedProduct;
-    if (product != null &&
-        (!product.isConfirmedExact ||
-            product.isDocumentedFamilyCandidate ||
-            product.category != normalizedCategory ||
-            product.brand != normalizedBrand ||
-            product.fullModel != normalizedModel ||
-            product.fuel != fuel ||
-            !_uuid.hasMatch(product.id))) {
+    if (product != null && !_uuid.hasMatch(product.id)) {
       throw ArgumentError.value(product, 'reviewedProduct');
     }
     return CloudApplianceCreate(
@@ -120,7 +136,12 @@ class OnboardingDraft {
       variant: product?.variant,
       region: product?.region,
       catalogProductId: product?.id,
-      matchQuality: product == null ? 'unresolved' : 'confirmed_exact',
+      matchQuality: product == null ? 'unresolved' : product.matchQuality,
+      fccId: optionalIdentity(fccId, 'fccId'),
+      icId: optionalIdentity(icId, 'icId'),
+      serialNumber: optionalIdentity(serialNumber, 'serialNumber'),
+      upc: optionalIdentity(upc, 'upc'),
+      bulbLabel: bulbLabel,
     );
   }
 }

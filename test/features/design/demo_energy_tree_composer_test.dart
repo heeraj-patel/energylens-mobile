@@ -36,7 +36,6 @@ DeviceInventoryItem item(
   double energyWh = 5000,
   double? coveredSeconds,
   String category = 'computer',
-  CloudKbWasteResult? kbWasteResult,
 }) => DeviceInventoryItem(
   appliance: CloudAppliance(
     id: id,
@@ -48,7 +47,6 @@ DeviceInventoryItem item(
     fullModel: 'Example',
     fuel: 'electricity',
     matchQuality: 'confirmed_exact',
-    kbWasteResult: kbWasteResult,
   ),
   activeAttachmentIds: [attachmentId],
   measuredBuckets: [
@@ -238,64 +236,30 @@ void main() {
     expect(result.day('2026-10-07').devices, hasLength(18));
   });
 
-  test(
-    'final KB miss applies the assumed schedule without interval evidence',
-    () {
-      const kbResult = CloudKbWasteResult(
-        id: 'kb-final-waste-1',
-        status: 'waste_evidence_unavailable_after_kb',
-      );
-      final device = item(
-        distinctId,
-        distinctAttachment,
-        today,
-        category: 'tv',
-        kbWasteResult: kbResult,
-      );
-      final withoutDuration = compose(devices: snapshot([device]));
-      final unchanged = withoutDuration.day('2026-10-07').devices.last;
-      expect(unchanged.cost.wasteMicros, 80000);
-      expect(unchanged.wasteDurationEvidenceId, isNull);
-
-      final verified = VerifiedDemoWasteDay(
-        homeId: home,
-        applianceId: distinctId,
-        period: today,
-        duration: WasteDurationEvidence(
-          seconds: 3600,
-          evidenceId: 'verified-idle-interval',
-          intervalKind: WasteDurationIntervalKind.verifiedIdle,
-        ),
-      );
-      final result = compose(
-        devices: snapshot([device]),
-        verifiedWasteDays: [verified],
-      );
-      final row = result.day('2026-10-07').devices.last;
-      expect(row.cost.totalMicros, unchanged.cost.totalMicros);
-      expect(row.cost.wasteMicros, 80000);
-      expect(row.cost.unclassifiedMicros, unchanged.cost.unclassifiedMicros);
-      expect(row.kbWasteResultId, kbResult.id);
-      expect(row.wasteDurationEvidenceId, 'verified-idle-interval');
-      expect(result.homeCost.totalMicros, withoutDuration.homeCost.totalMicros);
-
-      final duplicate = compose(
-        devices: snapshot([device]),
-        verifiedWasteDays: [verified, verified],
-      );
-      expect(duplicate.day('2026-10-07').devices.last.cost.wasteMicros, 80000);
-
-      for (final status in ['pending', 'failed']) {
-        final unresolvedDevice = item(
-          distinctId,
-          distinctAttachment,
-          today,
-          category: 'tv',
-          kbWasteResult: CloudKbWasteResult(id: 'kb-$status', status: status),
-        );
-        final unresolved = compose(devices: snapshot([unresolvedDevice]));
-        expect(unresolved.day('2026-10-07').devices.last.cost.wasteMicros, 0);
-      }
-    },
-  );
+  test('final KB miss never creates app-side waste', () {
+    final device = item(distinctId, distinctAttachment, today, category: 'tv');
+    final withoutDuration = compose(devices: snapshot([device]));
+    final row = withoutDuration.day('2026-10-07').devices.last;
+    expect(row.cost.wasteMicros, 0);
+    expect(row.wasteDurationEvidenceId, isNull);
+    final verified = VerifiedDemoWasteDay(
+      homeId: home,
+      applianceId: distinctId,
+      period: today,
+      duration: WasteDurationEvidence(
+        seconds: 3600,
+        evidenceId: 'verified-idle-interval',
+        intervalKind: WasteDurationIntervalKind.verifiedIdle,
+      ),
+    );
+    final withDuration = compose(
+      devices: snapshot([device]),
+      verifiedWasteDays: [verified],
+    );
+    expect(withDuration.day('2026-10-07').devices.last.cost.wasteMicros, 0);
+    expect(
+      withDuration.homeCost.totalMicros,
+      withoutDuration.homeCost.totalMicros,
+    );
+  });
 }

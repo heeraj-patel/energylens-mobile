@@ -80,22 +80,19 @@ void main() {
     );
   });
 
-  test('manual entry type selection stays in its own page', () {
+  test('manual entry captures a category key and rejects malformed values', () {
     final snapshot = DesignPageStateSnapshot.fromJson(
       jsonEncode({
         'scroll_x': 0,
         'scroll_y': 0,
         'fields': {'settings_manual_device_entry_field_001': 'Lamp'},
         'checks': {},
-        'selected_type': 'settings_manual_device_entry_action_017',
+        'selected_type': 'computer',
       }),
       homeId: 'home',
       page: 'settings_manual_device_entry',
     );
-    expect(
-      snapshot.selectedTypeAction,
-      'settings_manual_device_entry_action_017',
-    );
+    expect(snapshot.selectedTypeAction, 'computer');
     expect(
       () => DesignPageStateSnapshot.fromJson(
         jsonEncode({
@@ -131,7 +128,7 @@ void main() {
             'scroll_y': 0,
             'fields': {},
             'checks': {},
-            'selected_type': 'settings_manage_devices_action_015',
+            'selected_type': 'lighting',
           }),
           homeId: 'home',
           page: 'settings_manage_devices',
@@ -144,7 +141,7 @@ void main() {
             'scroll_y': 0,
             'fields': {},
             'checks': {},
-            'selected_type': 'settings_manual_device_entry_action_017',
+            'selected_type': 'computer',
           }),
           homeId: 'home',
           page: 'settings_manual_device_entry',
@@ -178,18 +175,20 @@ const search = element({type: 'search', field: 'perks_tips_field_002', value: 'a
 const password = element({type: 'password', field: 'perks_tips_field_003', value: 'secret'});
 const email = element({type: 'email', field: 'perks_tips_field_004', value: 'person@example.com'});
 const checkbox = element({type: 'checkbox', action: 'perks_tips_action_013', checked: true});
-const selectedType = element({tag: 'BUTTON', action: 'settings_manage_devices_action_015', selected: true});
-const manualType = element({tag: 'BUTTON', action: 'settings_manual_device_entry_action_017', selected: true});
+const selectedType = element({tag: 'SELECT', value: 'lighting'});
+const manualType = element({tag: 'SELECT', value: 'computer'});
 globalThis.Event = class { constructor(type) { this.type = type; this.bubbles = true; } };
-globalThis.window = {scrollX: 0, scrollY: 88, scrollTo(x, y) { this.restored = [x, y]; }};
+globalThis.window = {scrollX: 0, scrollY: 88, scrollTo(x, y) { this.restored = [x, y]; }, energyLensSelectType(key) { this.selected = key; }};
 globalThis.document = {
+  getElementById(id) { return id === 'energy-type' ? (currentPage === 'settings_manual_device_entry' ? manualType : selectedType) : null; },
   querySelectorAll(selector) {
     if (selector.includes('input[data-el-field]')) return [text, search, password, email];
     if (selector.includes('type="checkbox"')) return [checkbox];
-    if (selector.includes('.type-pill')) return [selectedType, manualType];
+
     return [];
   },
 };
+let currentPage = 'settings_manage_devices';
 const captured = JSON.parse(eval(scripts.capture));
 assert.deepEqual(captured.fields, {perks_tips_field_001: 'search term', perks_tips_field_002: 'abc'});
 assert.deepEqual(captured.checks, {perks_tips_action_013: true});
@@ -201,11 +200,12 @@ assert.equal(checkbox.checked, false);
 assert.deepEqual(checkbox.events, ['input', 'change']);
 assert.deepEqual(window.restored, [0, 260]);
 assert.equal(eval(scripts.type), true);
-assert.equal(selectedType.clicked, true);
+assert.equal(window.selected, 'lighting');
 assert.equal(eval(scripts.manualType), true);
-assert.equal(manualType.clicked, true);
+assert.equal(window.selected, 'computer');
+currentPage = 'settings_manual_device_entry';
 assert.equal(JSON.parse(eval(scripts.settings_manual_device_entry)).selected_type,
-  'settings_manual_device_entry_action_017');
+  'computer');
 for (const page of Object.keys(scripts)) {
   if (page === 'capture' || page === 'restore' || page === 'type' || page === 'manualType') continue;
   assert.ok(scripts[page].includes(JSON.stringify(page)));

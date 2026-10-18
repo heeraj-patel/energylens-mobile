@@ -1501,10 +1501,10 @@ void main() {
       find.byKey(const Key('appliance-hours-1')),
       200,
     );
-    expect(find.text('Estimated total: \$0.32/month'), findsOneWidget);
-    expect(find.text('On-time use: \$0.27/month'), findsOneWidget);
-    expect(find.text('Standby use: \$0.04/month'), findsOneWidget);
-    expect(find.text('ENERGY STAR data (EPA)'), findsOneWidget);
+    expect(find.text('Cost · \$0.32'), findsOneWidget);
+    expect(find.textContaining('On-time use:'), findsNothing);
+    expect(find.textContaining('Standby use:'), findsNothing);
+    expect(find.textContaining('ENERGY STAR'), findsNothing);
     expect(find.text('On time: 21 hours/week'), findsOneWidget);
     final slider = tester.widget<Slider>(
       find.byKey(const Key('appliance-hours-1')),
@@ -1514,7 +1514,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.hours, 42);
     expect(find.text('On time: 42 hours/week'), findsOneWidget);
-    expect(find.text('Estimated total: \$0.58/month'), findsOneWidget);
+    expect(find.text('Cost · \$0.58'), findsOneWidget);
     await tester.ensureVisible(
       find.byKey(const Key('reset-appliance-hours-1')),
     );
@@ -1523,7 +1523,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.hours, 21);
     expect(find.text('On time: 21 hours/week'), findsOneWidget);
-    expect(find.text('Estimated total: \$0.32/month'), findsOneWidget);
+    expect(find.text('Cost · \$0.32'), findsOneWidget);
   });
 
   testWidgets('does not label rolling meter history as today', (tester) async {
@@ -1658,7 +1658,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('KitchenAid refrigerator'), findsOneWidget);
     expect(find.text('Two-bulb Philips Hue White lamp'), findsOneWidget);
-    expect(find.text('N/A'), findsNWidgets(3));
+    expect(find.text('N/A'), findsNWidgets(2));
     expect(find.text('Waste cost'), findsNothing);
   });
 

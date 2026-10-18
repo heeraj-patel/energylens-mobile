@@ -99,37 +99,6 @@ class DemoEnergyTreeComposer {
         }
         try {
           tree = candidate.mergeInto(tree);
-          final matchingWasteDays = verifiedWasteDays
-              .where(
-                (value) =>
-                    value.homeId.toLowerCase() == homeId.toLowerCase() &&
-                    value.applianceId.toLowerCase() ==
-                        candidate.reading.deviceId.toLowerCase() &&
-                    value.period.sameAs(day.period),
-              )
-              .toList();
-          final matchingAppliances = snapshot.items
-              .where(
-                (item) =>
-                    item.appliance.id.toLowerCase() ==
-                    candidate.reading.deviceId.toLowerCase(),
-              )
-              .toList();
-          if (matchingAppliances.length == 1 &&
-              matchingAppliances.single.appliance.kbWasteResult?.status ==
-                  'waste_evidence_unavailable_after_kb') {
-            final appliance = matchingAppliances.single.appliance;
-            tree = tree.applyDummyWasteAfterKb(
-              localDate: day.period.localDate,
-              deviceId: appliance.id,
-              profileCategory: appliance.category,
-              durationEvidence: matchingWasteDays.length == 1
-                  ? matchingWasteDays.single.duration
-                  : null,
-              kbResult: KbWasteResult.wasteEvidenceUnavailableAfterKb,
-              kbResultId: appliance.kbWasteResult!.id,
-            );
-          }
         } on FormatException {
           // A malformed mapping or conflicting branch is not live evidence.
         }

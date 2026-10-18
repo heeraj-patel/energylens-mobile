@@ -14,6 +14,10 @@ class CandidateOnboardingReview {
     this.fullModel,
     this.fuel,
     this.room,
+    this.fccId,
+    this.icId,
+    this.serialNumber,
+    this.upc,
   });
 
   final String? name;
@@ -22,6 +26,10 @@ class CandidateOnboardingReview {
   final String? fullModel;
   final String? fuel;
   final String? room;
+  final String? fccId;
+  final String? icId;
+  final String? serialNumber;
+  final String? upc;
 }
 
 enum CandidateOnboardingReviewState {
@@ -74,7 +82,7 @@ class CandidateOnboardingReviewAdapter {
     if (candidates.isEmpty) {
       return const CandidateOnboardingReviewResult(
         state: CandidateOnboardingReviewState.missingFields,
-        missingFields: ['brand', 'fullModel', 'category'],
+        missingFields: ['category'],
       );
     }
     if (selectedCandidateIndex == null && candidates.length > 1) {
@@ -101,8 +109,6 @@ class CandidateOnboardingReviewAdapter {
     final missing = <String>[
       if (name == null) 'name',
       if (category == null) 'category',
-      if (brand == null) 'brand',
-      if (model == null) 'fullModel',
       if (fuel == null) 'fuel',
     ];
     if (missing.isNotEmpty) {
@@ -120,10 +126,14 @@ class CandidateOnboardingReviewAdapter {
     final draft = OnboardingDraft(
       name: name!,
       category: category!,
-      brand: brand!,
-      fullModel: model!,
+      brand: brand ?? '',
+      fullModel: model ?? '',
       fuel: fuel!,
       room: _value(values.room),
+      fccId: _value(values.fccId),
+      icId: _value(values.icId),
+      serialNumber: _value(values.serialNumber),
+      upc: _value(values.upc),
     );
     // Validation also rejects values that are present but unusable.
     draft.validated();

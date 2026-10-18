@@ -13,12 +13,11 @@ import 'features/discovery/discovery_api.dart';
 import 'features/discovery/discovery_credentials.dart';
 import 'features/discovery/electricity_settings_screen.dart';
 import 'features/design/demo_report_preview_screen.dart';
-import 'features/energy/useful_waste_cost_card.dart';
 import 'features/energy/daily_cost.dart';
 import 'features/energy/power_now_daily_cost_table.dart';
 import 'features/energy/power_now_visibility.dart';
-import 'features/energy/cloud_estimates_section.dart';
 import 'features/energy/cloud_metered_history_screen.dart';
+import 'features/energy/cloud_estimates_section.dart';
 import 'features/energy/cloud_cycle_comparison_screen.dart';
 import 'features/energy/cloud_kasa_runtime_screen.dart';
 import 'features/energy/cloud_metered_summary_screen.dart';
@@ -1349,30 +1348,6 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
     }
   }
 
-  (double?, double?) _costSplit(double? hours) {
-    final estimate = widget.estimate;
-    final evidence = estimate?.evidence;
-    if (_previewHours == null || hours == null || evidence == null) {
-      return (estimate?.activeCostUsd, estimate?.standbyCostUsd);
-    }
-    final rate = estimate?.rateUsdPerKwh;
-    if (rate == null) return (null, null);
-    final appliance = widget.appliance;
-    if (evidence.datasetId == 'msj5-kqfv') {
-      final count = appliance.bulbCount ?? 1;
-      final active = evidence.annualKwh * count * hours / 21 / 12 * rate;
-      final standby = evidence.standbyWatts == null
-          ? null
-          : evidence.standbyWatts! * count * (168 - hours) * 52 / 12000 * rate;
-      return (active, standby);
-    }
-    if (evidence.sourceKind == 'user_label' &&
-        appliance.combinedInputWatts != null) {
-      return (appliance.combinedInputWatts! * hours * 52 / 12000 * rate, null);
-    }
-    return (estimate?.activeCostUsd, estimate?.standbyCostUsd);
-  }
-
   @override
   void didUpdateWidget(covariant _ConnectedLoadRow oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -1481,46 +1456,15 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
   Widget build(BuildContext context) {
     final appliance = widget.appliance;
     final estimate = widget.estimate;
-    final evidence = estimate?.evidence;
     final measured = estimate?.status == 'measured';
     final hours = _previewHours ?? appliance.hoursPerWeek;
     final initialHours = appliance.initialHoursPerWeek;
     final showProfileHours =
         _usageProfile?.usageKind == 'hours_per_week' &&
         !measured &&
-        (evidence?.sourceKind == 'category_typical' ||
-            evidence?.usageBasis.startsWith('hours_per_day:') == true) &&
         !(appliance.category == 'lighting' &&
             appliance.loadKind == 'replaceable_bulb');
-    final (activeCost, standbyCost) = _costSplit(hours);
-    final cost = _previewHours == null
-        ? estimate?.estimatedCostUsd
-        : activeCost == null
-        ? null
-        : activeCost + (standbyCost ?? 0);
-    final rateLabel = estimate?.rateSourceLabel;
-    final sourceLabel = measured
-        ? 'Meter readings · ${((estimate?.measurementCoverageFraction ?? 0) * 100).round()}% of the last 30 days covered'
-        : evidence == null
-        ? 'Energy source unavailable'
-        : energySourceHeading(evidence);
-    final onTimeOnly =
-        standbyCost == null &&
-        (evidence?.sourceKind == 'user_label' ||
-            evidence?.datasetId == 'msj5-kqfv');
-    final costHeading = measured
-        ? 'Observed last 30 days'
-        : evidence?.sourceKind == 'energy_star_archive'
-        ? 'Historical test-profile cost'
-        : evidence?.sourceKind == 'oem_family'
-        ? 'Manufacturer family test-profile cost'
-        : evidence?.sourceKind == 'energuide_family'
-        ? 'Historical EnerGuide family test-profile cost'
-        : onTimeOnly
-        ? 'Estimated on-time'
-        : standbyCost != null
-        ? 'Estimated total'
-        : 'Estimated monthly cost';
+    final cost = estimate?.estimatedCostUsd;
     return _Surface(
       child: Row(
         children: [
@@ -1536,14 +1480,15 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
                       ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 4),
+                Text(measured ? 'Last 30 days' : 'Per month'),
+                if (estimate?.estimatedKwh != null)
+                  Text(
+                    'Energy · ${estimate!.estimatedKwh!.toStringAsFixed(1)} kWh',
+                  ),
                 Text(
                   cost != null
-                      ? measured
-                            ? '$costHeading: \$${cost.toStringAsFixed(2)}'
-                            : '$costHeading: \$${cost.toStringAsFixed(2)}/month'
-                      : estimate?.estimatedKwh != null
-                      ? 'Cost unavailable'
-                      : 'Estimate unavailable',
+                      ? 'Cost · \$${cost.toStringAsFixed(2)}'
+                      : 'Energy data is not available yet.',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: cost == null ? _secondary(context) : _green,
                     fontWeight: cost == null
@@ -1551,65 +1496,8 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
                         : FontWeight.w700,
                   ),
                 ),
-                if (activeCost != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    '${evidence?.sourceKind == 'category_typical' ? 'Active use' : 'On-time use'}: \$${activeCost.toStringAsFixed(2)}/month',
-                    style: Theme.of(context).textTheme.bodySmall
-                        ?.copyWith(color: _secondary(context)),
-                  ),
-                  Text(
-                    standbyCost == null
-                        ? 'Standby use: unavailable'
-                        : 'Standby use: \$${standbyCost.toStringAsFixed(2)}/month',
-                    style: Theme.of(context).textTheme.bodySmall
-                        ?.copyWith(color: _secondary(context)),
-                  ),
-                ],
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(
-                      evidence?.sourceKind == 'energy_star'
-                          ? Icons.verified_outlined
-                          : Icons.info_outline,
-                      size: 16,
-                      color: _secondary(context),
-                    ),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        sourceLabel,
-                        style: Theme.of(context).textTheme.bodySmall
-                            ?.copyWith(color: _secondary(context)),
-                      ),
-                    ),
-                  ],
-                ),
-                if (cost != null && rateLabel != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    'Rate: $rateLabel',
-                    style: Theme.of(context).textTheme.bodySmall
-                        ?.copyWith(color: _secondary(context)),
-                  ),
-                ],
-                const SizedBox(height: 10),
-                UsefulWasteCostPanel(
-                  scopeLabel: 'Cost for ${appliance.name}',
-                  periodLabel: measured
-                      ? 'Observed last 30 days, covered time only'
-                      : 'Estimated monthly cost',
-                  usefulCostUsd: null,
-                  wasteCostUsd: null,
-                  unclassifiedCostUsd: cost,
-                  detail:
-                      'Useful and wasted use need device activity evidence.',
-                ),
                 if (appliance.category == 'lighting' &&
                     appliance.loadKind == 'replaceable_bulb' &&
-                    (evidence?.datasetId == 'msj5-kqfv' ||
-                        evidence?.sourceKind == 'user_label') &&
                     hours != null) ...[
                   const SizedBox(height: 8),
                   Text(
@@ -1714,10 +1602,7 @@ class _ConnectedLoadRowState extends State<_ConnectedLoadRow> {
                     ),
                 ],
                 if (_usageProfile?.usageKind == 'cycles_per_week' &&
-                    !measured &&
-                    (evidence?.sourceKind == 'category_typical' ||
-                        evidence?.usageBasis.startsWith('cycles_per_year:') ==
-                            true)) ...[
+                    !measured) ...[
                   const SizedBox(height: 8),
                   Text(
                     'Use: ${(_previewCycles ?? _usageProfile!.value).toStringAsFixed(1)} cycles/week',
@@ -1838,7 +1723,6 @@ class _PowerNow extends StatelessWidget {
             final plug = attachedPlugByAppliance[appliance.id];
             final estimate = estimates[appliance.id];
             final sourcedCost = sourceDailyCostUsd(estimate);
-            final source = sourcedCost == null ? null : estimate?.evidence;
             final todayRecord =
                 plug == null || plug.connectionStatus == 'identity_changed'
                 ? null
@@ -1847,23 +1731,12 @@ class _PowerNow extends StatelessWidget {
                 ? todayRecord?.$2
                 : null;
             final meteredTodayCost = freshMeteredTodayCostUsd(todayReading);
-            final displayedSource = meteredTodayCost == null ? source : null;
             return PowerNowDailyCostRow(
               applianceId: appliance.id,
               deviceName: appliance.name,
               plugName: plug?.name,
               usedTodayUsd: meteredTodayCost ?? sourcedCost,
               wastedTodayUsd: null,
-              sourceName: displayedSource == null
-                  ? (meteredTodayCost == null
-                        ? null
-                        : todayReading?.rateSourceLabel)
-                  : energySourceHeading(displayedSource),
-              sourceUrl:
-                  displayedSource?.sourceUrl ??
-                  (meteredTodayCost == null
-                      ? null
-                      : todayReading?.rateSourceUrl),
               meteredTodayUsd: todayReading?.observedCostUsd,
               meterCoverageFraction: todayReading?.coverageFraction,
             );

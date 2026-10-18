@@ -2,32 +2,85 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/cloud_api/cloud_api_client.dart';
 import '../../core/cloud_api/cloud_appliance.dart';
-import '../../core/cloud_api/cloud_catalog.dart';
 import '../../core/cloud_api/cloud_home.dart';
+import '../../core/cloud_api/cloud_energy_categories.dart';
 import '../discovery/discovery_api.dart';
 import '../discovery/discovery_credentials.dart';
 import 'photo_capture_service.dart';
 import 'cloud_usage_questions_screen.dart';
 
-/// A photo suggestion is a prefill only. The user confirms the exact model.
-String? modelHintFromOcr(String? text) {
-  if (text == null) return null;
-  final labeled = RegExp(
-    r'\b(?:MODEL(?:[ \t]+NUMBER|[ \t]+NO)?|M/N|MDL)[ \t]*[:#]?[ \t]*([A-Z0-9][A-Z0-9-]{2,24})\b',
-    caseSensitive: false,
-  ).allMatches(text);
-  for (final match in labeled) {
-    final model = match.group(1);
-    if (model != null && RegExp(r'\d').hasMatch(model)) {
-      return model.toUpperCase();
-    }
-  }
-  return null;
+class OcrIdentityFields {
+  const OcrIdentityFields({
+    this.model,
+    this.serialNumber,
+    this.fccId,
+    this.icId,
+  });
+  final String? model;
+  final String? serialNumber;
+  final String? fccId;
+  final String? icId;
 }
+
+/// Label fields are stored as identity hints; the user still confirms the model.
+OcrIdentityFields identityFieldsFromOcr(String text) {
+  String? field(RegExp label, {bool needsDigit = false}) {
+    final lines = text.split(RegExp(r'[\r\n]+'));
+    for (var i = 0; i < lines.length; i++) {
+      final match = label.firstMatch(lines[i]);
+      if (match == null) continue;
+      var value = lines[i].substring(match.end).trim();
+      value = value.replaceFirst(RegExp(r'^[\s:#.\-]+'), '');
+      if (value.isEmpty && i + 1 < lines.length) value = lines[i + 1].trim();
+      final token = RegExp(
+        r'^[A-Z0-9][A-Z0-9./\-]{1,39}',
+        caseSensitive: false,
+      ).firstMatch(value)?.group(0);
+      if (token != null && (!needsDigit || RegExp(r'\d').hasMatch(token))) {
+        return token.toUpperCase();
+      }
+    }
+    return null;
+  }
+
+  final model = field(
+    RegExp(
+      r'\b(?:MODEL|MODÈLE|MOD\.?|M/N|MDL)(?:\s*(?:NO\.?|NUMBER|#))?\s*[:#.]?',
+      caseSensitive: false,
+    ),
+    needsDigit: true,
+  );
+  final serial = field(
+    RegExp(
+      r'\b(?:SERIAL(?:\s*(?:NO\.?|NUMBER|#))?|S/N|SN)\s*[:#.]?',
+      caseSensitive: false,
+    ),
+  );
+  final fcc = field(RegExp(r'\bFCC\s*ID\s*[:#.]?', caseSensitive: false));
+  final ic = field(
+    RegExp(r'\b(?:IC|ISED\s*IC)\s*(?:ID)?\s*[:#.]?', caseSensitive: false),
+  );
+  final validFcc =
+      fcc != null &&
+          RegExp(r'^(?:2[A-Z0-9]{4}|[A-Z0-9]{3})[A-Z0-9-]+$').hasMatch(fcc)
+      ? fcc
+      : null;
+  final validIc = ic != null && RegExp(r'^\d+[A-Z]?-?[A-Z0-9-]+$').hasMatch(ic)
+      ? ic
+      : null;
+  return OcrIdentityFields(
+    model: model,
+    serialNumber: serial,
+    fccId: validFcc,
+    icId: validIc,
+  );
+}
+
+String? modelHintFromOcr(String? text) =>
+    text == null ? null : identityFieldsFromOcr(text).model;
 
 /// Returns only a likely maker name; serials and the full OCR text stay local.
 String? manufacturerHintFromOcr(String? text) {
@@ -180,6 +233,9 @@ class _PhotoRecognition {
 }
 
 class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
+  static EnergyCategories? _sessionCategories;
+  EnergyCategories? _categories = _sessionCategories;
+  String? _categoryGroup;
   final _hub = TextEditingController();
   final _token = TextEditingController();
   final _name = TextEditingController();
@@ -189,27 +245,19 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   final _hours = TextEditingController();
   final _bulbs = TextEditingController();
   final _watts = TextEditingController();
-  String _category = 'computer';
+  String _category = '';
   String _loadKind = 'appliance';
   String _fuel = 'electricity';
   String _cloudSaveKey = newCloudIdempotencyKey();
   String? _ocrText;
   String? _photoManufacturerHint;
   String? _upc;
+  OcrIdentityFields _ocrIdentity = const OcrIdentityFields();
   List<IdentificationCandidate> _photoCandidates = const [];
-  List<CloudCatalogProduct> _catalogResults = const [];
-  CloudCatalogProduct? _catalogDetail;
-  CloudCatalogProduct? _selectedCatalogProduct;
-  String? _catalogMessage;
-  bool _catalogBusy = false;
-  bool _catalogFallbackAvailable = false;
   bool _candidateLookupFailed = false;
   Uint8List? _photoBytes;
   CapturedPhoto? _photo;
-  bool _confirmedModel = false;
   bool _busy = false;
-  (String, String, String, String, String)? _checkedModelKey;
-  EnergyLookup? _modelCheck;
   String? _error;
   String? _deleteError;
   _PendingAttachment? _pendingAttachment;
@@ -218,7 +266,6 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   bool _savedPlugsLoading = false;
   List<SavedAppliance> _saved = const [];
   final Map<int, EnergyEstimate> _estimates = {};
-  final Map<int, String> _lookupStatuses = {};
 
   bool get _cloudOnly =>
       _selectedPlugId == null &&
@@ -240,6 +287,37 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     }
     if (!_cloudOnly) _restore();
     if (_canSelectSavedPlug) unawaited(_loadSavedPlugs());
+    unawaited(_loadCategories());
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      EnergyCategories? fresh;
+      if (_cloudOnly) {
+        fresh = await widget.cloudApi!.energyCategories(
+          etag: _sessionCategories?.etag,
+        );
+      } else {
+        final (address, token) = await _readHub();
+        if (address != null && token != null) {
+          fresh = await widget.api.energyCategories(address, token);
+        }
+      }
+      if (fresh != null) _sessionCategories = fresh;
+      if (!mounted) return;
+      setState(() {
+        _categories = _sessionCategories;
+        for (final group
+            in _categories?.groups ?? const <EnergyCategoryGroup>[]) {
+          if (group.types.any((type) => type.key == _category)) {
+            _categoryGroup = group.key;
+            break;
+          }
+        }
+      });
+    } catch (_) {
+      // Keep the session's last category list while offline.
+    }
   }
 
   Future<(String?, String?)> _readHub() async {
@@ -285,7 +363,6 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     setState(() {
       _selectedPlugId = plugId;
       _error = null;
-      _confirmedModel = false;
     });
     if (plugId != null) unawaited(_refresh());
   }
@@ -297,12 +374,6 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   void _cloudIdentityChanged() {
     if (!_cloudOnly) return;
     _cloudInputChanged();
-    _selectedCatalogProduct = null;
-    _catalogDetail = null;
-    _catalogResults = const [];
-    _catalogMessage = null;
-    _catalogFallbackAvailable = false;
-    _confirmedModel = false;
   }
 
   Future<void> _restore() async {
@@ -338,11 +409,6 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             if (mounted) {
               setState(() {
                 _estimates[item.id] = estimate;
-                if (estimate.reason == 'no_match') {
-                  _lookupStatuses[item.id] = 'no_match';
-                } else if (estimate.evidence != null) {
-                  _lookupStatuses.remove(item.id);
-                }
               });
             }
           } catch (_) {
@@ -357,197 +423,6 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
         );
       }
     }
-  }
-
-  (String, String, String, String, String) get _modelKey => (
-    _category,
-    _manufacturer.text.trim(),
-    _model.text.trim(),
-    _hub.text.trim(),
-    _token.text.trim(),
-  );
-
-  Future<void> _checkModelBeforeSave() async {
-    if (_busy) return;
-    final key = _modelKey;
-    if (_hub.text.trim().isEmpty || _token.text.trim().isEmpty) {
-      setState(
-        () => _error = 'Enter the hub address and token to check the model.',
-      );
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      final lookup = await widget.api.checkModel(
-        _hub.text.trim(),
-        _token.text.trim(),
-        category: key.$1,
-        manufacturer: key.$2,
-        model: key.$3,
-      );
-      if (mounted && _modelKey == key) {
-        setState(() {
-          _checkedModelKey = key;
-          _modelCheck = lookup;
-        });
-      }
-    } catch (error) {
-      if (mounted) {
-        setState(
-          () => _error = error is StateError ? error.message : 'Could not check the model. Try again when the hub is reachable.',
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _searchReviewedCatalog() async {
-    if (!_cloudOnly || _catalogBusy || _busy) return;
-    final brand = _manufacturer.text.trim();
-    final model = _model.text.trim();
-    final fuel = _fuel;
-    if (brand.isEmpty || model.length < 2) {
-      setState(
-        () => _catalogMessage =
-            'Enter a manufacturer and full model to check reviewed products.',
-      );
-      return;
-    }
-    setState(() {
-      _catalogBusy = true;
-      _catalogResults = const [];
-      _catalogDetail = null;
-      _selectedCatalogProduct = null;
-      _catalogMessage = null;
-      _catalogFallbackAvailable = false;
-    });
-    try {
-      final results = await widget.cloudApi!.searchCatalogModels(
-        brand: brand,
-        model: model,
-        fuel: fuel,
-        region: widget.cloudHome!.countryCode,
-      );
-      if (!mounted ||
-          _manufacturer.text.trim() != brand ||
-          _model.text.trim() != model ||
-          _fuel != fuel) {
-        return;
-      }
-      setState(() {
-        _catalogResults = results;
-        _catalogFallbackAvailable = results.isEmpty;
-        _catalogMessage = results.isEmpty
-            ? 'No reviewed product matches this full model and fuel. You can still save the confirmed label identity without a catalog link.'
-            : null;
-      });
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _catalogFallbackAvailable = true;
-          _catalogMessage = 'Reviewed catalog unavailable. You can save a confirmed label identity without a catalog link.';
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _catalogBusy = false);
-    }
-  }
-
-  Future<void> _openCatalogProduct(CloudCatalogProduct result) async {
-    if (_catalogBusy || _busy) return;
-    if (result.isDocumentedFamilyCandidate) {
-      setState(() {
-        _catalogDetail = result;
-        _selectedCatalogProduct = null;
-        _confirmedModel = false;
-        _catalogMessage = null;
-        _catalogFallbackAvailable = false;
-      });
-      return;
-    }
-    setState(() {
-      _catalogBusy = true;
-      _catalogMessage = null;
-      _catalogFallbackAvailable = false;
-      _selectedCatalogProduct = null;
-      _confirmedModel = false;
-    });
-    try {
-      final detail = await widget.cloudApi!.catalogProduct(result.id);
-      if (!mounted) return;
-      if (detail.id != result.id ||
-          detail.brand.toLowerCase() !=
-              _manufacturer.text.trim().toLowerCase() ||
-          detail.fullModel.toLowerCase() != _model.text.trim().toLowerCase() ||
-          detail.fuel != _fuel ||
-          detail.region != null &&
-              detail.region!.toLowerCase() !=
-                  widget.cloudHome!.countryCode.toLowerCase()) {
-        setState(
-          () => _catalogMessage = 'Product details no longer match the entered model and fuel. Search again.',
-        );
-        return;
-      }
-      setState(() => _catalogDetail = detail);
-    } catch (_) {
-      if (mounted) {
-        setState(
-          () => _catalogMessage =
-              'Could not load reviewed product details. Try again.',
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _catalogBusy = false);
-    }
-  }
-
-  void _selectExactCatalog() {
-    final detail = _catalogDetail;
-    if (detail == null || !detail.isConfirmedExact) return;
-    setState(() {
-      // Cloud inventory checks canonical fields byte-for-byte at linkage.
-      _category = detail.category;
-      _manufacturer.text = detail.brand;
-      _model.text = detail.fullModel;
-      _selectedCatalogProduct = detail;
-      _confirmedModel = false;
-      _catalogMessage = 'Exact reviewed product selected. Confirm the full label model and fuel before saving.';
-    });
-  }
-
-  String _modelCheckMessage(EnergyLookup lookup) {
-    if (lookup.evidence case final source?) {
-      final isFamilySource =
-          source.sourceKind == 'oem_family' ||
-          source.sourceKind == 'energuide_family';
-      return '${isFamilySource ? 'Family source' : 'Matched'} ${source.matchedBrand} ${source.matchedModel} · ${energySourceLabel(source)}';
-    }
-    return switch (lookup.status) {
-      'missing_identity' => 'No manufacturer and model to check. You can save without a sourced estimate.',
-      'source_unavailable' =>
-        'Energy source unavailable. You can save now and check again later.',
-      'ambiguous' || 'truncated' =>
-        'Model match needs review. You can save without a sourced estimate.',
-      'unsupported_category' => 'No energy model catalog for this category. You can save without a sourced estimate.',
-      'no_usable_energy' => 'A product record was found, but it has no usable energy rating. You can save without an estimate.',
-      _ => 'No energy rating was found in the catalog for this model. You can save without a sourced estimate.',
-    };
-  }
-
-  Future<void> _searchWebForModel() async {
-    final manufacturer = _manufacturer.text.trim();
-    final model = _model.text.trim();
-    if (manufacturer.isEmpty || model.isEmpty) return;
-    final query = '${_category.replaceAll('_', ' ')} $manufacturer $model';
-    final uri = Uri.https('www.google.com', '/search', {'q': query});
-    final launcher =
-        widget.webSearchLauncher ??
-        (uri) => launchUrl(uri, mode: LaunchMode.externalApplication);
-    await launcher(uri);
   }
 
   Future<void> _deleteManualAppliance(SavedAppliance item) async {
@@ -586,7 +461,6 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       setState(() {
         _saved = _saved.where((row) => row.id != item.id).toList();
         _estimates.remove(item.id);
-        _lookupStatuses.remove(item.id);
       });
       await _refresh();
     } catch (error) {
@@ -707,9 +581,9 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
         : null;
     _photoManufacturerHint = manufacturerHint;
     _upc = recognition.upc;
+    _ocrIdentity = identityFieldsFromOcr(recognition.text ?? '');
     _photoCandidates = recognition.candidates;
     _candidateLookupFailed = recognition.lookupFailed;
-    _confirmedModel = false;
     _model.text = hint ?? '';
     if (replaceSuggestedMaker) _manufacturer.text = manufacturerHint ?? '';
   }
@@ -768,9 +642,6 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       await _attachSavedAppliance();
       return;
     }
-    if (_manufacturer.text.trim().isEmpty || _model.text.trim().isEmpty) {
-      return;
-    }
     final hubAddress = _hub.text.trim();
     final hubToken = _token.text.trim();
     final plugId = _selectedPlugId;
@@ -782,6 +653,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     final bulbs = bulbsText.isEmpty ? null : int.tryParse(bulbsText);
     final watts = wattsText.isEmpty ? null : double.tryParse(wattsText);
     if (_name.text.trim().isEmpty ||
+        _category.isEmpty ||
         hubAddress.isEmpty ||
         hubToken.isEmpty ||
         (hoursText.isNotEmpty && (hours == null || hours < 0 || hours > 168)) ||
@@ -792,20 +664,12 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             wattsText.isNotEmpty &&
             (watts == null || !watts.isFinite || watts <= 0 || watts > 2000)) ||
         (lighting && watts != null && (bulbs == null || hours == null)) ||
-        (widget.method == 'photo' && _photoBytes == null) ||
-        (widget.method == 'photo' &&
-            _model.text.trim().isNotEmpty &&
-            !_confirmedModel)) {
+        (widget.method == 'photo' && _photoBytes == null)) {
       setState(
         () => _error = 'Enter a name and hub details, check weekly hours, and confirm the photo model.',
       );
       return;
     }
-    if (widget.method == 'manual' && _checkedModelKey != _modelKey) {
-      setState(() => _error = 'Check this model before saving the device.');
-      return;
-    }
-    final checkedLookup = widget.method == 'manual' ? _modelCheck : null;
     setState(() {
       _busy = true;
       _error = null;
@@ -837,37 +701,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             plugId: plugId,
           );
         }
-        if (checkedLookup != null) {
-          _lookupStatuses[saved.id] = checkedLookup.status;
-        }
-        _checkedModelKey = null;
-        _modelCheck = null;
       });
-      if (checkedLookup != null ||
-          (widget.method == 'photo' &&
-              saved.manufacturer.trim().isNotEmpty &&
-              saved.model.trim().isNotEmpty)) {
-        try {
-          final lookup = await widget.api.lookupEnergy(
-            _hub.text.trim(),
-            _token.text.trim(),
-            saved.id,
-          );
-          if (mounted && lookup.status != 'source_unavailable') {
-            setState(() => _lookupStatuses[saved.id] = lookup.status);
-          }
-          if (lookup.evidence != null) {
-            final estimate = await widget.api.estimate(
-              _hub.text.trim(),
-              _token.text.trim(),
-              saved.id,
-            );
-            if (mounted) setState(() => _estimates[saved.id] = estimate);
-          }
-        } catch (_) {
-          // The saved record stays visible with its pre-save source result.
-        }
-      }
       if (plugId != null) {
         await _attachSavedAppliance();
         return;
@@ -947,13 +781,8 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     final brand = _manufacturer.text.trim();
     final model = _model.text.trim();
     if (name.isEmpty ||
-        brand.isEmpty ||
-        model.isEmpty ||
-        !_confirmedModel ||
+        _category.isEmpty ||
         (widget.method == 'photo' && _photoBytes == null)) {
-      setState(
-        () => _error = 'Enter a name, manufacturer and full model, then confirm the label model and fuel.',
-      );
       return;
     }
     setState(() {
@@ -979,9 +808,22 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
           brand: brand,
           fullModel: model,
           fuel: _fuel,
-          variant: _selectedCatalogProduct?.variant,
-          region: _selectedCatalogProduct?.region,
-          catalogProductId: _selectedCatalogProduct?.id,
+          matchQuality: 'unresolved',
+          fccId: _ocrIdentity.fccId,
+          icId: _ocrIdentity.icId,
+          serialNumber: _ocrIdentity.serialNumber,
+          upc: _upc,
+          bulbLabel: _category == 'lighting'
+              ? BulbLabel(
+                  loadKind: _loadKind,
+                  bulbCount: _loadKind == 'replaceable_bulb'
+                      ? int.tryParse(_bulbs.text.trim())
+                      : null,
+                  combinedInputWatts: _loadKind == 'replaceable_bulb'
+                      ? double.tryParse(_watts.text.trim())
+                      : null,
+                )
+              : null,
         ),
         idempotencyKey: _cloudSaveKey,
       );
@@ -1017,103 +859,29 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
     }
   }
 
-  Future<void> _checkEnergy(
-    SavedAppliance item, {
-    bool fetchSource = true,
-  }) async {
+  Future<void> _checkEnergy(SavedAppliance item) async {
     if (_busy) return;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      if (fetchSource) {
-        final lookup = await widget.api.lookupEnergy(
-          _hub.text.trim(),
-          _token.text.trim(),
-          item.id,
-        );
-        if (mounted) setState(() => _lookupStatuses[item.id] = lookup.status);
-        if (lookup.evidence == null) return;
-      }
       final estimate = await widget.api.estimate(
         _hub.text.trim(),
         _token.text.trim(),
         item.id,
       );
       if (mounted) setState(() => _estimates[item.id] = estimate);
-    } catch (error) {
+    } catch (_) {
       if (mounted) {
         setState(
-          () => _error = error is StateError ? error.message : 'Could not check energy data. Try again when the hub is online.',
+          () => _error =
+              'Could not check energy data. Try again when the hub is online.',
         );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-  }
-
-  String _estimateStatus(int id) =>
-      switch (_lookupStatuses[id] ?? _estimates[id]?.reason) {
-        'not_checked' || null => 'Estimate unavailable · Check energy data',
-        'unsupported_category' =>
-          'Estimate unavailable · No matched energy data for this category',
-        'missing_identity' =>
-          'Estimate unavailable · Exact manufacturer and model needed',
-        'ambiguous' ||
-        'truncated' => 'Estimate unavailable · Model match needs review',
-        'source_unavailable' =>
-          'Estimate unavailable · ENERGY STAR data could not be reached',
-        'no_usable_energy' =>
-          'Estimate unavailable · Matched record has no usable energy figure',
-        'no_match' => 'Estimate unavailable · No exact source model match',
-        _ => 'Estimate unavailable',
-      };
-
-  void _showSource(EnergyEvidence source, EnergyEstimate estimate) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                energySourceHeading(source),
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 10),
-              if (source.sourceKind != 'user_label')
-                Text(
-                  '${source.sourceKind == 'oem_family' || source.sourceKind == 'energuide_family' ? 'Source covers' : 'Matched model'}: ${source.matchedBrand} ${source.matchedModel}',
-                ),
-              Text(
-                source.sourceKind == 'user_label'
-                    ? 'Calculated energy: ${source.annualKwh.toStringAsFixed(1)} kWh/year'
-                    : 'Published energy${estimate.bulbCount != null && estimate.bulbCount! > 1 ? ' per bulb' : ''}: ${source.annualKwh.toStringAsFixed(1)} kWh/year',
-              ),
-              Text('Basis: ${source.usageBasis}'),
-              if (source.sourceKind != 'user_label')
-                Text('Dataset: ${source.datasetId}'),
-              Text(energyRateDescription(estimate)),
-              if (estimate.rateSourceUrl case final url?) SelectableText(url),
-              Text(
-                'Retrieved: ${DateTime.fromMillisecondsSinceEpoch(source.retrievedAt * 1000).toLocal()}',
-              ),
-              const SizedBox(height: 10),
-              if (source.sourceUrl.isNotEmpty) SelectableText(source.sourceUrl),
-              const SizedBox(height: 12),
-              const Text(
-                'This is an estimate for the identified appliance, not a measured reading.',
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   @override
@@ -1251,7 +1019,6 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                       onTap: () => setState(() {
                         _manufacturer.text = candidate.manufacturer;
                         _model.text = candidate.model;
-                        _confirmedModel = false;
                       }),
                     ),
                 ] else if (_candidateLookupFailed)
@@ -1280,83 +1047,63 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             ),
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(
-              key: ValueKey('applianceCategory-$_category'),
-              initialValue: _category,
+              key: ValueKey('applianceGroup-$_categoryGroup'),
+              initialValue: _categoryGroup,
               decoration: const InputDecoration(
                 labelText: 'Category',
+                hintText: 'Choose category',
                 border: OutlineInputBorder(),
               ),
               items: [
-                const DropdownMenuItem(
-                  value: 'computer',
-                  child: Text('Computer'),
-                ),
-                const DropdownMenuItem(
-                  value: 'lighting',
-                  child: Text('Lamp or bulb'),
-                ),
-                const DropdownMenuItem(
-                  value: 'refrigerator',
-                  child: Text('Refrigerator'),
-                ),
-                DropdownMenuItem(
-                  value: _cloudOnly ? 'television' : 'tv',
-                  child: const Text('TV'),
-                ),
-                if (_cloudOnly) ...const [
-                  DropdownMenuItem(value: 'washer', child: Text('Washer')),
-                  DropdownMenuItem(value: 'dryer', child: Text('Dryer')),
-                  DropdownMenuItem(
-                    value: 'dishwasher',
-                    child: Text('Dishwasher'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'space_heater',
-                    child: Text('Space heater'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'air_conditioner',
-                    child: Text('Air conditioner'),
-                  ),
-                ],
-                const DropdownMenuItem(
-                  value: 'other',
-                  child: Text('Other appliance'),
-                ),
-                if (_cloudOnly &&
-                    !const {
-                      'computer',
-                      'lighting',
-                      'refrigerator',
-                      'tv',
-                      'television',
-                      'washer',
-                      'dryer',
-                      'dishwasher',
-                      'space_heater',
-                      'air_conditioner',
-                      'other',
-                    }.contains(_category))
-                  DropdownMenuItem(
-                    value: _category,
-                    child: Text('Reviewed: $_category'),
-                  ),
+                for (final group
+                    in _categories?.groups ?? const <EnergyCategoryGroup>[])
+                  DropdownMenuItem(value: group.key, child: Text(group.label)),
               ],
               onChanged: (value) => setState(() {
-                _category = value ?? _category;
-                _loadKind = _category == 'lighting'
-                    ? 'replaceable_bulb'
-                    : 'appliance';
-                if (_cloudOnly) {
-                  _confirmedModel = false;
-                  _cloudSaveKey = newCloudIdempotencyKey();
-                  _selectedCatalogProduct = null;
-                  _catalogDetail = null;
-                  _catalogResults = const [];
-                }
+                _categoryGroup = value;
+                _category = '';
+                _loadKind = 'appliance';
               }),
             ),
-            if (_category == 'lighting' && !_cloudOnly) ...[
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              key: ValueKey('applianceCategory-$_categoryGroup-$_category'),
+              initialValue: _category.isEmpty ? null : _category,
+              decoration: InputDecoration(
+                labelText: 'Type of Device',
+                hintText: _categoryGroup == null
+                    ? 'Choose category first'
+                    : 'Choose type',
+                border: const OutlineInputBorder(),
+              ),
+              items: [
+                for (final type
+                    in _categories?.groups
+                            .where((group) => group.key == _categoryGroup)
+                            .expand((group) => group.types) ??
+                        const <EnergyCategoryType>[])
+                  DropdownMenuItem(value: type.key, child: Text(type.label)),
+                if (_category.isNotEmpty &&
+                    !(_categories?.groups.any(
+                          (group) =>
+                              group.types.any((type) => type.key == _category),
+                        ) ??
+                        false))
+                  DropdownMenuItem(value: _category, child: Text(_category)),
+              ],
+              onChanged: _categoryGroup == null
+                  ? null
+                  : (value) => setState(() {
+                      _category = value ?? '';
+                      _loadKind = _category == 'lighting'
+                          ? 'replaceable_bulb'
+                          : 'appliance';
+                      if (_cloudOnly) {
+                        _cloudSaveKey = newCloudIdempotencyKey();
+                      }
+                    }),
+            ),
+            if (_category == 'lighting') ...[
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 initialValue: _loadKind,
@@ -1377,7 +1124,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                 onChanged: (value) =>
                     setState(() => _loadKind = value ?? _loadKind),
               ),
-              if (_loadKind == 'replaceable_bulb' && !_cloudOnly) ...[
+              if (_loadKind == 'replaceable_bulb') ...[
                 const SizedBox(height: 10),
                 TextField(
                   key: const Key('bulbCount'),
@@ -1419,7 +1166,6 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             TextField(
               key: const Key('applianceModel'),
               controller: _model,
-              onChanged: (_) => setState(() => _confirmedModel = false),
               decoration: InputDecoration(
                 labelText: _cloudOnly
                     ? 'Full model'
@@ -1429,18 +1175,6 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                 border: const OutlineInputBorder(),
               ),
             ),
-            if ((photo || _cloudOnly) && _model.text.trim().isNotEmpty)
-              CheckboxListTile(
-                value: _confirmedModel,
-                onChanged: (value) =>
-                    setState(() => _confirmedModel = value ?? false),
-                title: Text(
-                  _cloudOnly
-                      ? 'I checked this full model and fuel against the label'
-                      : 'I checked this model against the label',
-                ),
-                contentPadding: EdgeInsets.zero,
-              ),
             if (_canSelectSavedPlug) ...[
               const SizedBox(height: 10),
               DropdownButtonFormField<String?>(
@@ -1488,149 +1222,9 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                 ],
                 onChanged: (value) => setState(() {
                   _fuel = value ?? _fuel;
-                  _confirmedModel = false;
                   _cloudSaveKey = newCloudIdempotencyKey();
-                  _selectedCatalogProduct = null;
-                  _catalogDetail = null;
-                  _catalogResults = const [];
                 }),
               ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                key: const Key('searchReviewedCatalog'),
-                onPressed: _catalogBusy || _busy
-                    ? null
-                    : _searchReviewedCatalog,
-                icon: const Icon(Icons.fact_check_outlined),
-                label: const Text('Check reviewed catalog'),
-              ),
-              if (_catalogBusy) const LinearProgressIndicator(),
-              if (_catalogMessage != null)
-                Text(_catalogMessage!, key: const Key('catalogMessage')),
-              if (_catalogFallbackAvailable) ...[
-                TextButton.icon(
-                  key: const Key('searchWebForModel'),
-                  onPressed: _catalogBusy || _busy ? null : _searchWebForModel,
-                  icon: const Icon(Icons.open_in_new),
-                  label: const Text('Search web'),
-                ),
-                const Text(
-                  'External search results are unreviewed. They are not linked to this device or used for energy facts or estimates.',
-                  key: Key('unreviewedWebSearchNotice'),
-                ),
-              ],
-              for (final product in _catalogResults)
-                Card(
-                  child: ListTile(
-                    key: Key('catalogProduct-${product.id}'),
-                    title: Text('${product.brand} ${product.fullModel}'),
-                    subtitle: Text(
-                      product.isConfirmedExact
-                          ? 'Reviewed exact model · ${product.fuel}'
-                          : product.isDocumentedFamilyCandidate
-                          ? 'Unconfirmed family candidate for ${product.matchedModel} · representative SKU ${product.fullModel} · ${product.fuel} · cannot link as exact'
-                          : 'Documented family or unresolved model · ${product.fuel}',
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: _catalogBusy
-                        ? null
-                        : () => _openCatalogProduct(product),
-                  ),
-                ),
-              if (_catalogDetail case final detail?) ...[
-                const SizedBox(height: 8),
-                Text(
-                  detail.isDocumentedFamilyCandidate
-                      ? 'Unconfirmed family candidate'
-                      : 'Reviewed product details',
-                  style: theme.textTheme.titleMedium,
-                ),
-                Text(
-                  '${detail.brand} ${detail.fullModel}${detail.variant == null ? '' : ' · ${detail.variant}'} · ${detail.fuel}${detail.region == null ? '' : ' · ${detail.region}'} · ${detail.category}',
-                ),
-                if (detail.isDocumentedFamilyCandidate)
-                  Text(
-                    'Entered model: ${detail.matchedModel}. Representative catalog SKU: ${detail.fullModel}. ${detail.variantMatch == 'confirmed' ? 'Variant matched to the documented family.' : 'Variant remains unresolved.'} This candidate is not verified for the entered full model. Confirm the model and fuel from the appliance label before saving. It cannot be linked as an exact product or used for an energy cost estimate.',
-                  ),
-                Text(
-                  detail.isConfirmedExact
-                      ? 'Exact reviewed identity. Select it only if the full label model and fuel agree.'
-                      : 'Documented family or unresolved identity. It cannot be linked as an exact product.',
-                ),
-                if (detail.isDocumentedFamilyCandidate)
-                  const Text(
-                    'Representative family energy facts are withheld for this candidate.',
-                  )
-                else if (detail.facts.isEmpty)
-                  const Text(
-                    'No reviewed energy facts are attached to this product.',
-                  ),
-                if (!detail.isDocumentedFamilyCandidate)
-                  for (final fact in detail.facts) ...[
-                    Text(
-                      '${fact.kind}: ${fact.value} ${fact.unit} · ${fact.sourceKind}',
-                    ),
-                    Text(
-                      'Test basis: ${fact.testBasis.isEmpty ? 'not stated' : fact.testBasis.entries.map((entry) => '${entry.key}: ${entry.value}').join(', ')}',
-                    ),
-                    Text(
-                      'Reviewed ${fact.reviewedAt.toUtc().toIso8601String()}',
-                    ),
-                    SelectableText(fact.sourceUrl),
-                  ],
-                const Text(
-                  'A reviewed identity or fact does not establish this home’s actual energy use.',
-                ),
-                if (detail.isConfirmedExact)
-                  FilledButton(
-                    key: const Key('selectExactCatalogProduct'),
-                    onPressed: _catalogBusy ? null : _selectExactCatalog,
-                    child: const Text('Select exact reviewed product'),
-                  ),
-              ],
-              if (_selectedCatalogProduct != null)
-                Text(
-                  'Selected exact reviewed product: ${_selectedCatalogProduct!.brand} ${_selectedCatalogProduct!.fullModel}',
-                ),
-            ],
-            if (!photo && !_cloudOnly) ...[
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                key: const Key('checkModelBeforeSave'),
-                onPressed: _busy ? null : _checkModelBeforeSave,
-                icon: const Icon(Icons.search),
-                label: const Text('Check model'),
-              ),
-              if (_checkedModelKey == _modelKey && _modelCheck != null)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _modelCheckMessage(_modelCheck!),
-                      key: const Key('modelCheckResult'),
-                      style: TextStyle(
-                        color: _modelCheck!.evidence == null
-                            ? theme.colorScheme.error
-                            : theme.colorScheme.primary,
-                      ),
-                    ),
-                    if (_modelCheck!.evidence == null &&
-                        _manufacturer.text.trim().isNotEmpty &&
-                        _model.text.trim().isNotEmpty &&
-                        _modelCheck!.status != 'missing_identity') ...[
-                      TextButton.icon(
-                        key: const Key('searchWebForModel'),
-                        onPressed: _searchWebForModel,
-                        icon: const Icon(Icons.open_in_new),
-                        label: const Text('Search web'),
-                      ),
-                      const Text(
-                        'External search results are unreviewed. They are not linked to this device or used for energy facts or estimates.',
-                        key: Key('unreviewedWebSearchNotice'),
-                      ),
-                    ],
-                  ],
-                ),
             ],
             if (!_cloudOnly) ...[
               const SizedBox(height: 10),
@@ -1683,11 +1277,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             FilledButton(
               key: const Key('saveAppliance'),
               onPressed:
-                  _busy ||
-                      (!_cloudOnly &&
-                          _pendingAttachment == null &&
-                          (_manufacturer.text.trim().isEmpty ||
-                              _model.text.trim().isEmpty))
+                  _busy || _category.isEmpty
                   ? null
                   : _save,
               child: Text(
@@ -1731,45 +1321,18 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                           ),
                         const Text('No live readings'),
                         const SizedBox(height: 8),
-                        if (_estimates[item.id]?.evidence
-                            case final source?) ...[
-                          Text(
-                            _estimates[item.id]!.estimatedCostUsd == null
-                                ? 'Estimated monthly energy: ${_estimates[item.id]!.estimatedKwh!.toStringAsFixed(1)} kWh'
-                                : '${source.sourceKind == 'energy_star_archive'
-                                      ? 'Historical test-profile cost'
-                                      : source.sourceKind == 'oem_family'
-                                      ? 'Manufacturer family test-profile cost'
-                                      : source.sourceKind == 'energuide_family'
-                                      ? 'Historical EnerGuide family test-profile cost'
-                                      : 'Estimated monthly cost'}: \$${_estimates[item.id]!.estimatedCostUsd!.toStringAsFixed(2)} · ${_estimates[item.id]!.estimatedKwh!.toStringAsFixed(1)} kWh',
-                            style: theme.textTheme.titleSmall,
-                          ),
-                          TextButton.icon(
-                            onPressed: () =>
-                                _showSource(source, _estimates[item.id]!),
-                            icon: Icon(
-                              source.sourceKind == 'energy_star'
-                                  ? Icons.verified_outlined
-                                  : Icons.info_outline,
-                            ),
-                            label: Text(energySourceLabel(source)),
-                          ),
-                          OutlinedButton(
-                            onPressed: _busy
-                                ? null
-                                : () => _checkEnergy(item, fetchSource: false),
-                            child: const Text('Update cost with my rate'),
-                          ),
+                        if (_estimates[item.id]?.estimatedKwh
+                            case final kwh?) ...[
+                          Text('Energy · ${kwh.toStringAsFixed(1)} kWh'),
+                          if (_estimates[item.id]?.estimatedCostUsd
+                              case final cost?)
+                            Text('Cost · \$${cost.toStringAsFixed(2)}'),
                         ] else
-                          Text(_estimateStatus(item.id)),
-                        if ((_lookupStatuses[item.id] ??
-                                _estimates[item.id]?.reason) !=
-                            'no_match')
-                          TextButton(
-                            onPressed: _busy ? null : () => _checkEnergy(item),
-                            child: const Text('Check energy data'),
-                          ),
+                          const Text('Energy data is not available yet.'),
+                        TextButton(
+                          onPressed: _busy ? null : () => _checkEnergy(item),
+                          child: const Text('Check energy data'),
+                        ),
                         if (item.onboardingMethod == 'manual' &&
                             widget.plugId == null)
                           TextButton.icon(

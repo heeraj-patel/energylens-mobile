@@ -93,6 +93,9 @@ Set<String> _approvedRemovedIds(String page, String category) {
   }
   if (category == 'bindings') {
     return {
+      if (page != 'settings_photo_scan_onboarding')
+        for (var n = 44; n <= 50; n++)
+          '${page}_text_${n.toString().padLeft(3, '0')}',
       for (final n in [8, 9, 11, 13, 15, 53, 55])
         '${page}_text_${n.toString().padLeft(3, '0')}',
       if (page == 'settings_photo_scan_onboarding') '${page}_text_057',
@@ -109,6 +112,9 @@ Set<String> _approvedRemovedIds(String page, String category) {
   }
   if (category == 'actions') {
     return {
+      if (page != 'settings_photo_scan_onboarding')
+        for (var n = 14; n <= 19; n++)
+          '${page}_action_${n.toString().padLeft(3, '0')}',
       for (var n = 8; n <= 10; n++)
         '${page}_action_${n.toString().padLeft(3, '0')}',
       if (page == 'settings_photo_scan_onboarding')

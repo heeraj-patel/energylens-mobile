@@ -1,11 +1,9 @@
 import '../discovery/discovery_api.dart';
 
-/// Converts a sourced estimate to the daily amount used by Power Now.
+/// Converts the hub's non-metering result to the daily amount used by Power Now.
 /// Metered amounts have a separate daily evidence path.
 double? sourceDailyCostUsd(EnergyEstimate? estimate) {
-  if (estimate == null ||
-      estimate.status == 'measured' ||
-      estimate.evidence == null) {
+  if (estimate == null || estimate.status == 'measured') {
     return null;
   }
   final amount = estimate.estimatedCostUsd;

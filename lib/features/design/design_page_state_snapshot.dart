@@ -99,8 +99,8 @@ class DesignPageStateSnapshot {
         (page == 'settings_manage_devices' ||
             page == 'settings_manual_device_entry') &&
         selectedType is String &&
-        RegExp('^${RegExp.escape(page)}_action_01[4-9]\$')
-            .hasMatch(selectedType);
+        RegExp(r'^[a-z0-9_]{1,120}$').hasMatch(selectedType) &&
+        !selectedType.startsWith('settings_');
     if (selectedType != null && !validTypeAction) {
       throw const FormatException('Invalid selected device type');
     }

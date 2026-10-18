@@ -16,7 +16,6 @@ DeviceInventoryItem item(
   List<DeviceMeasuredBucket> buckets = const [],
   String category = 'other',
   String? demoDeviceId,
-  CloudKbWasteResult? kbWasteResult,
 }) => DeviceInventoryItem(
   appliance: CloudAppliance(
     id: id,
@@ -29,7 +28,6 @@ DeviceInventoryItem item(
     fuel: 'electric',
     matchQuality: 'confirmed_exact',
     demoDeviceId: demoDeviceId,
-    kbWasteResult: kbWasteResult,
   ),
   activeAttachmentIds: const [],
   measuredBuckets: buckets,
@@ -155,15 +153,7 @@ void main() {
       read(
         items: [
           item(applianceA, 'A'),
-          item(
-            applianceB,
-            'B',
-            category: 'lighting',
-            kbWasteResult: const CloudKbWasteResult(
-              id: 'kb-final-b',
-              status: 'waste_evidence_unavailable_after_kb',
-            ),
-          ),
+          item(applianceB, 'B', category: 'lighting'),
           item(applianceC, 'C'),
         ],
         costs: costs,
@@ -173,7 +163,6 @@ void main() {
     expect(projection.rows[0].wasteCost, '\$0.25');
     expect(projection.rows[1].usefulCost, isNull);
     expect(projection.rows[1].wasteCost, isNull);
-    expect(projection.rows[1].demoWasteMicrosPerDay, 500);
     expect(projection.rows[2].usefulCost, isNull);
     expect(projection.rows[2].wasteCost, isNull);
   });
@@ -225,56 +214,31 @@ void main() {
       expect(projection.rows.last.measuredBucket, isNull);
       expect(projection.rows.first.manufacturer, 'Brand');
       expect(projection.rows.first.model, 'Model');
-      expect(projection.rows.first.demoWasteMicrosPerDay, isNull);
       expect(() => projection.rows.clear(), throwsUnsupportedError);
     },
   );
 
-  test('final KB miss alone permits eligible illustrative daily rate', () {
-    const finalMiss = CloudKbWasteResult(
-      id: 'kb-final',
-      status: 'waste_evidence_unavailable_after_kb',
-    );
+  test('final KB miss does not allocate app-side waste', () {
     final projection = prepareLiveDevicesProjection(
       read(
         items: [
-          item('a', 'Television', category: 'tv', kbWasteResult: finalMiss),
-          item('b', 'Lamp', category: 'light', kbWasteResult: finalMiss),
-          item(
-            'c',
-            'Fridge',
-            category: 'refrigerator',
-            kbWasteResult: finalMiss,
-          ),
-          item('d', 'Unknown', category: 'other', kbWasteResult: finalMiss),
+          item('a', 'Television', category: 'tv'),
+          item('b', 'Lamp', category: 'light'),
+          item('c', 'Fridge', category: 'refrigerator'),
+          item('d', 'Unknown', category: 'other'),
           item('e', 'Pending', category: 'tv'),
-          item(
-            'f',
-            'Metered TV',
-            category: 'tv',
-            kbWasteResult: finalMiss,
-            buckets: [bucket],
-          ),
+          item('f', 'Metered TV', category: 'tv', buckets: [bucket]),
         ],
       ),
     );
-    expect(projection.rows.map((row) => row.demoWasteMicrosPerDay), [
-      80000,
-      800,
-      null,
-      null,
-      null,
-      80000,
-    ]);
+    expect(projection.rows.every((row) => row.wasteCost == null), isTrue);
     final sample = prepareLiveDevicesProjection(
       read(
         mode: DesignContextMode.sample,
-        items: [
-          item('a', 'Television', category: 'tv', kbWasteResult: finalMiss),
-        ],
+        items: [item('a', 'Television', category: 'tv')],
       ),
     );
-    expect(sample.rows.single.demoWasteMicrosPerDay, isNull);
+    expect(sample.rows.single.wasteCost, isNull);
   });
 
   test('sample provenance has inventory but no household measurement', () {

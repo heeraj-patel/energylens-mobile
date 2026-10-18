@@ -3,18 +3,6 @@
 /// These values are illustrative and are never evidence of measured usage.
 enum DemoValueOrigin { mock, measured }
 
-enum KbWasteResult {
-  wasteEvidenceUnavailableAfterKb,
-  pending,
-  reviewedEvidence,
-}
-
-enum DummyWasteDraw { low, high }
-
-/// Internal illustrative schedule after a final KB miss. This is an assumed
-/// duration, not a measured interval.
-const int dummyIdleHoursPerLocalDay = 8;
-
 /// Verified evidence that a device was off or idle for a measured interval.
 /// Callers must not infer a full-day duration from missing data.
 enum WasteDurationIntervalKind { verifiedOff, verifiedIdle }
@@ -33,49 +21,6 @@ class WasteDurationEvidence {
   final int seconds;
   final String evidenceId;
   final WasteDurationIntervalKind intervalKind;
-}
-
-/// Provisional low-draw device and high-draw appliance groupings from the
-/// versioned category profiles. Unlisted categories stay unresolved.
-DummyWasteDraw? dummyWasteDrawForProfile(String profileCategory) {
-  const low = {
-    'media_player',
-    'media_server',
-    'speaker',
-    'smart_plug',
-    'printer',
-    'thermostat',
-    'light',
-    'lighting',
-    'fan',
-    'vacuum',
-    'garage_door',
-  };
-  const high = {
-    'tv',
-    'washer',
-    'dryer',
-    'dishwasher',
-    'hvac',
-    'water_heater',
-    'dehumidifier',
-    'microwave',
-    'oven',
-    'projector',
-  };
-  // Continuous equipment has no idle hours and receives no dummy allocation.
-  const continuous = {
-    'refrigerator',
-    'freezer',
-    'router',
-    'access_point',
-    'bridge',
-    'modem',
-  };
-  if (continuous.contains(profileCategory)) return null;
-  if (low.contains(profileCategory)) return DummyWasteDraw.low;
-  if (high.contains(profileCategory)) return DummyWasteDraw.high;
-  return null;
 }
 
 class DemoCost {
@@ -163,7 +108,6 @@ class DemoBranch {
     this.mappedMockBranchId,
     this.mappingEvidenceId,
     this.wasteProvenance,
-    this.kbWasteResultId,
     this.wasteDurationEvidenceId,
     this.illustrativePresentationCost,
   });
@@ -180,7 +124,6 @@ class DemoBranch {
   final String? mappedMockBranchId;
   final String? mappingEvidenceId;
   final String? wasteProvenance;
-  final String? kbWasteResultId;
   final String? wasteDurationEvidenceId;
 
   /// A display-only split of an otherwise unclassified measured total.
@@ -216,100 +159,6 @@ class DemoDayTree {
   DemoCost get devicesCost =>
       devices.fold(DemoCost.zero, (sum, row) => sum + row.cost);
   DemoCost get homeCost => devicesCost + unattributed.cost;
-
-  /// Applies an internal illustrative waste allocation only after a completed
-  /// KB decision establishes that no waste-specific evidence is available.
-  /// The eight-hour schedule is an assumption, never interval evidence. An
-  /// optional verified interval is retained as separate provenance only.
-  DemoDayTree applyDummyWasteAfterKb({
-    required String deviceId,
-    required String profileCategory,
-    WasteDurationEvidence? durationEvidence,
-    required KbWasteResult kbResult,
-    required String kbResultId,
-  }) {
-    if (kbResult != KbWasteResult.wasteEvidenceUnavailableAfterKb ||
-        kbResultId.isEmpty ||
-        !_uuid.hasMatch(deviceId) ||
-        (durationEvidence != null &&
-            durationEvidence.seconds > period.seconds)) {
-      throw const FormatException('No final KB waste fallback decision');
-    }
-    final draw = dummyWasteDrawForProfile(profileCategory);
-    if (draw == null) {
-      if (const {
-        'refrigerator',
-        'freezer',
-        'router',
-        'access_point',
-        'bridge',
-        'modem',
-      }.contains(profileCategory)) {
-        return this;
-      }
-      throw const FormatException('No dummy waste draw class for profile');
-    }
-    // USD micros/hour: $0.0001 for low draw, $0.01 for high draw.
-    // A day or month is summed in micros before any cent display rounding.
-    final rateMicrosPerHour = draw == DummyWasteDraw.low ? 100 : 10000;
-    final proposedMicros = rateMicrosPerHour * dummyIdleHoursPerLocalDay;
-    final rows = devices.toList();
-    final index = rows.indexWhere((row) => row.deviceId == deviceId);
-    if (index >= 0) {
-      final row = rows[index];
-      if (row.origin != DemoValueOrigin.measured ||
-          row.wasteProvenance != null ||
-          row.cost.wasteMicros != 0) {
-        throw const FormatException('Real waste allocation is unavailable');
-      }
-      final allocated = proposedMicros < row.cost.unclassifiedMicros
-          ? proposedMicros
-          : row.cost.unclassifiedMicros;
-      rows[index] = DemoBranch(
-        deviceId: row.deviceId,
-        name: row.name,
-        period: row.period,
-        cost: DemoCost.fromMicros(
-          usefulMicros: row.cost.usefulMicros,
-          wasteMicros: allocated,
-          unclassifiedMicros: row.cost.unclassifiedMicros - allocated,
-        ),
-        origin: row.origin,
-        sourceId: row.sourceId,
-        energyWh: row.energyWh,
-        tariffId: row.tariffId,
-        classificationEvidenceId: row.classificationEvidenceId,
-        mappedMockBranchId: row.mappedMockBranchId,
-        mappingEvidenceId: row.mappingEvidenceId,
-        wasteProvenance: 'dummy_assumed_8h_after_kb_miss',
-        kbWasteResultId: kbResultId,
-        wasteDurationEvidenceId: durationEvidence?.evidenceId,
-      );
-    } else {
-      rows.add(
-        DemoBranch(
-          deviceId: deviceId,
-          period: period,
-          cost: DemoCost.fromMicros(
-            usefulMicros: 0,
-            wasteMicros: proposedMicros,
-            unclassifiedMicros: 0,
-          ),
-          origin: DemoValueOrigin.mock,
-          sourceId: kbResultId,
-          wasteProvenance: 'dummy_assumed_8h_after_kb_miss',
-          kbWasteResultId: kbResultId,
-          wasteDurationEvidenceId: durationEvidence?.evidenceId,
-        ),
-      );
-    }
-    return DemoDayTree(
-      homeId: homeId,
-      period: period,
-      devices: rows,
-      unattributed: unattributed,
-    );
-  }
 
   /// A verified identity mapping replaces its mock leaf. An unmapped real
   /// device becomes a distinct leaf and increases the derived home total.
@@ -508,36 +357,6 @@ class DemoMonthTree {
 
   DemoDayTree day(String localDate) =>
       days.singleWhere((value) => value.period.localDate == localDate);
-
-  DemoMonthTree applyDummyWasteAfterKb({
-    required String localDate,
-    required String deviceId,
-    required String profileCategory,
-    WasteDurationEvidence? durationEvidence,
-    required KbWasteResult kbResult,
-    required String kbResultId,
-  }) {
-    if (!days.any((day) => day.period.localDate == localDate)) {
-      throw const FormatException('Waste day is outside demo month');
-    }
-    return DemoMonthTree(
-      homeId: homeId,
-      referenceLocalDate: referenceLocalDate,
-      days: days
-          .map(
-            (day) => day.period.localDate == localDate
-                ? day.applyDummyWasteAfterKb(
-                    deviceId: deviceId,
-                    profileCategory: profileCategory,
-                    durationEvidence: durationEvidence,
-                    kbResult: kbResult,
-                    kbResultId: kbResultId,
-                  )
-                : day,
-          )
-          .toList(),
-    );
-  }
 
   DemoMonthTree mergeMeasured(
     RealDeviceDay reading, {

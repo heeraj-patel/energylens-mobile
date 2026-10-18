@@ -75,7 +75,6 @@ void main() {
         'usageCost': null,
         'usefulCost': null,
         'wasteCost': null,
-        'demoWaste': null,
         'state': 'standby',
         'stateExpiresAt': null,
       },
@@ -110,84 +109,76 @@ void main() {
     expect(script, contains("waste.textContent = wasteText ?? 'N/A'"));
   });
 
-  test(
-    'renders eligible demo rates without rounding away sub-cent amounts',
-    () {
-      const renderer = LiveDevicesCardRenderer();
-      final script = renderer.appendScript(
-        projection: _projection(homeA, [
-          const LiveDeviceRow(
-            applianceId: 'light',
-            name: 'Lamp',
-            manufacturer: 'Acme',
-            model: 'L1',
-            measuredBucket: null,
-            demoWasteMicrosPerDay: 800,
-          ),
-          const LiveDeviceRow(
-            applianceId: 'tv',
-            name: 'Television',
-            measuredBucket: null,
-            demoWasteMicrosPerDay: 80000,
-          ),
-          const LiveDeviceRow(
-            applianceId: 'capped',
-            name: 'Capped device',
-            measuredBucket: null,
-            demoWasteMicrosPerDay: 1,
-          ),
-        ]),
-        generation: 1,
-      );
-      final encodedPayload = RegExp("atob\\('([^']+)'\\)")
-          .firstMatch(script)!
-          .group(1)!;
-      final payload = jsonDecode(
-        utf8.decode(base64Decode(encodedPayload)),
-      ) as Map<String, dynamic>;
-      expect(payload['rows'], [
-        {
-          'id': 'light',
-          'name': 'Lamp',
-          'identity': 'Acme L1',
-          'usageCost': null,
-          'usefulCost': null,
-          'wasteCost': null,
-          'demoWaste': '\$0.0008',
-          'state': 'standby',
-          'stateExpiresAt': null,
-        },
-        {
-          'id': 'tv',
-          'name': 'Television',
-          'identity': '',
-          'usageCost': null,
-          'usefulCost': null,
-          'wasteCost': null,
-          'demoWaste': '\$0.08',
-          'state': 'standby',
-          'stateExpiresAt': null,
-        },
-        {
-          'id': 'capped',
-          'name': 'Capped device',
-          'identity': '',
-          'usageCost': null,
-          'usefulCost': null,
-          'wasteCost': null,
-          'demoWaste': '\$0.000001',
-          'state': 'standby',
-          'stateExpiresAt': null,
-        },
-      ]);
-      expect(
-        script,
-        contains("clone.setAttribute('data-el-device-state', state)"),
-      );
-      expect(script, contains("useful.textContent = row.usefulCost ?? 'N/A'"));
-      expect(script, contains("waste.textContent = wasteText ?? 'N/A'"));
-    },
-  );
+  test('uses only Cloud-supplied waste cost for live rows', () {
+    const renderer = LiveDevicesCardRenderer();
+    final script = renderer.appendScript(
+      projection: _projection(homeA, [
+        const LiveDeviceRow(
+          applianceId: 'light',
+          name: 'Lamp',
+          manufacturer: 'Acme',
+          model: 'L1',
+          measuredBucket: null,
+        ),
+        const LiveDeviceRow(
+          applianceId: 'tv',
+          name: 'Television',
+          measuredBucket: null,
+        ),
+        const LiveDeviceRow(
+          applianceId: 'capped',
+          name: 'Capped device',
+          measuredBucket: null,
+        ),
+      ]),
+      generation: 1,
+    );
+    final encodedPayload = RegExp("atob\\('([^']+)'\\)")
+        .firstMatch(script)!
+        .group(1)!;
+    final payload = jsonDecode(
+      utf8.decode(base64Decode(encodedPayload)),
+    ) as Map<String, dynamic>;
+    expect(payload['rows'], [
+      {
+        'id': 'light',
+        'name': 'Lamp',
+        'identity': 'Acme L1',
+        'usageCost': null,
+        'usefulCost': null,
+        'wasteCost': null,
+        'state': 'standby',
+        'stateExpiresAt': null,
+      },
+      {
+        'id': 'tv',
+        'name': 'Television',
+        'identity': '',
+        'usageCost': null,
+        'usefulCost': null,
+        'wasteCost': null,
+        'state': 'standby',
+        'stateExpiresAt': null,
+      },
+      {
+        'id': 'capped',
+        'name': 'Capped device',
+        'identity': '',
+        'usageCost': null,
+        'usefulCost': null,
+        'wasteCost': null,
+        'state': 'standby',
+        'stateExpiresAt': null,
+      },
+    ]);
+    expect(script, isNot(contains('demoWaste')));
+    expect(
+      script,
+      contains("clone.setAttribute('data-el-device-state', state)"),
+    );
+    expect(script, contains("useful.textContent = row.usefulCost ?? 'N/A'"));
+    expect(script, contains("waste.textContent = wasteText ?? 'N/A'"));
+  });
 
   test('DOM append preserves mock cards, refreshes, and rejects stale scope', () async {
     final available = Process.runSync('node', [

@@ -32,12 +32,7 @@ String buildDesignPageStateCaptureScript(String page) {
       }
       let selectedType = null;
       if (page === 'settings_manage_devices' || page === 'settings_manual_device_entry') {
-        const selected = Array.from(document.querySelectorAll('button.type-pill[data-el-action]'))
-          .find((element) => element.dataset.elAction?.startsWith(page + '_action_') &&
-            (element.classList.contains('bg-primary-container') || element.getAttribute('aria-pressed') === 'true'));
-        if (selected && new RegExp('^' + page + '_action_01[4-9]\$').test(selected.dataset.elAction || '')) {
-          selectedType = selected.dataset.elAction;
-        }
+        selectedType = document.getElementById('energy-type')?.value || null;
       }
       return JSON.stringify({
         scroll_x: Math.max(0, Math.min(10000000, Math.round(window.scrollX || 0))),
@@ -88,9 +83,7 @@ String buildDesignPageStateRestoreScript(DesignPageStateSnapshot snapshot) {
           });
       }
       if ((page === 'settings_manage_devices' || page === 'settings_manual_device_entry') && state.selected_type) {
-        const target = Array.from(document.querySelectorAll('button.type-pill[data-el-action]'))
-          .find((element) => element.dataset.elAction === state.selected_type);
-        if (target) target.click();
+        window.energyLensSelectType?.(state.selected_type);
       }
       window.scrollTo(state.scroll_x || 0, state.scroll_y || 0);
       return true;

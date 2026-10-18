@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'live_devices_projection.dart';
 
 /// Generates narrowly scoped DOM operations for the approved Devices asset.
-/// Saved identity and eligible demo waste are assigned with textContent.
+/// Saved identity and Cloud costs are assigned with textContent.
 class LiveDevicesCardRenderer {
   const LiveDevicesCardRenderer();
 
@@ -42,9 +42,6 @@ class LiveDevicesCardRenderer {
             'usageCost': row.usageCost,
             'usefulCost': row.usefulCost,
             'wasteCost': row.wasteCost,
-            'demoWaste': row.demoWasteMicrosPerDay == null
-                ? null
-                : '\$${_formatDemoWaste(row.demoWasteMicrosPerDay!)}',
             'state': row.state,
             'stateExpiresAt': row.stateExpiresAt?.millisecondsSinceEpoch,
           },
@@ -105,7 +102,6 @@ class LiveDevicesCardRenderer {
         typeof row.identity !== 'string' ||
         (row.usageCost !== null && typeof row.usageCost !== 'string') ||
         (row.usefulCost !== null && typeof row.usefulCost !== 'string') ||
-        (row.demoWaste !== null && typeof row.demoWaste !== 'string') ||
         (row.wasteCost !== null && typeof row.wasteCost !== 'string') ||
         (row.stateExpiresAt !== null && !Number.isSafeInteger(row.stateExpiresAt)) ||
         !['active', 'idle', 'standby'].includes(row.state)) return false;
@@ -147,7 +143,7 @@ class LiveDevicesCardRenderer {
     useful.classList.remove('text-on-surface-variant');
     const usefulAmount = row.usefulCost && Number(row.usefulCost.replace(/[^0-9.]/g, ''));
     useful.classList.add(usefulAmount > 0 ? 'el-useful-ink' : 'text-on-surface-variant');
-    const wasteText = row.wasteCost ?? row.demoWaste;
+    const wasteText = row.wasteCost;
     waste.textContent = wasteText ?? 'N/A';
     waste.classList.remove('text-[#d97706]');
     waste.classList.remove('el-waste-ink');
@@ -184,13 +180,4 @@ class LiveDevicesCardRenderer {
 
   String _encode(Object payload) =>
       base64Encode(utf8.encode(jsonEncode(payload)));
-
-  String _formatDemoWaste(int micros) {
-    final whole = micros ~/ 1000000;
-    var fraction = (micros % 1000000).toString().padLeft(6, '0');
-    while (fraction.length > 2 && fraction.endsWith('0')) {
-      fraction = fraction.substring(0, fraction.length - 1);
-    }
-    return '$whole.$fraction';
-  }
 }

@@ -1,5 +1,6 @@
 import '../discovery/discovery_api.dart';
 import '../discovery/discovery_credentials.dart';
+import '../../core/cloud_api/cloud_energy_categories.dart';
 
 enum LocalWriteStatus { confirmed, unresolved, failed }
 
@@ -50,6 +51,13 @@ class LocalPilotDeviceLifecycle {
 
   final DiscoveryApi api;
   final DiscoveryCredentials credentials;
+
+  Future<EnergyCategories?> energyCategories() async {
+    final credential = await _credential();
+    if (credential == null) return null;
+    return api.energyCategories(credential.address, credential.token);
+  }
+
   String? _lastCredential;
   LocalInventory? _lastInventory;
   int _revision = 0;

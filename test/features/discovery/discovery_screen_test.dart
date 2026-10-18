@@ -1004,6 +1004,17 @@ void main() {
         ),
         client: MockClient((request) async {
           final path = request.url.path;
+          if (path == '/v1/energy-categories') {
+            return http.Response(
+              jsonEncode({'version': 1, 'groups': [
+                {'key': 'office', 'label': 'Office', 'types': [
+                  {'key': 'computer', 'label': 'Computer'},
+                ]},
+              ]}),
+              200,
+              headers: {'etag': '"1"'},
+            );
+          }
           if (path == '/v1/homes/$_cloudHomeId/hubs') {
             return http.Response(
               jsonEncode({
@@ -1176,13 +1187,14 @@ void main() {
       );
       await tester.enterText(find.byKey(const Key('applianceModel')), 'C123');
       await tester.pumpAndSettle();
-      await tester.ensureVisible(
-        find.text('I checked this full model and fuel against the label'),
-      );
+      await tester.tap(find.byKey(const ValueKey('applianceGroup-null')));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.text('I checked this full model and fuel against the label'),
-      );
+      await tester.tap(find.text('Office').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('applianceCategory-office-')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Computer').last);
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const Key('saveAppliance')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('saveAppliance')));
@@ -1513,7 +1525,7 @@ void main() {
     },
   );
 
-  testWidgets('shows OEM nameplate rating separate from measured energy', (
+  testWidgets('verified meter shows energy without manufacturer source', (
     tester,
   ) async {
     final api = NameplateDetailApi();
@@ -1537,15 +1549,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('OEM rated input (nameplate)'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.text('OEM rated input (nameplate)'), findsOneWidget);
-    expect(find.text('1350 W'), findsOneWidget);
-    expect(find.text('Manufacturer source'), findsOneWidget);
-    expect(find.text('0.200 kWh'), findsOneWidget);
+    expect(find.text('OEM rated input (nameplate)'), findsNothing);
+    expect(find.text('Manufacturer source'), findsNothing);
+    expect(find.text('Energy · 0.2 kWh'), findsOneWidget);
+    expect(find.text('Cost · \$0.04'), findsOneWidget);
     expect(find.textContaining('1350 kWh'), findsNothing);
   });
 
@@ -1604,7 +1611,7 @@ void main() {
   });
 
   testWidgets(
-    'opens measured detail with coverage and separate sourced estimate',
+    'opens concise measured detail without source labels',
     (tester) async {
       tester.view.physicalSize = const Size(800, 1200);
       tester.view.devicePixelRatio = 1;
@@ -1628,20 +1635,14 @@ void main() {
       );
       await tester.tap(find.text('View energy details').first);
       await tester.pumpAndSettle();
-      expect(find.text('Live power unavailable'), findsOneWidget);
-      expect(find.text('0.200 kWh'), findsOneWidget);
-      expect(find.textContaining('50% coverage'), findsOneWidget);
-      expect(find.textContaining('remaining 12h'), findsOneWidget);
-      expect(find.textContaining('18.0 kWh'), findsOneWidget);
-      expect(find.textContaining('EPA rated energy data'), findsOneWidget);
-      expect(
-        find.textContaining('Older meter data is available'),
-        findsOneWidget,
-      );
+      expect(find.text('Appliance energy'), findsOneWidget);
+      expect(find.text('Last 30 days'), findsOneWidget);
+      expect(find.text('Energy · 0.2 kWh'), findsOneWidget);
+      expect(find.textContaining('EPA'), findsNothing);
     },
   );
 
-  testWidgets('fetches attached estimate and labels measured month coverage', (
+  testWidgets('verified meter ignores attached estimate', (
     tester,
   ) async {
     final api = MeasuredEstimateApi();
@@ -1665,30 +1666,18 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(api.estimateCalls, 1);
-    await tester.scrollUntilVisible(
-      find.text('Measured 30-day energy · 12.5 kWh'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.text('Measured 30-day energy · 12.5 kWh'), findsOneWidget);
-    expect(
-      find.text('Measurement coverage · 35% of the 30-day window'),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining('Cached regional rate from 2026-01-01'),
-      findsOneWidget,
-    );
+    expect(api.estimateCalls, 0);
+    expect(find.text('Energy · 0.2 kWh'), findsOneWidget);
+    expect(find.textContaining('Measurement coverage'), findsNothing);
   });
 
-  testWidgets('shows the timestamp of the latest live meter sample', (
+  testWidgets('shows measured energy without sample metadata', (
     tester,
   ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: DeviceEnergyDetailScreen(
-          plug: const SavedPlug(
+          plug: SavedPlug(
             id: 'plug-detail',
             ip: '192.168.1.42',
             model: 'HS110',
@@ -1696,6 +1685,7 @@ void main() {
             room: 'Office',
             meterStatus: 'verified',
             lastVerifiedAt: 100,
+            connectedAppliance: DeviceDetailApi().appliance,
           ),
           api: TimestampApi(),
           hubAddress: 'https://192.168.1.20:8787',
@@ -1705,12 +1695,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('42 W'), findsOneWidget);
-    expect(find.textContaining('Sampled '), findsOneWidget);
-    expect(find.textContaining('Sep 29'), findsOneWidget);
+    expect(find.text('Energy · 0.2 kWh'), findsOneWidget);
+    expect(find.textContaining('Sampled '), findsNothing);
   });
 
-  testWidgets('marks a retained estimate as cached when the hub is offline', (
+  testWidgets('verified meter never uses a retained estimate', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -1739,21 +1728,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('18.0 kWh'), findsOneWidget);
-    expect(
-      find.text('Could not refresh · showing cached estimate'),
-      findsOneWidget,
-    );
+    expect(find.text('Energy · 0.2 kWh'), findsOneWidget);
+    expect(find.textContaining('18.0 kWh'), findsNothing);
   });
 
-  testWidgets('ignores a slower response for an earlier selected period', (
+  testWidgets('requests the monthly meter period', (
     tester,
   ) async {
     final api = PeriodRaceApi();
     await tester.pumpWidget(
       MaterialApp(
         home: DeviceEnergyDetailScreen(
-          plug: const SavedPlug(
+          plug: SavedPlug(
             id: 'plug-detail',
             ip: '192.168.1.42',
             model: 'HS110',
@@ -1761,6 +1747,7 @@ void main() {
             room: 'Office',
             meterStatus: 'verified',
             lastVerifiedAt: 100,
+            connectedAppliance: DeviceDetailApi().appliance,
           ),
           api: api,
           hubAddress: 'https://192.168.1.20:8787',
@@ -1768,25 +1755,9 @@ void main() {
         ),
       ),
     );
-    await tester.pump();
-    await tester.tap(find.text('Week'));
     await tester.pumpAndSettle();
-    expect(find.text('0.700 kWh'), findsOneWidget);
-
-    api.day.complete(
-      const DeviceEnergy(
-        status: 'measured',
-        period: 'day',
-        totalKwh: 0.1,
-        coverageFraction: 0.5,
-        coveredSecs: 43200,
-        latestWatts: 10,
-        readingCount: 2,
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('0.700 kWh'), findsOneWidget);
-    expect(find.text('0.100 kWh'), findsNothing);
+    expect(find.text('Last 30 days'), findsOneWidget);
+    expect(find.text('Energy · 0.7 kWh'), findsOneWidget);
   });
 
   test('formats electricity rate provenance and unavailable feedback', () {
@@ -2416,7 +2387,7 @@ void main() {
       'Dyson AM07',
     );
     expect(find.text('Living room fan'), findsOneWidget);
-    expect(find.textContaining('Estimate unavailable'), findsOneWidget);
+    expect(find.text('Energy data is not available yet.'), findsOneWidget);
     expect(find.text('Change connected appliance'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
@@ -2453,7 +2424,16 @@ void main() {
       tester.view.physicalSize = const Size(800, 1200);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
-      final api = _OwnerHeaderApi();
+      final api = _OwnerHeaderApi()
+        ..plug = SavedPlug(
+          id: 'saved-plug',
+          ip: '192.168.1.42',
+          model: 'KP115',
+          name: 'Saved office plug',
+          room: 'Office',
+          meterStatus: 'verified',
+          lastVerifiedAt: 100,
+        );
       final store = _AutoPairStore();
       final cloud = CloudApiClient(
         session: CloudSession(
@@ -2516,7 +2496,7 @@ void main() {
       await tester.tap(find.text('View energy details').first);
       await tester.pumpAndSettle();
       expect(find.textContaining('Could not load meter history'), findsNothing);
-      expect(find.text('Observed day, covered time only'), findsOneWidget);
+      expect(find.text('Appliance energy'), findsOneWidget);
       expect(api.reads, ['$_cloudHomeId:saved-plug']);
       cloud.close();
     },

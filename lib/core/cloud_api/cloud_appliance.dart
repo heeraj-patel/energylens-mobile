@@ -16,7 +16,6 @@ class CloudAppliance {
     this.createdAt,
     this.updatedAt,
     this.archivedAt,
-    this.kbWasteResult,
     this.demoDeviceId,
   });
 
@@ -36,7 +35,6 @@ class CloudAppliance {
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? archivedAt;
-  final CloudKbWasteResult? kbWasteResult;
 
   /// Present only for a database-backed synthetic inventory row.
   final String? demoDeviceId;
@@ -75,35 +73,12 @@ class CloudAppliance {
       createdAt: _optionalInstant(json['created_at']),
       updatedAt: _optionalInstant(json['updated_at']),
       archivedAt: _optionalInstant(json['archived_at']),
-      kbWasteResult: json['kb_waste_result'] == null
-          ? null
-          : CloudKbWasteResult.fromJson(json['kb_waste_result']),
       demoDeviceId: json['demo_device_id'] as String?,
     );
   }
 
   static DateTime? _optionalInstant(Object? value) =>
       value == null ? null : DateTime.parse(value as String);
-}
-
-class CloudKbWasteResult {
-  const CloudKbWasteResult({required this.id, required this.status});
-
-  final String id;
-  final String status;
-
-  factory CloudKbWasteResult.fromJson(Object? value) {
-    if (value is! Map<String, dynamic> ||
-        value['id'] is! String ||
-        (value['id'] as String).isEmpty ||
-        value['status'] != 'waste_evidence_unavailable_after_kb') {
-      throw const FormatException('Invalid KB waste result');
-    }
-    return CloudKbWasteResult(
-      id: value['id'] as String,
-      status: value['status'] as String,
-    );
-  }
 }
 
 class CloudApplianceCreate {
@@ -117,6 +92,11 @@ class CloudApplianceCreate {
     this.variant,
     this.region,
     this.catalogProductId,
+    this.fccId,
+    this.icId,
+    this.serialNumber,
+    this.upc,
+    this.bulbLabel,
     this.matchQuality = 'confirmed_exact',
   });
   final String name;
@@ -128,6 +108,11 @@ class CloudApplianceCreate {
   final String? variant;
   final String? region;
   final String? catalogProductId;
+  final String? fccId;
+  final String? icId;
+  final String? serialNumber;
+  final String? upc;
+  final BulbLabel? bulbLabel;
   final String matchQuality;
 
   Map<String, dynamic> toJson() => {
@@ -142,6 +127,11 @@ class CloudApplianceCreate {
       if (region != null) 'region': region,
       'match_quality': matchQuality,
       if (catalogProductId != null) 'catalog_product_id': catalogProductId,
+      if (fccId != null) 'fcc_id': fccId,
+      if (icId != null) 'ic_id': icId,
+      if (serialNumber != null) 'serial_number': serialNumber,
+      if (upc != null) 'upc': upc,
+      if (bulbLabel != null) 'bulb_label': bulbLabel!.toJson(),
     },
   };
 }
@@ -186,6 +176,11 @@ class CloudApplianceIdentityPatch {
     this.variant,
     this.region,
     this.catalogProductId,
+    this.fccId,
+    this.icId,
+    this.serialNumber,
+    this.upc,
+    this.bulbLabel,
   });
   final String brand;
   final String fullModel;
@@ -194,6 +189,11 @@ class CloudApplianceIdentityPatch {
   final String? variant;
   final String? region;
   final String? catalogProductId;
+  final String? fccId;
+  final String? icId;
+  final String? serialNumber;
+  final String? upc;
+  final BulbLabel? bulbLabel;
   Map<String, dynamic> toJson() => {
     'brand': brand,
     'full_model': fullModel,
@@ -202,5 +202,31 @@ class CloudApplianceIdentityPatch {
     if (variant != null) 'variant': variant,
     if (region != null) 'region': region,
     if (catalogProductId != null) 'catalog_product_id': catalogProductId,
+    if (fccId != null) 'fcc_id': fccId,
+    if (icId != null) 'ic_id': icId,
+    if (serialNumber != null) 'serial_number': serialNumber,
+    if (upc != null) 'upc': upc,
+    if (bulbLabel != null) 'bulb_label': bulbLabel!.toJson(),
+  };
+}
+
+class BulbLabel {
+  const BulbLabel({
+    required this.loadKind,
+    this.bulbCount,
+    this.combinedInputWatts,
+  });
+
+  final String loadKind;
+  final int? bulbCount;
+  final double? combinedInputWatts;
+
+  Map<String, dynamic> toJson() => {
+    'load_kind': loadKind,
+    if (loadKind == 'replaceable_bulb') ...{
+      if (bulbCount != null) 'bulb_count': bulbCount,
+      if (combinedInputWatts != null)
+        'combined_input_watts': combinedInputWatts,
+    },
   };
 }

@@ -234,12 +234,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
     var complete = true;
     for (final plug in plugs) {
-      // The Cloud sensor capability contract requires an observed meter.
-      // Unknown or absent meters remain local and are never labeled measured.
-      if (plug.meterStatus != 'verified') {
-        complete = false;
-        continue;
-      }
       try {
         final before = await cloud.sensors(home.id);
         final existing = before.where(
@@ -261,7 +255,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           }
           continue;
         }
-        final capabilities = const ['power', 'energy'];
+        final capabilities = plug.meterStatus == 'verified'
+            ? const ['power', 'energy']
+            : const <String>[];
         await cloud.createSensor(
           home.id,
           CloudSensorCreate(
@@ -320,7 +316,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       sensor.ownershipEpoch == ownership.ownershipEpoch &&
       sensor.localSensorId == plug.id &&
       sensor.kind == 'plug' &&
-      sensor.capabilities.toSet().containsAll(const {'power', 'energy'});
+      sensor.capabilities.toSet().containsAll(
+        plug.meterStatus == 'verified'
+            ? const {'power', 'energy'}
+            : const <String>{},
+      ) &&
+      (plug.meterStatus == 'verified' || sensor.capabilities.isEmpty);
 
   String _sensorRegistrationKey(
     String homeId,
@@ -771,11 +772,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       _error = null;
     });
     try {
-      await _hubApi.lookupEnergy(
-        _hub.text.trim(),
-        _token.text.trim(),
-        appliance.id,
-      );
       final estimate = await _hubApi.estimate(
         _hub.text.trim(),
         _token.text.trim(),
@@ -824,34 +820,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           Text(appliance.category),
           const Text('Connected load · No live readings'),
           if (plug.connectionStatus == 'identity_changed')
-            const Text('Estimate hidden until this plug is verified.')
-          else if (_estimates[appliance.id] case final estimate?)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                energyRateDescription(estimate),
-                style: theme.textTheme.bodySmall,
-              ),
-            ),
+            const Text('Estimate hidden until this plug is verified.'),
           if (plug.connectionStatus != 'identity_changed') ...[
-            if (_estimates[appliance.id]?.evidence case final source?) ...[
-              Text(
-                _estimates[appliance.id]!.estimatedCostUsd == null
-                    ? 'Estimated monthly energy: ${_estimates[appliance.id]!.estimatedKwh!.toStringAsFixed(1)} kWh'
-                    : 'Estimated monthly cost: \$${_estimates[appliance.id]!.estimatedCostUsd!.toStringAsFixed(2)} · ${_estimates[appliance.id]!.estimatedKwh!.toStringAsFixed(1)} kWh',
-              ),
-              TextButton.icon(
-                onPressed: () => _showSource(source, _estimates[appliance.id]!),
-                icon: Icon(
-                  source.sourceKind == 'energy_star' ||
-                          source.sourceKind == 'epa_exact'
-                      ? Icons.verified_outlined
-                      : Icons.info_outline,
-                ),
-                label: Text(energySourceLabel(source)),
-              ),
+            if (_estimates[appliance.id]?.estimatedKwh case final kwh?) ...[
+              Text('Energy · ${kwh.toStringAsFixed(1)} kWh'),
+              if (_estimates[appliance.id]?.estimatedCostUsd case final cost?)
+                Text('Cost · \$${cost.toStringAsFixed(2)}'),
             ] else
-              const Text('Estimate unavailable · Exact model/source needed'),
+              const Text('Energy data is not available yet.'),
           ],
           TextButton(
             onPressed: _busy ? null : () => _checkConnectedEnergy(appliance),
@@ -859,49 +835,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           ),
         ],
       ],
-    );
-  }
-
-  void _showSource(EnergyEvidence source, EnergyEstimate estimate) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                energySourceHeading(source),
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              if (source.sourceKind != 'user_label')
-                Text(
-                  'Matched model: ${source.matchedBrand} ${source.matchedModel}',
-                ),
-              Text(
-                source.sourceKind == 'user_label'
-                    ? 'Calculated energy: ${source.annualKwh.toStringAsFixed(1)} kWh/year'
-                    : 'Published energy${estimate.bulbCount != null && estimate.bulbCount! > 1 ? ' per bulb' : ''}: ${source.annualKwh.toStringAsFixed(1)} kWh/year',
-              ),
-              Text('Basis: ${source.usageBasis}'),
-              if (source.sourceKind != 'user_label')
-                Text('Dataset: ${source.datasetId}'),
-              Text(
-                'Source date: ${DateTime.fromMillisecondsSinceEpoch(source.retrievedAt * 1000).toLocal()}',
-              ),
-              Text(energyRateDescription(estimate)),
-              if (estimate.rateSourceUrl case final url?) SelectableText(url),
-              if (source.sourceUrl.isNotEmpty) SelectableText(source.sourceUrl),
-              const SizedBox(height: 8),
-              const Text(
-                'Estimated energy for the connected load. No live energy measurement.',
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -1126,7 +1059,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     final cloud = widget.cloudApi!;
     final homeId = widget.cloudHome!.id;
     final ownership = await _ownedHub();
-    if (ownership == null || plug.meterStatus != 'verified') {
+    if (ownership == null) {
       throw StateError('Cloud sensor unavailable');
     }
     await _syncAdoptedPlugSensors([plug]);
@@ -1938,6 +1871,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                 api: _hubApi,
                                 hubAddress: _hub.text.trim(),
                                 token: _token.text.trim(),
+                                cloudApi: widget.cloudApi,
+                                cloudAppliance: _cloudAttached[plug.id],
                                 estimate: plug.connectedAppliance == null
                                     ? null
                                     : _estimates[plug.connectedAppliance!.id],

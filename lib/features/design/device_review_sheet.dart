@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/cloud_api/cloud_appliance.dart';
+import '../../core/cloud_api/cloud_api_client.dart';
+import '../../core/cloud_api/cloud_energy_categories.dart';
 import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import '../identify/onboarding_draft_store.dart';
 import '../identify/onboarding_persistence_repository.dart';
@@ -11,6 +13,7 @@ class DeviceReviewSheet extends StatefulWidget {
   const DeviceReviewSheet({
     super.key,
     required this.lifecycle,
+    this.api,
     required this.accountId,
     required this.homeId,
     required this.homeName,
@@ -21,6 +24,7 @@ class DeviceReviewSheet extends StatefulWidget {
   });
 
   final CloudAuxiliaryDomainLifecycle lifecycle;
+  final CloudApiClient? api;
   final String accountId;
   final String homeId;
   final String homeName;
@@ -43,33 +47,53 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
   late final TextEditingController _model = TextEditingController(
     text: widget.model,
   );
-  late String? _category =
-      const {
-        'computer',
-        'lighting',
-        'refrigerator',
-        'television',
-        'washer',
-        'dryer',
-        'dishwasher',
-        'space_heater',
-        'air_conditioner',
-        'water_heater',
-        'other',
-      }.contains(widget.initialCategory)
-      ? widget.initialCategory
-      : null;
+  static EnergyCategories? _sessionCategories;
+  EnergyCategories? _categories = _sessionCategories;
+  late String? _category = widget.initialCategory;
+  String? _group;
   String? _fuel;
   bool _saving = false;
   PendingOnboardingDraft? _pending;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectGroupForCategory();
+    _loadCategories();
+  }
+
+  void _selectGroupForCategory() {
+    for (final group in _categories?.groups ?? const <EnergyCategoryGroup>[]) {
+      if (group.types.any((type) => type.key == _category)) {
+        _group = group.key;
+        return;
+      }
+    }
+  }
+
+  Future<void> _loadCategories() async {
+    final api = widget.api;
+    if (api == null) return;
+    try {
+      final fresh = await api.energyCategories(etag: _sessionCategories?.etag);
+      if (fresh != null) _sessionCategories = fresh;
+      if (!mounted) return;
+      setState(() {
+        _categories = _sessionCategories;
+        _selectGroupForCategory();
+      });
+    } catch (_) {
+      // Keep the session's last successful category list.
+    }
+  }
 
   bool _validText(String value) =>
       value.trim().isNotEmpty && value.trim().length <= 120;
 
   bool get _valid =>
       _validText(_name.text) &&
-      _validText(_manufacturer.text) &&
-      _validText(_model.text) &&
+      _manufacturer.text.trim().length <= 120 &&
+      _model.text.trim().length <= 120 &&
       _category != null &&
       _fuel != null;
 
@@ -157,34 +181,49 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
           ),
           DropdownButtonFormField<String>(
             key: const Key('reviewCategory'),
-            initialValue: _category,
-            decoration: const InputDecoration(labelText: 'Category'),
-            items: const [
-              DropdownMenuItem(value: 'computer', child: Text('Computer')),
-              DropdownMenuItem(value: 'lighting', child: Text('Lamp or bulb')),
-              DropdownMenuItem(
-                value: 'refrigerator',
-                child: Text('Refrigerator'),
-              ),
-              DropdownMenuItem(value: 'television', child: Text('TV')),
-              DropdownMenuItem(value: 'washer', child: Text('Washer')),
-              DropdownMenuItem(value: 'dryer', child: Text('Dryer')),
-              DropdownMenuItem(value: 'dishwasher', child: Text('Dishwasher')),
-              DropdownMenuItem(
-                value: 'space_heater',
-                child: Text('Space heater'),
-              ),
-              DropdownMenuItem(
-                value: 'air_conditioner',
-                child: Text('Air conditioner'),
-              ),
-              DropdownMenuItem(
-                value: 'water_heater',
-                child: Text('Water Heater'),
-              ),
-              DropdownMenuItem(value: 'other', child: Text('Other appliance')),
+            initialValue: _group,
+            decoration: const InputDecoration(
+              labelText: 'Category',
+              hintText: 'Choose category',
+            ),
+            items: [
+              for (final group
+                  in _categories?.groups ?? const <EnergyCategoryGroup>[])
+                DropdownMenuItem(value: group.key, child: Text(group.label)),
             ],
             onChanged: _saving
+                ? null
+                : (value) {
+                    _group = value;
+                    _category = null;
+                    _changed();
+                  },
+          ),
+          DropdownButtonFormField<String>(
+            key: const Key('reviewDeviceType'),
+            initialValue: _category,
+            decoration: InputDecoration(
+              labelText: 'Device Type',
+              hintText: _group == null
+                  ? 'Choose category first'
+                  : 'Choose type',
+            ),
+            items: [
+              for (final type
+                  in _categories?.groups
+                          .where((group) => group.key == _group)
+                          .expand((group) => group.types) ??
+                      const <EnergyCategoryType>[])
+                DropdownMenuItem(value: type.key, child: Text(type.label)),
+              if (_category != null &&
+                  !(_categories?.groups.any(
+                        (group) =>
+                            group.types.any((type) => type.key == _category),
+                      ) ??
+                      false))
+                DropdownMenuItem(value: _category, child: Text(_category!)),
+            ],
+            onChanged: _saving || _group == null
                 ? null
                 : (value) {
                     _category = value;

@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_energy_categories.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_report_delivery.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_report_preview.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
@@ -15,6 +17,31 @@ import 'package:flutter_test/flutter_test.dart';
 const account = '11111111-1111-4111-8111-111111111111';
 const home = '22222222-2222-4222-8222-222222222222';
 const applianceId = '33333333-3333-4333-8333-333333333333';
+
+class _CategoryApi implements CloudApiClient {
+  @override
+  Future<EnergyCategories?> energyCategories({
+    String? etag,
+  }) async => const EnergyCategories(
+    version: 1,
+    etag: '"1"',
+    groups: [
+      EnergyCategoryGroup(
+        key: 'kitchen',
+        label: 'Kitchen',
+        types: [EnergyCategoryType(key: 'refrigerator', label: 'Refrigerator')],
+      ),
+      EnergyCategoryGroup(
+        key: 'home',
+        label: 'Home',
+        types: [EnergyCategoryType(key: 'water_heater', label: 'Water Heater')],
+      ),
+    ],
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 class _Storage implements OnboardingDraftStorage {
   String? value;
@@ -146,6 +173,7 @@ void main() {
                   context: context,
                   builder: (_) => DeviceReviewSheet(
                     lifecycle: lifecycle,
+                    api: _CategoryApi(),
                     accountId: account,
                     homeId: home,
                     homeName: 'Lake House',
@@ -191,7 +219,8 @@ void main() {
         isNull,
       );
       expect(source.creates, 0);
-      await choose(tester, 'reviewCategory', 'Refrigerator');
+      await choose(tester, 'reviewCategory', 'Kitchen');
+      await choose(tester, 'reviewDeviceType', 'Refrigerator');
       await choose(tester, 'reviewEnergySource', 'Electricity');
       await tester.tap(find.byKey(const Key('reviewSave')));
       await tester.pumpAndSettle();
@@ -237,7 +266,8 @@ void main() {
     final lifecycle = _lifecycle(_Storage(), source);
     await lifecycle.selectVerifiedHome(account, home);
     await open(tester, lifecycle);
-    await choose(tester, 'reviewCategory', 'Refrigerator');
+    await choose(tester, 'reviewCategory', 'Kitchen');
+    await choose(tester, 'reviewDeviceType', 'Refrigerator');
     await choose(tester, 'reviewEnergySource', 'Electricity');
     await tester.tap(find.byKey(const Key('reviewSave')));
     await tester.pumpAndSettle();
@@ -258,7 +288,8 @@ void main() {
     final lifecycle = _lifecycle(_Storage(), source);
     await lifecycle.selectVerifiedHome(account, home);
     await open(tester, lifecycle);
-    await choose(tester, 'reviewCategory', 'Refrigerator');
+    await choose(tester, 'reviewCategory', 'Kitchen');
+    await choose(tester, 'reviewDeviceType', 'Refrigerator');
     await choose(tester, 'reviewEnergySource', 'Electricity');
     await tester.tap(find.byKey(const Key('reviewSave')));
     await tester.pump();

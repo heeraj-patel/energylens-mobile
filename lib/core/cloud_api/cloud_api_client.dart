@@ -30,6 +30,8 @@ import 'cloud_household_energy.dart';
 import 'cloud_regional_rate.dart';
 import 'cloud_usage_facts.dart';
 import 'cloud_device_states.dart';
+import 'cloud_energy_categories.dart';
+import 'cloud_energy_resolution.dart';
 
 class CloudApiException implements Exception {
   const CloudApiException(this.statusCode, this.code);
@@ -81,6 +83,40 @@ class CloudApiClient {
     : _client = client ?? cloudHttpClient(session.config);
   final CloudSession session;
   final http.Client _client;
+
+  Future<CloudEnergyResolution?> energyResolution(
+    String homeId,
+    String applianceId,
+  ) async {
+    try {
+      final response = await get(
+        '/v1/homes/${Uri.encodeComponent(homeId)}/appliances/${Uri.encodeComponent(applianceId)}/energy-resolution',
+      );
+      return CloudEnergyResolution.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      );
+    } on CloudApiException catch (error) {
+      if (error.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  Future<EnergyCategories?> energyCategories({String? etag}) async {
+    final response = await _request(
+      'GET',
+      '/v1/energy-categories',
+      ifNoneMatch: etag,
+    );
+    if (response.statusCode == 304) return null;
+    final responseEtag = _caseInsensitiveHeader(response.headers, 'etag');
+    if (responseEtag == null) {
+      throw const FormatException('Missing energy categories ETag');
+    }
+    return EnergyCategories.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+      responseEtag,
+    );
+  }
 
   Future<CloudAuthCapabilities?> authCapabilities() async {
     final origin = Uri.parse(session.config.apiUrl);
@@ -767,20 +803,19 @@ class CloudApiClient {
   }
 
   Future<List<CloudCatalogProduct>> searchCatalogModels({
-    required String brand,
+    String? brand,
     required String model,
-    required String fuel,
+    String? fuel,
     String? region,
   }) async {
+    final query = <String, dynamic>{'model': model};
+    if (brand != null) query['brand'] = brand;
+    if (fuel != null) query['fuel'] = fuel;
+    if (region != null) query['region'] = region;
     final response = await _request(
       'POST',
       '/v1/catalog/model-search',
-      jsonBody: jsonEncode({
-        'brand': brand,
-        'model': model,
-        'fuel': fuel,
-        'region': region,
-      }),
+      jsonBody: jsonEncode(query),
       idempotencyKey: newCloudIdempotencyKey(),
     );
     final body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -1553,6 +1588,7 @@ class CloudApiClient {
     String? jsonBody,
     String? idempotencyKey,
     String? ifMatch,
+    String? ifNoneMatch,
   }) async {
     final sessionGeneration = session.generation;
     if (!session.config.hasCloudSignIn) {
@@ -1584,6 +1620,7 @@ class CloudApiClient {
         request.headers['Idempotency-Key'] = idempotencyKey;
       }
       if (ifMatch != null) request.headers['If-Match'] = ifMatch;
+      if (ifNoneMatch != null) request.headers['If-None-Match'] = ifNoneMatch;
       return http.Response.fromStream(await _client.send(request));
     }
 
@@ -1600,7 +1637,8 @@ class CloudApiClient {
     if (sessionGeneration != session.generation) {
       throw const CloudApiException(401, 'not_authenticated');
     }
-    if (body.statusCode < 200 || body.statusCode >= 300) {
+    if ((body.statusCode < 200 || body.statusCode >= 300) &&
+        !(ifNoneMatch != null && body.statusCode == 304)) {
       String code = 'http_${body.statusCode}';
       try {
         final json = jsonDecode(body.body) as Map<String, dynamic>;
