@@ -37,8 +37,7 @@ For the Geekom username-auth simulator profile, the Cloud API is
 `https://192.168.68.136:18092`. Its `/v1/auth/config` endpoint advertises
 `username_password`. Configure `.env-local` with
 `ENERGYLENS_LOCAL_PILOT=false`, `ENERGYLENS_CLOUD_API_URL` set to that HTTPS
-origin, `ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED=true`,
-`ENERGYLENS_CLOUD_DEV_AUTH_ENABLED=true`, `ENERGYLENS_APP_ENV=dev`, and
+origin, `ENERGYLENS_CLOUD_DEV_AUTH_ENABLED=true`, `ENERGYLENS_APP_ENV=dev`, and
 `ENERGYLENS_CLOUD_DEV_CERT_SHA256=8ac41bd484dd773f16d954e4226eb2e7d7a800ed9a5c134ac5fbf430134376a6`,
 the current Cloud API leaf certificate SHA-256 pin. Recheck the leaf pin from
 the approved launch configuration whenever the Cloud certificate changes.
@@ -124,9 +123,11 @@ does not authorize an authenticated home.
 
 Start the Cloud API with `RUNTIME_ENV=local` using the
 [existing local launcher and private configuration](../energylens-dev-bash-scripts/README.md).
-For the authenticated Mobile build, set `ENERGYLENS_LOCAL_PILOT=false`,
-`ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED=true`, and the configured HTTPS
-`ENERGYLENS_CLOUD_API_URL` through `--dart-define`. Trust the configured server
+For the authenticated Mobile dev build, set `ENERGYLENS_LOCAL_PILOT=false`,
+`ENERGYLENS_CLOUD_DEV_AUTH_ENABLED=true`, `ENERGYLENS_APP_ENV=dev`, and the
+configured HTTPS `ENERGYLENS_CLOUD_API_URL` through `--dart-define`. This dev
+profile enables the username/password sign-in UI without enabling the separate
+`ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED` server profile. Trust the configured server
 certificate on the intended client; do not disable TLS verification. OIDC and
 email-link settings are unnecessary for this profile.
 
