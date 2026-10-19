@@ -135,7 +135,11 @@ void main() {
             },
             {
               'appliance_id': applianceB,
-              'allocation': allocation(cost: '0.000500'),
+              'allocation': allocation(
+                cost: '0.500000',
+                useful: '0.500000',
+                waste: '0.000000',
+              ),
             },
             {
               'appliance_id': applianceC,
@@ -161,10 +165,128 @@ void main() {
     );
     expect(projection.rows[0].usefulCost, '\$0.99');
     expect(projection.rows[0].wasteCost, '\$0.25');
-    expect(projection.rows[1].usefulCost, isNull);
-    expect(projection.rows[1].wasteCost, isNull);
+    expect(projection.rows[1].usefulCost, '\$0.50');
+    expect(projection.rows[1].wasteCost, '\$0.00');
     expect(projection.rows[2].usefulCost, isNull);
     expect(projection.rows[2].wasteCost, isNull);
+  });
+
+  test('estimated non-metered cost shows while measured stays unchanged', () {
+    const measured = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const estimated = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const zero = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const standby = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    Map<String, Object?> money(String value) => {
+      'amount': value,
+      'currency': 'USD',
+    };
+    Map<String, Object?> allocation(
+      String basis, {
+      String? cost,
+      String? useful,
+      String? waste,
+    }) => {
+      'energy': null,
+      'cost': cost == null ? null : money(cost),
+      'useful_energy': null,
+      'useful_cost': useful == null ? null : money(useful),
+      'waste_energy': null,
+      'waste_cost': waste == null ? null : money(waste),
+      'unclassified_energy': null,
+      'unclassified_cost': null,
+      'availability': 'partial',
+      'evidence_basis': basis,
+    };
+    final costs = CloudHouseholdEnergyTrends.fromJson({
+      'schema_revision': 'household_energy_v1',
+      'content_revision': 'v1',
+      'home_id': homeA,
+      'data_mode': 'household',
+      'snapshot_id': 'snapshot-1',
+      'generated_at': '2026-10-06T18:00:00Z',
+      'as_of': null,
+      'timezone': 'America/Chicago',
+      'period': {
+        'start_local': '2026-10-05T00:00:00-05:00',
+        'end_exclusive_local': '2026-10-12T00:00:00-05:00',
+      },
+      'scope': 'attributed_devices',
+      'availability': 'partial',
+      'evidence_basis': 'mixed',
+      'view': 'energy_trends',
+      'granularity': 'day',
+      'totals': allocation('mixed'),
+      'buckets': [
+        {
+          'start_local': '2026-10-06T00:00:00-05:00',
+          'end_exclusive_local': '2026-10-07T00:00:00-05:00',
+          'allocation': allocation('mixed'),
+          'coverage_fraction': null,
+          'device_allocations': [
+            {
+              'appliance_id': measured,
+              'allocation': allocation(
+                'measured',
+                cost: '1.239000',
+                useful: '0.985000',
+                waste: '0.254000',
+              ),
+            },
+            {
+              'appliance_id': estimated,
+              'allocation': allocation(
+                'estimated',
+                cost: '0.420000',
+                useful: '0.420000',
+                waste: '0.000000',
+              ),
+            },
+            {
+              'appliance_id': standby,
+              'allocation': allocation(
+                'estimated',
+                cost: '0.300000',
+                useful: '0.180000',
+                waste: '0.120000',
+              ),
+            },
+            {
+              'appliance_id': zero,
+              'allocation': allocation('mixed', cost: '0.000000'),
+            },
+          ],
+        },
+      ],
+    }, expectedHomeId: homeA);
+    final projection = prepareLiveDevicesProjection(
+      read(
+        items: [
+          item(measured, 'KS8'),
+          item(estimated, 'Dyson'),
+          item(zero, 'Fan'),
+          item(standby, 'Purifier'),
+        ],
+        costs: costs,
+      ),
+    );
+    expect(projection.rows[2].usageCost, '\$0.00');
+    final renamed = prepareLiveDevicesProjection(
+      read(
+        items: [item(measured, 'Dyson fan plug'), item(estimated, 'Dyson')],
+        costs: costs,
+      ),
+    );
+    expect(renamed.rows[0].name, 'Dyson fan plug');
+    expect(renamed.rows[0].usefulCost, '\$0.99');
+    expect(renamed.rows[0].usageCost, '\$1.24');
+    expect(projection.rows[0].usefulCost, '\$0.99');
+    expect(projection.rows[0].wasteCost, '\$0.25');
+    expect(projection.rows[1].usageCost, '\$0.42');
+    expect(projection.rows[1].usefulCost, '\$0.42');
+    expect(projection.rows[1].wasteCost, '\$0.00');
+    expect(projection.rows[3].usageCost, '\$0.30');
+    expect(projection.rows[3].usefulCost, '\$0.18');
+    expect(projection.rows[3].wasteCost, '\$0.12');
   });
 
   test('mixed live projection leaves seeded demo cards to their bindings', () {

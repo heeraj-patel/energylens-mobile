@@ -306,7 +306,11 @@ Map<String, _DailyRealCost> _realDailyCosts(DevicesDomainSnapshot snapshot) {
     final useful = _usdMicros(allocation.usefulCost);
     final waste = _usdMicros(allocation.wasteCost);
     if (total == null ||
-        !const {'measured', 'mixed'}.contains(allocation.evidenceBasis) ||
+        !const {
+          'measured',
+          'mixed',
+          'estimated',
+        }.contains(allocation.evidenceBasis) ||
         (useful != null && useful > total) ||
         (waste != null && waste > total) ||
         (useful != null && waste != null && useful + waste > total)) {
