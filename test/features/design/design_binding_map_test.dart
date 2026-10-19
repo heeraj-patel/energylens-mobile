@@ -97,7 +97,7 @@ Set<String> _approvedRemovedIds(String page, String category) {
   if (category == 'bindings') {
     return {
       if (page != 'settings_photo_scan_onboarding')
-        for (var n = 44; n <= 50; n++)
+        for (var n = 45; n <= 50; n++)
           '${page}_text_${n.toString().padLeft(3, '0')}',
       for (final n in [8, 9, 11, 13, 15, 53, 55])
         '${page}_text_${n.toString().padLeft(3, '0')}',
@@ -132,6 +132,34 @@ Set<String> _approvedRemovedIds(String page, String category) {
             '${page}_field_${n.toString().padLeft(3, '0')}',
         }
       : const {};
+}
+
+Set<String> _approvedDeviceSetupAddedIds(String page, String category) {
+  if (category == 'bindings') {
+    final first = page == 'settings_photo_scan_onboarding' ? 73 : 71;
+    final last = page == 'settings_photo_scan_onboarding' ? 90 : 81;
+    if (const {
+      'settings_manage_devices',
+      'settings_manual_device_entry',
+      'settings_photo_scan_onboarding',
+    }.contains(page)) {
+      return {
+        for (var n = first; n <= last; n++)
+          '${page}_text_${n.toString().padLeft(3, '0')}',
+      };
+    }
+  }
+  if (category == 'fields' &&
+      const {
+        'settings_manage_devices',
+        'settings_manual_device_entry',
+      }.contains(page)) {
+    return {
+      for (var n = 4; n <= 6; n++)
+        '${page}_field_${n.toString().padLeft(3, '0')}',
+    };
+  }
+  return const {};
 }
 
 Set<String> _approvedAddedIds(String page, String category) =>
@@ -240,6 +268,12 @@ void main() {
           .toSet();
       final bindingPaths = (mapping['bindings'] as List<dynamic>)
           .cast<Map<String, dynamic>>()
+          .where(
+            (item) => !_approvedDeviceSetupAddedIds(
+              page,
+              'bindings',
+            ).contains(item['id']),
+          )
           .map((item) => item['path'] as String)
           .toSet();
       expect(bindingPaths, textPaths, reason: '$page text coverage');
@@ -263,6 +297,12 @@ void main() {
                 ...mapping['fields'] as List<dynamic>,
               ]
               .cast<Map<String, dynamic>>()
+              .where(
+                (item) => !_approvedDeviceSetupAddedIds(
+                  page,
+                  'fields',
+                ).contains(item['id']),
+              )
               .map((item) => item['path'] as String)
               .toSet();
       expect(markedPaths, controlPaths, reason: '$page control coverage');

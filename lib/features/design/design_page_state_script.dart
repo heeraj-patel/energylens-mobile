@@ -30,14 +30,17 @@ String buildDesignPageStateCaptureScript(String page) {
             }
           });
       }
+      let selectedGroup = null;
       let selectedType = null;
       if (page === 'settings_manage_devices' || page === 'settings_manual_device_entry') {
+        selectedGroup = document.getElementById('energy-category')?.value || null;
         selectedType = document.getElementById('energy-type')?.value || null;
       }
       return JSON.stringify({
         scroll_x: Math.max(0, Math.min(10000000, Math.round(window.scrollX || 0))),
         scroll_y: Math.max(0, Math.min(10000000, Math.round(window.scrollY || 0))),
         fields, checks,
+        ...(selectedGroup ? {selected_group: selectedGroup} : {}),
         ...(selectedType ? {selected_type: selectedType} : {})
       });
     })()
@@ -82,8 +85,21 @@ String buildDesignPageStateRestoreScript(DesignPageStateSnapshot snapshot) {
             }
           });
       }
-      if ((page === 'settings_manage_devices' || page === 'settings_manual_device_entry') && state.selected_type) {
-        window.energyLensSelectType?.(state.selected_type);
+      if (page === 'settings_manage_devices' || page === 'settings_manual_device_entry') {
+        const group = state.selected_group || '';
+        const type = state.selected_type || '';
+        const room = document.getElementById('input-room')?.value || '';
+        if (group && window.EnergyLensDevicePicker?.set) {
+          window.EnergyLensDevicePicker.set(group, type, room);
+        } else if (type) {
+          window.energyLensSelectType?.(type);
+        } else if (group) {
+          const category = document.getElementById('energy-category');
+          if (category) {
+            category.value = group;
+            emit(category);
+          }
+        }
       }
       window.scrollTo(state.scroll_x || 0, state.scroll_y || 0);
       return true;

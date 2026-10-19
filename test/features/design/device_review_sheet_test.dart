@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_catalog.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_energy_categories.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_report_delivery.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_report_preview.dart';
@@ -17,6 +18,26 @@ import 'package:flutter_test/flutter_test.dart';
 const account = '11111111-1111-4111-8111-111111111111';
 const home = '22222222-2222-4222-8222-222222222222';
 const applianceId = '33333333-3333-4333-8333-333333333333';
+const catalogIdA = '44444444-4444-4444-8444-444444444444';
+const catalogIdB = '55555555-5555-4555-8555-555555555555';
+
+CloudCatalogProduct catalogProduct({
+  required String id,
+  required String category,
+  required String brand,
+  required String model,
+  String matchQuality = 'confirmed_exact',
+}) => CloudCatalogProduct(
+  id: id,
+  category: category,
+  brand: brand,
+  fullModel: model,
+  variant: null,
+  region: null,
+  fuel: 'electricity',
+  matchQuality: matchQuality,
+  facts: const [],
+);
 
 class _CategoryApi implements CloudApiClient {
   @override
@@ -34,7 +55,10 @@ class _CategoryApi implements CloudApiClient {
       EnergyCategoryGroup(
         key: 'home',
         label: 'Home',
-        types: [EnergyCategoryType(key: 'water_heater', label: 'Water Heater')],
+        types: [
+          EnergyCategoryType(key: 'water_heater', label: 'Water Heater'),
+          EnergyCategoryType(key: 'new_server_type', label: 'New server type'),
+        ],
       ),
     ],
   );
@@ -75,6 +99,10 @@ class _Appliances implements OnboardingPersistenceSource {
     variant: input!.variant,
     region: input!.region,
     catalogProductId: input!.catalogProductId,
+    serialNumber: input!.serialNumber,
+    fccId: input!.fccId,
+    icId: input!.icId,
+    upc: input!.upc,
   );
 
   @override
@@ -162,6 +190,14 @@ void main() {
     CloudAuxiliaryDomainLifecycle lifecycle, {
     void Function(CloudAppliance?)? onResult,
     String? initialCategory,
+    String initialRoom = '',
+    List<CloudCatalogProduct> catalogResults = const [],
+    bool catalogSearchFailed = false,
+    bool modelNotFoundOnLabel = false,
+    String? serialNumber,
+    String? fccId,
+    String? icId,
+    String? upc,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -180,7 +216,15 @@ void main() {
                     name: 'Fridge',
                     manufacturer: 'Acme',
                     model: 'A123',
+                    serialNumber: serialNumber,
+                    fccId: fccId,
+                    icId: icId,
+                    upc: upc,
                     initialCategory: initialCategory,
+                    initialRoom: initialRoom,
+                    catalogResults: catalogResults,
+                    catalogSearchFailed: catalogSearchFailed,
+                    modelNotFoundOnLabel: modelNotFoundOnLabel,
                   ),
                 );
                 onResult?.call(saved);
@@ -196,11 +240,187 @@ void main() {
   }
 
   Future<void> choose(WidgetTester tester, String key, String label) async {
+    await tester.ensureVisible(find.byKey(Key(key)));
     await tester.tap(find.byKey(Key(key)));
     await tester.pumpAndSettle();
     await tester.tap(find.text(label).last);
     await tester.pumpAndSettle();
   }
+
+  testWidgets('all catalog results appear with approved match copy', (
+    tester,
+  ) async {
+    final lifecycle = _lifecycle(_Storage(), _Appliances());
+    await lifecycle.selectVerifiedHome(account, home);
+    await open(
+      tester,
+      lifecycle,
+      catalogResults: [
+        catalogProduct(
+          id: catalogIdA,
+          category: 'refrigerator',
+          brand: 'Acme',
+          model: 'A123',
+        ),
+        catalogProduct(
+          id: catalogIdB,
+          category: 'water_heater',
+          brand: 'Beta',
+          model: 'B456',
+          matchQuality: 'documented_variant_family',
+        ),
+      ],
+    );
+    expect(
+      find.text('Found in catalog. Pick your model or edit below.'),
+      findsOneWidget,
+    );
+    expect(find.text('Catalog matches'), findsOneWidget);
+    expect(find.text('Acme A123'), findsOneWidget);
+    expect(find.text('Beta B456'), findsOneWidget);
+  });
+
+  testWidgets('scan identifiers prefill, edit and reach Cloud identity', (
+    tester,
+  ) async {
+    final source = _Appliances()..failFirstCreate = true;
+    final storage = _Storage();
+    final lifecycle = _lifecycle(storage, source);
+    await lifecycle.selectVerifiedHome(account, home);
+    await open(
+      tester,
+      lifecycle,
+      serialNumber: 'ORIGINAL123',
+      fccId: 'A3LWRF555',
+      icId: '649E-WRF555',
+      upc: '012345678905',
+    );
+    expect(find.text('Barcode 012345678905'), findsOneWidget);
+    for (final (key, value) in [
+      ('reviewSerialNumber', 'ORIGINAL123'),
+      ('reviewFccId', 'A3LWRF555'),
+      ('reviewIcId', '649E-WRF555'),
+      ('reviewUpc', '012345678905'),
+    ]) {
+      expect(
+        tester.widget<TextField>(find.byKey(Key(key))).controller!.text,
+        value,
+      );
+    }
+    await tester.enterText(
+      find.byKey(const Key('reviewSerialNumber')),
+      'CORRECTED123',
+    );
+    await choose(tester, 'reviewCategory', 'Kitchen');
+    await choose(tester, 'reviewDeviceType', 'Refrigerator');
+    await choose(tester, 'reviewEnergySource', 'Electricity');
+    await tester.ensureVisible(find.byKey(const Key('reviewSave')));
+    await tester.tap(find.byKey(const Key('reviewSave')));
+    await tester.pumpAndSettle();
+    expect(source.creates, 1);
+    expect(storage.value, isNotNull);
+    await tester.tap(find.byKey(const Key('reviewSave')));
+    await tester.pumpAndSettle();
+    expect(source.creates, 2);
+    expect(source.keys, [source.keys.first, source.keys.first]);
+    final identity = source.input!.toJson()['identity'] as Map<String, dynamic>;
+    expect(identity['serial_number'], 'CORRECTED123');
+    expect(identity['fcc_id'], 'A3LWRF555');
+    expect(identity['ic_id'], '649E-WRF555');
+    expect(identity['upc'], '012345678905');
+    expect(storage.value, isNull);
+  });
+
+  testWidgets('catalog selection fills fields and edited values keep link', (
+    tester,
+  ) async {
+    final source = _Appliances();
+    final lifecycle = _lifecycle(_Storage(), source);
+    await lifecycle.selectVerifiedHome(account, home);
+    await open(
+      tester,
+      lifecycle,
+      catalogResults: [
+        catalogProduct(
+          id: catalogIdB,
+          category: 'water_heater',
+          brand: 'Beta',
+          model: 'B456',
+          matchQuality: 'documented_variant_family',
+        ),
+      ],
+    );
+    await tester.tap(find.byKey(const Key('catalogProduct-$catalogIdB')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('reviewManufacturer')))
+          .controller!
+          .text,
+      'Beta',
+    );
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('reviewModel')))
+          .controller!
+          .text,
+      'B456',
+    );
+    expect(find.text('Water Heater'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('reviewManufacturer')),
+      'My brand',
+    );
+    await tester.enterText(find.byKey(const Key('reviewModel')), 'My model');
+    await choose(tester, 'reviewCategory', 'Kitchen');
+    await choose(tester, 'reviewDeviceType', 'Refrigerator');
+    await choose(tester, 'reviewEnergySource', 'Electricity');
+    await tester.ensureVisible(find.byKey(const Key('reviewSave')));
+    await tester.tap(find.byKey(const Key('reviewSave')));
+    await tester.pumpAndSettle();
+    expect(source.input!.category, 'refrigerator');
+    expect(source.input!.brand, 'My brand');
+    expect(source.input!.fullModel, 'My model');
+    expect(source.input!.catalogProductId, catalogIdB);
+    expect(source.input!.matchQuality, 'documented_variant_family');
+  });
+
+  testWidgets('zero and failed search states allow unresolved save', (
+    tester,
+  ) async {
+    for (final failed in [false, true]) {
+      final source = _Appliances();
+      final lifecycle = _lifecycle(_Storage(), source);
+      await lifecycle.selectVerifiedHome(account, home);
+      await open(
+        tester,
+        lifecycle,
+        catalogSearchFailed: failed,
+        modelNotFoundOnLabel: !failed,
+      );
+      expect(
+        find.text(
+          failed
+              ? 'Catalog is unavailable. Check the details and save.'
+              : 'No catalog match. Check the details and save.',
+        ),
+        findsOneWidget,
+      );
+      if (!failed) {
+        expect(
+          find.text('No model found on the label. Enter it below.'),
+          findsOneWidget,
+        );
+      }
+      await choose(tester, 'reviewCategory', 'Kitchen');
+      await choose(tester, 'reviewDeviceType', 'Refrigerator');
+      await choose(tester, 'reviewEnergySource', 'Electricity');
+      await tester.tap(find.byKey(const Key('reviewSave')));
+      await tester.pumpAndSettle();
+      expect(source.input!.catalogProductId, isNull);
+      expect(source.input!.matchQuality, 'unresolved');
+    }
+  });
 
   testWidgets(
     'review requires exact category and source before owner readback',
@@ -257,6 +477,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(source.input!.category, 'water_heater');
     expect(source.input!.fuel, 'electricity');
+  });
+
+  testWidgets('new API type and Room save as separate fields', (tester) async {
+    final source = _Appliances();
+    final lifecycle = _lifecycle(_Storage(), source);
+    await lifecycle.selectVerifiedHome(account, home);
+    await open(
+      tester,
+      lifecycle,
+      initialCategory: 'new_server_type',
+      initialRoom: 'Basement',
+    );
+    expect(find.text('New server type'), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('reviewRoom')), '  Garage  ');
+    await choose(tester, 'reviewEnergySource', 'Electricity');
+    await tester.tap(find.byKey(const Key('reviewSave')));
+    await tester.pumpAndSettle();
+    expect(source.input!.category, 'new_server_type');
+    expect(source.input!.room, 'Garage');
   });
 
   testWidgets('uncertain save retries same draft key without fake success', (

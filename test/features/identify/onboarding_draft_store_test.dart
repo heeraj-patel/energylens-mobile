@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_catalog.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:energylens_mobile/features/identify/onboarding_draft_store.dart';
@@ -59,6 +60,7 @@ class MemoryStorage implements OnboardingDraftStorage {
 class Source implements OnboardingPersistenceSource {
   int creates = 0;
   final List<String> keys = [];
+  CloudApplianceCreate? lastInput;
   bool uncertain = false;
   bool omitFromInventory = false;
   CloudAppliance row(String home) => CloudAppliance(
@@ -71,6 +73,10 @@ class Source implements OnboardingPersistenceSource {
     fullModel: 'A123',
     fuel: 'electricity',
     matchQuality: 'unresolved',
+    fccId: lastInput?.fccId,
+    icId: lastInput?.icId,
+    serialNumber: lastInput?.serialNumber,
+    upc: lastInput?.upc,
   );
   @override
   Future<CloudAppliance> create(
@@ -80,6 +86,7 @@ class Source implements OnboardingPersistenceSource {
   ) async {
     creates++;
     keys.add(key);
+    lastInput = input;
     if (uncertain) {
       uncertain = false;
       throw StateError('response lost');
@@ -323,6 +330,133 @@ void main() {
         'unresolved',
       );
       expect(storage.value, isNot(contains('confirmed_exact')));
+    },
+  );
+
+  test('reviewed catalog match quality survives staging and restart', () async {
+    final storage = MemoryStorage();
+    final first = manager(storage, Source());
+    await first.selectScope(userA, homeA);
+    await first.stage(
+      const OnboardingDraft(
+        name: 'Fridge',
+        category: 'refrigerator',
+        brand: 'Edited brand',
+        fullModel: 'Edited model',
+        fuel: 'electricity',
+        reviewedProduct: CloudCatalogProduct(
+          id: applianceId,
+          category: 'water_heater',
+          brand: 'Catalog brand',
+          fullModel: 'Catalog model',
+          variant: null,
+          region: null,
+          fuel: 'electricity',
+          matchQuality: 'documented_variant_family',
+          facts: [],
+        ),
+      ),
+    );
+    final restarted = manager(storage, Source());
+    await restarted.selectScope(userA, homeA);
+    final restored = (await restarted.restore())!.draft.validated();
+    expect(restored.brand, 'Edited brand');
+    expect(restored.fullModel, 'Edited model');
+    expect(restored.catalogProductId, applianceId);
+    expect(restored.matchQuality, 'documented_variant_family');
+
+    final legacy = jsonDecode(storage.value!) as Map<String, dynamic>;
+    final fields = legacy['draft'] as Map<String, dynamic>;
+    (fields['reviewed_catalog'] as Map<String, dynamic>).remove(
+      'match_quality',
+    );
+    storage.value = jsonEncode(legacy);
+    final legacyReader = manager(storage, Source());
+    await legacyReader.selectScope(userA, homeA);
+    expect(
+      (await legacyReader.restore())!.draft.validated().matchQuality,
+      'confirmed_exact',
+    );
+  });
+
+  test(
+    'edited scan identifiers survive restart, uncertain save and retry',
+    () async {
+      final storage = MemoryStorage();
+      final source = Source()..uncertain = true;
+      final first = manager(storage, source);
+      await first.selectScope(userA, homeA);
+      const scanned = OnboardingDraft(
+        name: 'Fridge',
+        category: 'refrigerator',
+        brand: 'Acme',
+        fullModel: 'A123',
+        fuel: 'electricity',
+        serialNumber: 'ORIGINAL123',
+        fccId: 'A3LWRF555',
+        icId: '649E-WRF555',
+        upc: '012345678905',
+      );
+      const edited = OnboardingDraft(
+        name: 'Fridge',
+        category: 'refrigerator',
+        brand: 'Acme',
+        fullModel: 'A123',
+        fuel: 'electricity',
+        serialNumber: 'CORRECTED123',
+        fccId: 'A3LWRF555',
+        icId: '649E-WRF555',
+        upc: '012345678905',
+      );
+      final scannedKey = (await first.stage(scanned)).operationKey;
+      final pending = await first.stage(edited);
+      expect(pending.operationKey, isNot(scannedKey));
+      await expectLater(
+        first.commit(pending, explicitlyApproved: true),
+        throwsStateError,
+      );
+
+      final restarted = manager(storage, source);
+      await restarted.selectScope(userA, homeA);
+      final restored = (await restarted.restore())!;
+      expect(restored.operationKey, pending.operationKey);
+      expect(restored.draft.serialNumber, 'CORRECTED123');
+      expect(restored.draft.fccId, 'A3LWRF555');
+      expect(restored.draft.icId, '649E-WRF555');
+      expect(restored.draft.upc, '012345678905');
+      expect(
+        (await restarted.commit(restored, explicitlyApproved: true))?.id,
+        applianceId,
+      );
+      expect(source.keys, [pending.operationKey, pending.operationKey]);
+      final identity =
+          source.lastInput!.toJson()['identity'] as Map<String, dynamic>;
+      expect(identity['serial_number'], 'CORRECTED123');
+      expect(identity['fcc_id'], 'A3LWRF555');
+      expect(identity['ic_id'], '649E-WRF555');
+      expect(identity['upc'], '012345678905');
+      expect(await restarted.restore(), isNull);
+    },
+  );
+
+  test(
+    'older draft without optional scan identifiers still restores',
+    () async {
+      final storage = MemoryStorage();
+      final first = manager(storage, Source());
+      await first.selectScope(userA, homeA);
+      await first.stage(draft);
+      final legacy = jsonDecode(storage.value!) as Map<String, dynamic>;
+      final fields = legacy['draft'] as Map<String, dynamic>;
+      expect(fields.keys, isNot(contains('serial_number')));
+      storage.value = jsonEncode(legacy);
+      final restarted = manager(storage, Source());
+      await restarted.selectScope(userA, homeA);
+      final restored = (await restarted.restore())!.draft;
+      expect(restored.serialNumber, isNull);
+      expect(restored.fccId, isNull);
+      expect(restored.icId, isNull);
+      expect(restored.upc, isNull);
     },
   );
 }

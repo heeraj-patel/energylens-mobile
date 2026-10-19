@@ -46,6 +46,24 @@ The Miller Home → Settings → Manage Settings → Profile, device setup, and 
 
 The Miller Home → Settings → Manage Settings → Profile, device setup, and home energy intelligence → Profile & Reports → Manage Devices → Add New Equipment → Select your preferred onboarding method → Mesh Online → Auto Scan → Discovered → Photo Scan → Active → Manual Form → Custom → Discovered on Circuit → 3 Ready → LG Smart Refrigerator → Circuit #3 • 142W signature match → + Add → Ecobee Smart Thermostat → Wi-Fi Mesh • Eco-profile synced → + Add → Sony Bravia TV 4K → Circuit #7 • Standby vampire load → + Add → Visual Label Extraction → OCR Ready → Scan with Camera → Upload Label → Detected Model → BOSCH SMS4ECW14E → Category → Dishwasher (Kitchen) → Rated Power → 2100W Max • 10A → 99% Confidence → Save Extracted Device → Photo Scan → Photo OCR → Take Photo → From Photos → Device Name → Manufacturer → Model Number → Type of Device → Climate / AC → Refrigeration → TV / Media → Computing → Kitchen → Water Heater → Save Device → Monitored Devices ( → 5 → ) → Active continuous energy telemetry → 5 of 16 circuits → Study Gaming PC → Subpanel A • RTX Workstation → Kitchen Refrigerator → Main Panel • Inverter Linear Base → Master Bed AC → Subpanel B • Climate Inverter → Living Room Soundbar → Subpanel B • Smart Arc Bar → Water Heater → 240V Circuit 12 • Hybrid Tank → Dashboard → Devices → Efficiency → Tips → Settings
 
+## Approved device setup additions
+
+The 2026-10-17 device setup approval adds the following copy to the packaged
+pages above. The original design-source lines remain a record of the supplied
+HTML and PNG files.
+
+| Surface | Visible copy | Accessibility-only copy |
+|---|---|---|
+| Manual Device Entry and Manage Devices | Category; Choose category; Choose category first; Choose type; Room; Optional; e.g. Basement; Kitchen; Living room; Bedroom; Office; Garage; Laundry. Category group and device type names come from the approved Cloud category list. | Room suggestions; the Category and Type combobox names and states. |
+| Photo Scan sample label | MODEL; AB-1234X; SERIAL; 0000000000; FCC ID; XXX-0000; IC; 0000A-0000; Model; Serial; FCC ID; IC. Hint: “Labels are usually on the back, side, or inside the door. Shoot flat, with no glare.” | Sample appliance label. Model, Serial, FCC ID and IC are highlighted. |
+| Photo Scan results | Model; Brand; Serial; FCC ID; IC. | Scan results; each field name followed by “found” or “not found” (Model found/Model not found through IC found/IC not found). |
+| Cloud review sheet | Found in catalog. Pick your model or edit below.; Catalog matches; No catalog match. Check the details and save.; Catalog is unavailable. Check the details and save.; No model found on the label. Enter it below.; Serial number; FCC ID; IC ID; UPC. | — |
+| Barcode identity, when detected | Barcode {upc} | — |
+
+The optional editable **UPC** label appears in Cloud device review immediately
+after **IC ID** under its later owner approval. “Barcode {upc}” is the separate
+approved scan-result chip wording.
+
 ## tips_care_upgrades
 
 The Miller Home → Perks And Tips → DISCOVER SAVINGS & PERKS → Rebates, zero-cost habits, and instant answers tailored to your home. → Programs → Efficiency → Care & Upgrades → Knowledge → Care & Upgrades → 5 Tailored Actions → Care & Maintenance → Low / Zero Cost → Filter Replacement → Replace HVAC & furnace filters every 90 days → Save ~15% draw → Coil & Gasket Cleaning → Vacuum fridge coils & wipe door seals → Save ~$14/mo → Weatherization → Seal window leaks & door weatherstripping → Save ~$16/mo → Useful Upgrades → Long-term Value → Appliance Replacement → Swap to Heat Pump & Energy Star appliances → Rebates up to $800 → Home Window Upgrade → Install double/triple pane low-E windows → Cuts loss ~20% → Dashboard → Devices → Efficiency → Tips → Settings

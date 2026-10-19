@@ -16,6 +16,10 @@ class PhotoLibraryPermissionDeniedException implements Exception {
   const PhotoLibraryPermissionDeniedException();
 }
 
+class PhotoRecoveryException implements Exception {
+  const PhotoRecoveryException();
+}
+
 class CapturedPhoto {
   const CapturedPhoto({required this.path, required this.bytes});
   final String path;
@@ -37,6 +41,17 @@ class PhotoCaptureService {
   Future<CapturedPhoto?> capturePhoto() => _pick(ImageSource.camera);
   Future<CapturedPhoto?> pickFromGallery() => _pick(ImageSource.gallery);
 
+  Future<CapturedPhoto?> recoverLostPhoto() async {
+    final response = await ImagePicker().retrieveLostData();
+    if (response.exception != null) throw const PhotoRecoveryException();
+    final files = response.files;
+    final file = files != null && files.isNotEmpty
+        ? files.first
+        : response.file;
+    if (file == null) return null;
+    return _prepare(file);
+  }
+
   Future<CapturedPhoto?> _pick(ImageSource source) async {
     try {
       final file = await ImagePicker().pickImage(
@@ -46,26 +61,7 @@ class PhotoCaptureService {
         imageQuality: 80,
       );
       if (file == null) return null;
-      final bytes = await file.readAsBytes();
-      if (bytes.length > 5 * 1024 * 1024) {
-        try {
-          await File(file.path).delete();
-        } catch (_) {
-          // The picker may remove its own temporary file.
-        }
-        throw const FormatException('Choose a photo smaller than 5 MB.');
-      }
-      final normalizedBytes = normalizePhotoOrientation(bytes);
-      if (normalizedBytes.length > 5 * 1024 * 1024) {
-        try {
-          await File(file.path).delete();
-        } catch (_) {
-          // The picker may remove its own temporary file.
-        }
-        throw const FormatException('Choose a photo smaller than 5 MB.');
-      }
-      await File(file.path).writeAsBytes(normalizedBytes, flush: true);
-      return CapturedPhoto(path: file.path, bytes: normalizedBytes);
+      return await _prepare(file);
     } on PlatformException catch (error) {
       if (error.code == 'camera_access_denied') {
         throw const CameraPermissionDeniedException();
@@ -75,6 +71,29 @@ class PhotoCaptureService {
       }
       rethrow;
     }
+  }
+
+  Future<CapturedPhoto> _prepare(XFile file) async {
+    final bytes = await file.readAsBytes();
+    if (bytes.length > 5 * 1024 * 1024) {
+      try {
+        await File(file.path).delete();
+      } catch (_) {
+        // The picker may remove its own temporary file.
+      }
+      throw const FormatException('Choose a photo smaller than 5 MB.');
+    }
+    final normalizedBytes = normalizePhotoOrientation(bytes);
+    if (normalizedBytes.length > 5 * 1024 * 1024) {
+      try {
+        await File(file.path).delete();
+      } catch (_) {
+        // The picker may remove its own temporary file.
+      }
+      throw const FormatException('Choose a photo smaller than 5 MB.');
+    }
+    await File(file.path).writeAsBytes(normalizedBytes, flush: true);
+    return CapturedPhoto(path: file.path, bytes: normalizedBytes);
   }
 
   /// Rotates into a new JPEG so native OCR reads the new pixels and a failed
@@ -104,8 +123,6 @@ class PhotoCaptureService {
         InputImage.fromFilePath(path),
       )).text.trim();
       return text.isEmpty ? null : text;
-    } catch (_) {
-      return null;
     } finally {
       try {
         await recognizer.close();

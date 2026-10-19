@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:energylens_mobile/core/cloud_api/cloud_energy_categories.dart';
 import 'package:energylens_mobile/features/design/local_pilot_device_lifecycle.dart';
 import 'package:energylens_mobile/features/design/local_pilot_device_review_sheet.dart';
 import 'package:energylens_mobile/features/discovery/discovery_api.dart';
@@ -24,6 +25,26 @@ class _Api extends DiscoveryApi {
   final inputs = <ApplianceInput>[];
   bool failRead = false;
   Completer<SavedAppliance>? heldPost;
+
+  @override
+  Future<EnergyCategories?> energyCategories(
+    String address,
+    String token, {
+    String? etag,
+  }) async => const EnergyCategories(
+    version: 1,
+    etag: '"1"',
+    groups: [
+      EnergyCategoryGroup(
+        key: 'refrigeration',
+        label: 'Refrigeration',
+        types: [
+          EnergyCategoryType(key: 'refrigerator', label: 'Refrigerator'),
+          EnergyCategoryType(key: 'new_server_type', label: 'New server type'),
+        ],
+      ),
+    ],
+  );
 
   @override
   Future<bool> supportsNearbyDiscovery(String baseUrl, String token) async =>
@@ -76,6 +97,8 @@ void main() {
     String method, {
     String manufacturer = 'Example',
     String model = 'Unlisted-100',
+    String initialCategory = 'refrigerator',
+    String initialRoom = '',
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -88,7 +111,8 @@ void main() {
                   lifecycle: lifecycle,
                   session: session,
                   onboardingMethod: method,
-                  initialCategory: 'refrigerator',
+                  initialCategory: initialCategory,
+                  initialRoom: initialRoom,
                   name: 'Kitchen Refrigerator',
                   manufacturer: manufacturer,
                   model: model,
@@ -130,6 +154,21 @@ void main() {
       expect(find.byKey(const Key('reviewEnergySource')), findsNothing);
     });
   }
+
+  testWidgets('new Hub type and Room save as separate values', (tester) async {
+    await showReview(
+      tester,
+      'manual',
+      initialCategory: 'new_server_type',
+      initialRoom: 'Laundry',
+    );
+    expect(find.text('New server type'), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('localReviewRoom')), 'Office');
+    await tester.tap(find.byKey(const Key('localReviewSave')));
+    await tester.pumpAndSettle();
+    expect(api.inputs.single.category, 'new_server_type');
+    expect(api.inputs.single.room, 'Office');
+  });
 
   testWidgets('incomplete identity keeps Save disabled', (tester) async {
     await showReview(tester, 'manual');

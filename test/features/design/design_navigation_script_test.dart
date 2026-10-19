@@ -136,6 +136,8 @@ for (const [page, script] of Object.entries(scripts)) {
       return {value: ({'input-device-name': 'Fridge',
                        'input-manufacturer': 'Acme',
                        'input-model': 'A123',
+                       'energy-category': 'kitchen',
+                       'input-room': 'Laundry',
                        'energy-type': 'dishwasher'})[id]};
     },
   };
@@ -167,7 +169,7 @@ for (const [page, script] of Object.entries(scripts)) {
     click(page + '_action_020');
     assert.deepEqual(reviews, [{
       name: 'Fridge', manufacturer: 'Acme', model: 'A123',
-      category: 'dishwasher'
+      group: 'kitchen', category: 'dishwasher', room: 'Laundry'
     }]);
     assert.deepEqual(photos, []);
     if (page === 'settings_manage_devices') {
@@ -237,6 +239,7 @@ globalThis.document = {
     'input-device-name': {value: 'Lamp'},
     'input-manufacturer': {value: ''},
     'input-model': {value: ''},
+    'input-room': {value: 'Basement'},
   })[id]; },
   addEventListener(event, fn) { clickHandler = fn; },
 };
@@ -253,7 +256,7 @@ clickHandler({
   target: {closest(selector) { return selector === 'button' ? {dataset: {elAction: 'settings_manual_device_entry_action_020'}} : null; }},
   preventDefault() {}, stopImmediatePropagation() {},
 });
-assert.deepEqual(reviews, [{name: 'Lamp', manufacturer: '', model: '', category: 'dishwasher'}]);
+assert.deepEqual(reviews, [{name: 'Lamp', manufacturer: '', model: '', group: 'kitchen', category: 'dishwasher', room: 'Basement'}]);
 window.energyLensSelectType('lighting');
 assert.equal(group.value, 'home');
 assert.equal(type.value, 'lighting');

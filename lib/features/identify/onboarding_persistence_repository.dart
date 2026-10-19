@@ -267,7 +267,11 @@ class OnboardingPersistenceRepository {
         detail.variant != input.variant ||
         detail.region != input.region ||
         detail.matchQuality != input.matchQuality ||
-        detail.catalogProductId != input.catalogProductId) {
+        detail.catalogProductId != input.catalogProductId ||
+        detail.fccId != input.fccId ||
+        detail.icId != input.icId ||
+        detail.serialNumber != input.serialNumber ||
+        detail.upc != input.upc) {
       throw const FormatException('Saved appliance readback differs');
     }
     _inventory = null;

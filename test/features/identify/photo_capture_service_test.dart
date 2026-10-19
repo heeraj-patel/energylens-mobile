@@ -1,10 +1,20 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
+// The picker platform seam lets these tests exercise Android recovery on hosts.
+// ignore: depend_on_referenced_packages
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 
 import 'package:energylens_mobile/features/identify/photo_capture_service.dart';
+
+class _PickerPlatform extends ImagePickerPlatform {
+  LostDataResponse response = LostDataResponse.empty();
+
+  @override
+  Future<LostDataResponse> getLostData() async => response;
+}
 
 void main() {
   test('EXIF upside-down orientation is baked into the preview pixels', () {
@@ -49,6 +59,53 @@ void main() {
       expect(result.width, 16);
       expect(result.height, 32);
       expect(result.exif.imageIfd.hasOrientation, isFalse);
+    },
+  );
+
+  test(
+    'recovered photo uses normal orientation and size preparation',
+    () async {
+      final original = ImagePickerPlatform.instance;
+      final picker = _PickerPlatform();
+      ImagePickerPlatform.instance = picker;
+      addTearDown(() => ImagePickerPlatform.instance = original);
+      final directory = await Directory.systemTemp.createTemp(
+        'energylens-recovery-',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final file = File('${directory.path}/recovered.jpg');
+      final source = img.Image(width: 32, height: 16);
+      source.exif.imageIfd.orientation = 3;
+      await file.writeAsBytes(img.encodeJpg(source));
+      picker.response = LostDataResponse(file: XFile(file.path));
+
+      final photo = await const PhotoCaptureService().recoverLostPhoto();
+
+      expect(photo?.path, file.path);
+      expect(photo?.bytes, await file.readAsBytes());
+      expect(
+        img.decodeImage(photo!.bytes)!.exif.imageIfd.hasOrientation,
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'lost-photo response distinguishes no data from picker failure',
+    () async {
+      final original = ImagePickerPlatform.instance;
+      final picker = _PickerPlatform();
+      ImagePickerPlatform.instance = picker;
+      addTearDown(() => ImagePickerPlatform.instance = original);
+
+      expect(await const PhotoCaptureService().recoverLostPhoto(), isNull);
+      picker.response = LostDataResponse(
+        exception: PlatformException(code: 'photo_access_denied'),
+      );
+      expect(
+        const PhotoCaptureService().recoverLostPhoto(),
+        throwsA(isA<PhotoRecoveryException>()),
+      );
     },
   );
 }

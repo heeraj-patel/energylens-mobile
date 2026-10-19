@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_api/cloud_api_client.dart';
+import '../../core/cloud_api/cloud_catalog.dart';
 import '../../core/cloud_api/cloud_energy_categories.dart';
 import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import '../identify/onboarding_draft_store.dart';
@@ -20,7 +21,15 @@ class DeviceReviewSheet extends StatefulWidget {
     this.name = '',
     this.manufacturer = '',
     this.model = '',
+    this.serialNumber,
+    this.fccId,
+    this.icId,
+    this.upc,
+    this.initialRoom = '',
     this.initialCategory,
+    this.catalogResults = const [],
+    this.catalogSearchFailed = false,
+    this.modelNotFoundOnLabel = false,
   });
 
   final CloudAuxiliaryDomainLifecycle lifecycle;
@@ -31,7 +40,15 @@ class DeviceReviewSheet extends StatefulWidget {
   final String name;
   final String manufacturer;
   final String model;
+  final String? serialNumber;
+  final String? fccId;
+  final String? icId;
+  final String? upc;
+  final String initialRoom;
   final String? initialCategory;
+  final List<CloudCatalogProduct> catalogResults;
+  final bool catalogSearchFailed;
+  final bool modelNotFoundOnLabel;
 
   @override
   State<DeviceReviewSheet> createState() => _DeviceReviewSheetState();
@@ -47,11 +64,27 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
   late final TextEditingController _model = TextEditingController(
     text: widget.model,
   );
+  late final TextEditingController _serialNumber = TextEditingController(
+    text: widget.serialNumber,
+  );
+  late final TextEditingController _fccId = TextEditingController(
+    text: widget.fccId,
+  );
+  late final TextEditingController _icId = TextEditingController(
+    text: widget.icId,
+  );
+  late final TextEditingController _upc = TextEditingController(
+    text: widget.upc,
+  );
+  late final TextEditingController _room = TextEditingController(
+    text: widget.initialRoom,
+  );
   static EnergyCategories? _sessionCategories;
   EnergyCategories? _categories = _sessionCategories;
   late String? _category = widget.initialCategory;
   String? _group;
   String? _fuel;
+  CloudCatalogProduct? _reviewedProduct;
   bool _saving = false;
   PendingOnboardingDraft? _pending;
 
@@ -63,6 +96,7 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
   }
 
   void _selectGroupForCategory() {
+    _group = null;
     for (final group in _categories?.groups ?? const <EnergyCategoryGroup>[]) {
       if (group.types.any((type) => type.key == _category)) {
         _group = group.key;
@@ -94,12 +128,27 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
       _validText(_name.text) &&
       _manufacturer.text.trim().length <= 120 &&
       _model.text.trim().length <= 120 &&
+      _serialNumber.text.trim().length <= 120 &&
+      _fccId.text.trim().length <= 120 &&
+      _icId.text.trim().length <= 120 &&
+      _upc.text.trim().length <= 120 &&
+      _room.text.trim().length <= 120 &&
       _category != null &&
       _fuel != null;
 
   void _changed() {
     _pending = null;
     setState(() {});
+  }
+
+  void _selectCatalogProduct(CloudCatalogProduct product) {
+    if (_saving) return;
+    _manufacturer.text = product.brand;
+    _model.text = product.fullModel;
+    _category = product.category;
+    _reviewedProduct = product;
+    _selectGroupForCategory();
+    _changed();
   }
 
   Future<void> _save() async {
@@ -116,6 +165,12 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
         brand: _manufacturer.text.trim(),
         fullModel: _model.text.trim(),
         fuel: _fuel!,
+        room: _room.text.trim(),
+        reviewedProduct: _reviewedProduct,
+        serialNumber: _serialNumber.text.trim(),
+        fccId: _fccId.text.trim(),
+        icId: _icId.text.trim(),
+        upc: _upc.text.trim(),
       );
       final pending =
           _pending ??
@@ -148,6 +203,11 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
     _name.dispose();
     _manufacturer.dispose();
     _model.dispose();
+    _serialNumber.dispose();
+    _fccId.dispose();
+    _icId.dispose();
+    _upc.dispose();
+    _room.dispose();
     super.dispose();
   }
 
@@ -158,6 +218,50 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (widget.modelNotFoundOnLabel) ...[
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text('No model found on the label. Enter it below.'),
+            ),
+            const SizedBox(height: 8),
+          ],
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              widget.catalogSearchFailed
+                  ? 'Catalog is unavailable. Check the details and save.'
+                  : widget.catalogResults.isEmpty
+                  ? 'No catalog match. Check the details and save.'
+                  : 'Found in catalog. Pick your model or edit below.',
+            ),
+          ),
+          if (widget.catalogResults.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Catalog matches',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            for (final product in widget.catalogResults)
+              ListTile(
+                key: Key('catalogProduct-${product.id}'),
+                contentPadding: EdgeInsets.zero,
+                title: Text('${product.brand} ${product.fullModel}'.trim()),
+                selected: _reviewedProduct?.id == product.id,
+                onTap: _saving ? null : () => _selectCatalogProduct(product),
+              ),
+            const SizedBox(height: 8),
+          ] else
+            const SizedBox(height: 16),
+          if (widget.upc?.trim().isNotEmpty == true) ...[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Chip(label: Text('Barcode ${widget.upc!.trim()}')),
+            ),
+            const SizedBox(height: 8),
+          ],
           TextField(
             key: const Key('reviewDeviceName'),
             controller: _name,
@@ -178,6 +282,41 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
             readOnly: _saving,
             onChanged: (_) => _changed(),
             decoration: const InputDecoration(labelText: 'Model'),
+          ),
+          TextField(
+            key: const Key('reviewSerialNumber'),
+            controller: _serialNumber,
+            readOnly: _saving,
+            onChanged: (_) => _changed(),
+            decoration: const InputDecoration(labelText: 'Serial number'),
+          ),
+          TextField(
+            key: const Key('reviewFccId'),
+            controller: _fccId,
+            readOnly: _saving,
+            onChanged: (_) => _changed(),
+            decoration: const InputDecoration(labelText: 'FCC ID'),
+          ),
+          TextField(
+            key: const Key('reviewIcId'),
+            controller: _icId,
+            readOnly: _saving,
+            onChanged: (_) => _changed(),
+            decoration: const InputDecoration(labelText: 'IC ID'),
+          ),
+          TextField(
+            key: const Key('reviewUpc'),
+            controller: _upc,
+            readOnly: _saving,
+            onChanged: (_) => _changed(),
+            decoration: const InputDecoration(labelText: 'UPC'),
+          ),
+          TextField(
+            key: const Key('reviewRoom'),
+            controller: _room,
+            readOnly: _saving,
+            onChanged: (_) => _changed(),
+            decoration: const InputDecoration(labelText: 'Room'),
           ),
           DropdownButtonFormField<String>(
             key: const Key('reviewCategory'),

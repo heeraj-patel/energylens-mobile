@@ -257,6 +257,53 @@ void main() {
     });
   });
 
+  test('Cloud readback exposes scanned identity fields', () {
+    final saved = CloudAppliance.fromJson({
+      'id': applianceId,
+      'home_id': homeA,
+      'name': 'Fridge',
+      'category': 'refrigerator',
+      'identity': {
+        'brand': 'Acme',
+        'full_model': 'A123',
+        'fuel': 'electricity',
+        'match_quality': 'unresolved',
+        'fcc_id': 'A3LWRF555',
+        'ic_id': '649E-WRF555',
+        'serial_number': 'CORRECTED123',
+        'upc': '012345678905',
+      },
+    });
+    expect(saved.fccId, 'A3LWRF555');
+    expect(saved.icId, '649E-WRF555');
+    expect(saved.serialNumber, 'CORRECTED123');
+    expect(saved.upc, '012345678905');
+  });
+
+  test(
+    'missing scanned identity in Cloud readback does not confirm save',
+    () async {
+      final source = FakeSource();
+      final repository = OnboardingPersistenceRepository(source)
+        ..selectHome(homeA);
+      await expectLater(
+        repository.save(
+          const OnboardingDraft(
+            name: 'Fridge',
+            category: 'refrigerator',
+            brand: 'Acme',
+            fullModel: 'A123',
+            fuel: 'electricity',
+            serialNumber: 'CORRECTED123',
+          ),
+          operationKey: key,
+        ),
+        throwsFormatException,
+      );
+      expect(source.creates, 1);
+    },
+  );
+
   test(
     'archive retries same version and key, then verifies active inventory',
     () async {

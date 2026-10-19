@@ -526,6 +526,7 @@ class _Record {
             'id': product.id,
             'variant': product.variant,
             'region': product.region,
+            'match_quality': product.matchQuality,
           },
       },
     };
@@ -561,7 +562,7 @@ _Record? _parse(String raw) {
           raw['load_kind'] is! String ||
           raw['bulb_count'] != null && raw['bulb_count'] is! int ||
           raw['combined_input_watts'] != null &&
-          raw['combined_input_watts'] is! num) {
+              raw['combined_input_watts'] is! num) {
         return null;
       }
       bulbLabel = BulbLabel(
@@ -577,7 +578,9 @@ _Record? _parse(String raw) {
           reviewed['id'] is! String ||
           !_uuid.hasMatch(reviewed['id'] as String) ||
           reviewed['variant'] != null && reviewed['variant'] is! String ||
-          reviewed['region'] != null && reviewed['region'] is! String) {
+          reviewed['region'] != null && reviewed['region'] is! String ||
+          reviewed['match_quality'] != null &&
+              reviewed['match_quality'] is! String) {
         return null;
       }
       product = CloudCatalogProduct(
@@ -588,7 +591,7 @@ _Record? _parse(String raw) {
         variant: reviewed['variant'] as String?,
         region: reviewed['region'] as String?,
         fuel: fields['fuel'] as String,
-        matchQuality: 'confirmed_exact',
+        matchQuality: reviewed['match_quality'] as String? ?? 'confirmed_exact',
         facts: const [],
       );
     }

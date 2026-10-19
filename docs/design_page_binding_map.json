@@ -5818,6 +5818,83 @@
           "text": [
             "Settings"
           ]
+        },
+        {
+          "id": "settings_manage_devices_text_071",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[1]/label[1]",
+          "text": [
+            "Category"
+          ]
+        },
+        {
+          "id": "settings_manage_devices_text_072",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[1]/button[1]/span[2]",
+          "text": [
+            "Choose category"
+          ]
+        },
+        {
+          "id": "settings_manage_devices_text_073",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[2]/button[1]/span[1]",
+          "text": [
+            "Choose category first"
+          ]
+        },
+        {
+          "id": "settings_manage_devices_text_074",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[1]/label[1]",
+          "text": [
+            "Room"
+          ]
+        },
+        {
+          "id": "settings_manage_devices_text_075",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[1]/span[1]",
+          "text": [
+            "Optional"
+          ]
+        },
+        {
+          "id": "settings_manage_devices_text_076",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[2]/button[1]/span[1]",
+          "text": [
+            "Kitchen"
+          ]
+        },
+        {
+          "id": "settings_manage_devices_text_077",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[2]/button[2]/span[1]",
+          "text": [
+            "Living room"
+          ]
+        },
+        {
+          "id": "settings_manage_devices_text_078",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[2]/button[3]/span[1]",
+          "text": [
+            "Bedroom"
+          ]
+        },
+        {
+          "id": "settings_manage_devices_text_079",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[2]/button[4]/span[1]",
+          "text": [
+            "Office"
+          ]
+        },
+        {
+          "id": "settings_manage_devices_text_080",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[2]/button[5]/span[1]",
+          "text": [
+            "Garage"
+          ]
+        },
+        {
+          "id": "settings_manage_devices_text_081",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[2]/button[6]/span[1]",
+          "text": [
+            "Laundry"
+          ]
         }
       ],
       "actions": [
@@ -6192,6 +6269,50 @@
             "id": "input-model",
             "placeholder": "e.g. FTXM-R",
             "type": "text"
+          }
+        },
+        {
+          "id": "settings_manage_devices_field_004",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[1]/button[1]",
+          "tag": "button",
+          "attributes": {
+            "class": "el-dd-field w-full min-h-12 px-3 rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface text-left flex items-center gap-2 transition-all",
+            "id": "dd-category",
+            "type": "button",
+            "aria-disabled": "true",
+            "role": "combobox",
+            "aria-haspopup": "listbox",
+            "aria-expanded": "false",
+            "aria-controls": "menu-category",
+            "aria-labelledby": "device-category-label dd-category-value"
+          }
+        },
+        {
+          "id": "settings_manage_devices_field_005",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[2]/button[1]",
+          "tag": "button",
+          "attributes": {
+            "class": "el-dd-field w-full min-h-12 px-3 rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface text-left flex items-center gap-2 transition-all",
+            "id": "dd-type",
+            "type": "button",
+            "role": "combobox",
+            "aria-haspopup": "listbox",
+            "aria-expanded": "false",
+            "aria-controls": "menu-type",
+            "aria-labelledby": "device-type-label dd-type-value",
+            "aria-disabled": "true"
+          }
+        },
+        {
+          "id": "settings_manage_devices_field_006",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/input[1]",
+          "tag": "input",
+          "attributes": {
+            "class": "w-full min-h-12 px-3 text-sm font-body-md rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary",
+            "id": "input-room",
+            "placeholder": "e.g. Basement",
+            "type": "text",
+            "autocomplete": "off"
           }
         }
       ]
@@ -6688,6 +6809,83 @@
           "text": [
             "Settings"
           ]
+        },
+        {
+          "id": "settings_manual_device_entry_text_071",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[1]/label[1]",
+          "text": [
+            "Category"
+          ]
+        },
+        {
+          "id": "settings_manual_device_entry_text_072",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[1]/button[1]/span[2]",
+          "text": [
+            "Choose category"
+          ]
+        },
+        {
+          "id": "settings_manual_device_entry_text_073",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[2]/button[1]/span[1]",
+          "text": [
+            "Choose category first"
+          ]
+        },
+        {
+          "id": "settings_manual_device_entry_text_074",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[1]/label[1]",
+          "text": [
+            "Room"
+          ]
+        },
+        {
+          "id": "settings_manual_device_entry_text_075",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[1]/span[1]",
+          "text": [
+            "Optional"
+          ]
+        },
+        {
+          "id": "settings_manual_device_entry_text_076",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[2]/button[1]/span[1]",
+          "text": [
+            "Kitchen"
+          ]
+        },
+        {
+          "id": "settings_manual_device_entry_text_077",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[2]/button[2]/span[1]",
+          "text": [
+            "Living room"
+          ]
+        },
+        {
+          "id": "settings_manual_device_entry_text_078",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[2]/button[3]/span[1]",
+          "text": [
+            "Bedroom"
+          ]
+        },
+        {
+          "id": "settings_manual_device_entry_text_079",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[2]/button[4]/span[1]",
+          "text": [
+            "Office"
+          ]
+        },
+        {
+          "id": "settings_manual_device_entry_text_080",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[2]/button[5]/span[1]",
+          "text": [
+            "Garage"
+          ]
+        },
+        {
+          "id": "settings_manual_device_entry_text_081",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/div[2]/button[6]/span[1]",
+          "text": [
+            "Laundry"
+          ]
         }
       ],
       "actions": [
@@ -7062,6 +7260,50 @@
             "id": "input-model",
             "placeholder": "e.g. WM3900HWA / FTXM",
             "type": "text"
+          }
+        },
+        {
+          "id": "settings_manual_device_entry_field_004",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[1]/button[1]",
+          "tag": "button",
+          "attributes": {
+            "class": "el-dd-field w-full min-h-12 px-3 rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface text-left flex items-center gap-2 transition-all",
+            "id": "dd-category",
+            "type": "button",
+            "aria-disabled": "true",
+            "role": "combobox",
+            "aria-haspopup": "listbox",
+            "aria-expanded": "false",
+            "aria-controls": "menu-category",
+            "aria-labelledby": "device-category-label dd-category-value"
+          }
+        },
+        {
+          "id": "settings_manual_device_entry_field_005",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[2]/button[1]",
+          "tag": "button",
+          "attributes": {
+            "class": "el-dd-field w-full min-h-12 px-3 rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface text-left flex items-center gap-2 transition-all",
+            "id": "dd-type",
+            "type": "button",
+            "role": "combobox",
+            "aria-haspopup": "listbox",
+            "aria-expanded": "false",
+            "aria-controls": "menu-type",
+            "aria-labelledby": "device-type-label dd-type-value",
+            "aria-disabled": "true"
+          }
+        },
+        {
+          "id": "settings_manual_device_entry_field_006",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[4]/div[2]/div[1]/div[3]/div[3]/input[1]",
+          "tag": "input",
+          "attributes": {
+            "class": "w-full min-h-12 px-3 text-sm font-body-md rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary",
+            "id": "input-room",
+            "placeholder": "e.g. Basement",
+            "type": "text",
+            "autocomplete": "off"
           }
         }
       ]
@@ -7571,6 +7813,132 @@
           "path": "/html[1]/body[1]/nav[1]/div[1]/a[5]/span[2]",
           "text": [
             "Settings"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_073",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/figure[1]/svg[1]/g[1]/text[1]",
+          "text": [
+            "MODEL"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_074",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/figure[1]/svg[1]/g[1]/text[2]",
+          "text": [
+            "AB-1234X"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_075",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/figure[1]/svg[1]/g[1]/text[3]",
+          "text": [
+            "SERIAL"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_076",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/figure[1]/svg[1]/g[1]/text[4]",
+          "text": [
+            "0000000000"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_077",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/figure[1]/svg[1]/g[1]/text[5]",
+          "text": [
+            "FCC ID"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_078",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/figure[1]/svg[1]/g[1]/text[6]",
+          "text": [
+            "XXX-0000"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_079",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/figure[1]/svg[1]/g[1]/text[7]",
+          "text": [
+            "IC"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_080",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/figure[1]/svg[1]/g[1]/text[8]",
+          "text": [
+            "0000A-0000"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_081",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/figure[1]/svg[1]/g[1]/g[2]/text[1]",
+          "text": [
+            "Model"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_082",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/figure[1]/svg[1]/g[1]/g[2]/text[2]",
+          "text": [
+            "Serial"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_083",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/figure[1]/svg[1]/g[1]/g[2]/text[3]",
+          "text": [
+            "FCC ID"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_084",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/figure[1]/svg[1]/g[1]/g[2]/text[4]",
+          "text": [
+            "IC"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_085",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/figure[1]/figcaption[1]/span[2]",
+          "text": [
+            "Labels are usually on the back, side, or inside the door. Shoot flat, with no glare."
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_086",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/div[2]/ul[1]/li[1]/span[2]",
+          "text": [
+            "Model"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_087",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/div[2]/ul[1]/li[2]/span[2]",
+          "text": [
+            "Brand"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_088",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/div[2]/ul[1]/li[3]/span[2]",
+          "text": [
+            "Serial"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_089",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/div[2]/ul[1]/li[4]/span[2]",
+          "text": [
+            "FCC ID"
+          ]
+        },
+        {
+          "id": "settings_photo_scan_onboarding_text_090",
+          "path": "/html[1]/body[1]/main[1]/div[1]/div[3]/div[3]/div[2]/div[2]/ul[1]/li[5]/span[2]",
+          "text": [
+            "IC"
           ]
         }
       ],

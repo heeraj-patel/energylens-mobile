@@ -85,19 +85,39 @@ void main() {
       jsonEncode({
         'scroll_x': 0,
         'scroll_y': 0,
-        'fields': {'settings_manual_device_entry_field_001': 'Lamp'},
+        'fields': {
+          'settings_manual_device_entry_field_001': 'Lamp',
+          'settings_manual_device_entry_field_006': 'Office',
+        },
         'checks': {},
+        'selected_group': 'work_technology',
         'selected_type': 'computer',
       }),
       homeId: 'home',
       page: 'settings_manual_device_entry',
     );
     expect(snapshot.selectedTypeAction, 'computer');
+    expect(snapshot.selectedGroupKey, 'work_technology');
+    expect(
+      snapshot.fieldValues['settings_manual_device_entry_field_006'],
+      'Office',
+    );
     expect(
       () => DesignPageStateSnapshot.fromJson(
         jsonEncode({
           ...snapshot.toJson(),
           'selected_type': 'settings_manage_devices_action_017',
+        }),
+        homeId: 'home',
+        page: 'settings_manual_device_entry',
+      ),
+      throwsFormatException,
+    );
+    expect(
+      () => DesignPageStateSnapshot.fromJson(
+        jsonEncode({
+          ...snapshot.toJson(),
+          'selected_group': 'settings_action_001',
         }),
         homeId: 'home',
         page: 'settings_manual_device_entry',
@@ -147,6 +167,34 @@ void main() {
           page: 'settings_manual_device_entry',
         ),
       ),
+      'manualPicker': buildDesignPageStateRestoreScript(
+        DesignPageStateSnapshot.fromJson(
+          jsonEncode({
+            'scroll_x': 0,
+            'scroll_y': 0,
+            'fields': {'settings_manual_device_entry_field_006': 'Laundry'},
+            'checks': {},
+            'selected_group': 'dishwashing_laundry',
+            'selected_type': 'dishwasher',
+          }),
+          homeId: 'home',
+          page: 'settings_manual_device_entry',
+        ),
+      ),
+      'managePicker': buildDesignPageStateRestoreScript(
+        DesignPageStateSnapshot.fromJson(
+          jsonEncode({
+            'scroll_x': 0,
+            'scroll_y': 0,
+            'fields': {'settings_manage_devices_field_006': 'Garage'},
+            'checks': {},
+            'selected_group': 'networking_smart_home',
+            'selected_type': 'router',
+          }),
+          homeId: 'home',
+          page: 'settings_manage_devices',
+        ),
+      ),
       for (final page in designPageIds)
         page: buildDesignPageStateCaptureScript(page),
     };
@@ -177,12 +225,23 @@ const email = element({type: 'email', field: 'perks_tips_field_004', value: 'per
 const checkbox = element({type: 'checkbox', action: 'perks_tips_action_013', checked: true});
 const selectedType = element({tag: 'SELECT', value: 'lighting'});
 const manualType = element({tag: 'SELECT', value: 'computer'});
+const selectedGroup = element({tag: 'SELECT', value: 'dishwashing_laundry'});
+const room = element({field: 'settings_manual_device_entry_field_006', value: 'Office'});
 globalThis.Event = class { constructor(type) { this.type = type; this.bubbles = true; } };
-globalThis.window = {scrollX: 0, scrollY: 88, scrollTo(x, y) { this.restored = [x, y]; }, energyLensSelectType(key) { this.selected = key; }};
+globalThis.window = {
+  scrollX: 0, scrollY: 88, scrollTo(x, y) { this.restored = [x, y]; },
+  energyLensSelectType(key) { this.selected = key; },
+  EnergyLensDevicePicker: {set(group, type, room) { window.pickerValues = [group, type, room]; }},
+};
 globalThis.document = {
-  getElementById(id) { return id === 'energy-type' ? (currentPage === 'settings_manual_device_entry' ? manualType : selectedType) : null; },
+  getElementById(id) {
+    if (id === 'energy-type') return currentPage === 'settings_manual_device_entry' ? manualType : selectedType;
+    if (id === 'energy-category') return selectedGroup;
+    if (id === 'input-room') return room;
+    return null;
+  },
   querySelectorAll(selector) {
-    if (selector.includes('input[data-el-field]')) return [text, search, password, email];
+    if (selector.includes('input[data-el-field]')) return [text, search, password, email, room];
     if (selector.includes('type="checkbox"')) return [checkbox];
 
     return [];
@@ -203,11 +262,24 @@ assert.equal(eval(scripts.type), true);
 assert.equal(window.selected, 'lighting');
 assert.equal(eval(scripts.manualType), true);
 assert.equal(window.selected, 'computer');
+assert.equal(eval(scripts.manualPicker), true);
+assert.deepEqual(window.pickerValues, ['dishwashing_laundry', 'dishwasher', 'Laundry']);
+room.dataset.elField = 'settings_manage_devices_field_006';
+assert.equal(eval(scripts.managePicker), true);
+assert.deepEqual(window.pickerValues, ['networking_smart_home', 'router', 'Garage']);
+assert.equal(JSON.parse(eval(scripts.settings_manage_devices)).fields.settings_manage_devices_field_006,
+  'Garage');
+room.dataset.elField = 'settings_manual_device_entry_field_006';
+room.value = 'Laundry';
 currentPage = 'settings_manual_device_entry';
 assert.equal(JSON.parse(eval(scripts.settings_manual_device_entry)).selected_type,
   'computer');
+assert.equal(JSON.parse(eval(scripts.settings_manual_device_entry)).selected_group,
+  'dishwashing_laundry');
+assert.equal(JSON.parse(eval(scripts.settings_manual_device_entry)).fields.settings_manual_device_entry_field_006,
+  'Laundry');
 for (const page of Object.keys(scripts)) {
-  if (page === 'capture' || page === 'restore' || page === 'type' || page === 'manualType') continue;
+  if (page === 'capture' || page === 'restore' || page === 'type' || page === 'manualType' || page === 'manualPicker' || page === 'managePicker') continue;
   assert.ok(scripts[page].includes(JSON.stringify(page)));
 }
 ''',

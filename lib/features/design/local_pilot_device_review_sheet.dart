@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../../core/cloud_api/cloud_energy_categories.dart';
 import '../discovery/discovery_api.dart';
 import 'local_pilot_device_lifecycle.dart';
 
@@ -14,7 +15,9 @@ class LocalPilotDeviceReviewSheet extends StatefulWidget {
     this.name = '',
     this.manufacturer = '',
     this.model = '',
+    this.initialRoom = '',
     this.initialCategory,
+    this.initialCategories,
   });
 
   final LocalPilotDeviceLifecycle lifecycle;
@@ -23,7 +26,9 @@ class LocalPilotDeviceReviewSheet extends StatefulWidget {
   final String name;
   final String manufacturer;
   final String model;
+  final String initialRoom;
   final String? initialCategory;
+  final EnergyCategories? initialCategories;
 
   @override
   State<LocalPilotDeviceReviewSheet> createState() =>
@@ -35,11 +40,44 @@ class _LocalPilotDeviceReviewSheetState
   late final _name = TextEditingController(text: widget.name);
   late final _manufacturer = TextEditingController(text: widget.manufacturer);
   late final _model = TextEditingController(text: widget.model);
+  late final _room = TextEditingController(text: widget.initialRoom);
+  late EnergyCategories? _categories = widget.initialCategories;
   late String? _category = widget.initialCategory;
+  String? _group;
   bool _saving = false;
   bool _attempted = false;
 
   bool _withinLimit(String value) => utf8.encode(value.trim()).length <= 100;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectGroupForCategory();
+    _loadCategories();
+  }
+
+  void _selectGroupForCategory() {
+    _group = null;
+    for (final group in _categories?.groups ?? const <EnergyCategoryGroup>[]) {
+      if (group.types.any((type) => type.key == _category)) {
+        _group = group.key;
+        return;
+      }
+    }
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final fresh = await widget.lifecycle.energyCategories();
+      if (!mounted || fresh == null) return;
+      setState(() {
+        _categories = fresh;
+        _selectGroupForCategory();
+      });
+    } catch (_) {
+      // Retain the list supplied by the current session.
+    }
+  }
 
   bool get _valid =>
       _name.text.trim().isNotEmpty &&
@@ -48,6 +86,7 @@ class _LocalPilotDeviceReviewSheetState
       _model.text.trim().isNotEmpty &&
       _withinLimit(_manufacturer.text) &&
       _withinLimit(_model.text) &&
+      _withinLimit(_room.text) &&
       _category != null;
 
   Future<void> _save() async {
@@ -58,7 +97,7 @@ class _LocalPilotDeviceReviewSheetState
     });
     final input = ApplianceInput(
       name: _name.text.trim(),
-      room: '',
+      room: _room.text.trim(),
       category: _category!,
       manufacturer: _manufacturer.text.trim(),
       model: _model.text.trim(),
@@ -80,6 +119,7 @@ class _LocalPilotDeviceReviewSheetState
     _name.dispose();
     _manufacturer.dispose();
     _model.dispose();
+    _room.dispose();
     super.dispose();
   }
 
@@ -111,36 +151,57 @@ class _LocalPilotDeviceReviewSheetState
             onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(labelText: 'Model'),
           ),
+          TextField(
+            key: const Key('localReviewRoom'),
+            controller: _room,
+            readOnly: _attempted,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(labelText: 'Room'),
+          ),
+          DropdownButtonFormField<String>(
+            key: const Key('localReviewGroup'),
+            initialValue: _group,
+            decoration: const InputDecoration(
+              labelText: 'Category',
+              hintText: 'Choose category',
+            ),
+            items: [
+              for (final group
+                  in _categories?.groups ?? const <EnergyCategoryGroup>[])
+                DropdownMenuItem(value: group.key, child: Text(group.label)),
+            ],
+            onChanged: _attempted
+                ? null
+                : (value) => setState(() {
+                    _group = value;
+                    _category = null;
+                  }),
+          ),
           DropdownButtonFormField<String>(
             key: const Key('localReviewCategory'),
             initialValue: _category,
-            decoration: const InputDecoration(labelText: 'Category'),
-            items: const [
-              DropdownMenuItem(value: 'computer', child: Text('Computer')),
-              DropdownMenuItem(value: 'lighting', child: Text('Lamp or bulb')),
-              DropdownMenuItem(
-                value: 'refrigerator',
-                child: Text('Refrigerator'),
-              ),
-              DropdownMenuItem(value: 'television', child: Text('TV')),
-              DropdownMenuItem(value: 'washer', child: Text('Washer')),
-              DropdownMenuItem(value: 'dryer', child: Text('Dryer')),
-              DropdownMenuItem(value: 'dishwasher', child: Text('Dishwasher')),
-              DropdownMenuItem(
-                value: 'space_heater',
-                child: Text('Space heater'),
-              ),
-              DropdownMenuItem(
-                value: 'air_conditioner',
-                child: Text('Air conditioner'),
-              ),
-              DropdownMenuItem(
-                value: 'water_heater',
-                child: Text('Water Heater'),
-              ),
-              DropdownMenuItem(value: 'other', child: Text('Other appliance')),
+            decoration: InputDecoration(
+              labelText: 'Device Type',
+              hintText: _group == null
+                  ? 'Choose category first'
+                  : 'Choose type',
+            ),
+            items: [
+              for (final type
+                  in _categories?.groups
+                          .where((group) => group.key == _group)
+                          .expand((group) => group.types) ??
+                      const <EnergyCategoryType>[])
+                DropdownMenuItem(value: type.key, child: Text(type.label)),
+              if (_category != null &&
+                  !(_categories?.groups.any(
+                        (group) =>
+                            group.types.any((type) => type.key == _category),
+                      ) ??
+                      false))
+                DropdownMenuItem(value: _category, child: Text(_category!)),
             ],
-            onChanged: _attempted
+            onChanged: _attempted || _group == null
                 ? null
                 : (value) => setState(() => _category = value),
           ),

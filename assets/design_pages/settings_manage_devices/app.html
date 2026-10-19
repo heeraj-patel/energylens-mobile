@@ -108,7 +108,103 @@
       min-height: max(884px, 100dvh);
     }
   </style>
-<link rel="stylesheet" href="../shared/fonts.css"><script src="../shared/chrome.js"></script><link rel="stylesheet" href="../shared/mobile_refinements.css"></head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen"><div id="el-header"></div><main class="flex-1 flex flex-col relative w-full pt-16 pb-20 bg-surface"><div class="flex flex-col w-full px-gutter py-space-md space-y-space-lg">
+<link rel="stylesheet" href="../shared/fonts.css"><script src="../shared/chrome.js"></script><link rel="stylesheet" href="../shared/mobile_refinements.css"><style>
+/* Two-level device picker (category, then type) and Room suggestion chips. */
+.el-dd-field { cursor: pointer; }
+.el-dd-field:focus-visible { outline: 2px solid #006686; outline-offset: 2px; }
+.el-dd-field[aria-expanded="true"] {
+  background-color: #ffffff;
+  border-color: #006686;
+  box-shadow: 0 0 0 2px rgb(0 102 134 / 20%);
+}
+.el-dd-field[aria-expanded="true"] .el-dd-arrow { transform: rotate(180deg); color: #006686; }
+.el-dd-arrow { transition: transform 160ms cubic-bezier(.2, 0, 0, 1); }
+.el-dd-field.has-value .el-dd-value { color: #111b2f; }
+.el-dd-field.has-value #dd-category-icon { color: #006686; }
+.el-dd-field[aria-disabled="true"] { cursor: not-allowed; opacity: .55; }
+
+.el-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  max-height: 368px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background-color: #ffffff;
+  border: 1px solid rgb(190 200 206 / 45%);
+  border-radius: .5rem;
+  box-shadow: 0 6px 20px rgb(17 27 47 / 12%), 0 1px 3px rgb(17 27 47 / 8%);
+  overscroll-behavior: contain;
+}
+.el-menu.opens-up { top: auto; bottom: calc(100% - 16px); }
+.el-menu-item {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  color: #111b2f;
+  cursor: pointer;
+}
+.el-menu-item:hover,
+.el-menu-item.is-active { background-color: #f1f3ff; }
+.el-menu-item .el-menu-icon { color: #3f484e; }
+.el-menu-item .el-menu-check { margin-left: auto; color: #006686; visibility: hidden; }
+.el-menu-item[aria-selected="true"] {
+  background-color: rgb(125 211 252 / 28%);
+  color: #005b78;
+  font-weight: 600;
+}
+.el-menu-item[aria-selected="true"] .el-menu-icon,
+.el-menu-item[aria-selected="true"] .el-menu-check { color: #005b78; visibility: visible; }
+
+.el-room-chip {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.el-room-chip > span {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: .5rem;
+  border: 1px solid #bec8ce;
+  background-color: #ffffff;
+  color: #3f484e;
+  font-family: "Rubik", sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.el-room-chip:hover > span { background-color: #f1f3ff; }
+.el-room-chip:focus-visible { outline: none; }
+.el-room-chip:focus-visible > span { outline: 2px solid #006686; outline-offset: 2px; }
+.el-room-chip[aria-pressed="true"] > span {
+  background-color: #7dd3fc;
+  border-color: #7dd3fc;
+  color: #005b78;
+  font-weight: 600;
+}
+
+@media (min-width: 700px) and (min-device-width: 600px) and (min-device-height: 600px) and (min-height: 320px) {
+  .el-room-chip > span { height: 36px; font-size: 14px; line-height: 20px; padding: 0 14px; }
+  .el-menu { max-height: 440px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .el-dd-arrow, .el-room-chip > span { transition: none; }
+}
+</style></head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen"><div id="el-header"></div><main class="flex-1 flex flex-col relative w-full pt-16 pb-20 bg-surface"><div class="flex flex-col w-full px-gutter py-space-md space-y-space-lg">
 <div class="flex items-center justify-between">
 <div class="flex items-start gap-space-sm">
 <div class="w-10 h-10 shrink-0 rounded-full bg-surface-container-high flex items-center justify-center text-primary shadow-sm border border-outline-variant/30" aria-hidden="true">
@@ -226,19 +322,52 @@
 <div class="space-y-2">
 <div>
 <label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" data-el-bind="settings_manage_devices_text_041" for="input-device-name">Device Name</label>
-<input class="w-full px-3 py-2 text-xs rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary" id="input-device-name" placeholder="e.g. Living Room AC" type="text" data-el-field="settings_manage_devices_field_001">
+<input class="w-full min-h-12 px-3 py-2 text-xs rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary" id="input-device-name" placeholder="e.g. Living Room AC" type="text" data-el-field="settings_manage_devices_field_001">
 </div>
 <div class="grid grid-cols-2 gap-2">
 <div>
 <label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" data-el-bind="settings_manage_devices_text_042" for="input-manufacturer">Manufacturer</label>
-<input class="w-full px-3 py-2 text-xs rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary" id="input-manufacturer" placeholder="e.g. Daikin" type="text" data-el-field="settings_manage_devices_field_002">
+<input class="w-full min-h-12 px-3 py-2 text-xs rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary" id="input-manufacturer" placeholder="e.g. Daikin" type="text" data-el-field="settings_manage_devices_field_002">
 </div>
 <div>
 <label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" data-el-bind="settings_manage_devices_text_043" for="input-model">Model</label>
-<input class="w-full px-3 py-2 text-xs rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary" id="input-model" placeholder="e.g. FTXM-R" type="text" data-el-field="settings_manage_devices_field_003">
+<input class="w-full min-h-12 px-3 py-2 text-xs rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary" id="input-model" placeholder="e.g. FTXM-R" type="text" data-el-field="settings_manage_devices_field_003">
 </div>
 </div>
-<div class="space-y-2"><div><label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" for="energy-category">Category</label><select id="energy-category" aria-label="Category" class="w-full px-3 py-2 text-xs rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface"><option value="">Choose category</option></select></div><div><label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" for="energy-type">Device Type</label><select id="energy-type" aria-label="Device Type" class="w-full px-3 py-2 text-xs rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface" disabled><option value="">Choose category first</option></select></div></div>
+<div class="space-y-2"><div class="el-dd relative" data-dd="category">
+<label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" id="device-category-label" for="dd-category" data-el-bind="settings_manage_devices_text_071">Category</label>
+<button class="el-dd-field w-full min-h-12 px-3 rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface text-left flex items-center gap-2 transition-all" id="dd-category" type="button" aria-disabled="true" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="menu-category" aria-labelledby="device-category-label dd-category-value" data-el-field="settings_manage_devices_field_004">
+<span class="material-symbols-outlined text-[20px] text-on-surface-variant" id="dd-category-icon" aria-hidden="true">category</span>
+<span class="el-dd-value flex-1 min-w-0 text-sm font-body-md text-on-surface-variant" id="dd-category-value" data-el-bind="settings_manage_devices_text_072">Choose category</span>
+<span class="el-dd-arrow material-symbols-outlined text-[20px] text-on-surface-variant" aria-hidden="true">arrow_drop_down</span>
+</button>
+<ul class="el-menu hidden" id="menu-category" role="listbox" aria-labelledby="device-category-label" tabindex="-1"></ul>
+</div>
+<div class="el-dd relative" data-dd="type">
+<label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant mb-1" id="device-type-label" data-el-bind="settings_manage_devices_text_044" for="dd-type">Device Type</label>
+<button class="el-dd-field w-full min-h-12 px-3 rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface text-left flex items-center gap-2 transition-all" id="dd-type" type="button" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="menu-type" aria-labelledby="device-type-label dd-type-value" aria-disabled="true" data-el-field="settings_manage_devices_field_005">
+<span class="el-dd-value flex-1 min-w-0 text-sm font-body-md text-on-surface-variant" id="dd-type-value" data-el-bind="settings_manage_devices_text_073">Choose category first</span>
+<span class="el-dd-arrow material-symbols-outlined text-[20px] text-on-surface-variant" aria-hidden="true">arrow_drop_down</span>
+</button>
+<ul class="el-menu hidden" id="menu-type" role="listbox" aria-labelledby="device-type-label" tabindex="-1"></ul>
+</div>
+<div>
+<div class="flex items-baseline justify-between mb-1">
+<label class="block text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant" for="input-room" data-el-bind="settings_manage_devices_text_074">Room</label>
+<span class="text-[11px] font-label-md text-on-surface-variant" data-el-bind="settings_manage_devices_text_075">Optional</span>
+</div>
+<input class="w-full min-h-12 px-3 text-sm font-body-md rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary" id="input-room" placeholder="e.g. Basement" type="text" autocomplete="off" data-el-field="settings_manage_devices_field_006">
+<div class="flex flex-wrap gap-x-2" role="group" aria-label="Room suggestions" id="room-suggestions">
+<button class="el-room-chip" type="button" aria-pressed="false"><span data-el-bind="settings_manage_devices_text_076">Kitchen</span></button>
+<button class="el-room-chip" type="button" aria-pressed="false"><span data-el-bind="settings_manage_devices_text_077">Living room</span></button>
+<button class="el-room-chip" type="button" aria-pressed="false"><span data-el-bind="settings_manage_devices_text_078">Bedroom</span></button>
+<button class="el-room-chip" type="button" aria-pressed="false"><span data-el-bind="settings_manage_devices_text_079">Office</span></button>
+<button class="el-room-chip" type="button" aria-pressed="false"><span data-el-bind="settings_manage_devices_text_080">Garage</span></button>
+<button class="el-room-chip" type="button" aria-pressed="false"><span data-el-bind="settings_manage_devices_text_081">Laundry</span></button>
+</div>
+</div>
+<select id="energy-category" hidden aria-hidden="true" tabindex="-1" disabled><option value="">Choose category</option></select>
+<select id="energy-type" hidden aria-hidden="true" tabindex="-1" disabled><option value="">Choose category first</option></select></div>
 </div>
 <button class="w-full py-2.5 px-3 rounded-xl bg-primary text-on-primary font-label-md text-xs font-semibold shadow-sm hover:opacity-95 transition-all flex items-center justify-center gap-1.5" type="button" data-el-action="settings_manage_devices_action_020" data-el-bind="settings_manage_devices_text_051">
 <span class="material-symbols-outlined text-[18px]">add</span>
@@ -418,4 +547,20 @@
     }
   }
 </script></main><div id="el-footer"></div><script>EnergyLensChrome.mount({"activeTab":"settings","homeName":"The Miller Home","pageLabel":"Settings","leadingIcon":"bolt","profileImage":"../shared/images/image-3.jpg","tabIcons":["space_dashboard","devices","energy_savings_leaf","savings","settings"],"tabLabels":["Dashboard","Devices","Efficiency","Tips","Settings"],"headerActions":["settings_manage_devices_action_001","settings_manage_devices_action_002"],"headerBindings":["settings_manage_devices_text_001","settings_manage_devices_text_002"],"footerActions":["settings_manage_devices_action_026","settings_manage_devices_action_027","settings_manage_devices_action_028","settings_manage_devices_action_029","settings_manage_devices_action_030"],"footerBindings":["settings_manage_devices_text_066","settings_manage_devices_text_067","settings_manage_devices_text_068","settings_manage_devices_text_069","settings_manage_devices_text_070"]});</script>
+<script>
+(() => {
+  const room = document.getElementById('input-room');
+  const chips = Array.from(document.querySelectorAll('#room-suggestions .el-room-chip'));
+  if (!room) return;
+  const sync = () => chips.forEach((chip) => chip.setAttribute('aria-pressed',
+    String(chip.textContent.trim().toLowerCase() === room.value.trim().toLowerCase())));
+  chips.forEach((chip) => chip.addEventListener('click', () => {
+    room.value = chip.getAttribute('aria-pressed') === 'true' ? '' : chip.textContent.trim();
+    room.dispatchEvent(new Event('input', {bubbles: true}));
+    room.focus();
+  }));
+  room.addEventListener('input', sync);
+  sync();
+})();
+</script>
 </body></html>

@@ -12,6 +12,10 @@ class CloudAppliance {
     this.region,
     this.catalogProductId,
     required this.matchQuality,
+    this.fccId,
+    this.icId,
+    this.serialNumber,
+    this.upc,
     this.version,
     this.createdAt,
     this.updatedAt,
@@ -31,6 +35,10 @@ class CloudAppliance {
   final String? region;
   final String? catalogProductId;
   final String matchQuality;
+  final String? fccId;
+  final String? icId;
+  final String? serialNumber;
+  final String? upc;
   final int? version;
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -69,6 +77,10 @@ class CloudAppliance {
       region: identity['region'] as String?,
       catalogProductId: identity['catalog_product_id'] as String?,
       matchQuality: identity['match_quality'] as String,
+      fccId: identity['fcc_id'] as String?,
+      icId: identity['ic_id'] as String?,
+      serialNumber: identity['serial_number'] as String?,
+      upc: identity['upc'] as String?,
       version: json['version'] as int?,
       createdAt: _optionalInstant(json['created_at']),
       updatedAt: _optionalInstant(json['updated_at']),

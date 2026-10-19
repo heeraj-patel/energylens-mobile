@@ -91,6 +91,47 @@ Future<void> _chooseWasher(WidgetTester tester) async {
 }
 
 void main() {
+  test(
+    'model-only catalog search omits brand and fuel and returns every result',
+    () async {
+      http.Request? seen;
+      final api = _api(
+        MockClient((request) async {
+          seen = request;
+          return http.Response(
+            jsonEncode({
+              'products': [
+                for (final id in [
+                  '44444444-4444-4444-8444-444444444444',
+                  '55555555-5555-4555-8555-555555555555',
+                ])
+                  {
+                    'id': id,
+                    'category': 'washer',
+                    'brand': 'LG',
+                    'full_model': 'WM3070HWA',
+                    'variant': null,
+                    'region': null,
+                    'fuel': 'electricity',
+                    'match_quality': 'confirmed_exact',
+                    'facts': [],
+                  },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+      final products = await api.searchCatalogModels(model: 'WM3070HWA');
+      expect(jsonDecode(seen!.body), {'model': 'WM3070HWA'});
+      expect(products.map((product) => product.id), [
+        '44444444-4444-4444-8444-444444444444',
+        '55555555-5555-4555-8555-555555555555',
+      ]);
+      api.close();
+    },
+  );
+
   test('reviewed model search sends only confirmed identity fields and reads facts', () async {
     final seen = <http.Request>[];
     final product = {

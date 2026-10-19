@@ -25,57 +25,56 @@ class OcrIdentityFields {
   final String? icId;
 }
 
+final _ocrModelPattern = RegExp(
+  r'\b(?:MODEL|MOD[ÈE]LE|MOD|M/N|MDL)\b\.?(?:[ \t]*/[ \t]*MOD[ÈE]LE\b\.?)?(?:[ \t]*(?:NO\b\.?|NUMBER\b|#))?[ \t]*[:#.]?\s*([A-Z0-9][A-Z0-9/.\-]{2,31})',
+  caseSensitive: false,
+);
+final _ocrSerialPattern = RegExp(
+  r'\b(?:S/N|SN|SER(?:IAL)?\b\.?(?:[ \t]*(?:NO\b\.?|NUMBER\b|#))?)[ \t]*[:#.]?\s*([A-Z0-9][A-Z0-9\-]{3,31})',
+  caseSensitive: false,
+);
+final _ocrFccPattern = RegExp(
+  r'\bFCC[ \t]*ID[ \t]*[:#.]?[ \t]*((?:2[A-Z0-9]{4})|(?:[A-Z0-9]{3}))([ \t-]?)([A-Z0-9\-]{1,14})\b',
+  caseSensitive: false,
+);
+final _ocrIcPattern = RegExp(
+  r'\b(?:ISED[ \t]+)?IC[ \t]*(?:ID)?[ \t]*[:#.]?[ \t]*(\d{1,6}[A-Z]?)[ \t]*-[ \t]*([A-Z0-9]{1,11})\b',
+  caseSensitive: false,
+);
+
+RegExpMatch? _firstOcrModelMatch(String text) {
+  for (final match in _ocrModelPattern.allMatches(text)) {
+    final value = match.group(1)!.replaceFirst(RegExp(r'[./\-]+$'), '');
+    if (RegExp(r'\d').hasMatch(value)) return match;
+  }
+  return null;
+}
+
+String? _firstOcrValue(RegExp pattern, String text) {
+  for (final match in pattern.allMatches(text)) {
+    final value = match.group(1)!.replaceFirst(RegExp(r'[./\-]+$'), '');
+    if (RegExp(r'\d').hasMatch(value)) return value.toUpperCase();
+  }
+  return null;
+}
+
 /// Label fields are stored as identity hints; the user still confirms the model.
 OcrIdentityFields identityFieldsFromOcr(String text) {
-  String? field(RegExp label, {bool needsDigit = false}) {
-    final lines = text.split(RegExp(r'[\r\n]+'));
-    for (var i = 0; i < lines.length; i++) {
-      final match = label.firstMatch(lines[i]);
-      if (match == null) continue;
-      var value = lines[i].substring(match.end).trim();
-      value = value.replaceFirst(RegExp(r'^[\s:#.\-]+'), '');
-      if (value.isEmpty && i + 1 < lines.length) value = lines[i + 1].trim();
-      final token = RegExp(
-        r'^[A-Z0-9][A-Z0-9./\-]{1,39}',
-        caseSensitive: false,
-      ).firstMatch(value)?.group(0);
-      if (token != null && (!needsDigit || RegExp(r'\d').hasMatch(token))) {
-        return token.toUpperCase();
-      }
-    }
-    return null;
-  }
-
-  final model = field(
-    RegExp(
-      r'\b(?:MODEL|MODÈLE|MOD\.?|M/N|MDL)(?:\s*(?:NO\.?|NUMBER|#))?\s*[:#.]?',
-      caseSensitive: false,
-    ),
-    needsDigit: true,
-  );
-  final serial = field(
-    RegExp(
-      r'\b(?:SERIAL(?:\s*(?:NO\.?|NUMBER|#))?|S/N|SN)\s*[:#.]?',
-      caseSensitive: false,
-    ),
-  );
-  final fcc = field(RegExp(r'\bFCC\s*ID\s*[:#.]?', caseSensitive: false));
-  final ic = field(
-    RegExp(r'\b(?:IC|ISED\s*IC)\s*(?:ID)?\s*[:#.]?', caseSensitive: false),
-  );
-  final validFcc =
-      fcc != null &&
-          RegExp(r'^(?:2[A-Z0-9]{4}|[A-Z0-9]{3})[A-Z0-9-]+$').hasMatch(fcc)
-      ? fcc
-      : null;
-  final validIc = ic != null && RegExp(r'^\d+[A-Z]?-?[A-Z0-9-]+$').hasMatch(ic)
-      ? ic
-      : null;
+  final model = _firstOcrModelMatch(text)
+      ?.group(1)
+      ?.replaceFirst(RegExp(r'[./\-]+$'), '')
+      .toUpperCase();
+  final serial = _firstOcrValue(_ocrSerialPattern, text);
+  final fcc = _ocrFccPattern.firstMatch(text);
+  final ic = _ocrIcPattern.firstMatch(text);
   return OcrIdentityFields(
     model: model,
     serialNumber: serial,
-    fccId: validFcc,
-    icId: validIc,
+    fccId: fcc == null
+        ? null
+        : '${fcc.group(1)}${fcc.group(2) == '-' ? '-' : ''}${fcc.group(3)}'
+              .toUpperCase(),
+    icId: ic == null ? null : '${ic.group(1)}-${ic.group(2)}'.toUpperCase(),
   );
 }
 
@@ -85,15 +84,12 @@ String? modelHintFromOcr(String? text) =>
 /// Returns only a likely maker name; serials and the full OCR text stay local.
 String? manufacturerHintFromOcr(String? text) {
   if (text == null) return null;
+  final modelMatch = _firstOcrModelMatch(text);
+  if (modelMatch == null) return null;
   final lines = text.split(RegExp(r'[\r\n]+'));
-  var modelLine = -1;
-  for (var index = 0; index < lines.length; index++) {
-    if (modelHintFromOcr(lines[index]) != null) {
-      modelLine = index;
-      break;
-    }
-  }
-  if (modelLine < 0) return null;
+  final modelLine = RegExp(r'[\r\n]+')
+      .allMatches(text.substring(0, modelMatch.start))
+      .length;
   const known = <String, String>{
     'LG': 'LG',
     'SAMSUNG': 'Samsung',
@@ -1276,10 +1272,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             const SizedBox(height: 16),
             FilledButton(
               key: const Key('saveAppliance'),
-              onPressed:
-                  _busy || _category.isEmpty
-                  ? null
-                  : _save,
+              onPressed: _busy || _category.isEmpty ? null : _save,
               child: Text(
                 _busy
                     ? 'Saving…'

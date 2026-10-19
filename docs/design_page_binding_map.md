@@ -15,6 +15,17 @@ composition can address them, but the backend must not treat them as live data.
 The exact customer presentation for missing, loading, stale, and offline values
 still requires owner approval.
 
+The owner-approved device setup additions extend the frozen manifest without
+changing its original fixture revision. Manual Device Entry and Manage Devices
+use text IDs 071–081 for Category, its initial value, the initial Type value,
+Room, Optional, and the six room suggestions. Their field IDs 004–006 identify
+the Category and Type comboboxes and the Room input. The Photo Scan page uses
+text IDs 073–090 for the sample label, hint, and five result-chip field names.
+Its result-chip words change only through the approved found/not-found states;
+the page script sets their TalkBack labels after OCR. The corresponding paths
+for these additions point into current packaged HTML; older paths still refer
+to the frozen fixture.
+
 The following source controls have no approved native outcome: Quick Nap,
 assistant prompt, dashboard period selectors, Devices filters/sort/pagination,
 Automate Cutoff, Set Reminder, Sync Thermostat, promotional links, profile

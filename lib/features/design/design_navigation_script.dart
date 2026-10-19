@@ -99,7 +99,9 @@ String buildDesignNavigationScript(String page) {
             name: document.getElementById('input-device-name')?.value || '',
             manufacturer: document.getElementById('input-manufacturer')?.value || '',
             model: document.getElementById('input-model')?.value || '',
-            category: document.getElementById('energy-type')?.value || ''
+            group: document.getElementById('energy-category')?.value || '',
+            category: document.getElementById('energy-type')?.value || '',
+            room: document.getElementById('input-room')?.value || ''
           }));
           return;
         }

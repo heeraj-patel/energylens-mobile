@@ -12,6 +12,7 @@ class DesignPageStateSnapshot {
     required this.scrollY,
     required this.fieldValues,
     required this.checkedActions,
+    this.selectedGroupKey,
     this.selectedTypeAction,
   });
 
@@ -25,6 +26,7 @@ class DesignPageStateSnapshot {
   final int scrollY;
   final Map<String, String> fieldValues;
   final Map<String, bool> checkedActions;
+  final String? selectedGroupKey;
   final String? selectedTypeAction;
 
   Map<String, Object?> toJson() => {
@@ -32,6 +34,7 @@ class DesignPageStateSnapshot {
     'scroll_y': scrollY,
     'fields': fieldValues,
     'checks': checkedActions,
+    if (selectedGroupKey != null) 'selected_group': selectedGroupKey,
     if (selectedTypeAction != null) 'selected_type': selectedTypeAction,
   };
 
@@ -53,6 +56,7 @@ class DesignPageStateSnapshot {
             'scroll_y',
             'fields',
             'checks',
+            'selected_group',
             'selected_type',
           }.contains(key),
         )) {
@@ -62,6 +66,7 @@ class DesignPageStateSnapshot {
     final y = decoded['scroll_y'];
     final fields = decoded['fields'];
     final checks = decoded['checks'];
+    final selectedGroup = decoded['selected_group'];
     final selectedType = decoded['selected_type'];
     if (x is! int ||
         y is! int ||
@@ -73,6 +78,7 @@ class DesignPageStateSnapshot {
         checks is! Map<String, dynamic> ||
         fields.length > maxFieldCount ||
         checks.length > maxFieldCount ||
+        (selectedGroup != null && selectedGroup is! String) ||
         (selectedType != null && selectedType is! String)) {
       throw const FormatException('Invalid design page state values');
     }
@@ -95,13 +101,17 @@ class DesignPageStateSnapshot {
       }
       parsedChecks[entry.key] = entry.value as bool;
     }
-    final validTypeAction =
-        (page == 'settings_manage_devices' ||
-            page == 'settings_manual_device_entry') &&
-        selectedType is String &&
-        RegExp(r'^[a-z0-9_]{1,120}$').hasMatch(selectedType) &&
-        !selectedType.startsWith('settings_');
-    if (selectedType != null && !validTypeAction) {
+    final devicePage =
+        page == 'settings_manage_devices' ||
+        page == 'settings_manual_device_entry';
+    bool validKey(Object? value) =>
+        value is String &&
+        RegExp(r'^[a-z0-9_]{1,120}$').hasMatch(value) &&
+        !value.startsWith('settings_');
+    if (selectedGroup != null && (!devicePage || !validKey(selectedGroup))) {
+      throw const FormatException('Invalid selected device group');
+    }
+    if (selectedType != null && (!devicePage || !validKey(selectedType))) {
       throw const FormatException('Invalid selected device type');
     }
     final snapshot = DesignPageStateSnapshot(
@@ -111,6 +121,7 @@ class DesignPageStateSnapshot {
       scrollY: y,
       fieldValues: Map.unmodifiable(parsedFields),
       checkedActions: Map.unmodifiable(parsedChecks),
+      selectedGroupKey: selectedGroup as String?,
       selectedTypeAction: selectedType as String?,
     );
     if (utf8.encode(jsonEncode(snapshot.toJson())).length > maxPayloadBytes) {

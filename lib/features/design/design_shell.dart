@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -10,12 +12,13 @@ import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_api/cloud_energy_categories.dart';
 import '../../core/cloud_api/cloud_appliance_list.dart';
 import '../../core/cloud_api/cloud_api_client.dart';
+import '../../core/cloud_api/cloud_catalog.dart';
 import '../../core/cloud_api/cloud_household_energy.dart'
     show CloudEfficiencyMonthToDate;
 import '../../core/cloud_api/cloud_home.dart' show newCloudIdempotencyKey;
 import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import '../identify/appliance_onboarding_screen.dart'
-    show manufacturerHintFromOcr, modelHintFromOcr;
+    show identityFieldsFromOcr, manufacturerHintFromOcr;
 import '../identify/photo_capture_service.dart';
 import 'device_review_sheet.dart';
 import 'efficiency_domain_repository.dart';
@@ -64,6 +67,7 @@ class DesignShell extends StatefulWidget {
     this.onDiscoverDevices,
     this.onboardingLifecycle,
     this.photoCapture = const PhotoCaptureService(),
+    this.recoverLostPhotoOnStart,
     this.designContextCoordinator,
     this.designTour = false,
     this.localPilot = false,
@@ -78,6 +82,7 @@ class DesignShell extends StatefulWidget {
   final Future<void> Function()? onDiscoverDevices;
   final CloudAuxiliaryDomainLifecycle? onboardingLifecycle;
   final PhotoCaptureService photoCapture;
+  final bool? recoverLostPhotoOnStart;
 
   /// Native-only verified scope. It is never passed into the WebView.
   final DesignContextCoordinator? designContextCoordinator;
@@ -260,7 +265,13 @@ class _DesignShellState extends State<DesignShell> {
           // The pilot remains editable for this session if local storage fails.
         }
       }
-      if (mounted) await _loadPage();
+      if (mounted) {
+        await _loadPage();
+        if (widget.recoverLostPhotoOnStart ??
+            (!kIsWeb && defaultTargetPlatform == TargetPlatform.android)) {
+          unawaited(_recoverLostPhoto());
+        }
+      }
     });
   }
 
@@ -1228,32 +1239,25 @@ class _DesignShellState extends State<DesignShell> {
           decoded['name'] is! String ||
           decoded['manufacturer'] is! String ||
           decoded['model'] is! String ||
-          (decoded['category'] != null && decoded['category'] is! String)) {
+          (decoded['group'] != null && decoded['group'] is! String) ||
+          (decoded['room'] != null && decoded['room'] is! String) ||
+          (decoded['category'] != null && decoded['category'] is! String) ||
+          (decoded['serialNumber'] != null &&
+              decoded['serialNumber'] is! String) ||
+          (decoded['fccId'] != null && decoded['fccId'] is! String) ||
+          (decoded['icId'] != null && decoded['icId'] is! String) ||
+          (decoded['upc'] != null && decoded['upc'] is! String)) {
         return;
       }
       fields = decoded;
     } catch (_) {
       return;
     }
-    const reviewCategories = {
-      'computer',
-      'lighting',
-      'refrigerator',
-      'television',
-      'washer',
-      'dryer',
-      'dishwasher',
-      'space_heater',
-      'air_conditioner',
-      'water_heater',
-      'other',
-    };
     final selectedCategory = fields['category'] as String?;
-    if (!fromPhoto &&
-        (selectedCategory == null ||
-            !reviewCategories.contains(selectedCategory))) {
+    if (!fromPhoto && (selectedCategory == null || selectedCategory.isEmpty)) {
       return;
     }
+    final room = (fields['room'] as String?) ?? '';
     _reviewOpen = true;
     try {
       if (widget.localPilot) {
@@ -1274,9 +1278,11 @@ class _DesignShellState extends State<DesignShell> {
             name: fields['name'] as String,
             manufacturer: fields['manufacturer'] as String,
             model: fields['model'] as String,
-            initialCategory: reviewCategories.contains(selectedCategory)
-                ? selectedCategory
-                : null,
+            initialRoom: room,
+            initialCategory: selectedCategory?.isEmpty == true
+                ? null
+                : selectedCategory,
+            initialCategories: _sessionCategories,
           ),
         );
         if (result?.status == LocalWriteStatus.confirmed &&
@@ -1286,6 +1292,27 @@ class _DesignShellState extends State<DesignShell> {
         return;
       }
       if (context == null || lifecycle == null || !mounted) return;
+      final reviewPage = _page;
+      final reviewGeneration = _pageLoadGeneration;
+      final model = (fields['model'] as String).trim();
+      final manufacturer = (fields['manufacturer'] as String).trim();
+      var catalogResults = <CloudCatalogProduct>[];
+      var catalogSearchFailed = false;
+      if (fromPhoto && model.isNotEmpty && widget.settingsApi != null) {
+        try {
+          catalogResults = await widget.settingsApi!.searchCatalogModels(
+            model: model,
+            brand: manufacturer.isEmpty ? null : manufacturer,
+          );
+        } catch (_) {
+          catalogSearchFailed = true;
+        }
+      }
+      if (!mounted ||
+          !_isCurrentPageLoad(reviewPage, reviewGeneration) ||
+          !lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+        return;
+      }
       final saved = await showDialog<CloudAppliance>(
         context: this.context,
         builder: (_) => DeviceReviewSheet(
@@ -1297,6 +1324,14 @@ class _DesignShellState extends State<DesignShell> {
           name: fields['name'] as String,
           manufacturer: fields['manufacturer'] as String,
           model: fields['model'] as String,
+          serialNumber: fromPhoto ? fields['serialNumber'] as String? : null,
+          fccId: fromPhoto ? fields['fccId'] as String? : null,
+          icId: fromPhoto ? fields['icId'] as String? : null,
+          upc: fromPhoto ? fields['upc'] as String? : null,
+          initialRoom: room,
+          catalogResults: catalogResults,
+          catalogSearchFailed: catalogSearchFailed,
+          modelNotFoundOnLabel: fromPhoto && model.isEmpty,
           initialCategory: selectedCategory?.isEmpty == true
               ? null
               : selectedCategory,
@@ -1331,70 +1366,173 @@ class _DesignShellState extends State<DesignShell> {
     _capturingPhoto = true;
     CapturedPhoto? photo;
     try {
+      await _clearScanResults();
       photo = source == 'camera'
           ? await widget.photoCapture.capturePhoto()
           : await widget.photoCapture.pickFromGallery();
-      if (photo == null ||
-          !_isCurrentPageLoad(
-            'settings_photo_scan_onboarding',
-            pageGeneration,
-          ) ||
-          (!widget.localPilot &&
-              !lifecycle!.isVerifiedScope(
-                context!.accountId,
-                context.homeId,
-              ))) {
-        return;
-      }
-      final text = await widget.photoCapture.extractTextHint(photo.path);
-      if (text == null) return;
-      if (!_isCurrentPageLoad(
-            'settings_photo_scan_onboarding',
-            pageGeneration,
-          ) ||
-          (!widget.localPilot &&
-              !lifecycle!.isVerifiedScope(
-                context!.accountId,
-                context.homeId,
-              ))) {
-        return;
-      }
-      if (kDebugMode) debugPrint('Photo OCR ($source) recognised: "$text"');
-      if (widget.localPilot &&
-          (_localInventory == null || widget.localDeviceLifecycle == null)) {
-        if (mounted) {
-          ScaffoldMessenger.of(this.context).showSnackBar(
-            const SnackBar(
-              content: Text('Scan complete. A paired hub is needed to use it.'),
-            ),
-          );
-        }
-        return;
-      }
-      await _reviewDevice(
-        jsonEncode({
-          'name': '',
-          'manufacturer': manufacturerHintFromOcr(text) ?? '',
-          'model': modelHintFromOcr(text) ?? '',
-        }),
-        fromPhoto: true,
-      );
+      if (photo != null) await _processCapturedPhoto(photo, pageGeneration);
     } on CameraPermissionDeniedException {
-      if (mounted) {
-        ScaffoldMessenger.of(this.context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Camera access was denied. Allow it in settings or choose a photo.',
-            ),
-          ),
-        );
-      }
+      _photoMessage(
+        'Camera access was denied. Allow it in settings or choose a photo.',
+      );
+    } on PhotoLibraryPermissionDeniedException {
+      _photoMessage(
+        'Photo access was denied. Allow it in settings or use the camera.',
+      );
+    } on FormatException {
+      _photoMessage(
+        'This photo is over 5 MB. Take it again or choose a smaller one.',
+      );
+    } on PlatformException {
+      _photoMessage('Camera is not available. Choose a photo instead.');
     } catch (_) {
-      // Picker cancellation or unavailable native capture leaves the page as is.
+      _photoMessage('Something went wrong with the photo. Try again.');
     } finally {
       if (photo != null) await widget.photoCapture.discard(photo);
       _capturingPhoto = false;
     }
+  }
+
+  void _photoMessage(String message) {
+    if (!mounted || _page != 'settings_photo_scan_onboarding') return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _clearScanResults() async {
+    if (!mounted || _page != 'settings_photo_scan_onboarding') return;
+    try {
+      await _controller.runJavaScript(
+        'window.EnergyLensPhotoScanResults?.clear();',
+      );
+    } catch (_) {
+      // The native review flow remains available if the page is still loading.
+    }
+  }
+
+  Future<void> _showScanResults({
+    required bool model,
+    required bool brand,
+    required bool serial,
+    required bool fccId,
+    required bool icId,
+  }) async {
+    if (!mounted || _page != 'settings_photo_scan_onboarding') return;
+    final states = jsonEncode({
+      'model': model,
+      'brand': brand,
+      'serial': serial,
+      'fccId': fccId,
+      'icId': icId,
+    });
+    try {
+      await _controller.runJavaScript(
+        'window.EnergyLensPhotoScanResults?.show($states);',
+      );
+    } catch (_) {
+      // The native review flow remains available if the page is still loading.
+    }
+  }
+
+  Future<void> _recoverLostPhoto() async {
+    if (_capturingPhoto) return;
+    _capturingPhoto = true;
+    CapturedPhoto? photo;
+    try {
+      photo = await widget.photoCapture.recoverLostPhoto();
+      if (photo == null || !mounted) return;
+      if (_page != 'settings_photo_scan_onboarding') {
+        await _navigate('settings_photo_scan_onboarding');
+      }
+      if (!mounted || _page != 'settings_photo_scan_onboarding') return;
+      await _clearScanResults();
+      _photoMessage('Your last photo was recovered. Reading it now.');
+      await _processCapturedPhoto(photo, _pageLoadGeneration);
+    } on PhotoRecoveryException {
+      if (mounted && _page != 'settings_photo_scan_onboarding') {
+        await _navigate('settings_photo_scan_onboarding');
+      }
+      _photoMessage(
+        'The photo was lost while the camera was open. Take it again.',
+      );
+    } catch (_) {
+      _photoMessage('Something went wrong with the photo. Try again.');
+    } finally {
+      if (photo != null) await widget.photoCapture.discard(photo);
+      _capturingPhoto = false;
+    }
+  }
+
+  Future<void> _processCapturedPhoto(
+    CapturedPhoto photo,
+    int pageGeneration,
+  ) async {
+    final context = widget.designContextCoordinator?.context;
+    final lifecycle = widget.onboardingLifecycle;
+    bool isCurrent() =>
+        _isCurrentPageLoad('settings_photo_scan_onboarding', pageGeneration) &&
+        (widget.localPilot ||
+            (context != null &&
+                lifecycle != null &&
+                lifecycle.isVerifiedScope(context.accountId, context.homeId)));
+    if (!isCurrent()) return;
+    String? text;
+    String? upc;
+    try {
+      final results = await Future.wait<String?>([
+        widget.photoCapture.extractTextHint(photo.path),
+        widget.photoCapture.detectUpc(photo.path).catchError((_) => null),
+      ]);
+      text = results[0];
+      upc = results[1];
+    } catch (_) {
+      if (isCurrent()) {
+        _photoMessage(
+          'Could not read this photo. Try again or enter the model yourself.',
+        );
+      }
+      return;
+    }
+    if (!isCurrent()) return;
+    if (text == null || text.trim().isEmpty) {
+      await _showScanResults(
+        model: false,
+        brand: false,
+        serial: false,
+        fccId: false,
+        icId: false,
+      );
+      _photoMessage(
+        'No label text found. Try again or enter the model yourself.',
+      );
+      return;
+    }
+    final identity = identityFieldsFromOcr(text);
+    final manufacturer = manufacturerHintFromOcr(text);
+    await _showScanResults(
+      model: identity.model != null,
+      brand: manufacturer != null,
+      serial: identity.serialNumber != null,
+      fccId: identity.fccId != null,
+      icId: identity.icId != null,
+    );
+    if (widget.localPilot &&
+        (_localInventory == null || widget.localDeviceLifecycle == null)) {
+      _photoMessage('Scan complete. A paired hub is needed to use it.');
+      return;
+    }
+    await _reviewDevice(
+      jsonEncode({
+        'name': '',
+        'manufacturer': manufacturer ?? '',
+        'model': identity.model ?? '',
+        'upc': upc,
+        'serialNumber': identity.serialNumber,
+        'fccId': identity.fccId,
+        'icId': identity.icId,
+      }),
+      fromPhoto: true,
+    );
   }
 
   Future<void> _archiveSavedAppliance(String applianceId) async {
@@ -1686,9 +1824,21 @@ class _DesignShellState extends State<DesignShell> {
     await _navigate(route);
   }
 
-  void _back() {
-    if (_history.isEmpty) return;
-    unawaited(_navigate(null));
+  void _back() => unawaited(_backOrDismissPicker());
+
+  Future<void> _backOrDismissPicker() async {
+    if (_page == 'settings_manage_devices' ||
+        _page == 'settings_manual_device_entry') {
+      try {
+        final dismissed = await _controller.runJavaScriptReturningResult(
+          'window.EnergyLensDevicePicker?.dismiss() === true',
+        );
+        if (dismissed == true || dismissed.toString() == 'true') return;
+      } catch (_) {
+        // The page can still navigate if its picker is not installed.
+      }
+    }
+    if (_history.isNotEmpty) await _navigate(null);
   }
 
   Future<void> _navigate(String? route) async {
