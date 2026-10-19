@@ -839,6 +839,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onDevicesChanged: _refreshHub,
         autoScanDiscovery: widget.autoScanDiscovery,
         startInConnectAppliance: widget.startInConnectAppliance,
+        onboardingDrafts: widget.onboardingDrafts,
       ),
     };
     return Scaffold(
@@ -2217,6 +2218,7 @@ class _AskAndAdd extends StatefulWidget {
     required this.startInConnectAppliance,
     this.cloudHome,
     this.cloudApi,
+    this.onboardingDrafts,
   });
 
   final DiscoveryApi api;
@@ -2234,6 +2236,7 @@ class _AskAndAdd extends StatefulWidget {
   final bool startInConnectAppliance;
   final CloudHome? cloudHome;
   final CloudApiClient? cloudApi;
+  final DurableOnboardingDrafts? onboardingDrafts;
 
   @override
   State<_AskAndAdd> createState() => _AskAndAddState();
