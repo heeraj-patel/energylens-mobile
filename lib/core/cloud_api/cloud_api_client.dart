@@ -35,9 +35,14 @@ import 'cloud_energy_categories.dart';
 import 'cloud_energy_resolution.dart';
 
 class CloudApiException implements Exception {
-  const CloudApiException(this.statusCode, this.code);
+  const CloudApiException(
+    this.statusCode,
+    this.code, {
+    this.details = const {},
+  });
   final int statusCode;
   final String code;
+  final Map<String, dynamic> details;
   @override
   String toString() => 'Cloud API error $statusCode ($code)';
 }
@@ -1653,11 +1658,15 @@ class CloudApiClient {
     if ((body.statusCode < 200 || body.statusCode >= 300) &&
         !(ifNoneMatch != null && body.statusCode == 304)) {
       String code = 'http_${body.statusCode}';
+      Map<String, dynamic> details = const {};
       try {
         final json = jsonDecode(body.body) as Map<String, dynamic>;
         code = json['code'] as String? ?? code;
+        if (json['details'] is Map<String, dynamic>) {
+          details = json['details'] as Map<String, dynamic>;
+        }
       } catch (_) {}
-      throw CloudApiException(body.statusCode, code);
+      throw CloudApiException(body.statusCode, code, details: details);
     }
     return body;
   }

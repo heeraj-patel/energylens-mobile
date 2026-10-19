@@ -27,6 +27,7 @@ import 'features/energy/stop_waste_programs.dart';
 import 'features/energy/local_pilot_programs.dart';
 import 'features/energy/cloud_report_preview_screen.dart';
 import 'features/identify/appliance_onboarding_screen.dart';
+import 'features/identify/onboarding_draft_store.dart';
 import 'features/identify/cloud_usage_questions_screen.dart';
 import 'features/design/design_shell.dart';
 import 'features/design/local_pilot_device_lifecycle.dart';
@@ -182,6 +183,7 @@ class EnergyLensApp extends StatelessWidget {
                             cloudHome: cloudHome,
                             cloudApi: cloudApi,
                             accountId: accountId,
+                            onboardingDrafts: lifecycle.drafts,
                           ),
                         ),
                       );
@@ -222,6 +224,7 @@ class HomeScreen extends StatefulWidget {
     this.cloudHome,
     this.cloudApi,
     this.accountId,
+    this.onboardingDrafts,
     this.localPilotMode = false,
     this.visibilityStore = const PowerNowVisibilityStore(),
   });
@@ -236,6 +239,7 @@ class HomeScreen extends StatefulWidget {
   final CloudHome? cloudHome;
   final CloudApiClient? cloudApi;
   final String? accountId;
+  final DurableOnboardingDrafts? onboardingDrafts;
   final bool localPilotMode;
   final PowerNowVisibilityStore visibilityStore;
 
@@ -2261,6 +2265,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
           credentials: widget.credentials,
           cloudHome: widget.cloudHome,
           cloudApi: widget.cloudApi,
+          onboardingDrafts: widget.onboardingDrafts,
         ),
       ),
     );
@@ -2525,6 +2530,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
                   autoScan: widget.autoScanDiscovery,
                   cloudHome: widget.cloudHome,
                   cloudApi: widget.cloudApi,
+                  onboardingDrafts: widget.onboardingDrafts,
                 ),
               ),
             );
@@ -2544,6 +2550,7 @@ class _AskAndAddState extends State<_AskAndAdd> {
                   method: 'manual',
                   cloudHome: widget.cloudHome,
                   cloudApi: widget.cloudApi,
+                  onboardingDrafts: widget.onboardingDrafts,
                 ),
               ),
             );

@@ -21,6 +21,7 @@ class CloudAppliance {
     this.updatedAt,
     this.archivedAt,
     this.demoDeviceId,
+    this.nearbyOrigin,
   });
 
   final String id;
@@ -46,6 +47,7 @@ class CloudAppliance {
 
   /// Present only for a database-backed synthetic inventory row.
   final String? demoDeviceId;
+  final CloudNearbyOrigin? nearbyOrigin;
 
   factory CloudAppliance.fromJson(Map<String, dynamic> json) {
     final identity = json['identity'];
@@ -86,11 +88,47 @@ class CloudAppliance {
       updatedAt: _optionalInstant(json['updated_at']),
       archivedAt: _optionalInstant(json['archived_at']),
       demoDeviceId: json['demo_device_id'] as String?,
+      nearbyOrigin: json['nearby_origin'] == null
+          ? null
+          : CloudNearbyOrigin.fromJson(
+              json['nearby_origin'] as Map<String, dynamic>,
+            ),
     );
   }
 
   static DateTime? _optionalInstant(Object? value) =>
       value == null ? null : DateTime.parse(value as String);
+}
+
+class CloudNearbyOrigin {
+  const CloudNearbyOrigin({
+    required this.hubId,
+    required this.ownershipEpoch,
+    required this.protocolDeviceId,
+  });
+
+  factory CloudNearbyOrigin.fromJson(Map<String, dynamic> json) =>
+      CloudNearbyOrigin(
+        hubId: json['hub_id'] as String,
+        ownershipEpoch: json['ownership_epoch'] as int,
+        protocolDeviceId: json['protocol_device_id'] as String,
+      );
+
+  final String hubId;
+  final int ownershipEpoch;
+  final String protocolDeviceId;
+
+  Map<String, dynamic> toJson() => {
+    'hub_id': hubId,
+    'ownership_epoch': ownershipEpoch,
+    'protocol_device_id': protocolDeviceId,
+  };
+
+  bool matches(CloudNearbyOrigin? other) =>
+      other != null &&
+      hubId == other.hubId &&
+      ownershipEpoch == other.ownershipEpoch &&
+      protocolDeviceId == other.protocolDeviceId;
 }
 
 class CloudApplianceCreate {
@@ -110,6 +148,7 @@ class CloudApplianceCreate {
     this.upc,
     this.bulbLabel,
     this.matchQuality = 'confirmed_exact',
+    this.nearbyOrigin,
   });
   final String name;
   final String category;
@@ -126,9 +165,11 @@ class CloudApplianceCreate {
   final String? upc;
   final BulbLabel? bulbLabel;
   final String matchQuality;
+  final CloudNearbyOrigin? nearbyOrigin;
 
   Map<String, dynamic> toJson() => {
     'name': name,
+    if (nearbyOrigin != null) 'nearby_origin': nearbyOrigin!.toJson(),
     'category': category,
     if (room != null && room!.isNotEmpty) 'room': room,
     'identity': {
