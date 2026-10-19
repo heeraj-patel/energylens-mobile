@@ -1,6 +1,10 @@
 import XCTest
 
 final class DiscoveryNavigationUITests: XCTestCase {
+  private var expectedCloudHome: String {
+    ProcessInfo.processInfo.environment["ENERGYLENS_TEST_EXPECTED_HOME"] ?? "niksim"
+  }
+
   func testCloudAccountPairsHubAndShowsSavedPlug() throws {
     continueAfterFailure = false
     guard
@@ -46,7 +50,7 @@ final class DiscoveryNavigationUITests: XCTestCase {
       object: app)
     XCTAssertEqual(XCTWaiter.wait(for: [routeReady], timeout: 180), .completed)
     let demoHome = app.buttons
-      .matching(NSPredicate(format: "label CONTAINS[c] %@", "niksim"))
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", expectedCloudHome))
       .firstMatch
     if chooseHome.exists {
       let selectionRoute = XCTNSPredicateExpectation(
@@ -105,7 +109,7 @@ final class DiscoveryNavigationUITests: XCTestCase {
       .firstMatch
     XCTAssertTrue(connected.waitForExistence(timeout: 90), "Hub pairing did not connect")
     XCTAssertTrue(app.descendants(matching: .any)
-      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Cloud home: niksim"))
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Cloud home: \(expectedCloudHome)"))
       .firstMatch.exists, "Paired Hub was not scoped to the selected Cloud home")
     let saved = app.descendants(matching: .any)
       .matching(NSPredicate(format: "label CONTAINS[c] %@", "Kitchen Mixer Plug"))
@@ -159,6 +163,21 @@ final class DiscoveryNavigationUITests: XCTestCase {
     app.launch()
 
     let usernameField = app.textFields["Username"]
+    if usernameField.waitForExistence(timeout: 15) {
+      guard let password = ProcessInfo.processInfo.environment["ENERGYLENS_TEST_PASSWORD"],
+            !password.isEmpty else {
+        XCTFail("The Cloud session was absent and private sign-in credentials were not supplied")
+        return
+      }
+      let passwordField = app.descendants(matching: .any)
+        .matching(NSPredicate(format: "label == %@", "Password"))
+        .firstMatch
+      usernameField.tap()
+      usernameField.typeText(username)
+      passwordField.tap()
+      passwordField.typeText(password)
+      app.buttons["Submit"].tap()
+    }
     let settings = app.links
       .matching(NSPredicate(format: "label CONTAINS[c] %@", "Settings"))
       .firstMatch
@@ -168,10 +187,10 @@ final class DiscoveryNavigationUITests: XCTestCase {
       object: app)
     XCTAssertEqual(XCTWaiter.wait(for: [routeReady], timeout: 180), .completed,
                    "The existing Cloud session did not restore a home")
-    XCTAssertFalse(usernameField.exists, "The acceptance test unexpectedly reached sign-in")
+    XCTAssertFalse(usernameField.exists, "The acceptance test did not reach an authenticated home")
 
     let demoHome = app.buttons
-      .matching(NSPredicate(format: "label CONTAINS[c] %@", "niksim"))
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", expectedCloudHome))
       .firstMatch
     if chooseHome.exists {
       let selectionRoute = XCTNSPredicateExpectation(
@@ -214,8 +233,16 @@ final class DiscoveryNavigationUITests: XCTestCase {
     XCTAssertTrue(connected.waitForExistence(timeout: 120),
                   "The current owned Hub pairing did not connect automatically")
     XCTAssertTrue(app.descendants(matching: .any)
-      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Cloud home: niksim"))
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Cloud home: \(expectedCloudHome)"))
       .firstMatch.exists, "The automatic pairing was not scoped to the selected Cloud home")
+
+    if ProcessInfo.processInfo.environment["ENERGYLENS_TEST_REQUIRE_SAVED_PLUG"] == "0" {
+      let evidence = XCTAttachment(screenshot: app.screenshot())
+      evidence.name = "Owned Hub connected to selected Cloud home"
+      evidence.lifetime = .keepAlways
+      add(evidence)
+      return
+    }
 
     let saved = app.descendants(matching: .any)
       .matching(NSPredicate(format: "label CONTAINS[c] %@", "Kitchen Mixer Plug"))
@@ -342,7 +369,7 @@ final class DiscoveryNavigationUITests: XCTestCase {
     XCTAssertEqual(routeResult, .completed, "Cloud sign-in did not reach a home or Settings")
     let chooserTileLabel = NSPredicate(
       format: "label CONTAINS[c] %@ AND label MATCHES[c] %@",
-      "niksim",
+      expectedCloudHome,
       ".*[0-9]{5}.*[A-Za-z_]+/[A-Za-z_]+.*")
     let demoHome = app.buttons
       .matching(chooserTileLabel)

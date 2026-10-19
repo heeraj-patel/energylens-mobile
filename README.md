@@ -33,24 +33,18 @@ configure the HTTPS Cloud API and its authentication profile, then run:
 scripts/deploy-ios-simulator.sh --cloud --device SIMULATOR_UDID
 ```
 
-For local owner home `niksim` acceptance, use the private Mobile profile and
-verify its Cloud API origin before every build. The former LAN origin
-`https://192.168.68.116:18091` can become stale if the Cloud host changes
-addresses. The current Cloud certificate also covers the host's Tailscale
-origin `https://100.66.70.66:18091`. Keep the matching verified
-Cloud certificate pin and confirm each target can reach this origin. See the
-[iOS deployment guide](../energylens-dev-bash-scripts/README.md) for the
-address, listener, and simulator checks. The intended `niksim` Hub host is
-`geekom-a9-max`, but its active Hub instance is currently bound to another
-home. A `niksim` connection requires its own authorized Hub identity or an
-explicit owner transfer. `GeekHome` is a separate home/profile on the
-Geekom with its Cloud API at `https://192.168.68.136:18092`; use that Cloud
-profile only for work explicitly targeting that environment. Set
-`ENERGYLENS_LOCAL_PILOT=false`, `ENERGYLENS_CLOUD_DEV_AUTH_ENABLED=true`, and
-`ENERGYLENS_APP_ENV=dev` for either username-auth profile. Keep the selected
-origin and matching pin in the mode-`0600` environment file, and keep account
-passwords out of it. Leave `ENERGYLENS_HUB_URL` empty for Cloud-owned Hub
-discovery; the selected Cloud home determines the owned Hub.
+For shared `GeekHome` work on this Mac or `geekom-a4-max`, use a separate
+private profile with the currently verified GeekHome Cloud HTTPS origin
+`https://192.168.68.136:18092` and its matching certificate pin. This Mac's
+current `.env-local` still targets its separate `niksim` Cloud on port `18091`;
+do not use it for shared GeekHome builds. Set `ENERGYLENS_LOCAL_PILOT=false`,
+`ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED=true` for the configured local email
+authentication, and leave `ENERGYLENS_HUB_URL` empty for Cloud-owned Hub
+discovery. Keep the file mode `0600` and account passwords out of it. Follow
+the [iOS deployment guide](../energylens-dev-bash-scripts/README.md#mobile-owner-topology-and-source-of-truth)
+for certificate, pin, and live Home/Hub ownership checks. The guide's
+`--shared-geekhome PRIVATE_ENV_FILE` wrapper requires explicit profile
+selection and reuses this repository's Cloud deployment script.
 
 Build and install from the mobile repository so the script regenerates Flutter
 build configuration from the selected private environment file:
@@ -255,14 +249,19 @@ for signing, wireless recovery, and the direct install command.
 ## Native owned-Hub auto-pair acceptance
 
 The `RunnerUITests/DiscoveryNavigationUITests/testCloudSessionAutoPairsOwnedHubAndShowsSavedPlug`
-test verifies automatic pairing for an existing Cloud session, then checks that
+test verifies automatic pairing for the selected Cloud home, then checks that
 the Kitchen Mixer Plug KS8 (`KP115(US)`) appears in Auto Scan and the monitored
-device list. It does not sign in or accept operator pairing JSON. Set
+device list. It can sign in with private test credentials if a prior Cloud
+session does not restore; it never accepts operator pairing JSON. Set
 `ENERGYLENS_TEST_REUSE_SESSION=1`,
 `ENERGYLENS_TEST_RESET_OWNED_PAIRING=1`, and
 `ENERGYLENS_TEST_USERNAME` only in the private `RunnerUITests` environment of
-a temporary `.xctestrun` copy. This test does not need a password. Keep the
-temporary test-run file mode 0600 and remove it after the run.
+a temporary `.xctestrun` copy. Supply `ENERGYLENS_TEST_PASSWORD` there when
+same-launch sign-in may be needed. Set `ENERGYLENS_TEST_EXPECTED_HOME` for a
+home other than `niksim`. For Home/Hub-only acceptance, set
+`ENERGYLENS_TEST_REQUIRE_SAVED_PLUG=0` to stop after the connected owned Hub
+and selected Cloud home assertions. Keep the temporary test-run file mode
+0600 and remove it after the run.
 
 The reset flag clears only Keychain accounts with the
 `energylens.hub.pairing.v2.` prefix, including their scoped client IDs. It
