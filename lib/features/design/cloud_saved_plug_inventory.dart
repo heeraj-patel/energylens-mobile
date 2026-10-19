@@ -1,4 +1,5 @@
 import '../../core/cloud_api/cloud_api_client.dart';
+import '../../core/cloud_api/cloud_appliance.dart';
 import '../discovery/discovery_api.dart';
 import '../discovery/discovery_credentials.dart';
 
@@ -27,6 +28,7 @@ class CloudSavedPlugInventory {
     required CloudApiClient cloud,
     required String accountId,
     required String homeId,
+    List<CloudAppliance> appliances = const [],
     required bool Function() isCurrent,
   }) async {
     final generation = cloud.session.generation;
@@ -40,6 +42,44 @@ class CloudSavedPlugInventory {
     if (!current()) return const [];
     final ownerships = await cloud.hubs(homeId);
     if (!current()) return const [];
+    final visibleApplianceIds = {
+      for (final appliance in appliances)
+        if (appliance.homeId == homeId && appliance.archivedAt == null)
+          appliance.id,
+    };
+    final attachedSensorIds = <String>{};
+    try {
+      final attachments = await cloud.attachments(homeId);
+      if (!current()) return const [];
+      attachedSensorIds.addAll(
+        attachments
+            .where(
+              (attachment) =>
+                  attachment.endedAt == null &&
+                  visibleApplianceIds.contains(attachment.applianceId) &&
+                  attachment.sensorId != null,
+            )
+            .map((attachment) => attachment.sensorId!),
+      );
+    } catch (_) {
+      // An unavailable Cloud attachment read cannot establish a duplicate.
+    }
+    final attachedPlugIds = <String>{};
+    if (attachedSensorIds.isNotEmpty) {
+      try {
+        final sensors = await cloud.sensors(homeId);
+        if (!current()) return const [];
+        for (final sensor in sensors) {
+          if (attachedSensorIds.contains(sensor.id) && sensor.kind == 'plug') {
+            attachedPlugIds.add(
+              '${sensor.hubId}|${sensor.ownershipEpoch}|${sensor.localSensorId}',
+            );
+          }
+        }
+      } catch (_) {
+        // Keep saved plugs visible when their Cloud identity is unavailable.
+      }
+    }
     final result = <CloudSavedPlug>[];
     final seen = <String>{};
     for (final ownership in ownerships) {
@@ -80,6 +120,11 @@ class CloudSavedPlugInventory {
       }
       for (final plug in plugs) {
         if (plug.id.isEmpty) throw const FormatException('Invalid Hub plug ID');
+        if (attachedPlugIds.contains(
+          '${ownership.hubId}|${ownership.ownershipEpoch}|${plug.id}',
+        )) {
+          continue;
+        }
         final id = '${ownership.localHubId}|${plug.id}';
         if (seen.add(id)) {
           result.add(

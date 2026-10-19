@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_hub_claim.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:energylens_mobile/features/design/cloud_saved_plug_inventory.dart';
@@ -99,6 +100,39 @@ class _HubApi extends DiscoveryApi {
       ),
     ];
   }
+}
+
+class _ReplacementHubApi extends _HubApi {
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async => const [
+    SavedPlug(
+      id: 'ks8-id',
+      ip: '192.168.1.8',
+      model: 'KP115',
+      name: 'Kitchen Mixer Plug KS8',
+      room: '',
+      meterStatus: 'verified',
+      lastVerifiedAt: 0,
+    ),
+    SavedPlug(
+      id: 'ks19-id',
+      ip: '192.168.1.19',
+      model: 'HS103',
+      name: 'Living Room Lamp KS19',
+      room: '',
+      meterStatus: 'absent',
+      lastVerifiedAt: 0,
+    ),
+    SavedPlug(
+      id: 'other-id',
+      ip: '192.168.1.30',
+      model: 'KP115',
+      name: 'Other plug',
+      room: '',
+      meterStatus: 'verified',
+      lastVerifiedAt: 0,
+    ),
+  ];
 }
 
 class _MultiCredentials extends DiscoveryCredentials {
@@ -204,6 +238,86 @@ CloudApiClient _multiCloud() => CloudApiClient(
   ),
 );
 
+CloudApiClient _cloudWithAttachments() => CloudApiClient(
+  session: CloudSession(
+    config: config,
+    store: _Tokens(),
+    authenticator: _Auth(),
+  ),
+  client: MockClient((request) async {
+    final path = request.url.path;
+    if (path.endsWith('/hubs')) {
+      return http.Response(
+        jsonEncode({
+          'hubs': [
+            {
+              'hub_id': 'cloud-hub',
+              'local_hub_id': hub,
+              'home_id': home,
+              'ownership_epoch': 3,
+              'version': 1,
+            },
+          ],
+        }),
+        200,
+      );
+    }
+    if (path.endsWith('/attachments')) {
+      return http.Response(
+        jsonEncode({
+          'attachments': [
+            for (final (id, appliance, sensor) in [
+              (
+                'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                '11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                '11111111-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+              ),
+              (
+                'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                '22222222-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                '22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+              ),
+            ])
+              {
+                'id': id,
+                'home_id': home,
+                'appliance_id': appliance,
+                'sensor_id': sensor,
+                'started_at': '2026-10-17T00:00:00Z',
+                'ended_at': null,
+              },
+          ],
+        }),
+        200,
+      );
+    }
+    if (path.endsWith('/sensors')) {
+      return http.Response(
+        jsonEncode({
+          'sensors': [
+            for (final (id, local) in [
+              ('11111111-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'ks8-id'),
+              ('22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'ks19-id'),
+            ])
+              {
+                'id': id,
+                'home_id': home,
+                'hub_id': 'cloud-hub',
+                'ownership_epoch': 3,
+                'local_sensor_id': local,
+                'kind': 'plug',
+                'capabilities': ['power'],
+                'version': 1,
+              },
+          ],
+        }),
+        200,
+      );
+    }
+    return http.Response('{}', 404);
+  }),
+);
+
 void main() {
   final pairing = StoredPairingCredential(
     address: address,
@@ -231,6 +345,48 @@ void main() {
     );
     expect(api.reads, 1);
   });
+
+  test(
+    'omits KS8 and KS19 plug rows when their replacements are attached',
+    () async {
+      const replacements = [
+        CloudAppliance(
+          id: '11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          homeId: home,
+          name: 'Dyson cool fan',
+          category: 'fan',
+          room: null,
+          brand: 'Dyson',
+          fullModel: '',
+          fuel: 'electric',
+          matchQuality: 'exact',
+        ),
+        CloudAppliance(
+          id: '22222222-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          homeId: home,
+          name: 'Philips Hue two-bulb lamp',
+          category: 'lighting',
+          room: null,
+          brand: 'Philips Hue',
+          fullModel: '',
+          fuel: 'electric',
+          matchQuality: 'exact',
+        ),
+      ];
+      final rows =
+          await CloudSavedPlugInventory(
+            api: _ReplacementHubApi(),
+            credentials: _Credentials(pairing),
+          ).read(
+            cloud: _cloudWithAttachments(),
+            accountId: 'account-a',
+            homeId: home,
+            appliances: replacements,
+            isCurrent: () => true,
+          );
+      expect(rows.map((row) => row.id), ['$hub|other-id']);
+    },
+  );
 
   test('drops a result when owner scope changes during the Hub read', () async {
     var current = true;
@@ -265,45 +421,10 @@ void main() {
     expect(api.reads, 0);
   });
 
-  test('an offline Hub does not hide another owned Hub, in either order', () async {
-    final credentials = _MultiCredentials({
-      hub: pairing,
-      otherHub: StoredPairingCredential(
-        address: otherAddress,
-        hubId: otherHub,
-        clientId: 'other-client',
-        token: 'other-secret',
-        ownershipEpoch: 3,
-      ),
-    });
-    for (final (offlineAddress, failOnSaved, expectedHub) in [
-      (address, false, otherHub),
-      (otherAddress, true, hub),
-    ]) {
-      final api = _MultiHubApi(
-        offlineAddress: offlineAddress,
-        failOnSaved: failOnSaved,
-      );
-      final rows = await CloudSavedPlugInventory(
-        api: api,
-        credentials: credentials,
-      ).read(
-        cloud: _multiCloud(),
-        accountId: 'account-a',
-        homeId: home,
-        isCurrent: () => true,
-      );
-      expect(rows.map((row) => row.id), ['$expectedHub|plug-8']);
-    }
-  });
-
-  test('a stale scope discards earlier results when a later Hub fails', () async {
-    var current = true;
-    final api = _MultiHubApi(offlineAddress: otherAddress, failOnSaved: true)
-      ..beforeFailure = () => current = false;
-    final rows = await CloudSavedPlugInventory(
-      api: api,
-      credentials: _MultiCredentials({
+  test(
+    'an offline Hub does not hide another owned Hub, in either order',
+    () async {
+      final credentials = _MultiCredentials({
         hub: pairing,
         otherHub: StoredPairingCredential(
           address: otherAddress,
@@ -312,13 +433,56 @@ void main() {
           token: 'other-secret',
           ownershipEpoch: 3,
         ),
-      }),
-    ).read(
-      cloud: _multiCloud(),
-      accountId: 'account-a',
-      homeId: home,
-      isCurrent: () => current,
-    );
-    expect(rows, isEmpty);
-  });
+      });
+      for (final (offlineAddress, failOnSaved, expectedHub) in [
+        (address, false, otherHub),
+        (otherAddress, true, hub),
+      ]) {
+        final api = _MultiHubApi(
+          offlineAddress: offlineAddress,
+          failOnSaved: failOnSaved,
+        );
+        final rows =
+            await CloudSavedPlugInventory(
+              api: api,
+              credentials: credentials,
+            ).read(
+              cloud: _multiCloud(),
+              accountId: 'account-a',
+              homeId: home,
+              isCurrent: () => true,
+            );
+        expect(rows.map((row) => row.id), ['$expectedHub|plug-8']);
+      }
+    },
+  );
+
+  test(
+    'a stale scope discards earlier results when a later Hub fails',
+    () async {
+      var current = true;
+      final api = _MultiHubApi(offlineAddress: otherAddress, failOnSaved: true)
+        ..beforeFailure = () => current = false;
+      final rows =
+          await CloudSavedPlugInventory(
+            api: api,
+            credentials: _MultiCredentials({
+              hub: pairing,
+              otherHub: StoredPairingCredential(
+                address: otherAddress,
+                hubId: otherHub,
+                clientId: 'other-client',
+                token: 'other-secret',
+                ownershipEpoch: 3,
+              ),
+            }),
+          ).read(
+            cloud: _multiCloud(),
+            accountId: 'account-a',
+            homeId: home,
+            isCurrent: () => current,
+          );
+      expect(rows, isEmpty);
+    },
+  );
 }

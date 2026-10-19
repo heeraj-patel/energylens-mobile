@@ -614,6 +614,7 @@ class _DesignShellState extends State<DesignShell> {
           cloud: cloud,
           accountId: context.accountId,
           homeId: context.homeId,
+          appliances: rows,
           isCurrent: () =>
               _isCurrentPageLoad(page, generation) &&
               identical(widget.designContextCoordinator?.context, context) &&
