@@ -1,5 +1,6 @@
 import '../../core/cloud_api/cloud_api_client.dart';
 import '../../core/cloud_api/cloud_household_energy.dart';
+import '../../core/cloud_api/cloud_top_savings_move.dart';
 
 /// Native data source for the Dashboard page. It uses the same typed client in
 /// household and isolated sample mode; it does not render or change the page.
@@ -21,11 +22,17 @@ abstract interface class DashboardCurrentWeekDomainSource {
   Future<CloudHouseholdEnergyTrends> currentWeekTrends(String homeId);
 }
 
+/// Optional Top Savings Move read for the dashboard card.
+abstract interface class DashboardTopSavingsDomainSource {
+  Future<CloudTopSavingsMove> topSavingsMove(String homeId);
+}
+
 class CloudDashboardDomainSource
     implements
         DashboardDomainSource,
         DashboardPeriodDomainSource,
-        DashboardCurrentWeekDomainSource {
+        DashboardCurrentWeekDomainSource,
+        DashboardTopSavingsDomainSource {
   const CloudDashboardDomainSource(this.api);
   final CloudApiClient api;
 
@@ -50,6 +57,10 @@ class CloudDashboardDomainSource
   @override
   Future<CloudHouseholdEnergyTrends> currentWeekTrends(String homeId) =>
       api.householdEnergyTrends(homeId, granularity: 'day');
+
+  @override
+  Future<CloudTopSavingsMove> topSavingsMove(String homeId) =>
+      api.topSavingsMove(homeId);
 }
 
 class DashboardDomainSnapshot {
@@ -58,12 +69,14 @@ class DashboardDomainSnapshot {
     this.trends, {
     this.periodTrends = const {},
     this.weekToDateTrends,
+    this.topSavingsMove,
     this.isCurrent,
   });
   final CloudHouseholdDashboard dashboard;
   final CloudHouseholdEnergyTrends trends;
   final Map<String, CloudHouseholdEnergyTrends> periodTrends;
   final CloudHouseholdEnergyTrends? weekToDateTrends;
+  final CloudTopSavingsMove? topSavingsMove;
   final bool Function()? isCurrent;
 
   String get homeId => dashboard.homeId;
@@ -120,11 +133,22 @@ class DashboardDomainRepository {
                 .currentWeekTrends(homeId)
                 .then<CloudHouseholdEnergyTrends?>((value) => value)
                 .catchError((Object _) => null);
+      final DashboardTopSavingsDomainSource? savingsSource =
+          source is DashboardTopSavingsDomainSource
+          ? source as DashboardTopSavingsDomainSource
+          : null;
+      final savingsRead = savingsSource == null
+          ? Future<CloudTopSavingsMove?>.value(null)
+          : savingsSource
+                .topSavingsMove(homeId)
+                .then<CloudTopSavingsMove?>((value) => value)
+                .catchError((Object _) => null);
       final results = await Future.wait<Object?>([
         dashboardRead,
         hourlyRead,
         periodReads,
         weekRead,
+        savingsRead,
       ]);
       if (stale()) return null;
       final dashboard = results[0] as CloudHouseholdDashboard;
@@ -144,6 +168,7 @@ class DashboardDomainRepository {
         }
       }
       final weekRow = results[3] as CloudHouseholdEnergyTrends?;
+      final savingsRow = results[4] as CloudTopSavingsMove?;
       return DashboardDomainSnapshot(
         dashboard,
         trends,
@@ -153,6 +178,11 @@ class DashboardDomainRepository {
                 weekRow.granularity == 'day' &&
                 _samePeriodContext(dashboard, weekRow, homeId)
             ? weekRow
+            : null,
+        topSavingsMove:
+            savingsRow != null &&
+                savingsRow.homeId.toLowerCase() == homeId.toLowerCase()
+            ? savingsRow
             : null,
         isCurrent: () => !stale(),
       );

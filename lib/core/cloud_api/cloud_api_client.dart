@@ -27,6 +27,7 @@ import 'cloud_tariff.dart';
 import 'cloud_cycle_comparison.dart';
 import 'cloud_sensor.dart';
 import 'cloud_household_energy.dart';
+import 'cloud_top_savings_move.dart';
 import 'cloud_regional_rate.dart';
 import 'cloud_usage_facts.dart';
 import 'cloud_device_states.dart';
@@ -152,6 +153,17 @@ class CloudApiClient {
       '/v1/homes/${Uri.encodeComponent(homeId)}/dashboard',
     );
     return CloudHouseholdDashboard.fromJson(
+      _decodeObject(response.body),
+      expectedHomeId: homeId,
+    );
+  }
+
+  Future<CloudTopSavingsMove> topSavingsMove(String homeId) async {
+    _validateHouseholdHomeId(homeId);
+    final response = await get(
+      '/v1/homes/${Uri.encodeComponent(homeId)}/top-savings-move',
+    );
+    return CloudTopSavingsMove.fromJson(
       _decodeObject(response.body),
       expectedHomeId: homeId,
     );

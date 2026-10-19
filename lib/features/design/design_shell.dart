@@ -26,6 +26,7 @@ import 'efficiency_month_to_date_bindings.dart';
 import 'dashboard_chart_projection.dart';
 import 'dashboard_chart_renderer.dart';
 import 'dashboard_domain_repository.dart';
+import 'dashboard_top_savings_bindings.dart';
 import 'design_context_coordinator.dart';
 import 'design_numeric_bindings.dart';
 import 'design_navigation_script.dart';
@@ -170,6 +171,7 @@ class _DesignShellState extends State<DesignShell> {
   DesignNumericBindings? _dashboardBindings;
   DesignNumericBindings? _sampleDevicesBindings;
   List<DesignTextBinding>? _efficiencyBindings;
+  DashboardTopSavingsBindings? _topSavingsBindings;
   CloudEfficiencyMonthToDate? _efficiencyChartSummary;
   int? _peerTabScrollY;
   DesignPageTicket? _pageTicket;
@@ -456,6 +458,7 @@ class _DesignShellState extends State<DesignShell> {
     _dashboardBindings = null;
     _sampleDevicesBindings = null;
     _efficiencyBindings = null;
+    _topSavingsBindings = null;
     _efficiencyChartSummary = null;
     _pageTicket = null;
     _bindingGate.clear();
@@ -502,6 +505,11 @@ class _DesignShellState extends State<DesignShell> {
         _dashboardBindings = projection;
         await _applyDashboardBindings(generation);
         await _applyDashboardChart(generation);
+        final snapshot = read.value;
+        _topSavingsBindings = snapshot is DashboardDomainSnapshot
+            ? prepareDashboardTopSavingsBindings(snapshot.topSavingsMove)
+            : null;
+        await _applyDashboardTopSavings(generation);
       } catch (_) {
         // Packaged numeric values remain visible when live values are invalid.
       }
@@ -772,6 +780,7 @@ class _DesignShellState extends State<DesignShell> {
     if (page == 'dashboard') {
       await _applyDashboardBindings(generation);
       await _applyDashboardChart(generation);
+      await _applyDashboardTopSavings(generation);
       return;
     }
     if (_efficiencyPages.contains(page)) {
@@ -1053,6 +1062,36 @@ class _DesignShellState extends State<DesignShell> {
       await _controller.runJavaScriptReturningResult(script);
     } catch (_) {
       // The packaged values remain visible on script failure.
+    }
+  }
+
+  Future<void> _applyDashboardTopSavings(int generation) async {
+    final projection = _topSavingsBindings;
+    final read = _pageReads.latestRead;
+    final context = widget.designContextCoordinator?.context;
+    final ticket = _pageTicket;
+    if (!_pageReady ||
+        !_isCurrentPageLoad('dashboard', generation) ||
+        projection == null ||
+        read == null ||
+        read.page != 'dashboard' ||
+        context == null ||
+        ticket == null ||
+        read.accountId != context.accountId ||
+        read.homeId != context.homeId ||
+        !context.allowsReadMode(read.mode)) {
+      return;
+    }
+    final script = _bindingRenderer.updateScript(ticket, projection.bindings);
+    if (script == null) return;
+    try {
+      await _controller.runJavaScriptReturningResult(script);
+      if (!_bindingGate.acceptsTicket(ticket)) return;
+      await _controller.runJavaScriptReturningResult(
+        hideDashboardBindingsScript(ticket, projection.hiddenBindingIds),
+      );
+    } catch (_) {
+      // The packaged card remains visible on script failure.
     }
   }
 
