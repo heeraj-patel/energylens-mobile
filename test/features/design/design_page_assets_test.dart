@@ -52,7 +52,7 @@ String _withApprovedPolish(String text, String pageId) {
   if (pageId == 'dashboard') {
     return text.replaceFirst(
       'savings PIGGYBANK HAPPY Happy afternoon, Alex! Piggybank is looking safe & happy today 🌻',
-      'energy_savings_leaf Energylens provides customized energy savings tips for your home. Helping you & the Globe!!',
+      'energy_savings_leaf Energylens provides customized energy savings for your house. Helping you & Globe!!',
     );
   }
   if (pageId == 'tips_knowledge')
