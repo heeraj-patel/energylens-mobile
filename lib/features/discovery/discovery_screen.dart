@@ -1463,6 +1463,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         _nearbyState == 'failed' ||
         _nearbyState == 'cancelled' ||
         _nearbyState == 'partial';
+    final accountCandidates = _nearbyCandidates
+        .where(
+          (candidate) =>
+              candidate.isGoveeAccountDevice &&
+              !_addedNearbyIds.contains(candidate.id),
+        )
+        .toList(growable: false);
     return [
       const SizedBox(height: 24),
       Text('Nearby devices', style: theme.textTheme.titleLarge),
@@ -1491,23 +1498,52 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           ),
         ),
       for (final candidate in _nearbyCandidates)
-        if (!_addedNearbyIds.contains(candidate.id))
-          ListTile(
-            key: Key('nearby-${candidate.id}'),
-            contentPadding: EdgeInsets.zero,
-            title: Text(candidate.displayName),
-            trailing: TextButton(
-              onPressed:
-                  _busy ||
-                      (candidate.requiresAction &&
-                          (candidate.manualProtocol == null ||
-                              candidate.manualIpv4 == null))
-                  ? null
-                  : () => _addNearby(candidate),
-              child: const Text('Add'),
-            ),
-          ),
+        if (!candidate.isGoveeAccountDevice &&
+            !_addedNearbyIds.contains(candidate.id))
+          _nearbyRow(candidate),
+      if (accountCandidates.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        Text(
+          'From your accounts',
+          key: const Key('nearby-accounts-header'),
+          style: theme.textTheme.titleMedium,
+        ),
+        for (final candidate in accountCandidates)
+          _nearbyRow(candidate, accountSubtitle: 'Govee account'),
+      ],
     ];
+  }
+
+  Widget _nearbyRow(
+    NearbyDeviceCandidate candidate, {
+    String? accountSubtitle,
+  }) {
+    final overline = candidate.deviceLabel?.trim();
+    return ListTile(
+      key: Key('nearby-${candidate.id}'),
+      contentPadding: EdgeInsets.zero,
+      isThreeLine: accountSubtitle != null,
+      title: accountSubtitle != null && overline?.isNotEmpty == true
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(overline!, style: Theme.of(context).textTheme.labelSmall),
+                Text(candidate.displayName),
+              ],
+            )
+          : Text(candidate.displayName),
+      subtitle: accountSubtitle == null ? null : Text(accountSubtitle),
+      trailing: TextButton(
+        onPressed:
+            _busy ||
+                (candidate.requiresAction &&
+                    (candidate.manualProtocol == null ||
+                        candidate.manualIpv4 == null))
+            ? null
+            : () => _addNearby(candidate),
+        child: const Text('Add'),
+      ),
+    );
   }
 
   void _cancelNearby() {
