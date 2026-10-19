@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,8 @@ import '../discovery/discovery_api.dart';
 import '../discovery/discovery_credentials.dart';
 import 'photo_capture_service.dart';
 import 'cloud_usage_questions_screen.dart';
+import 'onboarding_draft_store.dart';
+import 'onboarding_persistence_repository.dart';
 
 class OcrIdentityFields {
   const OcrIdentityFields({
@@ -180,6 +183,12 @@ class ApplianceOnboardingScreen extends StatefulWidget {
     this.capture = const PhotoCaptureService(),
     this.cloudHome,
     this.cloudApi,
+    this.onboardingDrafts,
+    this.nearbyOrigin,
+    this.protocolDeviceId,
+    this.initialName,
+    this.initialManufacturer,
+    this.initialModel,
     this.webSearchLauncher,
   }) : assert(method == 'manual' || method == 'photo');
 
@@ -192,6 +201,12 @@ class ApplianceOnboardingScreen extends StatefulWidget {
   final PhotoCaptureService capture;
   final CloudHome? cloudHome;
   final CloudApiClient? cloudApi;
+  final DurableOnboardingDrafts? onboardingDrafts;
+  final CloudNearbyOrigin? nearbyOrigin;
+  final String? protocolDeviceId;
+  final String? initialName;
+  final String? initialManufacturer;
+  final String? initialModel;
   final Future<bool> Function(Uri uri)? webSearchLauncher;
 
   @override
@@ -275,6 +290,9 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
   void initState() {
     super.initState();
     _selectedPlugId = widget.plugId;
+    _name.text = widget.initialName ?? '';
+    _manufacturer.text = widget.initialManufacturer ?? '';
+    _model.text = widget.initialModel ?? '';
     for (final controller in [_name, _room]) {
       controller.addListener(_cloudInputChanged);
     }
@@ -682,6 +700,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
           model: _model.text.trim(),
           loadKind: _loadKind,
           onboardingMethod: widget.method,
+          protocolDeviceId: widget.protocolDeviceId,
           hoursPerWeek: hours,
           bulbCount: lighting ? bulbs : null,
           combinedInputWatts: lighting ? watts : null,
@@ -795,34 +814,49 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
         }
         return;
       }
-      final saved = await widget.cloudApi!.createAppliance(
-        widget.cloudHome!.id,
-        CloudApplianceCreate(
-          name: name,
-          category: _category,
-          room: _room.text.trim().isEmpty ? null : _room.text.trim(),
-          brand: brand,
-          fullModel: model,
-          fuel: _fuel,
-          matchQuality: 'unresolved',
-          fccId: _ocrIdentity.fccId,
-          icId: _ocrIdentity.icId,
-          serialNumber: _ocrIdentity.serialNumber,
-          upc: _upc,
-          bulbLabel: _category == 'lighting'
-              ? BulbLabel(
-                  loadKind: _loadKind,
-                  bulbCount: _loadKind == 'replaceable_bulb'
-                      ? int.tryParse(_bulbs.text.trim())
-                      : null,
-                  combinedInputWatts: _loadKind == 'replaceable_bulb'
-                      ? double.tryParse(_watts.text.trim())
-                      : null,
-                )
-              : null,
-        ),
-        idempotencyKey: _cloudSaveKey,
+      final draft = OnboardingDraft(
+        name: name,
+        category: _category,
+        room: _room.text.trim().isEmpty ? null : _room.text.trim(),
+        brand: brand,
+        fullModel: model,
+        fuel: _fuel,
+        fccId: _ocrIdentity.fccId,
+        icId: _ocrIdentity.icId,
+        serialNumber: _ocrIdentity.serialNumber,
+        upc: _upc,
+        bulbLabel: _category == 'lighting'
+            ? BulbLabel(
+                loadKind: _loadKind,
+                bulbCount: _loadKind == 'replaceable_bulb'
+                    ? int.tryParse(_bulbs.text.trim())
+                    : null,
+                combinedInputWatts: _loadKind == 'replaceable_bulb'
+                    ? double.tryParse(_watts.text.trim())
+                    : null,
+              )
+            : null,
+        nearbyOrigin: widget.nearbyOrigin,
       );
+      final drafts = widget.onboardingDrafts;
+      CloudAppliance saved;
+      if (drafts == null) {
+        saved = await widget.cloudApi!.createAppliance(
+          widget.cloudHome!.id,
+          draft.validated(),
+          idempotencyKey: _cloudSaveKey,
+        );
+      } else {
+        final pending = await drafts.restore();
+        if (pending != null &&
+            jsonEncode(pending.draft.validated().toJson()) !=
+                jsonEncode(draft.validated().toJson())) {
+          throw StateError('A different onboarding draft is pending');
+        }
+        final confirmed = await drafts.save(draft);
+        if (confirmed == null) throw StateError('Onboarding scope changed');
+        saved = confirmed;
+      }
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
@@ -937,7 +971,11 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
             if (_cloudOnly) ...[
               const SizedBox(height: 8),
               Text(
-                'Saving to ${widget.cloudHome!.name} in Cloud. This record is not linked to a local hub or meter.',
+                widget.nearbyOrigin == null
+                    ? 'Saving to ${widget.cloudHome!.name} in Cloud. This record is not linked to a local hub or meter.'
+                    : widget.cloudHome!.name.trim().isEmpty
+                    ? 'Saved to your home'
+                    : 'Saved to ${widget.cloudHome!.name.trim()}',
               ),
             ],
             if (widget.plugId != null) ...[

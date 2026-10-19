@@ -18,6 +18,8 @@ import 'plug_connection_status.dart';
 import 'discovery_credentials.dart';
 import 'hub_pairing_screen.dart';
 import '../identify/appliance_onboarding_screen.dart';
+import '../identify/onboarding_draft_store.dart';
+import '../identify/cloud_usage_questions_screen.dart';
 import 'device_energy_detail_screen.dart';
 
 String? _makeModelIdentity(String? manufacturer, String? model) {
@@ -37,6 +39,7 @@ class DiscoveryScreen extends StatefulWidget {
     this.cloudHome,
     this.cloudApi,
     this.accountId,
+    this.onboardingDrafts,
   });
 
   final DiscoveryApi api;
@@ -45,6 +48,7 @@ class DiscoveryScreen extends StatefulWidget {
   final CloudHome? cloudHome;
   final CloudApiClient? cloudApi;
   final String? accountId;
+  final DurableOnboardingDrafts? onboardingDrafts;
 
   @override
   State<DiscoveryScreen> createState() => _DiscoveryScreenState();
@@ -59,6 +63,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   List<NearbyDeviceCandidate> _nearbyCandidates = const [];
   List<NearbySavedDevice> _nearbySaved = const [];
   final Set<String> _addedNearbyIds = {};
+  final Set<String> _openingNearbyDeviceIds = {};
   bool _nearbyAvailable = false;
   String? _nearbyState;
   String? _nearbyScanId;
@@ -895,6 +900,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             plugId: plug.id,
             api: _hubApi,
             credentials: widget.credentials,
+            onboardingDrafts: widget.onboardingDrafts,
           ),
         ),
       );
@@ -1008,6 +1014,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             cloudApi: cloud,
             api: _hubApi,
             credentials: widget.credentials,
+            onboardingDrafts: widget.onboardingDrafts,
             hubAddress: _hub.text.trim(),
             hubToken: _token.text.trim(),
           ),
@@ -1489,6 +1496,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           title: Text(
             device.name.trim().isEmpty ? 'Unnamed device' : device.name,
           ),
+          onTap:
+              _busy || (widget.cloudApi == null && device.applianceId != null)
+              ? null
+              : () => _openNearbyDevice(device),
         ),
       for (final candidate in _nearbyCandidates)
         if (!_addedNearbyIds.contains(candidate.id))
@@ -1496,16 +1507,30 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             key: Key('nearby-${candidate.id}'),
             contentPadding: EdgeInsets.zero,
             title: Text(candidate.displayName),
-            trailing: TextButton(
-              onPressed:
-                  _busy ||
-                      (candidate.requiresAction &&
-                          (candidate.manualProtocol == null ||
-                              candidate.manualIpv4 == null))
-                  ? null
-                  : () => _addNearby(candidate),
-              child: const Text('Add'),
-            ),
+            onTap:
+                candidate.alreadySaved &&
+                    candidate.savedDeviceId != null &&
+                    !_busy &&
+                    !(widget.cloudApi == null &&
+                        _nearbySaved.any(
+                          (device) =>
+                              device.id == candidate.savedDeviceId &&
+                              device.applianceId != null,
+                        ))
+                ? () => _openSavedNearbyCandidate(candidate)
+                : null,
+            trailing: candidate.alreadySaved
+                ? null
+                : TextButton(
+                    onPressed:
+                        _busy ||
+                            (candidate.requiresAction &&
+                                (candidate.manualProtocol == null ||
+                                    candidate.manualIpv4 == null))
+                        ? null
+                        : () => _addNearby(candidate),
+                    child: const Text('Add'),
+                  ),
           ),
     ];
   }
@@ -1543,55 +1568,378 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     _nearbyScanToken = null;
   }
 
+  void _rememberSavedNearbyCandidate(
+    NearbyDeviceCandidate original,
+    NearbyDeviceCandidate refreshed,
+  ) {
+    if (!mounted) return;
+    setState(() {
+      _nearbyCandidates = [
+        for (final item in _nearbyCandidates)
+          if (item.id == original.id)
+            item.asSaved(refreshed.savedDeviceId)
+          else
+            item,
+      ];
+    });
+  }
+
   Future<void> _addNearby(NearbyDeviceCandidate candidate) async {
-    if (DateTime.now().millisecondsSinceEpoch >= candidate.expiresAtMs) {
-      setState(() => _error = 'Search stopped. Try again.');
-      return;
-    }
-    if (candidate.requiresAction) {
-      final continueSetup = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Finish setup'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Continue'),
-            ),
-          ],
-        ),
-      );
-      if (continueSetup == true && mounted) {
-        _ip.text = candidate.manualIpv4!;
-        setState(() {
-          _showManualEntry = true;
-          _manualProtocol = candidate.manualProtocol!;
-          _nearbyAvailable = false;
-        });
-        await _search(manual: true);
-      }
-      return;
-    }
+    if (_busy || candidate.alreadySaved) return;
     setState(() => _busy = true);
+    SavedPlug? connectPlug;
+    NearbySavedDevice? openDevice;
     try {
-      await _hubApi.adoptNearby(
-        _hub.text.trim(),
-        _token.text.trim(),
-        candidate,
-        candidate.displayName,
-      );
-      if (mounted) setState(() => _addedNearbyIds.add(candidate.id));
+      var selected = candidate;
+      var refreshed = false;
+      if (DateTime.now().millisecondsSinceEpoch >= selected.expiresAtMs) {
+        selected = await _refreshNearbyCandidate(candidate);
+        refreshed = true;
+      }
+      if (!mounted) return;
+      if (selected.alreadySaved) {
+        _rememberSavedNearbyCandidate(candidate, selected);
+        await _loadNearbySaved();
+        if (!mounted) return;
+        final savedId = selected.savedDeviceId;
+        final saved = _nearbySaved
+            .where((item) => item.id == savedId)
+            .firstOrNull;
+        if (saved != null) {
+          setState(() => _addedNearbyIds.add(candidate.id));
+          setState(() => _busy = false);
+          await _openNearbyDevice(saved);
+        } else if (mounted) {
+          setState(() => _error = 'Couldn’t connect. Try again.');
+        }
+        return;
+      }
+      if (selected.requiresAction) {
+        if (selected.manualProtocol == null || selected.manualIpv4 == null) {
+          throw StateError('Search stopped. Try again.');
+        }
+        final continueSetup = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Finish setup'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Continue'),
+              ),
+            ],
+          ),
+        );
+        if (continueSetup == true && mounted) {
+          _ip.text = selected.manualIpv4!;
+          setState(() {
+            _showManualEntry = true;
+            _manualProtocol = selected.manualProtocol!;
+            _nearbyAvailable = false;
+            _busy = false;
+          });
+          await _search(manual: true);
+        }
+        return;
+      }
+      NearbySavedDevice adopted;
+      try {
+        adopted = await _hubApi.adoptNearby(
+          _hub.text.trim(),
+          _token.text.trim(),
+          selected,
+          selected.displayName,
+        );
+      } on HubRequestException catch (error) {
+        if (error.code != 'candidate_expired' && error.code != 'scan_expired')
+          rethrow;
+        if (refreshed) throw StateError('Search stopped. Try again.');
+        selected = await _refreshNearbyCandidate(candidate);
+        refreshed = true;
+        if (selected.alreadySaved) {
+          _rememberSavedNearbyCandidate(candidate, selected);
+          await _loadNearbySaved();
+          final savedId = selected.savedDeviceId;
+          final saved = _nearbySaved
+              .where((item) => item.id == savedId)
+              .firstOrNull;
+          if (saved != null && mounted) {
+            setState(() => _addedNearbyIds.add(candidate.id));
+            setState(() => _busy = false);
+            await _openNearbyDevice(saved);
+          } else if (mounted) {
+            setState(() => _error = 'Couldn’t connect. Try again.');
+          }
+          return;
+        }
+        if (!selected.canAdopt) {
+          throw StateError('Search stopped. Try again.');
+        }
+        adopted = await _hubApi.adoptNearby(
+          _hub.text.trim(),
+          _token.text.trim(),
+          selected,
+          selected.displayName,
+        );
+      }
+      if (!mounted) return;
+      setState(() {
+        _addedNearbyIds.add(candidate.id);
+        _addedNearbyIds.add(selected.id);
+        _nearbySaved = [
+          ..._nearbySaved.where((item) => item.id != adopted.id),
+          adopted,
+        ];
+      });
       await _loadNearbySaved();
-    } catch (_) {
+      final legacy = adopted.bindings.any(
+        (binding) =>
+            binding.adapterInstanceId == 'legacy-local' &&
+            binding.securityDomainId == 'legacy-local' &&
+            binding.nativeDeviceId == adopted.id,
+      );
+      if (legacy) {
+        try {
+          final plugs = await _hubApi.saved(
+            _hub.text.trim(),
+            _token.text.trim(),
+          );
+          if (mounted) {
+            setState(() => _saved = plugs);
+            final plug = plugs
+                .where((item) => item.id == adopted.id)
+                .firstOrNull;
+            if (plug?.connectedAppliance == null) connectPlug = plug;
+          }
+        } catch (_) {
+          // The Hub device remains saved if the v1 inventory is unavailable.
+        }
+      }
+      if (!legacy) openDevice = adopted;
+    } catch (error) {
       if (mounted) {
-        setState(() => _error = 'Couldn’t connect. Try again.');
+        setState(
+          () => _error =
+              error is StateError &&
+                  error.message == 'Search stopped. Try again.'
+              ? 'Search stopped. Try again.'
+              : 'Couldn’t connect. Try again.',
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+    if (connectPlug != null && mounted) await _connectAppliance(connectPlug);
+    if (openDevice != null && mounted) await _openNearbyDevice(openDevice);
+  }
+
+  Future<void> _openSavedNearbyCandidate(
+    NearbyDeviceCandidate candidate,
+  ) async {
+    final savedId = candidate.savedDeviceId;
+    if (savedId == null || _busy) return;
+    var device = _nearbySaved.where((item) => item.id == savedId).firstOrNull;
+    if (device == null) {
+      setState(() => _busy = true);
+      await _loadNearbySaved();
+      if (mounted) setState(() => _busy = false);
+      device = _nearbySaved.where((item) => item.id == savedId).firstOrNull;
+    }
+    if (device != null && mounted) {
+      await _openNearbyDevice(device);
+    } else if (mounted) {
+      setState(() => _error = 'Couldn’t connect. Try again.');
+    }
+  }
+
+  Future<void> _openNearbyDevice(NearbySavedDevice device) async {
+    if (_busy || !mounted || !_openingNearbyDeviceIds.add(device.id)) return;
+    try {
+      if (device.id.isEmpty || device.bindings.isEmpty) {
+        setState(() => _error = 'Couldn’t connect. Try again.');
+        return;
+      }
+      final legacy = device.bindings.any(
+        (binding) =>
+            binding.adapterInstanceId == 'legacy-local' &&
+            binding.securityDomainId == 'legacy-local' &&
+            binding.nativeDeviceId == device.id,
+      );
+      if (legacy) {
+        var plug = _saved.where((item) => item.id == device.id).firstOrNull;
+        if (plug == null) {
+          setState(() => _busy = true);
+          try {
+            final plugs = await _hubApi.saved(
+              _hub.text.trim(),
+              _token.text.trim(),
+            );
+            if (!mounted) return;
+            setState(() => _saved = plugs);
+            plug = plugs.where((item) => item.id == device.id).firstOrNull;
+          } catch (_) {
+            if (mounted)
+              setState(() => _error = 'Couldn’t connect. Try again.');
+            return;
+          } finally {
+            if (mounted) setState(() => _busy = false);
+          }
+        }
+        if (plug == null) {
+          if (mounted) setState(() => _error = 'Couldn’t connect. Try again.');
+          return;
+        }
+        if (plug.connectedAppliance == null) await _connectAppliance(plug);
+        return;
+      }
+      final hub = _hub.text.trim();
+      final token = _token.text.trim();
+      final epoch = _scanEpoch;
+      final cloud = widget.cloudApi;
+      final home = widget.cloudHome;
+      CloudNearbyOrigin? origin;
+      CloudAppliance? linked;
+      if (cloud == null && device.applianceId != null) return;
+      if (cloud != null && home != null) {
+        if (widget.onboardingDrafts == null || widget.accountId == null) {
+          setState(() => _error = 'Couldn’t connect. Try again.');
+          return;
+        }
+        setState(() => _busy = true);
+        try {
+          final ownership = await _ownedHub();
+          if (ownership == null ||
+              ownership.homeId != home.id ||
+              ownership.localHubId != _pairedHubId ||
+              ownership.ownershipEpoch != _pairedOwnershipEpoch) {
+            if (mounted)
+              setState(() => _error = 'Couldn’t connect. Try again.');
+            return;
+          }
+          origin = CloudNearbyOrigin(
+            hubId: ownership.hubId,
+            ownershipEpoch: ownership.ownershipEpoch,
+            protocolDeviceId: device.id,
+          );
+          final matches = (await cloud.appliances(home.id))
+              .where(
+                (item) =>
+                    item.archivedAt == null &&
+                    origin!.matches(item.nearbyOrigin),
+              )
+              .toList();
+          if (matches.length > 1) {
+            if (mounted)
+              setState(() => _error = 'Couldn’t connect. Try again.');
+            return;
+          }
+          linked = matches.firstOrNull;
+        } catch (_) {
+          if (mounted) setState(() => _error = 'Couldn’t connect. Try again.');
+          return;
+        } finally {
+          if (mounted) setState(() => _busy = false);
+        }
+      }
+      if (!mounted ||
+          epoch != _scanEpoch ||
+          hub != _hub.text.trim() ||
+          token != _token.text.trim())
+        return;
+      if (linked != null && cloud != null && home != null) {
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute<void>(
+            builder: (_) => CloudUsageQuestionsScreen(
+              home: home,
+              appliance: linked!,
+              api: cloud,
+              purpose: 'review',
+            ),
+          ),
+        );
+        return;
+      }
+      await Navigator.push<Object>(
+        context,
+        MaterialPageRoute<Object>(
+          builder: (_) => ApplianceOnboardingScreen(
+            method: 'manual',
+            protocolDeviceId: cloud == null ? device.id : null,
+            nearbyOrigin: origin,
+            initialName: device.name,
+            initialManufacturer: device.manufacturer,
+            initialModel: device.model,
+            api: _hubApi,
+            credentials: widget.credentials,
+            hubAddress: hub,
+            hubToken: token,
+            cloudHome: home,
+            cloudApi: cloud,
+            onboardingDrafts: widget.onboardingDrafts,
+          ),
+        ),
+      );
+      if (!mounted) return;
+      await _loadNearbySaved();
+      if (cloud != null && home != null) {
+        try {
+          await cloud.appliances(home.id);
+        } catch (_) {}
+      }
+    } finally {
+      _openingNearbyDeviceIds.remove(device.id);
+    }
+  }
+
+  Future<NearbyDeviceCandidate> _refreshNearbyCandidate(
+    NearbyDeviceCandidate previous,
+  ) async {
+    final identity = previous.stableIdentity;
+    if (identity == null) throw StateError('Search stopped. Try again.');
+    final hub = _hub.text.trim();
+    final token = _token.text.trim();
+    final epoch = _scanEpoch;
+    var scan = await _hubApi.startNearbyScan(hub, token);
+    var accepted = false;
+    try {
+      final matches = <String, NearbyDeviceCandidate>{};
+      var completed = false;
+      for (var attempt = 0; attempt < 15; attempt++) {
+        if (!mounted ||
+            epoch != _scanEpoch ||
+            hub != _hub.text.trim() ||
+            token != _token.text.trim()) {
+          throw StateError('Search stopped. Try again.');
+        }
+        for (final found in scan.candidates) {
+          if (identity.matches(found.stableIdentity)) matches[found.id] = found;
+        }
+        if (scan.nextCursor case final cursor?) {
+          scan = await _hubApi.nearbyScan(hub, token, scan.id, cursor: cursor);
+          continue;
+        }
+        if (scan.isTerminal) {
+          completed = scan.state == 'complete';
+          break;
+        }
+        await Future<void>.delayed(const Duration(seconds: 1));
+        scan = await _hubApi.nearbyScan(hub, token, scan.id);
+      }
+      if (!completed ||
+          matches.length != 1 ||
+          DateTime.now().millisecondsSinceEpoch >=
+              matches.values.single.expiresAtMs) {
+        throw StateError('Search stopped. Try again.');
+      }
+      accepted = true;
+      return matches.values.single;
+    } finally {
+      if (!accepted) await _cancelScan(hub, token, scan.id);
     }
   }
 

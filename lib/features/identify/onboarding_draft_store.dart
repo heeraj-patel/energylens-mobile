@@ -521,6 +521,8 @@ class _Record {
         if (draft.serialNumber != null) 'serial_number': draft.serialNumber,
         if (draft.upc != null) 'upc': draft.upc,
         if (draft.bulbLabel != null) 'bulb_label': draft.bulbLabel!.toJson(),
+        if (draft.nearbyOrigin != null)
+          'nearby_origin': draft.nearbyOrigin!.toJson(),
         if (product != null)
           'reviewed_catalog': {
             'id': product.id,
@@ -554,6 +556,16 @@ _Record? _parse(String raw) {
     if (fields['room'] != null && fields['room'] is! String) return null;
     for (final key in ['fcc_id', 'ic_id', 'serial_number', 'upc']) {
       if (fields[key] != null && fields[key] is! String) return null;
+    }
+    CloudNearbyOrigin? nearbyOrigin;
+    final rawOrigin = fields['nearby_origin'];
+    if (rawOrigin != null) {
+      if (rawOrigin is! Map<String, dynamic> ||
+          rawOrigin['hub_id'] is! String ||
+          rawOrigin['ownership_epoch'] is! int ||
+          rawOrigin['protocol_device_id'] is! String)
+        return null;
+      nearbyOrigin = CloudNearbyOrigin.fromJson(rawOrigin);
     }
     BulbLabel? bulbLabel;
     if (fields['bulb_label'] != null) {
@@ -608,6 +620,7 @@ _Record? _parse(String raw) {
       serialNumber: fields['serial_number'] as String?,
       upc: fields['upc'] as String?,
       bulbLabel: bulbLabel,
+      nearbyOrigin: nearbyOrigin,
     );
     draft.validated();
     return _Record(

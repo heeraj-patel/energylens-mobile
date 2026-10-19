@@ -63,6 +63,30 @@ void main() {
     },
   );
 
+  test('scan identity and saved state decode with older Hub fallback', () {
+    final old = NearbyDeviceCandidate.fromJson(candidateJson);
+    expect(old.alreadySaved, isFalse);
+    expect(old.stableIdentity, isNull);
+    final saved = NearbyDeviceCandidate.fromJson({
+      ...candidateJson,
+      'already_saved': true,
+      'stable_identity': {'source': 'ssdp', 'value': 'uuid:tv-one'},
+    });
+    expect(saved.alreadySaved, isTrue);
+    expect(
+      saved.stableIdentity!.matches(
+        const NearbyStableIdentity('ssdp', 'uuid:tv-one'),
+      ),
+      isTrue,
+    );
+    expect(
+      saved.stableIdentity!.matches(
+        const NearbyStableIdentity('ssdp', 'uuid:tv-two'),
+      ),
+      isFalse,
+    );
+  });
+
   test('generic inventory preserves endpoint scope and binding identity', () {
     final device = NearbySavedDevice.fromJson({
       'id': 'device-1',

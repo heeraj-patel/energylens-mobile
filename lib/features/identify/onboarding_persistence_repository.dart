@@ -28,7 +28,23 @@ class CloudOnboardingPersistenceSource implements OnboardingPersistenceSource {
     String homeId,
     CloudApplianceCreate input,
     String key,
-  ) => api.createAppliance(homeId, input, idempotencyKey: key);
+  ) async {
+    try {
+      return await api.createAppliance(homeId, input, idempotencyKey: key);
+    } on CloudApiException catch (error) {
+      final linkedId = error.details['appliance_id'];
+      if (input.nearbyOrigin == null ||
+          error.code != 'nearby_origin_conflict' ||
+          linkedId is! String)
+        rethrow;
+      final existing = (await api.appliance(homeId, linkedId)).value;
+      if (existing.homeId != homeId ||
+          !input.nearbyOrigin!.matches(existing.nearbyOrigin))
+        rethrow;
+      return existing;
+    }
+  }
+
   @override
   Future<CloudAppliance> detail(String homeId, String applianceId) async =>
       (await api.appliance(homeId, applianceId)).value;
@@ -68,6 +84,7 @@ class OnboardingDraft {
     this.serialNumber,
     this.upc,
     this.bulbLabel,
+    this.nearbyOrigin,
   });
   final String name;
   final String category;
@@ -81,6 +98,7 @@ class OnboardingDraft {
   final String? serialNumber;
   final String? upc;
   final BulbLabel? bulbLabel;
+  final CloudNearbyOrigin? nearbyOrigin;
 
   CloudApplianceCreate validated() {
     String requiredText(String value, String field) {
@@ -142,6 +160,7 @@ class OnboardingDraft {
       serialNumber: optionalIdentity(serialNumber, 'serialNumber'),
       upc: optionalIdentity(upc, 'upc'),
       bulbLabel: bulbLabel,
+      nearbyOrigin: nearbyOrigin,
     );
   }
 }
@@ -271,7 +290,9 @@ class OnboardingPersistenceRepository {
         detail.fccId != input.fccId ||
         detail.icId != input.icId ||
         detail.serialNumber != input.serialNumber ||
-        detail.upc != input.upc) {
+        detail.upc != input.upc ||
+        input.nearbyOrigin != null &&
+            !input.nearbyOrigin!.matches(detail.nearbyOrigin)) {
       throw const FormatException('Saved appliance readback differs');
     }
     _inventory = null;

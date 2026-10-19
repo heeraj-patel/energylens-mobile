@@ -249,6 +249,9 @@ class NearbyDeviceCandidate {
     required this.scanId,
     required this.expiresAtMs,
     required this.requiresAction,
+    this.alreadySaved = false,
+    this.stableIdentity,
+    this.savedDeviceId,
     required this.addresses,
     this.sources = const [],
     required this.capabilities,
@@ -269,6 +272,13 @@ class NearbyDeviceCandidate {
         category: json['category'] as String?,
         name: json['name'] as String?,
         requiresAction: json['requires_action'] as bool,
+        alreadySaved: json['already_saved'] as bool? ?? false,
+        stableIdentity: json['stable_identity'] is Map<String, dynamic>
+            ? NearbyStableIdentity.fromJson(
+                json['stable_identity'] as Map<String, dynamic>,
+              )
+            : null,
+        savedDeviceId: json['saved_device_id'] as String?,
         reasonCode: json['reason_code'] as String?,
         addresses: (json['addresses'] as List<dynamic>)
             .map(
@@ -294,10 +304,31 @@ class NearbyDeviceCandidate {
   final String? category;
   final String? name;
   final bool requiresAction;
+  final bool alreadySaved;
+  final NearbyStableIdentity? stableIdentity;
+  final String? savedDeviceId;
   final String? reasonCode;
   final List<NearbyDeviceAddress> addresses;
   final List<String> sources;
   final List<NearbyDeviceCapability> capabilities;
+
+  NearbyDeviceCandidate asSaved(String? deviceId) => NearbyDeviceCandidate(
+    id: id,
+    scanId: scanId,
+    expiresAtMs: expiresAtMs,
+    requiresAction: requiresAction,
+    alreadySaved: true,
+    stableIdentity: stableIdentity,
+    savedDeviceId: deviceId,
+    addresses: addresses,
+    sources: sources,
+    capabilities: capabilities,
+    manufacturer: manufacturer,
+    model: model,
+    category: category,
+    name: name,
+    reasonCode: reasonCode,
+  );
 
   String get displayName {
     final value = name?.trim().isNotEmpty == true
@@ -322,6 +353,19 @@ class NearbyDeviceCandidate {
       .where((address) => address.kind == 'ipv4')
       .map((address) => address.value)
       .firstOrNull;
+}
+
+class NearbyStableIdentity {
+  const NearbyStableIdentity(this.source, this.value);
+
+  factory NearbyStableIdentity.fromJson(Map<String, dynamic> json) =>
+      NearbyStableIdentity(json['source'] as String, json['value'] as String);
+
+  final String source;
+  final String value;
+
+  bool matches(NearbyStableIdentity? other) =>
+      other != null && source == other.source && value == other.value;
 }
 
 class NearbyDeviceAddress {
@@ -391,6 +435,7 @@ class NearbySavedDevice {
     this.model,
     this.endpoints = const [],
     this.bindings = const [],
+    this.applianceId,
   });
 
   factory NearbySavedDevice.fromJson(Map<String, dynamic> json) =>
@@ -411,6 +456,7 @@ class NearbySavedDevice {
                   NearbyDeviceBinding.fromJson(item as Map<String, dynamic>),
             )
             .toList(growable: false),
+        applianceId: json['appliance_id'] as int?,
       );
 
   final String id;
@@ -419,6 +465,7 @@ class NearbySavedDevice {
   final String? model;
   final List<NearbyDeviceEndpoint> endpoints;
   final List<NearbyDeviceBinding> bindings;
+  final int? applianceId;
 }
 
 class NearbyDeviceEndpoint {
@@ -822,6 +869,7 @@ class ApplianceInput {
     this.hoursPerWeek,
     this.bulbCount,
     this.combinedInputWatts,
+    this.protocolDeviceId,
   });
 
   final String name;
@@ -834,6 +882,7 @@ class ApplianceInput {
   final double? hoursPerWeek;
   final int? bulbCount;
   final double? combinedInputWatts;
+  final String? protocolDeviceId;
 
   Map<String, dynamic> toJson() => {
     'name': name,
@@ -846,6 +895,7 @@ class ApplianceInput {
     'hours_per_week': hoursPerWeek,
     'bulb_count': bulbCount,
     'combined_input_watts': combinedInputWatts,
+    if (protocolDeviceId != null) 'protocol_device_id': protocolDeviceId,
   };
 }
 
