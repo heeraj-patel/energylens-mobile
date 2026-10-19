@@ -1371,7 +1371,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 _hub.text.trim(),
                 _token.text.trim(),
                 _ip.text.trim(),
-                protocol: _manualProtocol,
+                protocol:
+                    const {
+                      'geeni',
+                      'kmc',
+                      'smart_life',
+                    }.contains(_manualProtocol)
+                    ? 'tuya'
+                    : _manualProtocol,
               ),
             ]
           : await _hubApi.scan(_hub.text.trim(), _token.text.trim());
@@ -1500,7 +1507,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       for (final candidate in _nearbyCandidates)
         if (!candidate.isGoveeAccountDevice &&
             !_addedNearbyIds.contains(candidate.id))
-          _nearbyRow(candidate),
+          _nearbyRow(
+            candidate,
+            subtitle: candidate.isTuyaDevice ? 'Tuya compatible' : null,
+          ),
       if (accountCandidates.isNotEmpty) ...[
         const SizedBox(height: 16),
         Text(
@@ -1509,21 +1519,18 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           style: theme.textTheme.titleMedium,
         ),
         for (final candidate in accountCandidates)
-          _nearbyRow(candidate, accountSubtitle: 'Govee account'),
+          _nearbyRow(candidate, subtitle: 'Govee account'),
       ],
     ];
   }
 
-  Widget _nearbyRow(
-    NearbyDeviceCandidate candidate, {
-    String? accountSubtitle,
-  }) {
+  Widget _nearbyRow(NearbyDeviceCandidate candidate, {String? subtitle}) {
     final overline = candidate.deviceLabel?.trim();
     return ListTile(
       key: Key('nearby-${candidate.id}'),
       contentPadding: EdgeInsets.zero,
-      isThreeLine: accountSubtitle != null,
-      title: accountSubtitle != null && overline?.isNotEmpty == true
+      isThreeLine: subtitle != null,
+      title: subtitle != null && overline?.isNotEmpty == true
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1532,11 +1539,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               ],
             )
           : Text(candidate.displayName),
-      subtitle: accountSubtitle == null ? null : Text(accountSubtitle),
+      subtitle: subtitle == null ? null : Text(subtitle),
       trailing: TextButton(
         onPressed:
             _busy ||
                 (candidate.requiresAction &&
+                    !candidate.needsDeviceKey &&
                     (candidate.manualProtocol == null ||
                         candidate.manualIpv4 == null))
             ? null
@@ -1584,7 +1592,17 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       setState(() => _error = 'Search stopped. Try again.');
       return;
     }
-    if (candidate.requiresAction) {
+    if (candidate.needsDeviceKey) {
+      final saved = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        builder: (context) => _DeviceKeySheet(
+          title: candidate.displayName,
+          saveKey: (key) => _saveDeviceKey(candidate, key),
+        ),
+      );
+      if (saved != true || !mounted) return;
+    } else if (candidate.requiresAction) {
       final continueSetup = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -1628,6 +1646,25 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       }
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Sends the key to the hub and waits for its check; true only when the plug accepts it.
+  Future<bool> _saveDeviceKey(
+    NearbyDeviceCandidate candidate,
+    String key,
+  ) async {
+    final hub = _hub.text.trim();
+    final token = _token.text.trim();
+    try {
+      var job = await _hubApi.startDeviceKeyJob(hub, token, candidate, key);
+      for (var i = 0; i < 30 && !job.isReady && !job.isFailed; i++) {
+        await Future<void>.delayed(const Duration(seconds: 1));
+        job = await _hubApi.deviceKeyJob(hub, token, job.id);
+      }
+      return job.isReady;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -1823,6 +1860,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     child: Text('Shelly Gen2'),
                   ),
                   DropdownMenuItem(value: 'tasmota', child: Text('Tasmota')),
+                  DropdownMenuItem(value: 'geeni', child: Text('Geeni')),
+                  DropdownMenuItem(value: 'kmc', child: Text('KMC')),
+                  DropdownMenuItem(
+                    value: 'smart_life',
+                    child: Text('Smart Life'),
+                  ),
                 ],
                 onChanged: _busy
                     ? null
@@ -2056,6 +2099,107 @@ class _PlugCandidateCard extends StatelessWidget {
               child: const Text('Save this plug'),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DeviceKeySheet extends StatefulWidget {
+  const _DeviceKeySheet({required this.title, required this.saveKey});
+
+  final String title;
+  final Future<bool> Function(String key) saveKey;
+
+  @override
+  State<_DeviceKeySheet> createState() => _DeviceKeySheetState();
+}
+
+class _DeviceKeySheetState extends State<_DeviceKeySheet> {
+  final _key = TextEditingController();
+  bool _busy = false;
+  bool _failed = false;
+
+  @override
+  void dispose() {
+    _key.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() {
+      _busy = true;
+      _failed = false;
+    });
+    final ok = await widget.saveKey(_key.text.trim());
+    if (!mounted) return;
+    if (ok) {
+      Navigator.pop(context, true);
+    } else {
+      setState(() {
+        _busy = false;
+        _failed = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        20,
+        20,
+        20 + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Enter device key', style: theme.textTheme.titleLarge),
+          const SizedBox(height: 8),
+          Text(widget.title, style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          const Text(
+            'This plug needs its device key before it can share readings. You can find it in your Tuya IoT Platform project.',
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            key: const Key('device-key-field'),
+            controller: _key,
+            enabled: !_busy,
+            autocorrect: false,
+            enableSuggestions: false,
+            maxLength: 16,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              counterText: '',
+              labelText: 'Device key',
+              helperText: '16 characters',
+              errorText: _failed
+                  ? "This key didn't work for this plug. Check it and try again."
+                  : null,
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: _busy ? null : () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: _busy || _key.text.trim().length != 16
+                    ? null
+                    : _save,
+                child: const Text('Save key'),
+              ),
+            ],
+          ),
         ],
       ),
     );

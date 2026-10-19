@@ -313,8 +313,14 @@ class NearbyDeviceCandidate {
 
   bool get isGoveeAccountDevice => sources.contains('govee_cloud');
 
+  bool get isTuyaDevice => sources.contains('tuya');
+
+  bool get needsDeviceKey =>
+      requiresAction && reasonCode == 'local_key_required';
+
   bool get canAdopt =>
-      !requiresAction && DateTime.now().millisecondsSinceEpoch < expiresAtMs;
+      (!requiresAction || needsDeviceKey) &&
+      DateTime.now().millisecondsSinceEpoch < expiresAtMs;
 
   String? get manualProtocol {
     for (final source in sources) {
@@ -329,6 +335,21 @@ class NearbyDeviceCandidate {
       .where((address) => address.kind == 'ipv4')
       .map((address) => address.value)
       .firstOrNull;
+}
+
+/// Progress of a manual Tuya device-key check on the hub. It never carries the key.
+class DeviceKeyJob {
+  const DeviceKeyJob(this.id, this.state);
+
+  factory DeviceKeyJob.fromJson(Map<String, dynamic> json) =>
+      DeviceKeyJob(json['id'] as String, json['state'] as String);
+
+  final String id;
+  final String state;
+
+  bool get isReady => state == 'ready_for_adoption';
+
+  bool get isFailed => state == 'failed' || state == 'cancelled';
 }
 
 class NearbyDeviceAddress {
@@ -1202,6 +1223,33 @@ class DiscoveryApi {
     });
     return NearbySavedDevice.fromJson(response);
   }
+
+  Future<DeviceKeyJob> startDeviceKeyJob(
+    String baseUrl,
+    String token,
+    NearbyDeviceCandidate candidate,
+    String key,
+  ) async => DeviceKeyJob.fromJson(
+    await _post(baseUrl, token, '/v2/onboarding/jobs', {
+      'operation': 'credential_connect',
+      'provider': 'tuya_local_key',
+      'candidate_id': candidate.id,
+      'secret': key,
+    }),
+  );
+
+  Future<DeviceKeyJob> deviceKeyJob(
+    String baseUrl,
+    String token,
+    String jobId,
+  ) async => DeviceKeyJob.fromJson(
+    await _request(
+      baseUrl,
+      token,
+      '/v2/onboarding/jobs/${Uri.encodeComponent(jobId)}',
+      'GET',
+    ) as Map<String, dynamic>,
+  );
 
   Future<HubClaimProof> claimProof(
     HubClaimChallenge challenge, {

@@ -22,6 +22,9 @@ class _Api extends DiscoveryApi {
   final String state;
   int adoptionCount = 0;
   int probeCount = 0;
+  final probeProtocols = <String>[];
+  final submittedKeys = <String>[];
+  bool keyAccepted = true;
   bool failInventory = false;
   bool failScan = false;
   Completer<NearbyScan>? pendingStart;
@@ -73,6 +76,17 @@ class _Api extends DiscoveryApi {
   }
 
   @override
+  Future<DeviceKeyJob> startDeviceKeyJob(
+    String baseUrl,
+    String token,
+    NearbyDeviceCandidate candidate,
+    String key,
+  ) async {
+    submittedKeys.add(key);
+    return DeviceKeyJob('job', keyAccepted ? 'ready_for_adoption' : 'failed');
+  }
+
+  @override
   Future<NearbySavedDevice> adoptNearby(
     String baseUrl,
     String token,
@@ -92,6 +106,7 @@ class _Api extends DiscoveryApi {
     String protocol = 'kasa',
   }) async {
     probeCount++;
+    probeProtocols.add(protocol);
     return DiscoveredPlug(
       id: 'verified',
       ip: ipv4,
@@ -201,6 +216,192 @@ void main() {
       'requires_action': false,
     });
     expect(govee.displayName, 'Govee Plug');
+  });
+
+  NearbyDeviceCandidate tuya({String? name, bool needsKey = false}) =>
+      NearbyDeviceCandidate.fromJson({
+        'candidate_id': 'kmc',
+        'scan_id': 'scan',
+        'expires_at_ms': 4102444800000,
+        'manufacturer': null,
+        'name': name,
+        'model': 'KMC Smart Tap',
+        'category': 'smart_plug',
+        'device_label': 'KMC Smart Tap',
+        'addresses': [
+          {'kind': 'ipv4', 'value': '192.168.68.65', 'interface': null},
+        ],
+        'sources': ['tuya'],
+        'capabilities': <dynamic>[],
+        'requires_action': needsKey,
+        'reason_code': needsKey ? 'local_key_required' : null,
+      });
+
+  Future<void> scanFor(WidgetTester tester, _Api api) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(api: api, credentials: _Credentials()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Scan for plugs'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('Tuya row shows label, app name and fixed subtitle only', (
+    tester,
+  ) async {
+    final api = _Api(tuya(name: 'Kitchen strip'));
+    await scanFor(tester, api);
+    await tester.ensureVisible(find.text('Kitchen strip'));
+    expect(find.text('KMC Smart Tap'), findsOneWidget);
+    expect(find.text('Kitchen strip'), findsOneWidget);
+    expect(find.text('Tuya compatible'), findsOneWidget);
+    expect(find.text('Add'), findsOneWidget);
+    expect(find.text('From your accounts'), findsNothing);
+    expect(find.textContaining('192.168'), findsNothing);
+    expect(find.textContaining('tuya'), findsNothing);
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect(api.adoptionCount, 1);
+  });
+
+  testWidgets('Tuya row without an app name titles itself by its label', (
+    tester,
+  ) async {
+    final api = _Api(tuya());
+    await scanFor(tester, api);
+    await tester.ensureVisible(find.text('Tuya compatible'));
+    expect(find.text('KMC Smart Tap'), findsNWidgets(2));
+    expect(find.text('Tuya compatible'), findsOneWidget);
+  });
+
+  testWidgets('Add on a keyless Tuya device opens the device key sheet', (
+    tester,
+  ) async {
+    final api = _Api(tuya(name: 'Aquarium', needsKey: true));
+    await scanFor(tester, api);
+    await tester.ensureVisible(find.text('Add'));
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, 'Add'))
+          .onPressed,
+      isNotNull,
+    );
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect(find.text('Finish setup'), findsNothing);
+    expect(find.text('Enter device key'), findsOneWidget);
+    expect(find.text('Aquarium'), findsNWidgets(2));
+    expect(
+      find.text(
+        'This plug needs its device key before it can share readings. You can find it in your Tuya IoT Platform project.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Device key'), findsOneWidget);
+    expect(find.text('16 characters'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.text('Save key'), findsOneWidget);
+    final save = find.widgetWithText(FilledButton, 'Save key');
+    expect(tester.widget<FilledButton>(save).onPressed, isNull);
+    await tester.enterText(find.byKey(const Key('device-key-field')), 'short');
+    await tester.pump();
+    expect(tester.widget<FilledButton>(save).onPressed, isNull);
+    await tester.enterText(
+      find.byKey(const Key('device-key-field')),
+      '0123456789abcdef',
+    );
+    await tester.pump();
+    expect(tester.widget<FilledButton>(save).onPressed, isNotNull);
+  });
+
+  testWidgets(
+    'a rejected device key shows the approved error and keeps the sheet',
+    (tester) async {
+      final api = _Api(tuya(name: 'Aquarium', needsKey: true))
+        ..keyAccepted = false;
+      await scanFor(tester, api);
+      await tester.ensureVisible(find.text('Add'));
+      await tester.tap(find.text('Add'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('device-key-field')),
+        '0123456789abcdef',
+      );
+      await tester.pump();
+      await tester.tap(find.text('Save key'));
+      await tester.pumpAndSettle();
+      expect(api.submittedKeys, ['0123456789abcdef']);
+      expect(
+        find.text(
+          "This key didn't work for this plug. Check it and try again.",
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Enter device key'), findsOneWidget);
+      expect(api.adoptionCount, 0);
+    },
+  );
+
+  testWidgets('an accepted device key closes the sheet and adds the plug', (
+    tester,
+  ) async {
+    final api = _Api(tuya(name: 'Aquarium', needsKey: true));
+    await scanFor(tester, api);
+    await tester.ensureVisible(find.text('Add'));
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('device-key-field')),
+      '0123456789abcdef',
+    );
+    await tester.pump();
+    await tester.tap(find.text('Save key'));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter device key'), findsNothing);
+    expect(api.adoptionCount, 1);
+  });
+
+  testWidgets('Cancel on the device key sheet adds nothing', (tester) async {
+    final api = _Api(tuya(name: 'Aquarium', needsKey: true));
+    await scanFor(tester, api);
+    await tester.ensureVisible(find.text('Add'));
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter device key'), findsNothing);
+    expect(api.submittedKeys, isEmpty);
+    expect(api.adoptionCount, 0);
+  });
+
+  testWidgets('manual device type lists Geeni, KMC and Smart Life as Tuya', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final api = _Api(candidate());
+    await scanFor(tester, api);
+    await tester.tap(find.text('Enter a plug IP address'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('manualPlugIp')),
+      '192.168.68.65',
+    );
+    await tester.ensureVisible(find.text('Device type'));
+    await tester.tap(find.text('TP-Link Kasa'));
+    await tester.pumpAndSettle();
+    expect(find.text('Geeni'), findsOneWidget);
+    expect(find.text('KMC'), findsOneWidget);
+    expect(find.text('Smart Life'), findsOneWidget);
+    await tester.tap(find.text('KMC').last);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Check this IP address'));
+    await tester.tap(find.text('Check this IP address'));
+    await tester.pumpAndSettle();
+    expect(api.probeProtocols, ['tuya']);
   });
 
   testWidgets('unsupported candidate cannot be silently adopted', (
