@@ -146,6 +146,63 @@ void main() {
     expect(find.text('Add'), findsNothing);
   });
 
+  testWidgets('Govee account device sits under From your accounts', (
+    tester,
+  ) async {
+    final govee = NearbyDeviceCandidate.fromJson({
+      'candidate_id': 'govee',
+      'scan_id': 'scan',
+      'expires_at_ms': 4102444800000,
+      'manufacturer': 'Govee',
+      'name': 'Kitchen cooler plug',
+      'model': 'H5086',
+      'category': 'smart_plug',
+      'device_label': 'Govee Plug',
+      'addresses': <dynamic>[],
+      'sources': ['govee_cloud'],
+      'capabilities': <dynamic>[],
+      'requires_action': false,
+      'reason_code': null,
+    });
+    final api = _Api(govee);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(api: api, credentials: _Credentials()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Scan for plugs'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('From your accounts'));
+    expect(find.text('From your accounts'), findsOneWidget);
+    expect(find.text('Govee Plug'), findsOneWidget);
+    expect(find.text('Kitchen cooler plug'), findsOneWidget);
+    expect(find.text('Govee account'), findsOneWidget);
+    expect(find.text('Add'), findsOneWidget);
+    expect(find.textContaining('H5086'), findsNothing);
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect(api.adoptionCount, 1);
+    expect(find.text('From your accounts'), findsNothing);
+  });
+
+  testWidgets('Govee device without an app name falls back to its label', (
+    tester,
+  ) async {
+    final govee = NearbyDeviceCandidate.fromJson({
+      'candidate_id': 'govee',
+      'scan_id': 'scan',
+      'expires_at_ms': 4102444800000,
+      'model': 'H5086',
+      'device_label': 'Govee Plug',
+      'addresses': <dynamic>[],
+      'sources': ['govee_cloud'],
+      'capabilities': <dynamic>[],
+      'requires_action': false,
+    });
+    expect(govee.displayName, 'Govee Plug');
+  });
+
   testWidgets('unsupported candidate cannot be silently adopted', (
     tester,
   ) async {

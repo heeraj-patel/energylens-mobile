@@ -256,6 +256,7 @@ class NearbyDeviceCandidate {
     this.model,
     this.category,
     this.name,
+    this.deviceLabel,
     this.reasonCode,
   });
 
@@ -268,6 +269,7 @@ class NearbyDeviceCandidate {
         model: json['model'] as String?,
         category: json['category'] as String?,
         name: json['name'] as String?,
+        deviceLabel: json['device_label'] as String?,
         requiresAction: json['requires_action'] as bool,
         reasonCode: json['reason_code'] as String?,
         addresses: (json['addresses'] as List<dynamic>)
@@ -293,6 +295,7 @@ class NearbyDeviceCandidate {
   final String? model;
   final String? category;
   final String? name;
+  final String? deviceLabel;
   final bool requiresAction;
   final String? reasonCode;
   final List<NearbyDeviceAddress> addresses;
@@ -302,9 +305,13 @@ class NearbyDeviceCandidate {
   String get displayName {
     final value = name?.trim().isNotEmpty == true
         ? name!.trim()
+        : deviceLabel?.trim().isNotEmpty == true
+        ? deviceLabel!.trim()
         : model?.trim();
     return value == null || value.isEmpty ? 'Unnamed device' : value;
   }
+
+  bool get isGoveeAccountDevice => sources.contains('govee_cloud');
 
   bool get canAdopt =>
       !requiresAction && DateTime.now().millisecondsSinceEpoch < expiresAtMs;
