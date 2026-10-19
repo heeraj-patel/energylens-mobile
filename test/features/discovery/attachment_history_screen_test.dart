@@ -75,6 +75,8 @@ void main() {
     expect(find.text('Estimate for Acme L2'), findsOneWidget);
     expect(find.text('Usage at attachment: 21 hours/week'), findsOneWidget);
     expect(find.text('Usage for estimate: 42 hours/week'), findsOneWidget);
+    expect(find.textContaining('Source:'), findsNothing);
+    expect(find.textContaining('Rate:'), findsNothing);
     expect(
       find.text(
         'This older attachment has no saved identity or estimate snapshot.',

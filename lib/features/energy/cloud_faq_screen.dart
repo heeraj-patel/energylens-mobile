@@ -175,13 +175,6 @@ class _CloudFaqScreenState extends State<CloudFaqScreen> {
                       _loadAnswer();
                     },
                   ),
-                if (_applianceId == null)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 12),
-                    child: Text(
-                      'Select an appliance to see its sourced operating cost.',
-                    ),
-                  ),
               ],
               const SizedBox(height: 20),
               if (_loading)
@@ -217,11 +210,6 @@ class _CloudFaqScreenState extends State<CloudFaqScreen> {
                           ),
                           const SizedBox(height: 6),
                           Text(finding.text),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Sources: ${finding.refs.map((ref) => '${ref.kind} · revision ${ref.revision}').join(', ')}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
                         ],
                       ),
                     ),

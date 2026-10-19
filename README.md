@@ -33,18 +33,16 @@ configure the HTTPS Cloud API and its authentication profile, then run:
 scripts/deploy-ios-simulator.sh --cloud --device SIMULATOR_UDID
 ```
 
-For the Geekom username-auth simulator profile, the Cloud API is
-`https://192.168.68.136:18092`. Its `/v1/auth/config` endpoint advertises
-`username_password`. Configure `.env-local` with
-`ENERGYLENS_LOCAL_PILOT=false`, `ENERGYLENS_CLOUD_API_URL` set to that HTTPS
-origin, `ENERGYLENS_CLOUD_DEV_AUTH_ENABLED=true`, `ENERGYLENS_APP_ENV=dev`, and
-`ENERGYLENS_CLOUD_DEV_CERT_SHA256=8ac41bd484dd773f16d954e4226eb2e7d7a800ed9a5c134ac5fbf430134376a6`,
-the current Cloud API leaf certificate SHA-256 pin. Recheck the leaf pin from
-the approved launch configuration whenever the Cloud certificate changes.
-Keep the file private (`chmod 600 .env-local`); never put an account password
-in it. The Hub at `https://192.168.68.136:18787` has a separate certificate
-pin and is used for device pairing. Port `18091` is a separate loopback rate
-service, not the mobile sign-in API.
+For owner `niksim` acceptance, use the private Mobile profile for Cloud API
+`https://192.168.68.116:18091` and its matching Cloud certificate pin. The
+developer's Geekom `GeekHome` environment uses a separate Cloud API at
+`https://192.168.68.136:18092` and Hub at port `18787`; use that profile only
+for work explicitly targeting that environment. Set
+`ENERGYLENS_LOCAL_PILOT=false`, `ENERGYLENS_CLOUD_DEV_AUTH_ENABLED=true`, and
+`ENERGYLENS_APP_ENV=dev` for either username-auth profile. Keep the selected
+origin and matching pin in the mode-`0600` environment file, and keep account
+passwords out of it. Leave `ENERGYLENS_HUB_URL` empty for Cloud-owned Hub
+discovery; the selected Cloud home determines the owned Hub.
 
 Build and install from the mobile repository so the script regenerates Flutter
 build configuration from the selected private environment file:
@@ -144,8 +142,8 @@ server runtime configuration before retrying.
 
 If the sign-in screen shows `Internal error, Try again later` before credentials
 are submitted, first check the Cloud API target compiled into the simulator app.
-The Cloud API is on port `18092`; the Hub on `18787` and the loopback-only rate
-service on `18091` serve different purposes. Check that the HTTPS origin in
+The owner `niksim` Cloud API uses port `18091`; the developer Geekom Cloud API
+uses port `18092`. Check that the HTTPS origin in
 `.env-local` is the current Cloud API origin, that its `/v1/auth/config` returns
 HTTP 200 with `username_password`, and that the configured development pin is
 the leaf certificate pin for that Cloud API. The Hub certificate pin cannot be

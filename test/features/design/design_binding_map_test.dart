@@ -72,6 +72,9 @@ Set<String> _approvedRemovedIds(String page, String category) {
   }
   if (page == 'tips_knowledge' && category == 'bindings')
     return {'tips_knowledge_text_010'};
+  if (page == 'tips_care_upgrades' && category == 'bindings') {
+    return {'tips_care_upgrades_text_009', 'tips_care_upgrades_text_010'};
+  }
   if (page == 'settings' && category == 'bindings') {
     return {
       for (var n in [7, 8, 11, 12, 13, 14, 17, 20, 23])

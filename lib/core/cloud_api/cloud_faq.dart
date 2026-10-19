@@ -1,5 +1,17 @@
 const faqInsufficientAnswer = 'More usage information is needed.';
 
+bool _validOperatingCostRefs(List<CloudFaqEvidence> refs, String? applianceId) {
+  if (refs.length != 2) return false;
+  final source = refs.where(
+    (ref) => ref.kind == 'catalog_fact' || ref.kind == 'datawiz_resolution',
+  );
+  final tariff = refs.where((ref) => ref.kind == 'tariff');
+  return source.length == 1 &&
+      tariff.length == 1 &&
+      (source.single.kind != 'datawiz_resolution' ||
+          (source.single.revision == 1 && source.single.id == applianceId));
+}
+
 const faqIntents = <String, String>{
   'high_bill_possible_contributors': 'What could contribute to high use?',
   'top_waste_opportunities': 'Where could I reduce waste?',
@@ -80,7 +92,11 @@ class CloudFaqAnswer {
   final DateTime asOf;
   final bool adaptiveQuestions;
 
-  factory CloudFaqAnswer.fromJson(Map<String, dynamic> json, String intent) {
+  factory CloudFaqAnswer.fromJson(
+    Map<String, dynamic> json,
+    String intent, {
+    String? applianceId,
+  }) {
     final status = json['status'];
     final text = json['answer'];
     final rawFindings = json['findings'];
@@ -162,11 +178,7 @@ class CloudFaqAnswer {
                 !RegExp(
                   r'^Estimated operating cost: [0-9]+(?:\.[0-9]+)? [A-Z]{3} for \d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}\.$',
                 ).hasMatch(findings.first.text) ||
-                !findings.first.refs.any((ref) => ref.kind == 'catalog_fact') ||
-                !findings.first.refs.any((ref) => ref.kind == 'tariff') ||
-                findings.first.refs.any(
-                  (ref) => !const {'catalog_fact', 'tariff'}.contains(ref.kind),
-                )))) {
+                !_validOperatingCostRefs(findings.first.refs, applianceId)))) {
       throw const FormatException('Unsupported FAQ finding');
     }
     return CloudFaqAnswer(

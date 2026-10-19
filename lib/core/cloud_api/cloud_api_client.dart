@@ -914,6 +914,7 @@ class CloudApiClient {
     return CloudFaqAnswer.fromJson(
       jsonDecode(response.body) as Map<String, dynamic>,
       intent,
+      applianceId: applianceId,
     );
   }
 

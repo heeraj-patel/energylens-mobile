@@ -28,7 +28,10 @@ class CloudReportEstimate {
   final DateTime asOf;
   final List<String> sourceRefs;
 
-  factory CloudReportEstimate.fromJson(Map<String, dynamic> json) {
+  factory CloudReportEstimate.fromJson(
+    Map<String, dynamic> json,
+    String applianceId,
+  ) {
     final kind = _string(json['kind']);
     final energy = _string(json['energy_kwh']);
     final cost = _string(json['cost_usd']);
@@ -46,7 +49,7 @@ class CloudReportEstimate {
         rawRefs.length > 4) {
       throw const FormatException('Invalid report estimate');
     }
-    var fact = false, tariff = false;
+    var fact = false, tariff = false, resolution = false;
     final refs = <String>[];
     for (final value in rawRefs) {
       final ref = _object(value);
@@ -57,6 +60,7 @@ class CloudReportEstimate {
           !{
             'catalog_fact',
             'reviewed_usage_fact',
+            'datawiz_resolution',
             'tariff',
           }.contains(sourceKind) ||
           revision is! int ||
@@ -66,11 +70,20 @@ class CloudReportEstimate {
       fact |=
           sourceKind == 'catalog_fact' || sourceKind == 'reviewed_usage_fact';
       tariff |= sourceKind == 'tariff';
+      if (sourceKind == 'datawiz_resolution') {
+        if (resolution || id != applianceId || revision != 1) {
+          throw const FormatException('Invalid report resolution');
+        }
+        resolution = true;
+      }
       refs.add(
         '${sourceKind.replaceAll('_', ' ')} revision $revision (${id.substring(0, 8)})',
       );
     }
-    if (!fact || !tariff) {
+    if (!tariff ||
+        (resolution
+            ? fact || kind != 'estimated_operating_cost' || rawRefs.length != 2
+            : !fact)) {
       throw const FormatException('Unsourced report estimate');
     }
     return CloudReportEstimate(
@@ -235,7 +248,10 @@ class CloudReportPreview {
           explanation,
           item['estimate'] == null
               ? null
-              : CloudReportEstimate.fromJson(_object(item['estimate'])),
+              : CloudReportEstimate.fromJson(
+                  _object(item['estimate']),
+                  applianceId,
+                ),
         ),
       );
     }

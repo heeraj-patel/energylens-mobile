@@ -156,6 +156,53 @@ void main() {
     );
   });
 
+  test('accepts Datawiz cost evidence without accepting mixed sources', () {
+    final resolved = _cost();
+    final refs = [
+      {'id': appliance, 'kind': 'datawiz_resolution', 'revision': 1},
+      {'id': tariff, 'kind': 'tariff', 'revision': 1},
+    ];
+    (resolved['findings'] as List).single['evidence_refs'] = refs;
+    resolved['evidence_refs'] = refs;
+    expect(
+      CloudFaqAnswer.fromJson(
+        resolved,
+        'device_operating_cost',
+        applianceId: appliance,
+      ).findings.single.refs.first.kind,
+      'datawiz_resolution',
+    );
+    for (final badRefs in [
+      [refs.first],
+      [refs.first, refs.first, refs.last],
+      [
+        refs.first,
+        {'id': catalog, 'kind': 'catalog_fact', 'revision': 2},
+        refs.last,
+      ],
+      [
+        {'id': appliance, 'kind': 'datawiz_resolution', 'revision': 2},
+        refs.last,
+      ],
+      [
+        {'id': catalog, 'kind': 'datawiz_resolution', 'revision': 1},
+        refs.last,
+      ],
+    ]) {
+      final bad = _cost();
+      (bad['findings'] as List).single['evidence_refs'] = badRefs;
+      bad['evidence_refs'] = badRefs;
+      expect(
+        () => CloudFaqAnswer.fromJson(
+          bad,
+          'device_operating_cost',
+          applianceId: appliance,
+        ),
+        throwsFormatException,
+      );
+    }
+  });
+
   testWidgets('owner FAQ uses all intents, fallback link and sourced cost', (
     tester,
   ) async {
@@ -269,10 +316,7 @@ void main() {
     expect(find.byKey(const Key('faqOpenPrograms')), findsNothing);
     await tester.tap(find.byKey(const Key('faqIntent-device_operating_cost')));
     await tester.pumpAndSettle();
-    expect(
-      find.text('Select an appliance to see its sourced operating cost.'),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('faqAppliance')), findsOneWidget);
     await tester.tap(find.byKey(const Key('faqAppliance')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Washer').last);
@@ -283,6 +327,7 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(find.textContaining('Sources:'), findsNothing);
     expect(
       requests.where((r) => r.url.path.contains('/faq/answers/')).length,
       6,

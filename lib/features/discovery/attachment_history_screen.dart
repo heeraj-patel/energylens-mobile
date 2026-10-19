@@ -80,7 +80,6 @@ class _AttachmentHistoryScreenState extends State<AttachmentHistoryScreen> {
   Widget _entry(BuildContext context, AttachmentHistoryEntry entry) {
     final appliance = entry.applianceSnapshot;
     final estimate = entry.estimateSnapshot;
-    final evidence = estimate?['evidence'] as Map<String, dynamic>?;
     final estimatedIdentity =
         estimate?['appliance_identity'] as Map<String, dynamic>?;
     final estimateUsage = estimate?['usage_inputs'] as Map<String, dynamic>?;
@@ -135,12 +134,6 @@ class _AttachmentHistoryScreenState extends State<AttachmentHistoryScreen> {
                   Text(
                     'Saved cost estimate: \$${cost.toStringAsFixed(2)}/month',
                   ),
-                if (evidence != null)
-                  Text(
-                    'Source: ${evidence['source_kind']} · ${evidence['matched_brand']} ${evidence['matched_model']}',
-                  ),
-                if (estimate?['rate_source_label'] case final String rateLabel)
-                  Text('Rate: $rateLabel'),
               ] else
                 const Text(
                   'No monthly estimate was saved for this attachment.',

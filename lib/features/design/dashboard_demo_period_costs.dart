@@ -1,9 +1,8 @@
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
-/// The approved, illustrative device-cost schedule from Cloud's
-/// MobileDemoCostSnapshot. Values are cents per local calendar day; the chart
-/// never interprets them as measured usage or idle duration.
+/// The approved, illustrative device-cost schedule. Values are cents per local
+/// calendar day; the chart never interprets them as measured usage or idle duration.
 class DashboardDemoPeriodCosts {
   const DashboardDemoPeriodCosts._();
 

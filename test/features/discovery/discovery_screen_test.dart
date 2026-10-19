@@ -1771,7 +1771,6 @@ void main() {
       usageBasis: 'rated',
       retrievedAt: 1,
     );
-    expect(energySourceLabel(source), 'Estimated · EPA rated energy data');
     expect(energySourceHeading(source), 'EPA rated energy data');
     const manufacturerTest = EnergyEvidence(
       sourceKind: 'oem_exact',
@@ -1782,10 +1781,6 @@ void main() {
       annualKwh: 20,
       usageBasis: 'rated',
       retrievedAt: 1,
-    );
-    expect(
-      energySourceLabel(manufacturerTest),
-      'Estimated · Manufacturer model test data',
     );
     expect(
       energySourceHeading(manufacturerTest),
@@ -1800,10 +1795,6 @@ void main() {
       annualKwh: 20,
       usageBasis: 'Historical family test figure',
       retrievedAt: 1,
-    );
-    expect(
-      energySourceLabel(enerGuideFamily),
-      'Estimated · Historical EnerGuide family test data',
     );
     expect(
       energySourceHeading(enerGuideFamily),

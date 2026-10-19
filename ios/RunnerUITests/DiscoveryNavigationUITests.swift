@@ -342,7 +342,7 @@ final class DiscoveryNavigationUITests: XCTestCase {
     XCTAssertEqual(routeResult, .completed, "Cloud sign-in did not reach a home or Settings")
     let chooserTileLabel = NSPredicate(
       format: "label CONTAINS[c] %@ AND label MATCHES[c] %@",
-      "GeekHome",
+      "niksim",
       ".*[0-9]{5}.*[A-Za-z_]+/[A-Za-z_]+.*")
     let demoHome = app.buttons
       .matching(chooserTileLabel)

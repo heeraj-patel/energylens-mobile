@@ -888,19 +888,6 @@ class EnergyEvidence {
   final int retrievedAt;
 }
 
-String energySourceLabel(EnergyEvidence source) => switch (source.sourceKind) {
-  'epa_exact' => 'Estimated · EPA rated energy data',
-  'energy_star' => 'Estimated · ENERGY STAR data (EPA)',
-  'energy_star_archive' => 'Estimated · Historical ENERGY STAR data (EPA)',
-  'oem_exact' => 'Estimated · Manufacturer model test data',
-  'oem' => 'Estimated · Manufacturer data',
-  'oem_family' => 'Estimated · Manufacturer family test data',
-  'energuide_family' => 'Estimated · Historical EnerGuide family test data',
-  'user_label' => 'Estimated · Bulb ratings you entered',
-  'category_typical' => 'Estimated · Category typical use',
-  _ => 'Estimated · Source details',
-};
-
 String energySourceHeading(EnergyEvidence source) =>
     switch (source.sourceKind) {
       'epa_exact' => 'EPA rated energy data',

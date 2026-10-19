@@ -131,6 +131,45 @@ void main() {
     );
   });
 
+  test('accepts a scoped Datawiz resolution and rejects mixed evidence', () {
+    final resolved = payload();
+    final refs = [
+      {'id': appliance, 'kind': 'datawiz_resolution', 'revision': 1},
+      {'id': tariff, 'kind': 'tariff', 'revision': 1},
+    ];
+    ((resolved['items'] as List).single['estimate'] as Map)['source_refs'] =
+        refs;
+    expect(
+      CloudReportPreview.fromJson(resolved, home, {
+        appliance,
+      }).items.single.estimate!.energyKwh,
+      '0',
+    );
+    for (final badRefs in [
+      [
+        {'id': fact, 'kind': 'datawiz_resolution', 'revision': 1},
+        refs.last,
+      ],
+      [
+        {'id': appliance, 'kind': 'datawiz_resolution', 'revision': 2},
+        refs.last,
+      ],
+      [
+        refs.first,
+        {'id': fact, 'kind': 'catalog_fact', 'revision': 1},
+        refs.last,
+      ],
+    ]) {
+      final bad = payload();
+      ((bad['items'] as List).single['estimate'] as Map)['source_refs'] =
+          badRefs;
+      expect(
+        () => CloudReportPreview.fromJson(bad, home, {appliance}),
+        throwsFormatException,
+      );
+    }
+  });
+
   test('parses optional recipient-free latest delivery status', () {
     final base = payload();
     expect(

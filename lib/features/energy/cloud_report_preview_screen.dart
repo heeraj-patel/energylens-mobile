@@ -438,9 +438,6 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
                                   Text(
                                     '${estimate.periodStart} to ${estimate.periodEnd} (end exclusive) · As of ${estimate.asOf.toUtc()}',
                                   ),
-                                  Text(
-                                    'Sources: ${estimate.sourceRefs.join('; ')}',
-                                  ),
                                 ],
                               ],
                             ),
