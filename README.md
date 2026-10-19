@@ -33,11 +33,19 @@ configure the HTTPS Cloud API and its authentication profile, then run:
 scripts/deploy-ios-simulator.sh --cloud --device SIMULATOR_UDID
 ```
 
-For owner `niksim` acceptance, use the private Mobile profile for Cloud API
-`https://192.168.68.116:18091` and its matching Cloud certificate pin. The
-developer's Geekom `GeekHome` environment uses a separate Cloud API at
-`https://192.168.68.136:18092` and Hub at port `18787`; use that profile only
-for work explicitly targeting that environment. Set
+For local owner home `niksim` acceptance, use the private Mobile profile and
+verify its Cloud API origin before every build. The former LAN origin
+`https://192.168.68.116:18091` can become stale if the Cloud host changes
+addresses. The current Cloud certificate also covers the host's Tailscale
+origin `https://100.66.70.66:18091`. Keep the matching verified
+Cloud certificate pin and confirm each target can reach this origin. See the
+[iOS deployment guide](../energylens-dev-bash-scripts/README.md) for the
+address, listener, and simulator checks. The intended `niksim` Hub host is
+`geekom-a9-max`, but its active Hub instance is currently bound to another
+home. A `niksim` connection requires its own authorized Hub identity or an
+explicit owner transfer. `GeekHome` is a separate home/profile on the
+Geekom with its Cloud API at `https://192.168.68.136:18092`; use that Cloud
+profile only for work explicitly targeting that environment. Set
 `ENERGYLENS_LOCAL_PILOT=false`, `ENERGYLENS_CLOUD_DEV_AUTH_ENABLED=true`, and
 `ENERGYLENS_APP_ENV=dev` for either username-auth profile. Keep the selected
 origin and matching pin in the mode-`0600` environment file, and keep account
@@ -142,7 +150,7 @@ server runtime configuration before retrying.
 
 If the sign-in screen shows `Internal error, Try again later` before credentials
 are submitted, first check the Cloud API target compiled into the simulator app.
-The owner `niksim` Cloud API uses port `18091`; the developer Geekom Cloud API
+The local `niksim` Cloud API uses port `18091`; the separate Geekom Cloud API
 uses port `18092`. Check that the HTTPS origin in
 `.env-local` is the current Cloud API origin, that its `/v1/auth/config` returns
 HTTP 200 with `username_password`, and that the configured development pin is
