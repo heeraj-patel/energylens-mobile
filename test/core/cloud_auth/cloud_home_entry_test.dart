@@ -36,6 +36,8 @@ void main() {
           ),
         ),
       );
+      expect(find.text('Create a home'), findsOneWidget);
+      expect(find.widgetWithText(TextField, 'Home name'), findsOneWidget);
       await tester.enterText(
         find.widgetWithText(TextField, 'Home name'),
         'New home',
@@ -83,7 +85,45 @@ void main() {
         ),
       ),
     );
+    expect(find.text('Create a home'), findsNothing);
+    expect(find.byType(TextField), findsNothing);
+    expect(find.text('Create home'), findsNothing);
     await tester.tap(find.text('Main home'));
     expect(selected?.id, 'home-1');
+  });
+
+  testWidgets('create form waits for a confirmed empty home list', (
+    tester,
+  ) async {
+    Future<void> show({
+      bool loaded = false,
+      bool loading = false,
+      String? error,
+    }) => tester.pumpWidget(
+      MaterialApp(
+        home: CloudHomeEntry(
+          homes: const [],
+          loaded: loaded,
+          loading: loading,
+          listError: error,
+          onRefresh: () async {},
+          onCreate: (_, _) async => throw StateError('unexpected create'),
+          onSelect: (_) {},
+          onSignOut: () {},
+        ),
+      ),
+    );
+
+    await show();
+    expect(find.text('Create a home'), findsNothing);
+    expect(find.byType(TextField), findsNothing);
+    await show(loading: true);
+    expect(find.text('Create home'), findsNothing);
+    await show(error: 'Could not load homes');
+    expect(find.text('Could not load homes'), findsOneWidget);
+    expect(find.text('Create a home'), findsNothing);
+    await show(loaded: true);
+    expect(find.text('Create a home'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Home name'), findsOneWidget);
   });
 }

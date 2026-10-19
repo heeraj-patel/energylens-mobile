@@ -8,6 +8,7 @@ class CloudHomeEntry extends StatefulWidget {
     super.key,
     required this.homes,
     this.loading = false,
+    this.loaded = true,
     required this.onRefresh,
     required this.onCreate,
     required this.onSelect,
@@ -17,6 +18,7 @@ class CloudHomeEntry extends StatefulWidget {
 
   final List<CloudHome> homes;
   final bool loading;
+  final bool loaded;
   final String? listError;
   final Future<void> Function() onRefresh;
   final Future<CloudHome> Function(CloudHomeCreate, String) onCreate;
@@ -155,7 +157,8 @@ class _CloudHomeEntryState extends State<CloudHomeEntry> {
                 icon: const Icon(Icons.refresh),
                 label: const Text('Refresh homes'),
               ),
-              if (widget.homes.isEmpty &&
+              if (widget.loaded &&
+                  widget.homes.isEmpty &&
                   widget.listError == null &&
                   !widget.loading)
                 const Padding(
@@ -174,69 +177,74 @@ class _CloudHomeEntryState extends State<CloudHomeEntry> {
                         : () => widget.onSelect(home),
                   ),
                 ),
-              const SizedBox(height: 20),
-              Text(
-                'Create a home',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Home and postal location are saved in EnergyLens Cloud. Confirm the time zone before creating.',
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _name,
-                maxLength: 120,
-                decoration: const InputDecoration(
-                  labelText: 'Home name',
-                  hintText: 'My home',
+              if (widget.loaded &&
+                  widget.homes.isEmpty &&
+                  widget.listError == null &&
+                  !widget.loading) ...[
+                const SizedBox(height: 20),
+                Text(
+                  'Create a home',
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
-              ),
-              TextField(
-                controller: _zip,
-                maxLength: 20,
-                textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                  labelText: 'ZIP or postal code',
-                  hintText: '60601',
+                const SizedBox(height: 8),
+                const Text(
+                  'Home and postal location are saved in EnergyLens Cloud. Confirm the time zone before creating.',
                 ),
-              ),
-              TextField(
-                controller: _country,
-                maxLength: 2,
-                textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                  labelText: 'Country code',
-                  hintText: 'US',
-                ),
-              ),
-              TextField(
-                controller: _timezone,
-                maxLength: 100,
-                decoration: const InputDecoration(
-                  labelText: 'IANA time zone',
-                  hintText: 'America/Chicago',
-                ),
-              ),
-              if (_message != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(_message!, key: const Key('homeCreateMessage')),
-                ),
-              if (_uncertain)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: Text(
-                    'If your new home appears above after refresh, select it instead of submitting again.',
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _name,
+                  maxLength: 120,
+                  decoration: const InputDecoration(
+                    labelText: 'Home name',
+                    hintText: 'My home',
                   ),
                 ),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: _busy || widget.loading ? null : _create,
-                child: _busy
-                    ? const Text('Creating…')
-                    : const Text('Create home'),
-              ),
+                TextField(
+                  controller: _zip,
+                  maxLength: 20,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: const InputDecoration(
+                    labelText: 'ZIP or postal code',
+                    hintText: '60601',
+                  ),
+                ),
+                TextField(
+                  controller: _country,
+                  maxLength: 2,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: const InputDecoration(
+                    labelText: 'Country code',
+                    hintText: 'US',
+                  ),
+                ),
+                TextField(
+                  controller: _timezone,
+                  maxLength: 100,
+                  decoration: const InputDecoration(
+                    labelText: 'IANA time zone',
+                    hintText: 'America/Chicago',
+                  ),
+                ),
+                if (_message != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(_message!, key: const Key('homeCreateMessage')),
+                  ),
+                if (_uncertain)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      'If your new home appears above after refresh, select it instead of submitting again.',
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: _busy || widget.loading ? null : _create,
+                  child: _busy
+                      ? const Text('Creating…')
+                      : const Text('Create home'),
+                ),
+              ],
             ],
           ),
         ),

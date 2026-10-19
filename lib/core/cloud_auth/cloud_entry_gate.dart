@@ -111,6 +111,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   CloudHome? _selectedHome;
   String? _homeListError;
   bool _homeLoading = false;
+  bool _homeListLoaded = false;
   bool _allowRememberedRestore = true;
   bool _capabilitiesReady = false;
   CloudAuthCapabilities? _capabilities;
@@ -127,6 +128,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     _verifiedAccountId = null;
     _selectedHome = null;
     _homes = const [];
+    _homeListLoaded = false;
     _designContextCoordinator.signOut();
     _auxiliaryDomainLifecycle.clear().ignore();
     CloudHubClaimFlow.invalidatePendingClaims().ignore();
@@ -295,6 +297,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       if (mounted) {
         setState(() {
           _authenticated = true;
+          _homeListLoaded = false;
           _historyAccepted = preferences.value.historyAccepted;
           _message = null;
           _submitError = false;
@@ -334,7 +337,12 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
 
   Future<void> _loadHomes() async {
     final epoch = _lifecycleEpoch;
-    if (mounted) setState(() => _homeLoading = true);
+    if (mounted) {
+      setState(() {
+        _homeLoading = true;
+        _homeListLoaded = false;
+      });
+    }
     try {
       final homes = await _api.homes();
       if (!mounted || epoch != _lifecycleEpoch) return;
@@ -350,6 +358,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         setState(() {
           _homes = ownedHomes;
           _homeListError = null;
+          _homeListLoaded = true;
         });
       }
       if (_allowRememberedRestore &&
@@ -659,6 +668,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       return CloudHomeEntry(
         homes: _homes,
         loading: _homeLoading,
+        loaded: _homeListLoaded,
         listError: _homeListError,
         onRefresh: _loadHomes,
         onCreate: _createHome,
