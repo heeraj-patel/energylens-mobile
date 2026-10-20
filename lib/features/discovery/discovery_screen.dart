@@ -1947,10 +1947,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           context,
           MaterialPageRoute<void>(
             builder: (_) => CloudUsageQuestionsScreen(
-              home: home,
-              appliance: linked!,
+              homeId: home.id,
+              applianceId: linked!.id,
+              applianceName: linked.name,
               api: cloud,
-              purpose: 'review',
             ),
           ),
         );

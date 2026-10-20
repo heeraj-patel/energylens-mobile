@@ -154,6 +154,8 @@ class LiveDevicesCardRenderer {
     icon.textContent = 'devices_other';
     clone.setAttribute('data-el-live-device-id', row.id);
     clone.setAttribute('data-el-device-name', row.name);
+    clone.setAttribute('role', 'button');
+    clone.style.cursor = 'pointer';
     if (row.usageCost !== null) clone.setAttribute('data-el-usage-cost', row.usageCost);
     if (wasteText !== null) clone.setAttribute('data-el-waste-cost', wasteText);
     cards.push(clone);

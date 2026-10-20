@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
@@ -182,317 +181,230 @@ void main() {
     api.close();
   });
 
-  testWidgets('reads current answers and ignores stale question versions', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(800, 1600);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final posts = <http.Request>[];
-    Map<String, Object?> question(String id, int version) => {
+  group('device detail screen', () {
+    Map<String, Object?> choice(
+      String id,
+      String prompt,
+      List<List<Object>> o,
+    ) => {
       'id': id,
-      'version': version,
+      'version': 2,
       'purpose': 'onboarding',
       'appliance_id': appliance.id,
       'identity_revision': 3,
-      'prompt': id,
-      'answer_kind': 'cycles_per_week',
+      'prompt': prompt,
+      'answer_kind': 'choice',
       'unit': 'cycles/week',
       'optional': true,
+      'options': [
+        for (final e in o) {'key': e[0], 'value': e[1]},
+      ],
     };
-    Map<String, Object?> answer(
-      String id,
-      int version,
-      String status,
-      Object? value, {
-      int revision = 3,
-    }) => {
-      'question_id': id,
-      'question_version': version,
-      'appliance_id': appliance.id,
-      'identity_revision': revision,
-      'status': status,
-      'value': value,
-    };
-    final api = _api(
-      MockClient((request) async {
-        if (request.url.path.endsWith('/questions/answers') &&
-            request.method == 'GET') {
-          expect(request.url.queryParameters, {'appliance_id': appliance.id});
-          return http.Response(
-            jsonEncode({
-              'answers': [
-                answer('zero', 1, 'confirmed', 0),
-                answer('unknown', 1, 'unknown', null),
-                answer('stale', 1, 'confirmed', 4),
-                answer('old-revision', 1, 'confirmed', 5, revision: 2),
-              ],
-            }),
-            200,
-          );
-        }
-        if (request.method == 'GET') {
-          return http.Response(
-            jsonEncode({
-              'questions': [
-                question('zero', 1),
-                question('unknown', 1),
-                question('stale', 2),
-                question('old-revision', 1),
-                question('unanswered', 1),
-              ],
-            }),
-            200,
-          );
-        }
-        posts.add(request);
-        return _acknowledge(request);
-      }),
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        home: CloudUsageQuestionsScreen(
-          home: home,
-          appliance: appliance,
-          api: api,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Saved: 0 cycles/week'), findsOneWidget);
-    expect(find.text('Saved: Unknown'), findsOneWidget);
-    expect(find.text('Not answered yet'), findsNWidgets(3));
-    expect(find.byKey(const Key('usageValue-zero')), findsOneWidget);
-    expect(
-      tester
-          .widget<TextField>(find.byKey(const Key('usageValue-zero')))
-          .controller!
-          .text,
-      '0',
-    );
-    await tester.ensureVisible(find.byKey(const Key('saveUsageAnswers')));
-    await tester.tap(find.byKey(const Key('saveUsageAnswers')));
-    await tester.pumpAndSettle();
-    expect(posts, isEmpty);
-    api.close();
-  });
 
-  testWidgets('confirmed zero retries with identical body and key', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(800, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final posts = <http.Request>[];
-    final api = _api(
-      MockClient((request) async {
-        if (request.method == 'GET') {
-          if (request.url.path.endsWith('/questions/answers')) {
-            expect(request.url.queryParameters, {'appliance_id': appliance.id});
-            return http.Response('{"answers":[]}', 200);
+    final washer = choice(
+      'washer.cycles_per_week',
+      'About how many loads a week?',
+      [
+        ['0_2', 1.5],
+        ['3_5', 4],
+        ['6_8', 7],
+        ['9_plus', 10],
+      ],
+    );
+
+    Future<List<http.Request>> open(
+      WidgetTester tester, {
+      List<Map<String, Object?>> questions = const [],
+      List<Map<String, Object?>> answers = const [],
+      http.Response Function(http.Request)? refresh,
+    }) async {
+      tester.view.physicalSize = const Size(1170, 2532);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final posts = <http.Request>[];
+      final api = _api(
+        MockClient((request) async {
+          if (request.url.path.endsWith('/energy-resolution/refresh')) {
+            posts.add(request);
+            return refresh!(request);
           }
-          expect(request.url.queryParameters, {
-            'purpose': 'onboarding',
+          if (request.url.path.endsWith('/questions/answers')) {
+            if (request.method == 'POST') {
+              posts.add(request);
+              return _acknowledge(request);
+            }
+            return http.Response(jsonEncode({'answers': answers}), 200);
+          }
+          return http.Response(jsonEncode({'questions': questions}), 200);
+        }),
+      );
+      addTearDown(api.close);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CloudUsageQuestionsScreen(
+            homeId: home.id,
+            applianceId: appliance.id,
+            applianceName: appliance.name,
+            api: api,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return posts;
+    }
+
+    http.Response accepted(http.Request _) => http.Response(
+      jsonEncode({
+        'appliance_id': appliance.id,
+        'reason': 'owner_refresh',
+        'queued_at': '2026-10-20T10:00:00Z',
+      }),
+      202,
+    );
+
+    testWidgets('shows the name, options with approved labels and the action', (
+      tester,
+    ) async {
+      await open(tester, questions: [washer]);
+      expect(find.text('Washer'), findsOneWidget);
+      expect(find.text('About how many loads a week?'), findsOneWidget);
+      for (final label in ['0-2', '3-5', '6-8', '9 or more', 'Not sure']) {
+        expect(find.text(label), findsOneWidget);
+      }
+      expect(find.text('Refresh estimate'), findsOneWidget);
+      expect(find.text('Skip'), findsNothing);
+    });
+
+    testWidgets('shows the saved answer as selected', (tester) async {
+      await open(
+        tester,
+        questions: [washer],
+        answers: [
+          {
+            'question_id': 'washer.cycles_per_week',
+            'question_version': 2,
             'appliance_id': appliance.id,
-          });
-          return http.Response(
-            jsonEncode({
-              'questions': [
-                {
-                  'id': 'washer.cycles_per_week',
-                  'version': 1,
-                  'purpose': 'onboarding',
-                  'appliance_id': appliance.id,
-                  'identity_revision': 3,
-                  'prompt': 'How many cycles?',
-                  'answer_kind': 'cycles_per_week',
-                  'unit': 'cycles/week',
-                  'optional': true,
-                },
-              ],
-            }),
-            200,
-          );
-        }
-        posts.add(request);
-        if (posts.length == 1) throw const SocketException('uncertain');
-        return _acknowledge(request);
-      }),
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        home: CloudUsageQuestionsScreen(
-          home: home,
-          appliance: appliance,
-          api: api,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const Key('usageConfirmed-washer.cycles_per_week')),
-    );
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const Key('usageValue-washer.cycles_per_week')),
-      '0',
-    );
-    await tester.ensureVisible(find.byKey(const Key('saveUsageAnswers')));
-    await tester.tap(find.byKey(const Key('saveUsageAnswers')));
-    await tester.pumpAndSettle();
-    expect(find.text('Internal Error, Try again later'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('saveUsageAnswers')));
-    await tester.pumpAndSettle();
-    expect(posts, hasLength(2));
-    expect(posts[0].body, posts[1].body);
-    expect(
-      posts[0].headers['idempotency-key'],
-      posts[1].headers['idempotency-key'],
-    );
-    final answer = (jsonDecode(posts[0].body)['answers'] as List).single;
-    expect(answer['identity_revision'], 3);
-    expect(answer['status'], 'confirmed');
-    expect(answer['value'], 0);
-    expect(answer['confirmed_at'], isNotNull);
-    api.close();
-  });
+            'identity_revision': 3,
+            'status': 'confirmed',
+            'value': 7,
+          },
+        ],
+      );
+      expect(find.byIcon(Icons.check), findsOneWidget);
+    });
 
-  testWidgets('unknown sends null without confirmation timestamp', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(800, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    http.Request? post;
-    final api = _api(
-      MockClient((request) async {
-        if (request.method == 'GET') {
-          if (request.url.path.endsWith('/questions/answers')) {
-            return http.Response('{"answers":[]}', 200);
-          }
-          return http.Response(
-            jsonEncode({
-              'questions': [
-                {
-                  'id': 'washer.cycles_per_week',
-                  'version': 1,
-                  'purpose': 'onboarding',
-                  'appliance_id': appliance.id,
-                  'identity_revision': 3,
-                  'prompt': 'How many cycles?',
-                  'answer_kind': 'cycles_per_week',
-                  'unit': 'cycles/week',
-                  'optional': true,
-                },
-              ],
-            }),
-            200,
-          );
-        }
-        post = request;
-        return _acknowledge(request);
-      }),
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        home: CloudUsageQuestionsScreen(
-          home: home,
-          appliance: appliance,
-          api: api,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const Key('usageUnknown-washer.cycles_per_week')),
-    );
-    await tester.ensureVisible(find.byKey(const Key('saveUsageAnswers')));
-    await tester.tap(find.byKey(const Key('saveUsageAnswers')));
-    await tester.pumpAndSettle();
-    final answer = (jsonDecode(post!.body)['answers'] as List).single;
-    expect(answer['status'], 'unknown');
-    expect(answer['value'], isNull);
-    expect(answer['confirmed_at'], isNull);
-    api.close();
-  });
+    testWidgets('a tapped option saves its numeric value', (tester) async {
+      final posts = await open(tester, questions: [washer]);
+      await tester.tap(find.text('6-8'));
+      await tester.pumpAndSettle();
+      final answer = (jsonDecode(posts.single.body)['answers'] as List).single;
+      expect(answer['status'], 'confirmed');
+      expect(answer['value'], 7);
+      expect(find.byIcon(Icons.check), findsOneWidget);
+    });
 
-  testWidgets('FAQ context saves zero and advances to the next prompt', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(800, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    http.Request? post;
-    var answered = false;
-    final api = _api(
-      MockClient((request) async {
-        if (request.method == 'POST') {
-          post = request;
-          answered = true;
-          return _acknowledge(request);
-        }
-        if (request.url.path.endsWith('/questions/answers')) {
-          return http.Response('{"answers":[]}', 200);
-        }
-        expect(request.url.queryParameters['purpose'], 'faq');
-        return http.Response(
+    testWidgets('Not sure saves unknown', (tester) async {
+      final posts = await open(tester, questions: [washer]);
+      await tester.tap(find.text('Not sure'));
+      await tester.pumpAndSettle();
+      final answer = (jsonDecode(posts.single.body)['answers'] as List).single;
+      expect(answer['status'], 'unknown');
+      expect(answer['value'], isNull);
+    });
+
+    testWidgets('refresh accepted shows the approved message', (tester) async {
+      final posts = await open(tester, refresh: accepted);
+      await tester.tap(find.text('Refresh estimate'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Checking for newer energy data. This can take a few minutes.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        posts.single.headers['Idempotency-Key'],
+        matches(
+          RegExp(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+          ),
+        ),
+      );
+    });
+
+    testWidgets('refresh rate limit shows the approved message and waits', (
+      tester,
+    ) async {
+      await open(
+        tester,
+        refresh: (_) => http.Response(
           jsonEncode({
-            'questions': answered
-                ? []
-                : [
-                    {
-                      'id': 'faq-contributors/v1.washer.recent_cycles',
-                      'version': 1,
-                      'purpose': 'faq',
-                      'appliance_id': appliance.id,
-                      'identity_revision': 3,
-                      'prompt': 'Recent cycles?',
-                      'answer_kind': 'cycles_per_week',
-                      'unit': 'cycles/week',
-                      'optional': true,
-                    },
-                  ],
+            'code': 'refresh_rate_limited',
+            'details': {'retry_after_seconds': 60},
           }),
-          200,
-        );
-      }),
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        home: CloudUsageQuestionsScreen(
-          home: home,
-          appliance: appliance,
-          api: api,
-          purpose: 'faq',
+          429,
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Recent-use questions'), findsOneWidget);
-    await tester.tap(
-      find.byKey(
-        const Key('usageConfirmed-faq-contributors/v1.washer.recent_cycles'),
-      ),
-    );
-    await tester.pump();
-    await tester.enterText(
-      find.byKey(
-        const Key('usageValue-faq-contributors/v1.washer.recent_cycles'),
-      ),
-      '0',
-    );
-    await tester.ensureVisible(find.byKey(const Key('saveUsageAnswers')));
-    await tester.tap(find.byKey(const Key('saveUsageAnswers')));
-    await tester.pumpAndSettle();
-    expect((jsonDecode(post!.body)['answers'] as List).single['value'], 0);
-    expect(
-      find.textContaining('No more questions are available'),
-      findsOneWidget,
-    );
-    api.close();
+      );
+      await tester.tap(find.text('Refresh estimate'));
+      await tester.pump();
+      await tester.pump();
+      expect(
+        find.text('You refreshed this device recently. Try again later.'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('refreshEstimate')))
+            .onPressed,
+        isNull,
+      );
+      await tester.pump(const Duration(seconds: 61));
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('refreshEstimate')))
+            .onPressed,
+        isNotNull,
+      );
+    });
+
+    testWidgets('other refresh failures show the one internal error', (
+      tester,
+    ) async {
+      await open(
+        tester,
+        refresh: (_) => http.Response(
+          jsonEncode({'code': 'boom', 'message': 'database down'}),
+          500,
+        ),
+      );
+      await tester.tap(find.text('Refresh estimate'));
+      await tester.pumpAndSettle();
+      expect(find.text('Internal Error, Try again later'), findsOneWidget);
+      expect(find.textContaining('database'), findsNothing);
+    });
+
+    testWidgets('a failed question load shows the internal error', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1170, 2532);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final api = _api(MockClient((_) async => http.Response('nope', 503)));
+      addTearDown(api.close);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CloudUsageQuestionsScreen(
+            homeId: home.id,
+            applianceId: appliance.id,
+            applianceName: appliance.name,
+            api: api,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Internal Error, Try again later'), findsOneWidget);
+    });
   });
 }

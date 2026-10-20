@@ -13,6 +13,15 @@ String buildDesignNavigationScript(String page) {
         return clone.textContent.replace(/\\s+/g, ' ').trim();
       };
       document.addEventListener('click', (event) => {
+        const deviceCard = page === 'devices'
+          ? event.target.closest('[data-el-live-device-id]') : null;
+        if (deviceCard && !event.target.closest('a, button, select, input')) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          send('device_detail:' + deviceCard.getAttribute('data-el-live-device-id') +
+            ':' + (deviceCard.getAttribute('data-el-device-name') || ''));
+          return;
+        }
         const link = event.target.closest('a[data-path]');
         if (link) {
           const label = textOf(link);

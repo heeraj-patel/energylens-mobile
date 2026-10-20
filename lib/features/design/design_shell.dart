@@ -22,6 +22,7 @@ import '../../core/cloud_api/cloud_home.dart' show newCloudIdempotencyKey;
 import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import '../identify/appliance_onboarding_screen.dart'
     show identityFieldsFromOcr, manufacturerHintFromOcr;
+import '../identify/cloud_usage_questions_screen.dart';
 import '../identify/photo_capture_service.dart';
 import '../discovery/device_data_refresh.dart';
 import '../discovery/discovery_api.dart' show HubRequestException, PairingException;
@@ -1874,6 +1875,47 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     }
   }
 
+  static const _deviceDetailRoute = 'device_detail:';
+  static final _applianceIdPattern = RegExp(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+  );
+  bool _deviceDetailOpen = false;
+
+  /// [target] is `<appliance id>:<name>` from a tapped Devices card.
+  Future<void> _openDeviceDetail(String target) async {
+    final split = target.indexOf(':');
+    final id = split < 0 ? '' : target.substring(0, split);
+    final name = split < 0 ? '' : target.substring(split + 1).trim();
+    final api = widget.settingsApi;
+    final current = widget.designContextCoordinator?.context;
+    final lifecycle = widget.onboardingLifecycle;
+    if (_deviceDetailOpen ||
+        _page != 'devices' ||
+        api == null ||
+        current == null ||
+        name.isEmpty ||
+        !_applianceIdPattern.hasMatch(id) ||
+        (lifecycle != null &&
+            !lifecycle.isVerifiedScope(current.accountId, current.homeId))) {
+      return;
+    }
+    _deviceDetailOpen = true;
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => CloudUsageQuestionsScreen(
+            api: api,
+            homeId: current.homeId,
+            applianceId: id,
+            applianceName: name,
+          ),
+        ),
+      );
+    } finally {
+      _deviceDetailOpen = false;
+    }
+  }
+
   Future<void> _open(String route) async {
     if (route == 'discover_devices') {
       if (widget.localPilot && !widget.designTour) {
@@ -1907,6 +1949,10 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
           lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
         await _refreshSavedAppliances('settings_manage_devices', generation);
       }
+      return;
+    }
+    if (route.startsWith(_deviceDetailRoute)) {
+      await _openDeviceDetail(route.substring(_deviceDetailRoute.length));
       return;
     }
     if (_page == 'dashboard' && route.startsWith('dashboard_period:')) {

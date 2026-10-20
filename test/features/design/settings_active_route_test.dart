@@ -181,6 +181,75 @@ class _Adapters implements DesignContextAdapters {
 }
 
 void main() {
+  testWidgets('a tapped Devices card opens its appliance detail screen', (
+    tester,
+  ) async {
+    final platform = _WebPlatform();
+    WebViewPlatform.instance = platform;
+    const home = CloudHome(
+      id: _homeId,
+      name: 'Selected Home',
+      timezone: 'America/Chicago',
+      countryCode: 'US',
+      postalCode: '60601',
+      version: 1,
+      etag: '"1"',
+    );
+    final coordinator = DesignContextCoordinator(_Adapters(home));
+    coordinator.useVerifiedContext(
+      VerifiedDesignContext(
+        accountId: 'owner',
+        homeId: _homeId,
+        mode: DesignContextMode.household,
+      ),
+    );
+    final paths = <String>[];
+    final api = CloudApiClient(
+      session: CloudSession(
+        config: const CloudAuthConfig(
+          issuer: 'https://issuer.example',
+          audience: 'energylens-cloud',
+          clientId: 'client',
+          redirectUrl: 'io.energylens.app://login-callback',
+          apiUrl: 'https://api.example',
+        ),
+        store: _Store(),
+        authenticator: _Auth(),
+      ),
+      client: MockClient((request) async {
+        paths.add(request.url.path);
+        if (request.url.path.endsWith('/questions')) {
+          return http.Response(jsonEncode({'questions': []}), 200);
+        }
+        if (request.url.path.endsWith('/questions/answers')) {
+          return http.Response(jsonEncode({'answers': []}), 200);
+        }
+        return http.Response('{}', 500);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DesignShell(
+          settingsApi: api,
+          designContextCoordinator: coordinator,
+        ),
+      ),
+    );
+    await tester.pump();
+    platform.controller.route('devices');
+    await tester.pumpAndSettle();
+    platform.controller.route('device_detail:not-an-id:Washer');
+    await tester.pumpAndSettle();
+    expect(find.text('Refresh estimate'), findsNothing);
+    platform.controller.route(
+      'device_detail:22222222-2222-4222-8222-222222222222:Washer: big',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Washer: big'), findsOneWidget);
+    expect(find.text('Refresh estimate'), findsOneWidget);
+    expect(paths, contains('/v1/homes/$_homeId/questions'));
+  });
+
   testWidgets('local Settings device management opens discovery', (
     tester,
   ) async {

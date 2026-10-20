@@ -851,8 +851,9 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => CloudUsageQuestionsScreen(
-            home: widget.cloudHome!,
-            appliance: saved,
+            homeId: widget.cloudHome!.id,
+            applianceId: saved.id,
+            applianceName: saved.name,
             api: widget.cloudApi!,
           ),
         ),

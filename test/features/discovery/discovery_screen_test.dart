@@ -1225,7 +1225,7 @@ void main() {
       await tester.tap(find.byKey(const Key('saveAppliance')));
       await tester.pumpAndSettle();
       expect(applianceCreates, 1);
-      await tester.tap(find.byKey(const Key('saveUsageAnswers')));
+      await tester.pageBack();
       await tester.pumpAndSettle();
       expect(attachmentCreates, 2);
       expect(

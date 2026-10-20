@@ -7,6 +7,49 @@ import 'package:energylens_mobile/core/cloud_api/cloud_energy_categories.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('a live Devices card routes its appliance id and name', () async {
+    final script = buildDesignNavigationScript('devices');
+    final file = await File(
+      '${Directory.systemTemp.path}/energylens-device-card-${DateTime.now().microsecondsSinceEpoch}.json',
+    ).writeAsString(jsonEncode({'script': script}));
+    try {
+      final result = await Process.run('node', [
+        '-e',
+        r'''
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const {script} = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+const routes = [];
+let clickHandler;
+globalThis.document = {addEventListener(type, handler) { clickHandler = handler; }};
+globalThis.window = {};
+globalThis.EnergyLensNavigation = {postMessage(route) { routes.push(route); }};
+eval(script);
+const attrs = {'data-el-live-device-id': 'a1', 'data-el-device-name': 'Washer: big'};
+const card = {getAttribute: name => attrs[name] ?? null};
+let prevented = false;
+clickHandler({
+  target: {closest(selector) { return selector === '[data-el-live-device-id]' ? card : null; }},
+  preventDefault() { prevented = true; },
+  stopImmediatePropagation() {}
+});
+assert.equal(prevented, true);
+assert.deepEqual(routes, ['device_detail:a1:Washer: big']);
+routes.length = 0;
+clickHandler({
+  target: {closest(selector) { return selector === '[data-el-live-device-id]' ? card : selector === 'a, button, select, input' ? {} : null; }},
+  preventDefault() {}, stopImmediatePropagation() {}
+});
+assert.deepEqual(routes, []);
+''',
+        file.path,
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    } finally {
+      await file.delete();
+    }
+  });
+
   test('Dashboard period buttons route exact backend granularities', () async {
     final script = buildDesignNavigationScript('dashboard');
     final file = await File(

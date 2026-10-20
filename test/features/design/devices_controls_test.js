@@ -214,3 +214,12 @@ test('unknown live devices remain in All, sort after known values, and reset on 
   page.filter.dispatch('change');
   assert.equal(page.summary.textContent, 'Showing 1–10 of 10 devices');
 });
+
+test('sorts positive sub-cent waste above zero', () => {
+  const page = makePage([
+    card('Zero', 'Active', '$0.10', '$0.00'),
+    card('Tiny', 'Active', '$0.10', '<$0.01'),
+    card('Big', 'Active', '$0.10', '$0.30')
+  ]);
+  assert.deepEqual(page.visible(), ['Big', 'Tiny', 'Zero']);
+});
