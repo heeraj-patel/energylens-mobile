@@ -264,13 +264,6 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
         ),
       );
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Packaged pages must not reuse WebKit responses from an older install.
-      // Clear resource caches only; preserve cookies, local storage, and profile data.
-      try {
-        await _controller.clearCache();
-      } catch (_) {
-        // Platforms without resource-cache support can still load local assets.
-      }
       if (!mounted) return;
       if (widget.localPilot) {
         try {

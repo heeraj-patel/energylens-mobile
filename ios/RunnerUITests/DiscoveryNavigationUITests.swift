@@ -421,6 +421,13 @@ final class DiscoveryNavigationUITests: XCTestCase {
     // Acceptance setup may establish one legitimate local Cloud session for
     // later strict-reuse tests. The default path still exercises sign-out.
     if ProcessInfo.processInfo.environment["ENERGYLENS_TEST_PRESERVE_SESSION"] == "1" {
+      app.terminate()
+      app.launchArguments = []
+      app.launch()
+      XCTAssertTrue(settings.waitForExistence(timeout: 90),
+                    "Cloud session did not survive a process relaunch")
+      XCTAssertFalse(usernameField.exists,
+                     "Cloud session returned to sign-in after a process relaunch")
       return
     }
 

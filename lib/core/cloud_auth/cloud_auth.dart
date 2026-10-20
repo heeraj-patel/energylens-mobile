@@ -242,6 +242,11 @@ abstract interface class LocalCloudAuthService
   Future<void> resetPassword(String token, String password);
 }
 
+/// The refresh endpoint has definitively rejected the stored credential.
+class CloudRefreshCredentialRejected implements Exception {
+  const CloudRefreshCredentialRejected();
+}
+
 class AppAuthCloudAuthenticator implements CloudAuthenticator {
   const AppAuthCloudAuthenticator([FlutterAppAuth? appAuth])
     : _appAuth = appAuth ?? const FlutterAppAuth();
@@ -423,9 +428,16 @@ class CloudSession {
       }
       await _saveIfCurrent(tokens, generation);
       return generation == _generation ? tokens : null;
-    } catch (_) {
+    } on CloudRefreshCredentialRejected {
       await _clearIfCurrent(generation);
       return null;
+    } on FlutterAppAuthPlatformException catch (error) {
+      if (error.platformErrorDetails.error ==
+          FlutterAppAuthOAuthError.invalidGrant) {
+        await _clearIfCurrent(generation);
+        return null;
+      }
+      rethrow;
     }
   }
 

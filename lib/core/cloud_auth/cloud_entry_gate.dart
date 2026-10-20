@@ -117,6 +117,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   CloudAuthCapabilities? _capabilities;
   bool _submitAttempted = false;
   bool _submitError = false;
+  bool _allowSavedSessionRetry = true;
   String? _verifiedAccountId;
   int _lifecycleEpoch = 0;
 
@@ -250,6 +251,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                 (account.authMethod == null ||
                     account.authMethod == _session.credentialMethod);
       if (!identityValid) {
+        _allowSavedSessionRetry = false;
         if (kDebugMode) {
           final reason = usernameMode
               ? (account.authMethod != 'username_password'
@@ -285,6 +287,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       final preferences = await _api.accountPreferences();
       if (!mounted || epoch != _lifecycleEpoch) return;
       _verifiedAccountId = account.id;
+      _allowSavedSessionRetry = true;
       _allowRememberedRestore = true;
       final origin = Uri.parse(_session.config.apiUrl).origin;
       await _homeCreateDrafts.selectScope(
@@ -309,6 +312,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       if (!mounted || epoch != _lifecycleEpoch) return;
       _invalidateDesignContext();
       if (error.statusCode == 401 || error.statusCode == 403) {
+        _allowSavedSessionRetry = false;
         await _session.signOut();
       }
       if (mounted) {
@@ -578,6 +582,21 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       }
       if (!mounted || epoch != _lifecycleEpoch) return;
     }
+    if (_allowSavedSessionRetry) {
+      try {
+        if (await _session.store.read() != null) {
+          final token = await _session.accessToken();
+          if (!mounted) return;
+          if (token != null) {
+            await _validate();
+            return;
+          }
+        }
+      } catch (_) {
+        if (mounted) setState(() => _submitError = true);
+        return;
+      }
+    }
     if (_session.credentialMethod == 'oidc') {
       await _signIn();
     } else if (_session.config.isLocalAuthConfigured &&
@@ -589,6 +608,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   }
 
   Future<void> _signOut() async {
+    _allowSavedSessionRetry = false;
     _invalidateDesignContext();
     if (mounted) {
       setState(() {

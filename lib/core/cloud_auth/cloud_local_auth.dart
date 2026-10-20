@@ -162,8 +162,18 @@ class CloudLocalAuthClient implements LocalCloudAuthService {
   );
 
   @override
-  Future<CloudTokens> refresh(String refreshToken) async =>
-      _tokens(await _post('refresh', {'refresh_token': refreshToken}, 200));
+  Future<CloudTokens> refresh(String refreshToken) async {
+    try {
+      return _tokens(
+        await _post('refresh', {'refresh_token': refreshToken}, 200),
+      );
+    } on CloudLocalAuthException catch (error) {
+      if (error.statusCode == 401) {
+        throw const CloudRefreshCredentialRejected();
+      }
+      rethrow;
+    }
+  }
 
   @override
   Future<void> logout(String refreshToken) async {

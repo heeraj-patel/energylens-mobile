@@ -54,6 +54,40 @@ class FailingAuth extends Auth {
   Future<CloudTokens> signIn(CloudAuthConfig config) async => throw error;
 }
 
+class RetryAuth extends Auth {
+  RetryAuth({this.invalidGrant = false});
+  final bool invalidGrant;
+  int refreshCalls = 0;
+  int signInCalls = 0;
+
+  @override
+  Future<CloudTokens> refresh(CloudAuthConfig config, String token) async {
+    refreshCalls++;
+    if (refreshCalls == 1) {
+      if (invalidGrant) {
+        throw FlutterAppAuthPlatformException(
+          code: 'token_error',
+          platformErrorDetails: FlutterAppAuthPlatformErrorDetails(
+            error: FlutterAppAuthOAuthError.invalidGrant,
+          ),
+        );
+      }
+      throw const SocketException('offline');
+    }
+    return CloudTokens(
+      accessToken: 'recovered',
+      refreshToken: 'rotated',
+      expiresAt: DateTime.now().add(const Duration(minutes: 15)),
+    );
+  }
+
+  @override
+  Future<CloudTokens> signIn(CloudAuthConfig config) async {
+    signInCalls++;
+    return const CloudTokens(accessToken: 'new-login');
+  }
+}
+
 class RecordingDesignAdapters implements DesignContextAdapters {
   int clears = 0;
   @override
@@ -82,6 +116,218 @@ String ownedHomes([String second = secondHomeId]) =>
     '{"homes":[{"id":"$firstHomeId","name":"First home","timezone":"America/Chicago","location":{"country_code":"US","postal_code":"60601"}},{"id":"$second","name":"Second home","timezone":"America/Chicago","location":{"country_code":"US","postal_code":"60601"}}]}';
 
 void main() {
+  testWidgets('local Submit recovers saved session without password login', (
+    tester,
+  ) async {
+    const localConfig = CloudAuthConfig(
+      issuer: '',
+      audience: '',
+      clientId: '',
+      redirectUrl: '',
+      apiUrl: 'https://api.example',
+      localAuthEnabled: true,
+    );
+    var refreshCalls = 0;
+    var loginCalls = 0;
+    final local = CloudLocalAuthClient(
+      baseUrl: localConfig.apiUrl,
+      client: MockClient((request) async {
+        if (request.url.path.endsWith('/login')) {
+          loginCalls++;
+          return http.Response('', 401);
+        }
+        refreshCalls++;
+        if (refreshCalls == 1) return http.Response('', 503);
+        final expiry = DateTime.now().toUtc().add(const Duration(minutes: 15));
+        return http.Response(
+          '{"token_type":"Bearer","access_token":"recovered","refresh_token":"rotated",'
+          '"access_expires_at":"${expiry.toIso8601String()}",'
+          '"refresh_expires_at":"${expiry.add(const Duration(days: 30)).toIso8601String()}"}',
+          200,
+        );
+      }),
+    );
+    final store = Store()
+      ..tokens = CloudTokens(
+        accessToken: 'expired',
+        refreshToken: 'valid-refresh',
+        expiresAt: DateTime.now().subtract(const Duration(minutes: 1)),
+        refreshExpiresAt: DateTime.now().add(const Duration(days: 30)),
+        provider: 'local',
+      );
+    final session = CloudSession(
+      config: localConfig,
+      store: store,
+      authenticator: Auth(),
+      localAuth: local,
+    );
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config') {
+          return http.Response(
+            '{"schema_version":1,"methods":["username_password"],'
+            '"registration_enabled":false,"email_verification_required":false,'
+            '"password_recovery_enabled":false,"session_logout_revokes_access":true}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/me') {
+          return http.Response(
+            '{"id":"$verifiedAccountId","username":"dev",'
+            '"email_verified":true,"auth_method":"username_password"}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/me/preferences') {
+          return http.Response(
+            acceptedPreferences,
+            200,
+            headers: {'etag': '"1"'},
+          );
+        }
+        return http.Response(ownedHomes(), 200);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          session: session,
+          api: api,
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
+          homeBuilder: (_, _, _, _) => const Text('Private Home'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Submit'), findsOneWidget);
+    expect(store.tokens?.refreshToken, 'valid-refresh');
+    await tester.tap(find.text('Submit'));
+    await tester.pumpAndSettle();
+    expect(find.text('First home'), findsOneWidget);
+    expect(refreshCalls, 2);
+    expect(loginCalls, 0);
+    expect(store.tokens?.refreshToken, 'rotated');
+    api.close();
+    local.close();
+  });
+
+  testWidgets(
+    'Submit retries a stored session after transient restore failure',
+    (tester) async {
+      final store = Store()
+        ..tokens = CloudTokens(
+          accessToken: 'expired',
+          refreshToken: 'valid-refresh',
+          expiresAt: DateTime.now().subtract(const Duration(minutes: 1)),
+        );
+      final auth = RetryAuth();
+      final session = CloudSession(
+        config: config,
+        store: store,
+        authenticator: auth,
+      );
+      final api = CloudApiClient(
+        session: session,
+        client: MockClient((request) async {
+          if (request.url.path == '/v1/auth/config')
+            return http.Response('', 404);
+          if (request.url.path == '/v1/me') {
+            return http.Response(
+              '{"id":"$verifiedAccountId","email":null,"email_verified":true}',
+              200,
+            );
+          }
+          if (request.url.path == '/v1/me/preferences') {
+            return http.Response(
+              acceptedPreferences,
+              200,
+              headers: {'etag': '"1"'},
+            );
+          }
+          return http.Response(ownedHomes(), 200);
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CloudEntryGate(
+            session: session,
+            api: api,
+            homeCreateStorage: MemoryDraftStorage(),
+            activeHomeStorage: MemoryDraftStorage(),
+            homeBuilder: (_, _, _, _) => const Text('Private Home'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Submit'), findsOneWidget);
+      expect(store.tokens?.refreshToken, 'valid-refresh');
+      await tester.tap(find.text('Submit'));
+      await tester.pumpAndSettle();
+      expect(find.text('First home'), findsOneWidget);
+      expect(auth.refreshCalls, 2);
+      expect(auth.signInCalls, 0);
+      expect(store.tokens?.refreshToken, 'rotated');
+      api.close();
+    },
+  );
+
+  testWidgets('rejected stored refresh permits a new sign-in', (tester) async {
+    final store = Store()
+      ..tokens = CloudTokens(
+        accessToken: 'expired',
+        refreshToken: 'revoked',
+        expiresAt: DateTime.now().subtract(const Duration(minutes: 1)),
+      );
+    final auth = RetryAuth(invalidGrant: true);
+    final session = CloudSession(
+      config: config,
+      store: store,
+      authenticator: auth,
+    );
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config')
+          return http.Response('', 404);
+        if (request.url.path == '/v1/me') {
+          return http.Response(
+            '{"id":"$verifiedAccountId","email":null,"email_verified":true}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/me/preferences') {
+          return http.Response(
+            acceptedPreferences,
+            200,
+            headers: {'etag': '"1"'},
+          );
+        }
+        return http.Response(ownedHomes(), 200);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          session: session,
+          api: api,
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
+          homeBuilder: (_, _, _, _) => const Text('Private Home'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(store.tokens, isNull);
+    await tester.tap(find.text('Submit'));
+    await tester.pumpAndSettle();
+    expect(find.text('First home'), findsOneWidget);
+    expect(auth.refreshCalls, 1);
+    expect(auth.signInCalls, 1);
+    api.close();
+  });
+
   testWidgets('default gate renders the form with missing build config', (
     tester,
   ) async {

@@ -96,6 +96,7 @@ Set<String> _approvedRemovedIds(String page, String category) {
   }
   if (category == 'bindings') {
     return {
+      if (page == 'settings_manual_device_entry') '${page}_text_040',
       if (page != 'settings_photo_scan_onboarding')
         for (var n = 45; n <= 50; n++)
           '${page}_text_${n.toString().padLeft(3, '0')}',

@@ -111,9 +111,8 @@ class _WebController extends PlatformWebViewController {
   Future<void> loadFlutterAsset(String key) async {
     expectSync(
       cacheClears,
-      1,
-      reason:
-          'Clear stale packaged-resource caches before loading the first page',
+      0,
+      reason: 'Packaged pages load without clearing the WebView cache',
     );
     asset = key;
     navigation?.onFinished?.call('file:///$key');

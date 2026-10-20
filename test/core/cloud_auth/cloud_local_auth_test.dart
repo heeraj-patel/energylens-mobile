@@ -38,6 +38,121 @@ const _config = CloudAuthConfig(
 );
 
 void main() {
+  test(
+    'transient refresh failures retain the session for a later retry',
+    () async {
+      var attempts = 0;
+      final client = CloudLocalAuthClient(
+        baseUrl: _config.apiUrl,
+        client: MockClient((request) async {
+          expect(request.url.path, '/v1/auth/local/refresh');
+          attempts++;
+          if (attempts == 1) return http.Response('', 503);
+          if (attempts == 2) throw http.ClientException('offline');
+          final expiry = DateTime.now().toUtc().add(
+            const Duration(minutes: 15),
+          );
+          return http.Response(
+            jsonEncode({
+              'token_type': 'Bearer',
+              'access_token': 'recovered-access',
+              'refresh_token': 'rotated-refresh',
+              'access_expires_at': expiry.toIso8601String(),
+              'refresh_expires_at': expiry
+                  .add(const Duration(days: 30))
+                  .toIso8601String(),
+            }),
+            200,
+          );
+        }),
+      );
+      final store = _Store()
+        ..tokens = CloudTokens(
+          accessToken: 'expired-access',
+          refreshToken: 'original-refresh',
+          expiresAt: DateTime.now().subtract(const Duration(minutes: 1)),
+          refreshExpiresAt: DateTime.now().add(const Duration(days: 30)),
+          provider: 'local',
+        );
+      final session = CloudSession(
+        config: _config,
+        store: store,
+        authenticator: _Oidc(),
+        localAuth: client,
+      );
+      await expectLater(
+        session.accessToken(),
+        throwsA(isA<CloudLocalAuthException>()),
+      );
+      expect(store.tokens?.refreshToken, 'original-refresh');
+      await expectLater(
+        session.accessToken(),
+        throwsA(isA<http.ClientException>()),
+      );
+      expect(store.tokens?.refreshToken, 'original-refresh');
+      expect(await session.accessToken(), 'recovered-access');
+      expect(store.tokens?.refreshToken, 'rotated-refresh');
+      expect(attempts, 3);
+      client.close();
+    },
+  );
+
+  test('rejected refresh credential clears the persisted session', () async {
+    final client = CloudLocalAuthClient(
+      baseUrl: _config.apiUrl,
+      client: MockClient((_) async => http.Response('', 401)),
+    );
+    final store = _Store()
+      ..tokens = CloudTokens(
+        accessToken: 'expired-access',
+        refreshToken: 'revoked-refresh',
+        expiresAt: DateTime.now().subtract(const Duration(minutes: 1)),
+        refreshExpiresAt: DateTime.now().add(const Duration(days: 30)),
+        provider: 'local',
+      );
+    final session = CloudSession(
+      config: _config,
+      store: store,
+      authenticator: _Oidc(),
+      localAuth: client,
+    );
+    expect(await session.accessToken(), isNull);
+    expect(store.tokens, isNull);
+    client.close();
+  });
+
+  test(
+    'API 401 with unavailable refresh keeps credentials for retry',
+    () async {
+      final client = CloudLocalAuthClient(
+        baseUrl: _config.apiUrl,
+        client: MockClient((_) async => http.Response('', 503)),
+      );
+      final store = _Store()
+        ..tokens = CloudTokens(
+          accessToken: 'still-stored-access',
+          refreshToken: 'still-stored-refresh',
+          expiresAt: DateTime.now().add(const Duration(minutes: 5)),
+          refreshExpiresAt: DateTime.now().add(const Duration(days: 30)),
+          provider: 'local',
+        );
+      final session = CloudSession(
+        config: _config,
+        store: store,
+        authenticator: _Oidc(),
+        localAuth: client,
+      );
+      final api = CloudApiClient(
+        session: session,
+        client: MockClient((_) async => http.Response('', 401)),
+      );
+      await expectLater(api.me(), throwsA(isA<CloudLocalAuthException>()));
+      expect(store.tokens?.refreshToken, 'still-stored-refresh');
+      api.close();
+      client.close();
+    },
+  );
+
   test('local auth requires explicit enablement and a real HTTPS origin', () {
     expect(_config.isConfigured, isFalse);
     expect(_config.isLocalAuthConfigured, isTrue);
