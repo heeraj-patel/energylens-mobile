@@ -51,6 +51,10 @@ class CloudEstimate {
     required this.formulaVersion,
     required this.asOf,
     required this.unavailableReason,
+    this.wasteEnergy,
+    this.wasteCost,
+    this.wasteBasis,
+    this.rateBasis,
   });
   final String id;
   final String applianceId;
@@ -70,6 +74,10 @@ class CloudEstimate {
   final String formulaVersion;
   final DateTime asOf;
   final String? unavailableReason;
+  final CloudEstimateQuantity? wasteEnergy;
+  final String? wasteCost;
+  final String? wasteBasis;
+  final String? rateBasis;
 
   factory CloudEstimate.fromJson(Map<String, dynamic> json) {
     final period = json['period'];
@@ -97,7 +105,16 @@ class CloudEstimate {
         quality['source'] is! String ||
         quality['context'] is! String ||
         quality['rate'] is! String ||
-        json['waste'] != 'not_yet_assessed' ||
+        !const {'not_yet_assessed', 'assessed'}.contains(json['waste']) ||
+        !_optionalEnum(json['waste_basis'], const {
+          'standby',
+          'floor',
+          'demo',
+        }) ||
+        !_optionalEnum(json['rate_basis'], const {
+          'home_tariff',
+          'us_average',
+        }) ||
         refs is! List ||
         json['formula_version'] is! String ||
         asOf == null) {
@@ -118,6 +135,20 @@ class CloudEstimate {
                 cost['currency'] is! String ||
                 cost['rate_kind'] is! String)) {
       throw const FormatException('Invalid cloud estimate amount');
+    }
+    final wasteEnergy = json['waste_energy'];
+    final wasteCost = json['waste_cost'];
+    if (wasteEnergy != null &&
+            (wasteEnergy is! Map<String, dynamic> ||
+                wasteEnergy['value'] is! String ||
+                wasteEnergy['unit'] != 'kWh' ||
+                wasteEnergy['fuel'] != 'electricity') ||
+        wasteCost != null &&
+            (wasteCost is! Map<String, dynamic> ||
+                wasteCost['value'] is! String ||
+                wasteCost['currency'] is! String ||
+                wasteCost['rate_kind'] is! String)) {
+      throw const FormatException('Invalid cloud estimate waste');
     }
     if (json['kind'] == 'unavailable' &&
         (json['unavailable_reason'] is! String ||
@@ -172,9 +203,22 @@ class CloudEstimate {
       formulaVersion: json['formula_version'] as String,
       asOf: asOf,
       unavailableReason: json['unavailable_reason'] as String?,
+      wasteEnergy: wasteEnergy == null
+          ? null
+          : CloudEstimateQuantity(
+              value: wasteEnergy['value'] as String,
+              unit: 'kWh',
+              fuel: 'electricity',
+            ),
+      wasteCost: wasteCost == null ? null : wasteCost['value'] as String,
+      wasteBasis: json['waste_basis'] as String?,
+      rateBasis: json['rate_basis'] as String?,
     );
   }
 }
+
+bool _optionalEnum(Object? value, Set<String> allowed) =>
+    value == null || (value is String && allowed.contains(value));
 
 class CloudEstimateBatch {
   const CloudEstimateBatch({required this.estimates, required this.asOf});
