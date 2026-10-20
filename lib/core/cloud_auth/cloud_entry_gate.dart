@@ -210,7 +210,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       _selectedHome = null;
       _homes = const [];
       _homeLoading = false;
-      _message = 'Your cloud sign-in expired. Sign in again.';
+      _message = 'Your sign-in expired. Sign in again.';
     });
   }
 

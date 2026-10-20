@@ -984,7 +984,7 @@ void main() {
     expect(find.text('Main home'), findsNothing);
     expect(find.text('Private Home'), findsNothing);
     expect(
-      find.text('Your cloud sign-in expired. Sign in again.'),
+      find.text('Your sign-in expired. Sign in again.'),
       findsOneWidget,
     );
     api.close();

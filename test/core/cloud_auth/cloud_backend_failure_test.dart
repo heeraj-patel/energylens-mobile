@@ -24,7 +24,7 @@ const _config = CloudAuthConfig(
 const _homeId = '11111111-1111-4111-8111-111111111111';
 const _homeJson =
     '{"id":"$_homeId","name":"Main home","timezone":"America/Chicago","location":{"country_code":"US","postal_code":"60601"}}';
-const _expired = 'Your cloud sign-in expired. Sign in again.';
+const _expired = 'Your sign-in expired. Sign in again.';
 
 class _Store implements CloudTokenStore {
   CloudTokens? tokens = const CloudTokens(accessToken: 'token');
