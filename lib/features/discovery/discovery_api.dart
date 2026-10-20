@@ -1272,6 +1272,25 @@ class DiscoveryApi {
         .toList(growable: false);
   }
 
+  /// Refresh an already saved v2 identity and its reachability on the Hub.
+  Future<NearbySavedDevice> refreshNearbyDevice(
+    String baseUrl,
+    String token,
+    String deviceId,
+  ) async {
+    final response = await _post(
+      baseUrl,
+      token,
+      '/v2/devices/${Uri.encodeComponent(deviceId)}/refresh',
+      {},
+    );
+    final device = NearbySavedDevice.fromJson(response);
+    if (device.id != deviceId || device.id.isEmpty) {
+      throw const FormatException('Unexpected refreshed device ID.');
+    }
+    return device;
+  }
+
   Future<NearbySavedDevice> adoptNearby(
     String baseUrl,
     String token,

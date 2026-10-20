@@ -20,6 +20,7 @@ import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import '../identify/appliance_onboarding_screen.dart'
     show identityFieldsFromOcr, manufacturerHintFromOcr;
 import '../identify/photo_capture_service.dart';
+import '../discovery/device_data_refresh.dart';
 import 'device_review_sheet.dart';
 import 'efficiency_domain_repository.dart';
 import 'efficiency_trailing_30_day_bindings.dart';
@@ -73,6 +74,7 @@ class DesignShell extends StatefulWidget {
     this.designTour = false,
     this.localPilot = false,
     this.localDeviceLifecycle,
+    this.deviceDataRefresh,
     this.homeName = 'The Miller Home',
   });
 
@@ -90,13 +92,14 @@ class DesignShell extends StatefulWidget {
   final bool designTour;
   final bool localPilot;
   final LocalPilotDeviceLifecycle? localDeviceLifecycle;
+  final DeviceDataRefresh? deviceDataRefresh;
   final String homeName;
 
   @override
   State<DesignShell> createState() => _DesignShellState();
 }
 
-class _DesignShellState extends State<DesignShell> {
+class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
   static const _pages = <String>{
     'dashboard',
     'devices',
@@ -185,6 +188,14 @@ class _DesignShellState extends State<DesignShell> {
   final Map<String, String> _archiveKeys = <String, String>{};
   bool _navigating = false;
   int _navigationEpoch = 0;
+  late final DeviceDataRefresh _deviceDataRefresh =
+      widget.deviceDataRefresh ?? DeviceDataRefresh();
+  Future<void>? _deviceRefreshRun;
+  String? _deviceRefreshScope;
+  int _deviceRefreshGeneration = 0;
+  bool _deviceRefreshReloadPending = false;
+  bool _deviceRefreshReloadRunning = false;
+  String? _observedLocalDeviceIdentity;
   String? _activePageStateScope;
   static const _localSettingsStore = LocalPilotSettingsStore();
   static EnergyCategories? _sessionCategories;
@@ -200,6 +211,7 @@ class _DesignShellState extends State<DesignShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _localSettings = LocalPilotSettings(
       homeName: widget.homeName,
       ownerName: 'Alex Miller',
@@ -269,6 +281,7 @@ class _DesignShellState extends State<DesignShell> {
       }
       if (mounted) {
         await _loadPage();
+        unawaited(_refreshDeviceData());
         if (widget.recoverLostPhotoOnStart ??
             (!kIsWeb && defaultTargetPlatform == TargetPlatform.android)) {
           unawaited(_recoverLostPhoto());
@@ -280,6 +293,10 @@ class _DesignShellState extends State<DesignShell> {
   @override
   void didUpdateWidget(covariant DesignShell oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (_deviceRefreshScope != _currentDeviceRefreshScope()) {
+      _invalidateDeviceRefresh();
+      unawaited(_refreshDeviceData());
+    }
     if (!identical(
           oldWidget.designContextCoordinator,
           widget.designContextCoordinator,
@@ -311,10 +328,140 @@ class _DesignShellState extends State<DesignShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _invalidateDeviceRefresh();
     _tourTimer?.cancel();
     _invalidatePageLoad();
     _pageReads.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshDeviceData());
+    }
+  }
+
+  String? _currentDeviceRefreshScope() {
+    if (!mounted || widget.designTour) return null;
+    if (widget.localPilot) {
+      return widget.localDeviceLifecycle == null
+          ? null
+          : 'local|${identityHashCode(widget.localDeviceLifecycle)}|${_observedLocalDeviceIdentity ?? ''}';
+    }
+    final context = widget.designContextCoordinator?.context;
+    final cloud = widget.settingsApi;
+    final lifecycle = widget.onboardingLifecycle;
+    if (context == null ||
+        context.mode != DesignContextMode.household ||
+        cloud == null ||
+        lifecycle == null ||
+        !lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+      return null;
+    }
+    final session = cloud.session;
+    return '${identityHashCode(cloud)}|${identityHashCode(widget.designContextCoordinator)}|${identityHashCode(lifecycle)}|${session.config.apiUrl}|${session.credentialMethod}|${context.accountId}|${context.homeId}|${session.generation}';
+  }
+
+  void _invalidateDeviceRefresh() {
+    _deviceRefreshGeneration++;
+    _deviceRefreshScope = null;
+    _deviceRefreshRun = null;
+    _deviceRefreshReloadPending = false;
+  }
+
+  Future<void> _refreshDeviceData() async {
+    if (widget.localPilot && widget.localDeviceLifecycle != null) {
+      try {
+        _observedLocalDeviceIdentity = await widget.localDeviceLifecycle!
+            .currentIdentity();
+      } catch (_) {
+        _observedLocalDeviceIdentity = null;
+      }
+    }
+    final scope = _currentDeviceRefreshScope();
+    if (scope == null) {
+      _invalidateDeviceRefresh();
+      return;
+    }
+    if (scope == _deviceRefreshScope && _deviceRefreshRun != null) {
+      return _deviceRefreshRun;
+    }
+    if (scope != _deviceRefreshScope) {
+      _invalidateDeviceRefresh();
+      _deviceRefreshScope = scope;
+    }
+    final generation = _deviceRefreshGeneration;
+    bool current() =>
+        mounted &&
+        generation == _deviceRefreshGeneration &&
+        _currentDeviceRefreshScope() == scope;
+    final run = () async {
+      var attempted = false;
+      try {
+        if (widget.localPilot) {
+          final lifecycle = widget.localDeviceLifecycle;
+          if (lifecycle == null) return;
+          attempted = await _deviceDataRefresh.refreshLocal(
+            lifecycle: lifecycle,
+            isCurrent: current,
+          );
+        } else {
+          final context = widget.designContextCoordinator?.context;
+          final cloud = widget.settingsApi;
+          if (context == null || cloud == null) return;
+          attempted = await _deviceDataRefresh.refreshCloud(
+            cloud: cloud,
+            accountId: context.accountId,
+            homeId: context.homeId,
+            isCurrent: current,
+          );
+        }
+      } catch (_) {
+        // The visible page stays usable when Hub access is unavailable.
+      } finally {
+        if (current() && attempted) {
+          _deviceRefreshReloadPending = true;
+          unawaited(_reloadAfterDeviceRefresh());
+        }
+      }
+    }();
+    _deviceRefreshRun = run;
+    await run;
+    if (identical(_deviceRefreshRun, run)) _deviceRefreshRun = null;
+  }
+
+  Future<void> _reloadAfterDeviceRefresh() async {
+    if (!_deviceRefreshReloadPending ||
+        _deviceRefreshReloadRunning ||
+        !mounted ||
+        _reviewOpen ||
+        _capturingPhoto ||
+        _navigating ||
+        !_pageReady) {
+      return;
+    }
+    final scope = _currentDeviceRefreshScope();
+    if (scope == null || scope != _deviceRefreshScope) return;
+    final page = _page;
+    final generation = _pageLoadGeneration;
+    _deviceRefreshReloadRunning = true;
+    try {
+      await _capturePageState();
+      if (!mounted ||
+          scope != _currentDeviceRefreshScope() ||
+          !_isCurrentPageLoad(page, generation) ||
+          _reviewOpen ||
+          _capturingPhoto ||
+          _navigating) {
+        return;
+      }
+      _deviceRefreshReloadPending = false;
+      await _loadPage();
+    } finally {
+      _deviceRefreshReloadRunning = false;
+    }
   }
 
   Future<void> _loadPage() async {
@@ -399,6 +546,7 @@ class _DesignShellState extends State<DesignShell> {
     if (peerScrollY != null && _isCurrentPageLoad(page, generation)) {
       await _controller.runJavaScript('window.scrollTo(0, $peerScrollY)');
     }
+    if (_deviceRefreshReloadPending) unawaited(_reloadAfterDeviceRefresh());
   }
 
   Future<void> _capturePageState() async {
@@ -1383,6 +1531,7 @@ class _DesignShellState extends State<DesignShell> {
       }
     } finally {
       _reviewOpen = false;
+      if (_deviceRefreshReloadPending) unawaited(_reloadAfterDeviceRefresh());
     }
   }
 
@@ -1429,6 +1578,7 @@ class _DesignShellState extends State<DesignShell> {
     } finally {
       if (photo != null) await widget.photoCapture.discard(photo);
       _capturingPhoto = false;
+      if (_deviceRefreshReloadPending) unawaited(_reloadAfterDeviceRefresh());
     }
   }
 
@@ -1499,6 +1649,7 @@ class _DesignShellState extends State<DesignShell> {
     } finally {
       if (photo != null) await widget.photoCapture.discard(photo);
       _capturingPhoto = false;
+      if (_deviceRefreshReloadPending) unawaited(_reloadAfterDeviceRefresh());
     }
   }
 
@@ -1726,6 +1877,7 @@ class _DesignShellState extends State<DesignShell> {
       return;
     }
     if (route == 'sign_out') {
+      _invalidateDeviceRefresh();
       _navigationEpoch++;
       _pageStates.clear();
       _history.clear();
@@ -1736,6 +1888,7 @@ class _DesignShellState extends State<DesignShell> {
       return;
     }
     if (route == 'change_home') {
+      _invalidateDeviceRefresh();
       _navigationEpoch++;
       _pageStates.clear();
       _history.clear();
@@ -1905,6 +2058,7 @@ class _DesignShellState extends State<DesignShell> {
       await _loadPage();
     } finally {
       _navigating = false;
+      if (_deviceRefreshReloadPending) unawaited(_reloadAfterDeviceRefresh());
     }
   }
 
