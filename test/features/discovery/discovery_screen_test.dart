@@ -1114,7 +1114,6 @@ void main() {
                 'schema_version': 1,
                 'version': 1,
                 'email_reports_enabled': false,
-                'history_disclosure_accepted_at': '2026-10-01T00:00:00Z',
               }),
               200,
               headers: {'etag': '"1"'},

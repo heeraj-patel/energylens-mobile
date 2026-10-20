@@ -8,29 +8,21 @@ class CloudAccountPreferences {
   const CloudAccountPreferences({
     required this.version,
     required this.emailReportsEnabled,
-    required this.historyDisclosureAcceptedAt,
   });
   final int version;
   final bool emailReportsEnabled;
-  final DateTime? historyDisclosureAcceptedAt;
-
-  bool get historyAccepted => historyDisclosureAcceptedAt != null;
 
   factory CloudAccountPreferences.fromJson(Map<String, dynamic> json) {
     final version = json['version'];
-    final accepted = json['history_disclosure_accepted_at'];
-    final acceptedAt = accepted is String ? DateTime.tryParse(accepted) : null;
     if (version is! int ||
         version < 1 ||
         json['schema_version'] != 1 ||
-        json['email_reports_enabled'] is! bool ||
-        accepted != null && acceptedAt == null) {
+        json['email_reports_enabled'] is! bool) {
       throw const FormatException('Invalid account preferences');
     }
     return CloudAccountPreferences(
       version: version,
       emailReportsEnabled: json['email_reports_enabled'] as bool,
-      historyDisclosureAcceptedAt: acceptedAt,
     );
   }
 }

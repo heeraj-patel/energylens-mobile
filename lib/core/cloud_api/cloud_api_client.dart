@@ -1486,11 +1486,7 @@ class CloudApiClient {
     required String idempotencyKey,
   }) async {
     if (patch.isEmpty ||
-        patch.keys.any(
-          (key) =>
-              key != 'email_reports_enabled' &&
-              key != 'history_disclosure_accepted_at',
-        )) {
+        patch.keys.any((key) => key != 'email_reports_enabled')) {
       throw ArgumentError.value(patch, 'patch');
     }
     final response = await _request(

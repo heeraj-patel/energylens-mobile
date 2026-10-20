@@ -10,15 +10,11 @@ class CloudPreferencesScreen extends StatefulWidget {
     super.key,
     required this.api,
     this.home,
-    this.requireDisclosure = false,
-    this.onDisclosureAccepted,
     this.onSignOut,
   });
 
   final CloudApiClient api;
   final CloudHome? home;
-  final bool requireDisclosure;
-  final VoidCallback? onDisclosureAccepted;
   final VoidCallback? onSignOut;
 
   @override
@@ -32,12 +28,9 @@ class _CloudPreferencesScreenState extends State<CloudPreferencesScreen> {
   String? _message;
   bool _busy = false;
   bool _loading = true;
-  bool _acceptedChecked = false;
   bool _emailEnabled = false;
   String _goal = 'unspecified';
   String _comfort = 'unknown';
-  String? _pendingAcceptanceKey;
-  String? _pendingAcceptanceAt;
   String? _pendingEmailKey;
   bool? _pendingEmailValue;
   String? _pendingHomeKey;
@@ -58,7 +51,7 @@ class _CloudPreferencesScreenState extends State<CloudPreferencesScreen> {
     try {
       final account = await widget.api.accountPreferences();
       CloudVersioned<CloudHomePreferences>? home;
-      if (widget.home != null && account.value.historyAccepted) {
+      if (widget.home != null) {
         home = await widget.api.homePreferences(widget.home!.id);
       }
       if (mounted) {
@@ -68,8 +61,6 @@ class _CloudPreferencesScreenState extends State<CloudPreferencesScreen> {
           _emailEnabled = account.value.emailReportsEnabled;
           _goal = home?.value.goal ?? 'unspecified';
           _comfort = home?.value.comfortPriority ?? 'unknown';
-          _pendingAcceptanceKey = null;
-          _pendingAcceptanceAt = null;
           _pendingEmailKey = null;
           _pendingEmailValue = null;
           _pendingHomeKey = null;
@@ -86,50 +77,6 @@ class _CloudPreferencesScreenState extends State<CloudPreferencesScreen> {
       }
     } finally {
       if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _acceptDisclosure() async {
-    final current = _account;
-    if (current == null || !_acceptedChecked || _busy) return;
-    _pendingAcceptanceKey ??= newCloudIdempotencyKey();
-    _pendingAcceptanceAt ??= DateTime.now().toUtc().toIso8601String();
-    setState(() {
-      _busy = true;
-      _message = null;
-    });
-    try {
-      final saved = await widget.api.updateAccountPreferences(
-        {'history_disclosure_accepted_at': _pendingAcceptanceAt},
-        ifMatch: current.etag,
-        idempotencyKey: _pendingAcceptanceKey!,
-      );
-      if (!mounted) return;
-      setState(() {
-        _account = saved;
-        _pendingAcceptanceKey = null;
-        _pendingAcceptanceAt = null;
-        _message = 'History disclosure accepted.';
-      });
-      widget.onDisclosureAccepted?.call();
-      if (widget.home != null) await _refresh();
-    } on CloudApiException catch (error) {
-      if (!mounted) return;
-      setState(
-        () => _message = error.statusCode == 409
-            ? 'Settings changed. Refresh before trying again.'
-            : error.statusCode == 400 || error.statusCode == 428
-            ? 'This disclosure request expired. Refresh before trying again.'
-            : 'Could not confirm acceptance. Retry the same request or refresh to check its status.',
-      );
-    } catch (_) {
-      if (mounted) {
-        setState(
-          () => _message = 'Could not confirm acceptance. Retry the same request or refresh to check its status.',
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -232,10 +179,7 @@ class _CloudPreferencesScreenState extends State<CloudPreferencesScreen> {
     final home = _home;
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          widget.requireDisclosure ? 'History disclosure' : 'Cloud settings',
-        ),
-        automaticallyImplyLeading: !widget.requireDisclosure,
+        title: const Text('Cloud settings'),
         actions: [
           IconButton(
             tooltip: 'Refresh settings',
@@ -270,42 +214,6 @@ class _CloudPreferencesScreenState extends State<CloudPreferencesScreen> {
                   ),
                 if (account != null) ...[
                   Text(
-                    'Energy history disclosure',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'EnergyLens Cloud stores home inventory, usage answers, and energy history for your account. Detailed observations are retained for 30 days; hourly and daily summaries for 24 months.',
-                  ),
-                  const SizedBox(height: 12),
-                  if (account.value.historyAccepted)
-                    Text(
-                      'Accepted ${account.value.historyDisclosureAcceptedAt!.toUtc().toIso8601String()}',
-                    )
-                  else ...[
-                    CheckboxListTile(
-                      key: const Key('acceptHistoryDisclosure'),
-                      value: _acceptedChecked,
-                      onChanged: _busy
-                          ? null
-                          : (value) => setState(
-                              () => _acceptedChecked = value ?? false,
-                            ),
-                      title: const Text(
-                        'I have read and accept this required history disclosure.',
-                      ),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    FilledButton(
-                      onPressed: _busy || !_acceptedChecked
-                          ? null
-                          : _acceptDisclosure,
-                      child: const Text('Accept history disclosure'),
-                    ),
-                  ],
-                  const SizedBox(height: 28),
-                  Text(
                     'Email report preference',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
@@ -330,7 +238,7 @@ class _CloudPreferencesScreenState extends State<CloudPreferencesScreen> {
                     onPressed: _busy ? null : _saveEmail,
                     child: const Text('Save report preference'),
                   ),
-                  if (widget.home != null && account.value.historyAccepted) ...[
+                  if (widget.home != null) ...[
                     const SizedBox(height: 28),
                     TextButton.icon(
                       key: const Key('openCloudElectricityRate'),

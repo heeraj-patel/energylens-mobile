@@ -160,7 +160,6 @@ class _CloudUsageQuestionsScreenState extends State<CloudUsageQuestionsScreen> {
         () => _error = switch (error.code) {
           'version_conflict' =>
             'The appliance changed. Refresh questions before answering again.',
-          'history_disclosure_required' => 'Accept the required history disclosure in Cloud settings before answering.',
           _ =>
             'Could not confirm answers (${error.code}). Retry unchanged answers with the same request key.',
         },

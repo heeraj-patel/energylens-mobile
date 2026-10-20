@@ -62,12 +62,6 @@ class _CloudCycleComparisonScreenState
       _saveKey = null;
     });
     try {
-      final preferences = await widget.api.accountPreferences();
-      if (!preferences.value.historyAccepted) {
-        throw StateError(
-          'Accept Cloud energy history in account settings before comparing a measured cycle.',
-        );
-      }
       final appliances = await widget.api.appliances(widget.home.id);
       final attachments = await widget.api.attachments(widget.home.id);
       if (!mounted || generation != _generation) return;
@@ -87,10 +81,6 @@ class _CloudCycleComparisonScreenState
         _reference = null;
       });
       if (_appliance != null) await _loadReference(_appliance!, generation);
-    } on StateError catch (error) {
-      if (mounted && generation == _generation) {
-        setState(() => _error = error.message);
-      }
     } catch (_) {
       if (mounted && generation == _generation) {
         setState(
@@ -308,8 +298,6 @@ class _CloudCycleComparisonScreenState
       if (mounted) {
         setState(
           () => _error = switch (error.code) {
-            'history_disclosure_required' =>
-              'Accept Cloud energy history before saving this cycle.',
             'evidence_unavailable' =>
               'This cycle evidence changed. Refresh and compare again.',
             'idempotency_conflict' => 'This save request conflicts with an earlier attempt. Change the cycle and try again.',

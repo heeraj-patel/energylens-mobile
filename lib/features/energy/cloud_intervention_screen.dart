@@ -50,12 +50,6 @@ class _CloudInterventionScreenState extends State<CloudInterventionScreen> {
       _error = null;
     });
     try {
-      final preferences = await widget.api.accountPreferences();
-      if (!preferences.value.historyAccepted) {
-        throw StateError(
-          'Accept the history disclosure in Cloud settings before recording an action.',
-        );
-      }
       final attachments = await widget.api.attachments(widget.home.id);
       final candidates = attachments
           .where(
@@ -85,8 +79,6 @@ class _CloudInterventionScreenState extends State<CloudInterventionScreen> {
           _verified = false;
         }
       });
-    } on StateError catch (error) {
-      if (mounted) setState(() => _error = error.message);
     } catch (_) {
       if (mounted) {
         setState(

@@ -36,7 +36,6 @@ CloudVersioned<CloudAccountPreferences> accountPrefs() => const CloudVersioned(
   value: CloudAccountPreferences(
     version: 1,
     emailReportsEnabled: true,
-    historyDisclosureAcceptedAt: null,
   ),
   etag: '"1"',
 );

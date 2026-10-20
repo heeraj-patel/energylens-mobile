@@ -87,7 +87,6 @@ void main() {
               'schema_version': 1,
               'version': 1,
               'email_reports_enabled': false,
-              'history_disclosure_accepted_at': null,
             }),
             200,
             headers: {'etag': '"1"'},

@@ -110,7 +110,7 @@ const firstHomeId = '11111111-1111-1111-1111-111111111111';
 const secondHomeId = '22222222-2222-2222-2222-222222222222';
 const verifiedAccountId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const acceptedPreferences =
-    '{"version":1,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}';
+    '{"version":1,"schema_version":1,"email_reports_enabled":false}';
 
 String ownedHomes([String second = secondHomeId]) =>
     '{"homes":[{"id":"$firstHomeId","name":"First home","timezone":"America/Chicago","location":{"country_code":"US","postal_code":"60601"}},{"id":"$second","name":"Second home","timezone":"America/Chicago","location":{"country_code":"US","postal_code":"60601"}}]}';
@@ -736,7 +736,7 @@ void main() {
     }
   });
 
-  testWidgets('required disclosure gates home creation until accepted', (
+  testWidgets('home entry proceeds without any disclosure step', (
     tester,
   ) async {
     final session = CloudSession(
@@ -745,30 +745,20 @@ void main() {
       authenticator: Auth(),
     );
     var homesRequests = 0;
-    http.Request? acceptance;
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
-        if (request.url.path == '/v1/auth/config') {
-          return http.Response('', 404);
-        }
         switch (request.url.path) {
+          case '/v1/auth/config':
+            return http.Response('', 404);
           case '/v1/me':
             return http.Response(
               '{"id":"account-1","email":null,"email_verified":true}',
               200,
             );
           case '/v1/me/preferences':
-            if (request.method == 'PATCH') {
-              acceptance = request;
-              return http.Response(
-                '{"version":2,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}',
-                200,
-                headers: {'etag': '"2"'},
-              );
-            }
             return http.Response(
-              '{"version":1,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":null}',
+              '{"version":1,"schema_version":1,"email_reports_enabled":false}',
               200,
               headers: {'etag': '"1"'},
             );
@@ -791,34 +781,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('History disclosure'), findsOneWidget);
-    expect(find.text('Create home'), findsNothing);
-    expect(homesRequests, 0);
-    expect(find.text('Accept history disclosure'), findsOneWidget);
-    expect(
-      tester
-          .widget<FilledButton>(
-            find.widgetWithText(FilledButton, 'Accept history disclosure'),
-          )
-          .onPressed,
-      isNull,
-    );
-    await tester.tap(find.byKey(const Key('acceptHistoryDisclosure')));
-    await tester.pump();
-    expect(
-      tester
-          .widget<FilledButton>(
-            find.widgetWithText(FilledButton, 'Accept history disclosure'),
-          )
-          .onPressed,
-      isNotNull,
-    );
-    await tester.tap(find.text('Accept history disclosure'));
-    await tester.pumpAndSettle();
-    expect(acceptance?.headers['if-match'], '"1"');
-    expect(acceptance?.headers['idempotency-key'], isNotEmpty);
-    expect(homesRequests, 1);
     expect(find.text('Your cloud homes'), findsOneWidget);
+    expect(homesRequests, 1);
     api.close();
   });
 
@@ -869,7 +833,7 @@ void main() {
         }
         if (request.url.path == '/v1/me/preferences') {
           return http.Response(
-            '{"version":1,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}',
+            '{"version":1,"schema_version":1,"email_reports_enabled":false}',
             200,
             headers: {'etag': '"1"'},
           );
@@ -931,7 +895,7 @@ void main() {
         }
         if (request.url.path == '/v1/me/preferences') {
           return http.Response(
-            '{"version":1,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}',
+            '{"version":1,"schema_version":1,"email_reports_enabled":false}',
             200,
             headers: {'etag': '"1"'},
           );
@@ -981,7 +945,7 @@ void main() {
         }
         if (request.url.path == '/v1/me/preferences') {
           return http.Response(
-            '{"version":1,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}',
+            '{"version":1,"schema_version":1,"email_reports_enabled":false}',
             200,
             headers: {'etag': '"1"'},
           );

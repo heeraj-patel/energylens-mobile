@@ -56,7 +56,6 @@ class FakeSource implements SettingsMutationSource {
         value: CloudAccountPreferences(
           version: accountVersion,
           emailReportsEnabled: emailReports,
-          historyDisclosureAcceptedAt: null,
         ),
         etag: '"$accountVersion"',
       );

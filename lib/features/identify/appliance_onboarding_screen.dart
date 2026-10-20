@@ -805,15 +805,6 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       _error = null;
     });
     try {
-      final preferences = await widget.cloudApi!.accountPreferences();
-      if (!preferences.value.historyAccepted) {
-        if (mounted) {
-          setState(
-            () => _error = 'Accept the required history disclosure in Cloud settings before saving.',
-          );
-        }
-        return;
-      }
       final draft = OnboardingDraft(
         name: name,
         category: _category,

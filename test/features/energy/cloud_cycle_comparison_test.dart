@@ -178,7 +178,7 @@ void main() {
           expect(request.headers['authorization'], 'Bearer owner-token');
           if (request.url.path == '/v1/me/preferences') {
             return http.Response(
-              '{"version":2,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}',
+              '{"version":2,"schema_version":1,"email_reports_enabled":false}',
               200,
               headers: {'etag': '"2"'},
             );

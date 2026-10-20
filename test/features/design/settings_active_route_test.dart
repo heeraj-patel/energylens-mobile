@@ -162,7 +162,6 @@ class _Adapters implements DesignContextAdapters {
       accountPreferences: const CloudAccountPreferences(
         version: 1,
         emailReportsEnabled: false,
-        historyDisclosureAcceptedAt: null,
       ),
       accountPreferencesEtag: '"1"',
       home: home,
@@ -324,7 +323,6 @@ void main() {
               'schema_version': 1,
               'version': 1,
               'email_reports_enabled': false,
-              'history_disclosure_accepted_at': null,
             }),
             200,
             headers: {'etag': '"1"'},

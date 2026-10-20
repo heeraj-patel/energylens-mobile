@@ -241,54 +241,6 @@ void main() {
     },
   );
 
-  testWidgets('cloud inventory save stops when disclosure is not accepted', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(800, 1500);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    var posts = 0;
-    final api = _api(
-      MockClient((request) async {
-        if (request.method == 'POST') posts++;
-        return http.Response(
-          '{"version":1,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":null}',
-          200,
-          headers: {'etag': '"1"'},
-        );
-      }),
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ApplianceOnboardingScreen(
-          method: 'manual',
-          cloudHome: _home,
-          cloudApi: api,
-        ),
-      ),
-    );
-    await tester.enterText(find.byKey(const Key('applianceName')), 'Washer');
-    await _chooseWasher(tester);
-    await tester.enterText(
-      find.byKey(const Key('applianceManufacturer')),
-      'LG',
-    );
-    await tester.enterText(
-      find.byKey(const Key('applianceModel')),
-      'WM3070HWA',
-    );
-    await tester.ensureVisible(find.byKey(const Key('saveAppliance')));
-    await tester.tap(find.byKey(const Key('saveAppliance')));
-    await tester.pumpAndSettle();
-    expect(posts, 0);
-    expect(
-      find.textContaining('Accept the required history disclosure'),
-      findsOneWidget,
-    );
-    api.close();
-  });
-
   for (final (model, expectedModel) in [('', ''), ('WM3070HWA', 'WM3070HWA')]) {
     testWidgets(
       'explicit type saves ${model.isEmpty ? 'category-only' : 'model-only'} identity',
@@ -302,7 +254,7 @@ void main() {
           MockClient((request) async {
             if (request.url.path == '/v1/me/preferences') {
               return http.Response(
-                '{"version":2,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}',
+                '{"version":2,"schema_version":1,"email_reports_enabled":false}',
                 200,
                 headers: {'etag': '"2"'},
               );
@@ -420,7 +372,7 @@ void main() {
   );
 
   testWidgets(
-    'cloud save checks disclosure and retries unchanged details with one key',
+    'cloud save retries unchanged details with one key',
     (tester) async {
       tester.view.physicalSize = const Size(800, 1500);
       tester.view.devicePixelRatio = 1;
@@ -431,7 +383,7 @@ void main() {
         MockClient((request) async {
           if (request.url.path == '/v1/me/preferences') {
             return http.Response(
-              '{"version":2,"schema_version":1,"email_reports_enabled":false,"history_disclosure_accepted_at":"2026-09-30T00:00:00Z"}',
+              '{"version":2,"schema_version":1,"email_reports_enabled":false}',
               200,
               headers: {'etag': '"2"'},
             );

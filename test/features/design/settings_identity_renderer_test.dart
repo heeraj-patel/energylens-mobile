@@ -35,7 +35,6 @@ SettingsDomainSnapshot _snapshot({
     accountPreferences: const CloudAccountPreferences(
       version: 1,
       emailReportsEnabled: false,
-      historyDisclosureAcceptedAt: null,
     ),
     accountPreferencesEtag: '"1"',
     home: home,

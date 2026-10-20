@@ -133,8 +133,7 @@ email-link settings are unnecessary for this profile.
 
 The API's `/v1/auth/config` must advertise username authentication. Registration
 then signs in and verifies `/v1/me`; username accounts do not need email
-verification. Accept the existing disclosure explicitly, then create or select
-an owned home. Pending home creation retains its idempotency key across an
+verification. Create or select an owned home. Pending home creation retains its idempotency key across an
 uncertain response or restart. Changing home keeps the login and replaces the
 home context; signing into another account loads only that account's homes.
 If capability loading fails, check API reachability, certificate trust and

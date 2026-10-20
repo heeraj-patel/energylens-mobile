@@ -10,7 +10,6 @@ import '../../features/design/design_context_coordinator.dart';
 import 'cloud_auxiliary_domain_lifecycle.dart';
 import 'cloud_home_entry.dart';
 import 'cloud_auth.dart';
-import 'cloud_preferences_screen.dart';
 import 'cloud_registration_screen.dart';
 import 'cloud_local_auth.dart';
 import 'cloud_recovery_screen.dart';
@@ -105,7 +104,6 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   final _localPassword = TextEditingController();
   bool _busy = true;
   bool _authenticated = false;
-  bool _historyAccepted = false;
   String? _message;
   List<CloudHome> _homes = const [];
   CloudHome? _selectedHome;
@@ -284,7 +282,6 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         }
         return;
       }
-      final preferences = await _api.accountPreferences();
       if (!mounted || epoch != _lifecycleEpoch) return;
       _verifiedAccountId = account.id;
       _allowSavedSessionRetry = true;
@@ -301,13 +298,12 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         setState(() {
           _authenticated = true;
           _homeListLoaded = false;
-          _historyAccepted = preferences.value.historyAccepted;
           _message = null;
           _submitError = false;
           _submitAttempted = false;
         });
       }
-      if (preferences.value.historyAccepted) await _loadHomes();
+      await _loadHomes();
     } on CloudApiException catch (error) {
       if (!mounted || epoch != _lifecycleEpoch) return;
       _invalidateDesignContext();
@@ -613,7 +609,6 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     if (mounted) {
       setState(() {
         _authenticated = false;
-        _historyAccepted = false;
         _selectedHome = null;
         _homes = const [];
       });
@@ -639,19 +634,6 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   @override
   Widget build(BuildContext context) {
     if (_authenticated) {
-      if (!_historyAccepted) {
-        return CloudPreferencesScreen(
-          api: _api,
-          requireDisclosure: true,
-          onDisclosureAccepted: () {
-            setState(() => _historyAccepted = true);
-            _loadHomes();
-          },
-          onSignOut: () {
-            _signOut();
-          },
-        );
-      }
       final selected = _selectedHome;
       if (selected != null) {
         void signOut() {
