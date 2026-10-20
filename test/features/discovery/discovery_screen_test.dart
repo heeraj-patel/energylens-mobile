@@ -987,15 +987,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const Key('hubAccessMessage')),
-        scenario == 'forbidden' ? findsOneWidget : findsNothing,
-      );
-      expect(
         find.text(
           'Internal Error, Try again later',
           skipOffstage: false,
         ),
-        scenario == 'forbidden' ? findsNothing : findsOneWidget,
+        findsOneWidget,
       );
       cloud.close();
     });

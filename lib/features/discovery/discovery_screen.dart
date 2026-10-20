@@ -97,9 +97,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   bool _cloudHubOwned = false;
   bool _hubRefusedAccess = false;
 
-  static const _hubAccessMessage =
-      'This device doesn’t have permission to use your hub yet.';
-
   void _debugLog(String message) {
     if (kDebugMode) debugPrint('[hub] $message');
   }
@@ -658,9 +655,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (mounted) {
         setState(() {
           _hubConnected = false;
-          _error = error is HubRequestException && error.statusCode == 403
-              ? _hubAccessMessage
-              : internalErrorMessage;
+          _error = internalErrorMessage;
         });
       }
     } finally {
@@ -2198,15 +2193,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               icon: const Icon(Icons.radar),
               label: const Text('Scan for plugs'),
             ),
-            if (_error == _hubAccessMessage ||
-                (_error == null &&
-                    _restoreDone &&
-                    _cloudHubOwned &&
-                    _hubRefusedAccess &&
-                    !_canUseHubCustomerApi)) ...[
+            if (_error == null &&
+                _restoreDone &&
+                _cloudHubOwned &&
+                _hubRefusedAccess &&
+                !_canUseHubCustomerApi) ...[
               const SizedBox(height: 8),
               Text(
-                _hubAccessMessage,
+                internalErrorMessage,
                 key: const Key('hubAccessMessage'),
                 style: TextStyle(color: theme.colorScheme.error),
               ),
@@ -2291,7 +2285,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 ),
               ),
             ],
-            if (_error != null && _error != _hubAccessMessage) ...[
+            if (_error != null) ...[
               const SizedBox(height: 16),
               Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
             ],
