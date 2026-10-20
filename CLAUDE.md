@@ -45,7 +45,7 @@ All are compile-time `--dart-define`s. Template: `.env-example` -> `.env-local` 
 ```sh
 flutter pub get
 flutter analyze          # exits 1: 38 info/warning issues (pre-existing lints; unused local in test/features/energy/cloud_report_preview_screen_test.dart:235)
-flutter test             # 820 pass, 1 skip (needs Chrome); needs the sibling checkouts
+flutter test             # 756 pass, 1 skip (needs Chrome); needs the sibling checkouts
 flutter build apk --debug --dart-define=ENERGYLENS_LOCAL_PILOT=true   # OK, build/app/outputs/flutter-apk/app-debug.apk
 ```
 - Single file: `flutter test test/features/discovery/pairing_test.dart`. Test run takes ~25 s; debug APK build ~2.5 min cold.
