@@ -662,7 +662,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.scanCount, 2);
     expect(api.adoptionCount, 0);
-    expect(find.text('Search stopped. Try again.'), findsOneWidget);
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
   });
 
   for (final terminalState in ['partial', 'failed', 'cancelled']) {
@@ -738,7 +738,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('nearby-candidate')), findsOneWidget);
       expect(find.widgetWithText(TextButton, 'Add'), findsNothing);
-      expect(find.text('Couldn’t connect. Try again.'), findsOneWidget);
+      expect(find.text('Internal Error, Try again later'), findsOneWidget);
       expect(api.adoptionCount, 0);
     },
   );
@@ -794,7 +794,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.scanCount, 1);
     expect(api.adoptionCount, 0);
-    expect(find.text('Search stopped. Try again.'), findsOneWidget);
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
   });
 
   testWidgets('two Add taps start one adoption', (tester) async {
@@ -983,7 +983,7 @@ void main() {
     await tester.tap(find.text('Scan for plugs'));
     await tester.pumpAndSettle();
     expect(find.text('Kitchen plug'), findsOneWidget);
-    expect(find.text('Search stopped. Try again.'), findsOneWidget);
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
   });
 
   testWidgets('late inventory from an old Hub does not reappear', (

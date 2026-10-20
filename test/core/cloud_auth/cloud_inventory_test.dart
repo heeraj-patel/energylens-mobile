@@ -443,10 +443,7 @@ void main() {
       await tester.ensureVisible(find.byKey(const Key('saveAppliance')));
       await tester.tap(find.byKey(const Key('saveAppliance')));
       await tester.pumpAndSettle();
-      expect(
-        find.textContaining('Could not confirm Cloud save'),
-        findsOneWidget,
-      );
+      expect(find.text('Internal Error, Try again later'), findsOneWidget);
       await tester.tap(find.byKey(const Key('saveAppliance')));
       await tester.pumpAndSettle();
       expect(posts, hasLength(2));

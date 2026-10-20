@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../backend_error.dart';
 import 'cloud_auth.dart';
 import 'cloud_auth_link.dart';
 import 'cloud_local_auth.dart';
@@ -64,16 +65,14 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
     } on CloudLocalAuthException catch (error) {
       if (mounted) {
         setState(
-          () => _error = error.statusCode == 404
-              ? 'Password recovery is not available on this Cloud server.'
-              : 'Could not submit the request. Try again later.',
+          () => _error = isInputRejectionStatus(error.statusCode)
+              ? 'Could not submit the request. Try again later.'
+              : internalErrorMessage,
         );
       }
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error = 'Could not submit the request. Try again later.',
-        );
+        setState(() => _error = internalErrorMessage);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -136,18 +135,16 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
     } on CloudLocalAuthException catch (error) {
       if (mounted) {
         setState(
-          () => _error = error.statusCode == 404
-              ? 'Password reset is not available on this Cloud server.'
-              : error.statusCode == 401
+          () => _error = error.statusCode == 401
               ? 'This link is invalid, expired, or already used. Request a new one.'
-              : 'Could not reset the password. Try again later.',
+              : isInputRejectionStatus(error.statusCode)
+              ? 'Could not reset the password. Try again later.'
+              : internalErrorMessage,
         );
       }
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error = 'Could not reset the password. Try again later.',
-        );
+        setState(() => _error = internalErrorMessage);
       }
     } finally {
       _password.clear();

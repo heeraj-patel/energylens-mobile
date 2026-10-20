@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/cloud_api/cloud_api_client.dart';
 import '../../core/cloud_api/cloud_home.dart' show newCloudIdempotencyKey;
 import '../../core/cloud_api/cloud_preferences.dart' show CloudVersioned;
+import '../../core/backend_error.dart';
 
 enum AccountProfileField { owner, email, password }
 
@@ -39,6 +40,7 @@ class _AccountProfileScreenState extends State<AccountProfileScreen> {
   bool _loading = true;
   bool _saving = false;
   bool _failed = false;
+  bool _backendFailed = false;
 
   @override
   void initState() {
@@ -93,6 +95,7 @@ class _AccountProfileScreenState extends State<AccountProfileScreen> {
     setState(() {
       _saving = true;
       _failed = false;
+      _backendFailed = false;
     });
     try {
       if (widget.api == null) {
@@ -124,8 +127,16 @@ class _AccountProfileScreenState extends State<AccountProfileScreen> {
           );
       }
       if (mounted && widget.isCurrentAccount()) Navigator.of(context).pop(true);
-    } catch (_) {
-      if (mounted && widget.isCurrentAccount()) setState(() => _failed = true);
+    } catch (error) {
+      if (mounted && widget.isCurrentAccount()) {
+        final rejected =
+            error is CloudApiException &&
+            isInputRejectionStatus(error.statusCode);
+        setState(() {
+          _failed = rejected;
+          _backendFailed = !rejected;
+        });
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -199,6 +210,7 @@ class _AccountProfileScreenState extends State<AccountProfileScreen> {
               const Text(
                 'Couldn’t save changes. Check the fields and try again.',
               ),
+            if (_backendFailed) const Text(internalErrorMessage),
             const SizedBox(height: 24),
             FilledButton(
               onPressed:

@@ -346,7 +346,7 @@ void main() {
     expect(find.text('Submit'), findsOneWidget);
     await tester.tap(find.text('Submit'));
     await tester.pumpAndSettle();
-    expect(find.text('Internal error, Try again later'), findsOneWidget);
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
   });
 
   testWidgets('invalid development pin cannot start a request', (tester) async {
@@ -377,7 +377,7 @@ void main() {
     expect(find.text('Username'), findsOneWidget);
     await tester.tap(find.text('Submit'));
     await tester.pumpAndSettle();
-    expect(find.text('Internal error, Try again later'), findsOneWidget);
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
   });
 
   testWidgets(
@@ -416,16 +416,16 @@ void main() {
       expect(find.text('Username'), findsOneWidget);
       expect(find.text('Password'), findsOneWidget);
       expect(find.text('Submit'), findsOneWidget);
-      expect(find.text('Internal error, Try again later'), findsNothing);
+      expect(find.text('Internal Error, Try again later'), findsNothing);
       await tester.tap(find.text('Submit'));
       await tester.pumpAndSettle();
-      expect(find.text('Internal error, Try again later'), findsOneWidget);
+      expect(find.text('Internal Error, Try again later'), findsOneWidget);
       expect(requests, 0);
       api.close();
     },
   );
 
-  testWidgets('capability outage is silent until Submit and retries', (
+  testWidgets('capability outage shows the internal error and retries on Submit', (
     tester,
   ) async {
     const localConfig = CloudAuthConfig(
@@ -469,12 +469,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(capabilities, 1);
     expect(find.text('Username'), findsOneWidget);
-    expect(find.text('Internal error, Try again later'), findsNothing);
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
     await tester.tap(find.text('Submit'));
     await tester.pumpAndSettle();
     expect(capabilities, 2);
     final error = tester.widget<Text>(
-      find.text('Internal error, Try again later'),
+      find.text('Internal Error, Try again later'),
     );
     expect(
       error.style?.color,
@@ -489,7 +489,7 @@ void main() {
     );
     await tester.enterText(find.byKey(const Key('localSignInEmail')), 'nik');
     await tester.pump();
-    expect(find.text('Internal error, Try again later'), findsNothing);
+    expect(find.text('Internal Error, Try again later'), findsNothing);
     api.close();
     local.close();
   });
@@ -555,7 +555,7 @@ void main() {
     expect(capabilities, 2);
     expect(session.credentialMethod, 'username_password');
     expect(login?.body, contains('"username":"nik"'));
-    expect(find.text('Internal error, Try again later'), findsOneWidget);
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
     expect(
       tester
           .widget<TextField>(find.byKey(const Key('localSignInEmail')))
@@ -692,9 +692,9 @@ void main() {
           code: 'discovery_failed',
           platformErrorDetails: FlutterAppAuthPlatformErrorDetails(),
         ),
-        'Internal error, Try again later',
+        'Internal Error, Try again later',
       ),
-      (StateError('unavailable'), 'Internal error, Try again later'),
+      (StateError('unavailable'), 'Internal Error, Try again later'),
     ];
     for (final (failure, message) in failures) {
       final store = Store()..tokens = null;
@@ -727,7 +727,7 @@ void main() {
       await tester.tap(find.text('Submit'));
       await tester.pumpAndSettle();
       expect(
-        find.text('Internal error, Try again later'),
+        find.text('Internal Error, Try again later'),
         message == null ? findsNothing : findsOneWidget,
       );
       expect(store.tokens, isNull);
@@ -812,7 +812,7 @@ void main() {
     expect(find.text('Username'), findsOneWidget);
     expect(find.text('Password'), findsOneWidget);
     expect(find.text('Submit'), findsOneWidget);
-    expect(find.text('Internal error, Try again later'), findsNothing);
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
     api.close();
   });
 

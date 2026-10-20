@@ -992,7 +992,7 @@ void main() {
       );
       expect(
         find.text(
-          'Could not restore the hub connection. Pair again or retry.',
+          'Internal Error, Try again later',
           skipOffstage: false,
         ),
         scenario == 'forbidden' ? findsNothing : findsOneWidget,
@@ -2141,8 +2141,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('First plug'), findsOneWidget);
       expect(api.plugs.length, 2);
-      await tester.scrollUntilVisible(find.text('Couldn’t connect. Try again.'), -300);
-      expect(find.text('Couldn’t connect. Try again.'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('Internal Error, Try again later'), -300);
+      expect(find.text('Internal Error, Try again later'), findsOneWidget);
     },
   );
 

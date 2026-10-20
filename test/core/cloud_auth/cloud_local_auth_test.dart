@@ -377,7 +377,7 @@ void main() {
     );
     await tester.tap(find.text('Submit'));
     await tester.pumpAndSettle();
-    expect(find.text('Internal error, Try again later'), findsOneWidget);
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
     expect(find.text('Private Home'), findsNothing);
     api.close();
     client.close();
@@ -430,7 +430,7 @@ void main() {
     );
     await tester.tap(find.text('Submit'));
     await tester.pumpAndSettle();
-    expect(find.text('Internal error, Try again later'), findsOneWidget);
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
     expect(find.textContaining('secret'), findsNothing);
     expect(find.text('Private Home'), findsNothing);
     api.close();

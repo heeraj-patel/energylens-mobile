@@ -6,6 +6,7 @@ import '../../core/cloud_api/cloud_home.dart';
 import '../../core/cloud_api/cloud_report_preview.dart';
 import '../../core/cloud_api/cloud_report_delivery.dart';
 import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
+import '../../core/backend_error.dart';
 
 class CloudReportPreviewScreen extends StatefulWidget {
   const CloudReportPreviewScreen({
@@ -116,9 +117,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
       });
     } catch (_) {
       if (mounted && _hasVerifiedScope) {
-        setState(
-          () => _error = 'Could not load this home’s appliances. Try again.',
-        );
+        setState(() => _error = internalErrorMessage);
       }
     } finally {
       if (mounted && _hasVerifiedScope) setState(() => _busy = false);
@@ -172,17 +171,13 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
       if (!mounted || !_hasVerifiedScope) return;
       setState(
         () => _error = switch (error.statusCode) {
-          401 || 403 => 'Cloud sign-in is required to review this report.',
-          404 => 'This home or appliance is no longer available. Refresh appliances.',
           409 => 'This request key was used for another selection. Change the selection and try again.',
-          _ => 'Could not confirm the preview. Retry the same selection or refresh the home.',
+          _ => internalErrorMessage,
         },
       );
     } catch (_) {
       if (mounted && _hasVerifiedScope) {
-        setState(
-          () => _error = 'Could not confirm the preview. Retry the same selection or refresh the home.',
-        );
+        setState(() => _error = internalErrorMessage);
       }
     } finally {
       if (mounted && _hasVerifiedScope) setState(() => _busy = false);
@@ -212,8 +207,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
               ? null
               : switch (delivery?.state) {
                   'sent' => 'Email sent',
-                  'canceled' => 'Email failed to send, try again later.',
-                  'unconfirmed' => 'Could not confirm the request. Retry unchanged to safely check the same request.',
+                  'canceled' || 'unconfirmed' => internalErrorMessage,
                   _ => null,
                 };
         });
@@ -223,7 +217,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
         setState(() {
           _preview = null;
           _resetApproval();
-          _error = 'Could not confirm the latest preview status. Create a new preview.';
+          _error = internalErrorMessage;
         });
       }
     } finally {
@@ -311,24 +305,17 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
           _resetApproval();
         }
         _error = switch (error.code) {
-          'delivery_failed' => 'Email failed to send, try again later.',
-          'delivery_unconfirmed' => 'Could not confirm the request. Retry unchanged to safely check the same request.',
+          'delivery_failed' || 'delivery_unconfirmed' => internalErrorMessage,
           'preview_stale' || 'snapshot_mismatch' => 'This preview changed or expired. Create a new preview and approve it again.',
           'idempotency_key_reuse' => 'This request key was used for different recipients. Change recipients and approve again.',
           'delivery_rate_limited' =>
             'The manual report request limit was reached. Try later.',
-          _ => switch (error.statusCode) {
-            401 || 403 => 'Cloud sign-in is required to request this report.',
-            404 => 'This home or preview is no longer available. Create a new preview.',
-            _ => 'Could not confirm the request. Retry unchanged to safely check the same request.',
-          },
+          _ => internalErrorMessage,
         };
       });
     } catch (_) {
       if (mounted && _hasVerifiedScope) {
-        setState(
-          () => _error = 'Could not confirm the request. Retry unchanged to safely check the same request.',
-        );
+        setState(() => _error = internalErrorMessage);
       }
     } finally {
       if (mounted) setState(() => _busy = false);

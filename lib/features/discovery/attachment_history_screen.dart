@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'discovery_api.dart';
+import '../../core/backend_error.dart';
 
 class AttachmentHistoryScreen extends StatefulWidget {
   const AttachmentHistoryScreen({
@@ -42,7 +43,7 @@ class _AttachmentHistoryScreenState extends State<AttachmentHistoryScreen> {
       if (mounted) setState(() => _history = history);
     } catch (_) {
       if (mounted) {
-        setState(() => _error = 'Could not load attachment history.');
+        setState(() => _error = internalErrorMessage);
       }
     }
   }

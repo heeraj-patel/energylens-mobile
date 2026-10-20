@@ -7,6 +7,7 @@ import '../../core/cloud_api/cloud_energy_categories.dart';
 import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import '../identify/onboarding_draft_store.dart';
 import '../identify/onboarding_persistence_repository.dart';
+import '../../core/backend_error.dart';
 
 /// Native review gate for a design-page device draft. Broad design types are
 /// deliberately ignored; the owner chooses an exact category and fuel here.
@@ -86,6 +87,7 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
   String? _fuel;
   CloudCatalogProduct? _reviewedProduct;
   bool _saving = false;
+  bool _failed = false;
   PendingOnboardingDraft? _pending;
 
   @override
@@ -157,7 +159,10 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
         !widget.lifecycle.isVerifiedScope(widget.accountId, widget.homeId)) {
       return;
     }
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _failed = false;
+    });
     try {
       final draft = OnboardingDraft(
         name: _name.text.trim(),
@@ -191,8 +196,13 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
           widget.lifecycle.isVerifiedScope(widget.accountId, widget.homeId)) {
         Navigator.of(context).pop<CloudAppliance>(saved);
       }
-    } catch (_) {
+    } catch (error) {
       // Keep the reviewed draft and operation key for an unchanged retry.
+      if (mounted &&
+          !(error is CloudApiException &&
+              isInputRejectionStatus(error.statusCode))) {
+        setState(() => _failed = true);
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -229,7 +239,7 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
             alignment: Alignment.centerLeft,
             child: Text(
               widget.catalogSearchFailed
-                  ? 'Catalog is unavailable. Check the details and save.'
+                  ? internalErrorMessage
                   : widget.catalogResults.isEmpty
                   ? 'No catalog match. Check the details and save.'
                   : 'Found in catalog. Pick your model or edit below.',
@@ -392,6 +402,7 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
                     _changed();
                   },
           ),
+          if (_failed) const Text(internalErrorMessage),
           if (_saving) const LinearProgressIndicator(key: Key('reviewSaving')),
         ],
       ),

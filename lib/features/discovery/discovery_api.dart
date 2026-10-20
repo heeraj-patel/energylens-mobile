@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import '../../core/cloud_api/cloud_hub_claim.dart';
 import '../../core/cloud_api/cloud_energy_categories.dart';
 import '../../core/cloud_auth/cloud_auth.dart';
+import '../../core/backend_error.dart';
 
 class PairingDetails {
   const PairingDetails._({
@@ -1345,9 +1346,7 @@ class DiscoveryApi {
       StoredHubIdentity(address: address, hubId: hubId),
     );
     if (challenge.localHubId != hubId) {
-      throw const PairingException(
-        'The cloud challenge is for a different hub.',
-      );
+      throw const PairingException(internalErrorMessage);
     }
     final response = await pairingTransport.send(
       address,
@@ -1359,9 +1358,7 @@ class DiscoveryApi {
     final json = _decodePairingResponse(response);
     final proof = HubClaimProof.fromJson(json);
     if (proof.claimId != challenge.claimId || proof.localHubId != hubId) {
-      throw const PairingException(
-        'The hub returned a proof for a different claim.',
-      );
+      throw const PairingException(internalErrorMessage);
     }
     return proof;
   }
@@ -1399,7 +1396,7 @@ class DiscoveryApi {
     );
     final healthJson = _decodePairingResponse(health);
     if (healthJson['hub_id'] != details.hubId) {
-      throw const PairingException('The hub identity does not match.');
+      throw const PairingException(internalErrorMessage);
     }
 
     final claim = await pairingTransport.send(
@@ -1419,11 +1416,11 @@ class DiscoveryApi {
         claimJson['token_type'] != 'Bearer' ||
         token is! String ||
         token.isEmpty) {
-      throw const PairingException('The hub returned no client token.');
+      throw const PairingException(internalErrorMessage);
     }
     final epoch = claimJson['ownership_epoch'];
     if (epoch != null && (epoch is! int || epoch < 0)) {
-      throw const PairingException('The hub returned no client token.');
+      throw const PairingException(internalErrorMessage);
     }
     return PairingClaim(
       hubId: details.hubId,
@@ -1501,19 +1498,21 @@ class DiscoveryApi {
     try {
       decoded = jsonDecode(response.body);
     } on FormatException {
-      throw const PairingException('The hub returned an invalid response.');
+      throw const PairingException(internalErrorMessage);
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw PairingException(
-        decoded is Map<String, dynamic> && decoded['error'] is Map
+        isInputRejectionStatus(response.statusCode) &&
+                decoded is Map<String, dynamic> &&
+                decoded['error'] is Map
             ? (decoded['error'] as Map)['message'] as String? ??
-                  'Hub pairing failed.'
-            : 'Hub pairing failed.',
+                  internalErrorMessage
+            : internalErrorMessage,
         statusCode: response.statusCode,
       );
     }
     if (decoded is! Map<String, dynamic>) {
-      throw const PairingException('The hub returned an invalid response.');
+      throw const PairingException(internalErrorMessage);
     }
     return decoded;
   }
@@ -1965,7 +1964,9 @@ class DiscoveryApi {
         throw HubRequestException(
           response.statusCode,
           error?['code'] as String?,
-          error?['message'] as String? ?? 'Hub request failed',
+          isInputRejectionStatus(response.statusCode)
+              ? (error?['message'] as String? ?? internalErrorMessage)
+              : internalErrorMessage,
         );
       }
       return decoded;

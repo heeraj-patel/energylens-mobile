@@ -4,6 +4,7 @@ import '../../core/cloud_api/cloud_api_client.dart';
 import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_api/cloud_home.dart';
 import '../../core/cloud_api/cloud_question.dart';
+import '../../core/backend_error.dart';
 
 class CloudUsageQuestionsScreen extends StatefulWidget {
   const CloudUsageQuestionsScreen({
@@ -80,7 +81,7 @@ class _CloudUsageQuestionsScreenState extends State<CloudUsageQuestionsScreen> {
       setState(() => _questions = questions);
     } catch (_) {
       if (mounted) {
-        setState(() => _error = 'Could not load usage questions. Try again.');
+        setState(() => _error = internalErrorMessage);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -160,15 +161,12 @@ class _CloudUsageQuestionsScreenState extends State<CloudUsageQuestionsScreen> {
         () => _error = switch (error.code) {
           'version_conflict' =>
             'The appliance changed. Refresh questions before answering again.',
-          _ =>
-            'Could not confirm answers (${error.code}). Retry unchanged answers with the same request key.',
+          _ => internalErrorMessage,
         },
       );
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error = 'Could not confirm answers. Retry unchanged answers with the same request key.',
-        );
+        setState(() => _error = internalErrorMessage);
       }
     } finally {
       if (mounted) setState(() => _busy = false);

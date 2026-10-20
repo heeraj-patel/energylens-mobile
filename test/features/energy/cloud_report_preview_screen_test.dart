@@ -343,13 +343,7 @@ void main() {
     await tester.ensureVisible(find.byKey(const Key('requestReportDelivery')));
     await tester.tap(find.byKey(const Key('requestReportDelivery')));
     await tester.pumpAndSettle();
-    expect(
-      find.text(
-        'Could not confirm the request. Retry unchanged to safely check the same request.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Email failed to send, try again later.'), findsNothing);
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
     expect(deliveryPosts, hasLength(1));
     expect(jsonDecode(deliveryPosts.single.body), {
       'approved_snapshot_sha256': 'a' * 64,
@@ -376,7 +370,7 @@ void main() {
     deliveryReadbackState = 'canceled';
     await tester.tap(find.text('Check preview status'));
     await tester.pumpAndSettle();
-    expect(find.text('Email failed to send, try again later.'), findsOneWidget);
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
     api.close();
   });
 

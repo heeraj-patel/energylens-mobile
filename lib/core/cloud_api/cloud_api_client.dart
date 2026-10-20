@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../backend_error.dart';
 import '../cloud_auth/cloud_auth.dart';
 import '../cloud_auth/cloud_local_auth.dart';
 import '../cloud_auth/cloud_dev_tls.dart';
@@ -90,6 +91,14 @@ class CloudApiClient {
   final CloudSession session;
   final http.Client _client;
 
+  /// Called once when Cloud rejects the current session (401/403) or a signed-in
+  /// request has no usable token. The session owner signs the user out.
+  void Function()? onSessionRejected;
+
+  void _rejectSession(int generation) {
+    if (generation == session.generation) onSessionRejected?.call();
+  }
+
   Future<CloudEnergyResolution?> energyResolution(
     String homeId,
     String applianceId,
@@ -141,12 +150,22 @@ class CloudApiClient {
     return CloudAuthCapabilities.fromJson(body, session.config);
   }
 
+  /// A home that is missing or answers for a different ID cannot be verified
+  /// for this user, so the session is rejected like a 401/403.
   Future<CloudVersioned<CloudHome>> home(String homeId) async {
-    final response = await get('/v1/homes/${Uri.encodeComponent(homeId)}');
+    final generation = session.generation;
+    final http.Response response;
+    try {
+      response = await get('/v1/homes/${Uri.encodeComponent(homeId)}');
+    } on CloudApiException catch (error) {
+      if (error.statusCode == 404) _rejectSession(generation);
+      rethrow;
+    }
     final value = CloudHome.fromJson(
       jsonDecode(response.body) as Map<String, dynamic>,
     );
     if (value.id != homeId) {
+      _rejectSession(generation);
       throw const FormatException('Cloud home ID changed');
     }
     return CloudVersioned(value: value, etag: _requiredEtag(response));
@@ -1618,6 +1637,7 @@ class CloudApiClient {
     final uri = base.resolve(path);
     final token = await session.accessToken();
     if (token == null || sessionGeneration != session.generation) {
+      _rejectSession(sessionGeneration);
       throw const CloudApiException(401, 'not_authenticated');
     }
     Future<http.Response> send(String bearer) async {
@@ -1653,6 +1673,9 @@ class CloudApiClient {
     }
     if ((body.statusCode < 200 || body.statusCode >= 300) &&
         !(ifNoneMatch != null && body.statusCode == 304)) {
+      if (isSessionRejectionStatus(body.statusCode)) {
+        _rejectSession(sessionGeneration);
+      }
       String code = 'http_${body.statusCode}';
       Map<String, dynamic> details = const {};
       try {

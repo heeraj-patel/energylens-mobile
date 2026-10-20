@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/cloud_api/cloud_energy_categories.dart';
 import '../discovery/discovery_api.dart';
 import 'local_pilot_device_lifecycle.dart';
+import '../../core/backend_error.dart';
 
 class LocalPilotDeviceReviewSheet extends StatefulWidget {
   const LocalPilotDeviceReviewSheet({
@@ -46,6 +47,7 @@ class _LocalPilotDeviceReviewSheetState
   String? _group;
   bool _saving = false;
   bool _attempted = false;
+  bool _failed = false;
 
   bool _withinLimit(String value) => utf8.encode(value.trim()).length <= 100;
 
@@ -108,7 +110,11 @@ class _LocalPilotDeviceReviewSheetState
       final result = await widget.lifecycle.save(widget.session, input);
       if (mounted && result.status == LocalWriteStatus.confirmed) {
         Navigator.of(context).pop<LocalWriteResult>(result);
+      } else if (mounted) {
+        setState(() => _failed = true);
       }
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -205,6 +211,7 @@ class _LocalPilotDeviceReviewSheetState
                 ? null
                 : (value) => setState(() => _category = value),
           ),
+          if (_failed) const Text(internalErrorMessage),
           if (_saving)
             const LinearProgressIndicator(key: Key('localReviewSaving')),
         ],

@@ -21,6 +21,7 @@ import '../identify/appliance_onboarding_screen.dart';
 import '../identify/onboarding_draft_store.dart';
 import '../identify/cloud_usage_questions_screen.dart';
 import 'device_energy_detail_screen.dart';
+import '../../core/backend_error.dart';
 
 String? _makeModelIdentity(String? manufacturer, String? model) {
   final make = manufacturer?.trim() ?? '';
@@ -102,6 +103,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   void _debugLog(String message) {
     if (kDebugMode) debugPrint('[hub] $message');
   }
+
+  /// Hub text is shown only when the hub rejected the user's own input.
+  String _hubFailureMessage(Object error) =>
+      error is HubRequestException ? error.message : internalErrorMessage;
 
   String _describeHubError(Object error) => error is HubRequestException
       ? 'HubRequestException status=${error.statusCode} code=${error.code} message="${error.message}"'
@@ -198,9 +203,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         setState(
           () => _claimMessage = error.statusCode == 409
               ? 'Cloud could not link this hub. It may already belong to a home. Check ownership before trying again.'
-              : _claimFlow?.hasPendingFinish == true
-              ? 'Cloud could not confirm the hub link (${error.code}). Retry to finish the same claim.'
-              : 'Cloud could not start the hub link (${error.code}). Try again.',
+              : internalErrorMessage,
         );
       }
     } on PairingException catch (error) {
@@ -208,9 +211,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     } catch (_) {
       if (mounted) {
         setState(
-          () => _claimMessage = _claimFlow?.hasPendingFinish == true
-              ? 'Could not confirm the hub link. Retry to finish the same claim.'
-              : 'Could not start the hub link. Try again.',
+          () => _claimMessage = internalErrorMessage,
         );
       }
     } finally {
@@ -526,8 +527,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         }
         if (_cloudHubOwned && !_paired && !_hubRefusedAccess) {
           setState(
-            () => _error =
-                'Could not restore the hub connection. Pair again or retry.',
+            () => _error = internalErrorMessage,
           );
         }
         if (ownerships.isEmpty) {
@@ -587,7 +587,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           _hubConnected = false;
           _error = error is PairingException
               ? error.message
-              : 'Could not restore the hub connection. Pair again or retry.';
+              : internalErrorMessage;
         });
       }
     } finally {
@@ -660,7 +660,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           _hubConnected = false;
           _error = error is HubRequestException && error.statusCode == 403
               ? _hubAccessMessage
-              : 'Could not load saved plugs from the hub. Check its connection.';
+              : internalErrorMessage;
         });
       }
     } finally {
@@ -768,7 +768,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     } catch (_) {
       if (mounted) {
         setState(
-          () => _plugCheckFeedback[plug.id] = 'Check failed · Try again.',
+          () => _plugCheckFeedback[plug.id] = internalErrorMessage,
         );
       }
     } finally {
@@ -810,7 +810,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       });
     } catch (_) {
       if (current()) {
-        setState(() => _error = 'Couldn’t connect. Try again.');
+        setState(() => _error = internalErrorMessage);
       }
     } finally {
       if (mounted) setState(() => _deletingSavedPlugs.remove(plug.id));
@@ -833,9 +833,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     } catch (error) {
       if (mounted) {
         setState(
-          () => _error = error is StateError
-              ? error.message
-              : 'Could not check energy data.',
+          () => _error = _hubFailureMessage(error),
         );
       }
     } finally {
@@ -904,7 +902,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       );
     } catch (_) {
       if (mounted) {
-        setState(() => _error = 'Could not load appliances from the hub.');
+        setState(() => _error = internalErrorMessage);
       }
       return;
     }
@@ -987,9 +985,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     } catch (error) {
       if (mounted) {
         setState(
-          () => _error = error is StateError
-              ? error.message
-              : 'Could not connect this appliance to the plug.',
+          () => _error = _hubFailureMessage(error),
         );
       }
     } finally {
@@ -1015,9 +1011,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           .toList();
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error = 'Could not load this home’s appliances. Try again.',
-        );
+        setState(() => _error = internalErrorMessage);
       }
       return;
     }
@@ -1077,9 +1071,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           if (mounted) setState(() => _cloudAttached[plug.id] = saved);
         } catch (_) {
           if (mounted) {
-            setState(
-              () => _error = 'Could not connect this appliance to the plug.',
-            );
+            setState(() => _error = internalErrorMessage);
           }
         } finally {
           if (mounted) setState(() => _busy = false);
@@ -1097,9 +1089,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (mounted) setState(() => _cloudAttached[plug.id] = choice);
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error = 'Could not connect this appliance to the plug.',
-        );
+        setState(() => _error = internalErrorMessage);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1294,7 +1284,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     } catch (error) {
       if (mounted) {
         setState(
-          () => _error = error is StateError ? error.message : 'Could not save the plug. Check that it is still connected and try again.',
+          () => _error = _hubFailureMessage(error),
         );
       }
     } finally {
@@ -1334,7 +1324,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     } catch (_) {
       if (mounted) {
         setState(() {
-          _plugUpdateFeedback[saved.id] = 'Could not update the plug connection. Check that it is still connected and try again.';
+          _plugUpdateFeedback[saved.id] = internalErrorMessage;
         });
       }
     } finally {
@@ -1466,11 +1456,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           _nearbyState = 'failed';
           return;
         }
-        _error = error is FormatException
-            ? error.message
-            : error is StateError
-            ? error.message
-            : 'Couldn’t connect. Try again.';
+        _error = _hubFailureMessage(error);
       });
     } finally {
       if (mounted && (nearbyEpoch == null || nearbyEpoch == _scanEpoch)) {
@@ -1544,7 +1530,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       const SizedBox(height: 24),
       Text('Nearby devices', style: theme.textTheme.titleLarge),
       if (active) const Text('Looking for devices…'),
-      if (stopped) const Text('Search stopped. Try again.'),
+      if (stopped)
+        Text(
+          _nearbyState == 'failed'
+              ? internalErrorMessage
+              : 'Search stopped. Try again.',
+        ),
       if (!active &&
           !stopped &&
           _nearbyCandidates.isEmpty &&
@@ -1710,7 +1701,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           setState(() => _busy = false);
           await _openNearbyDevice(saved);
         } else if (mounted) {
-          setState(() => _error = 'Couldn’t connect. Try again.');
+          setState(() => _error = internalErrorMessage);
         }
         return;
       }
@@ -1782,7 +1773,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             setState(() => _busy = false);
             await _openNearbyDevice(saved);
           } else if (mounted) {
-            setState(() => _error = 'Couldn’t connect. Try again.');
+            setState(() => _error = internalErrorMessage);
           }
           return;
         }
@@ -1833,11 +1824,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     } catch (error) {
       if (mounted) {
         setState(
-          () => _error =
-              error is StateError &&
-                  error.message == 'Search stopped. Try again.'
-              ? 'Search stopped. Try again.'
-              : 'Couldn’t connect. Try again.',
+          () => _error = internalErrorMessage,
         );
       }
     } finally {
@@ -1862,7 +1849,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     if (device != null && mounted) {
       await _openNearbyDevice(device);
     } else if (mounted) {
-      setState(() => _error = 'Couldn’t connect. Try again.');
+      setState(() => _error = internalErrorMessage);
     }
   }
 
@@ -1870,7 +1857,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     if (_busy || !mounted || !_openingNearbyDeviceIds.add(device.id)) return;
     try {
       if (device.id.isEmpty || device.bindings.isEmpty) {
-        setState(() => _error = 'Couldn’t connect. Try again.');
+        setState(() => _error = internalErrorMessage);
         return;
       }
       final legacy = device.bindings.any(
@@ -1893,14 +1880,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             plug = plugs.where((item) => item.id == device.id).firstOrNull;
           } catch (_) {
             if (mounted)
-              setState(() => _error = 'Couldn’t connect. Try again.');
+              setState(() => _error = internalErrorMessage);
             return;
           } finally {
             if (mounted) setState(() => _busy = false);
           }
         }
         if (plug == null) {
-          if (mounted) setState(() => _error = 'Couldn’t connect. Try again.');
+          if (mounted) setState(() => _error = internalErrorMessage);
           return;
         }
         if (plug.connectedAppliance == null) await _connectAppliance(plug);
@@ -1916,7 +1903,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (cloud == null && device.applianceId != null) return;
       if (cloud != null && home != null) {
         if (widget.onboardingDrafts == null || widget.accountId == null) {
-          setState(() => _error = 'Couldn’t connect. Try again.');
+          setState(() => _error = internalErrorMessage);
           return;
         }
         setState(() => _busy = true);
@@ -1927,7 +1914,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               ownership.localHubId != _pairedHubId ||
               ownership.ownershipEpoch != _pairedOwnershipEpoch) {
             if (mounted)
-              setState(() => _error = 'Couldn’t connect. Try again.');
+              setState(() => _error = internalErrorMessage);
             return;
           }
           origin = CloudNearbyOrigin(
@@ -1944,12 +1931,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               .toList();
           if (matches.length > 1) {
             if (mounted)
-              setState(() => _error = 'Couldn’t connect. Try again.');
+              setState(() => _error = internalErrorMessage);
             return;
           }
           linked = matches.firstOrNull;
         } catch (_) {
-          if (mounted) setState(() => _error = 'Couldn’t connect. Try again.');
+          if (mounted) setState(() => _error = internalErrorMessage);
           return;
         } finally {
           if (mounted) setState(() => _busy = false);

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/backend_error.dart';
 import '../../core/cloud_api/cloud_api_client.dart';
 import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_api/cloud_energy_resolution.dart';
@@ -39,6 +40,7 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
   double? _kwh;
   double? _cost;
   bool _loading = true;
+  bool _failed = false;
 
   bool get _attached =>
       widget.cloudAppliance != null || widget.plug.connectedAppliance != null;
@@ -53,6 +55,7 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
     setState(() => _loading = true);
     double? kwh;
     double? cost;
+    var failed = false;
     try {
       if (widget.plug.meterStatus == 'verified') {
         final measured = await widget.api.deviceEnergy(
@@ -93,10 +96,11 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
         cost = estimate.estimatedCostUsd;
       }
     } catch (_) {
-      // An unavailable result uses the approved empty state.
+      failed = true;
     }
     if (mounted) {
       setState(() {
+        _failed = failed;
         _kwh = kwh;
         _cost = cost;
         _loading = false;
@@ -119,6 +123,8 @@ class _DeviceEnergyDetailScreenState extends State<DeviceEnergyDetailScreen> {
               const Text('Attach an appliance to see its energy and cost.')
             else if (_loading)
               const Center(child: CircularProgressIndicator())
+            else if (_failed)
+              const Text(internalErrorMessage)
             else if (_kwh == null)
               const Text('Energy data is not available yet.')
             else

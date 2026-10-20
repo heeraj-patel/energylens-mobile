@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/cloud_api/cloud_api_client.dart';
 import '../../core/cloud_api/cloud_home.dart';
 import 'settings_mutation_adapter.dart';
+import '../../core/backend_error.dart';
 
 /// Native home edit. The WebView never receives credentials or write tokens.
 class HomeDetailsScreen extends StatefulWidget {
@@ -31,6 +32,7 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
   bool _loading = true;
   bool _saving = false;
   bool _conflict = false;
+  bool _backendFailed = false;
   bool _timezoneUnresolved = false;
 
   @override
@@ -67,6 +69,7 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
     setState(() {
       _saving = true;
       _conflict = false;
+      _backendFailed = false;
       _timezoneUnresolved = false;
     });
     try {
@@ -97,9 +100,13 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
       if (error.statusCode == 409 || error.statusCode == 412) {
         setState(() => _conflict = true);
         await _load();
+      } else {
+        setState(() => _backendFailed = true);
       }
     } catch (_) {
-      // Leave the values editable. A failed write has no success readback.
+      if (mounted && widget.isCurrentHome()) {
+        setState(() => _backendFailed = true);
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -150,6 +157,7 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
           ),
           if (_conflict)
             const Text('Home details changed elsewhere. Reload and try again.'),
+          if (_backendFailed) const Text(internalErrorMessage),
           if (_timezoneUnresolved)
             const Text(
               'ZIP code saved. We couldn’t determine its time zone, so your home time zone stayed the same.',

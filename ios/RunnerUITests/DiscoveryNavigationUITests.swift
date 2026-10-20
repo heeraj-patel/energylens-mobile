@@ -292,7 +292,7 @@ final class DiscoveryNavigationUITests: XCTestCase {
       .firstMatch
     let submit = app.buttons["Submit"]
     let error = app.descendants(matching: .any)
-      .matching(NSPredicate(format: "label == %@", "Internal error, Try again later"))
+      .matching(NSPredicate(format: "label == %@", "Internal Error, Try again later"))
       .firstMatch
     XCTAssertTrue(username.waitForExistence(timeout: 90), "Username field did not render")
     XCTAssertTrue(password.exists, "Password field did not render")
@@ -350,7 +350,7 @@ final class DiscoveryNavigationUITests: XCTestCase {
     XCTAssertTrue(usernameField.waitForExistence(timeout: 300), "Sign-in form did not render")
     XCTAssertTrue(passwordField.exists, "Password field did not render")
     let startupError = app.descendants(matching: .any)
-      .matching(NSPredicate(format: "label == %@", "Internal error, Try again later"))
+      .matching(NSPredicate(format: "label == %@", "Internal Error, Try again later"))
       .firstMatch
     XCTAssertFalse(startupError.exists,
                    "Startup showed an authentication error before submission")

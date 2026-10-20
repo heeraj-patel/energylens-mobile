@@ -141,7 +141,7 @@ server runtime configuration before retrying.
 
 ### Troubleshooting a Cloud sign-in error
 
-If the sign-in screen shows `Internal error, Try again later` before credentials
+If the sign-in screen shows `Internal Error, Try again later` before credentials
 are submitted, first check the Cloud API target compiled into the simulator app.
 The local `niksim` Cloud API uses port `18091`; the separate Geekom Cloud API
 uses port `18092`. Check that the HTTPS origin in

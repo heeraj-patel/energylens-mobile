@@ -342,7 +342,7 @@ void main() {
     await tester.ensureVisible(find.byKey(const Key('saveUsageAnswers')));
     await tester.tap(find.byKey(const Key('saveUsageAnswers')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Retry unchanged answers'), findsOneWidget);
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
     await tester.tap(find.byKey(const Key('saveUsageAnswers')));
     await tester.pumpAndSettle();
     expect(posts, hasLength(2));

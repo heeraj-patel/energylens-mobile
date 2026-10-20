@@ -6,6 +6,7 @@ import '../../features/identify/onboarding_draft_store.dart';
 import 'cloud_api_client.dart';
 import 'cloud_home.dart';
 import 'cloud_hub_claim.dart';
+import '../backend_error.dart';
 
 /// Keeps the one-use hub proof and finish idempotency key for an uncertain retry.
 class CloudHubClaimFlow {
@@ -165,12 +166,10 @@ class CloudHubClaimFlow {
       final challenge = await cloud.beginHubClaim(home.id, hubId);
       if (!current()) throw StateError('Claim scope changed');
       if (challenge.localHubId != hubId) {
-        throw const PairingException(
-          'Cloud returned a challenge for a different hub.',
-        );
+        throw const PairingException(internalErrorMessage);
       }
       if (!challenge.expiresAt.isAfter(DateTime.now().toUtc())) {
-        throw const PairingException('The cloud challenge expired. Try again.');
+        throw const PairingException(internalErrorMessage);
       }
       final proof = await hub.claimProof(
         challenge,

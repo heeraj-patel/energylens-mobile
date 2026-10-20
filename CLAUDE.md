@@ -41,11 +41,11 @@ All are compile-time `--dart-define`s. Template: `.env-example` -> `.env-local` 
 - `ENERGYLENS_HUB_TOKEN` is never compiled in; the iOS script hands it over at runtime (see Gotchas).
 - Profiles: local pilot (`LOCAL_PILOT=true`); Hub pilot (`LOCAL_PILOT=false` + `HUB_URL`); Cloud OIDC (4 OIDC defines + API URL); local username auth or email auth (`CLOUD_LOCAL_AUTH_ENABLED=true` + API URL). Debug builds with no Cloud config show a `LOCAL PREVIEW` path (`allowLocalPreview`, kDebugMode only).
 
-## Commands (verified 2026-10-16 on Linux unless marked)
+## Commands (verified 2026-10-20 on Linux unless marked)
 ```sh
 flutter pub get
-flutter analyze          # exits 1: 28 issues (incl. unused local in test/features/energy/cloud_report_preview_screen_test.dart:235)
-flutter test             # 759 pass, 1 skip (needs Chrome), 1 fail: design_binding_map_test (all 14 pages carry frozen binding IDs)
+flutter analyze          # exits 1: 38 info/warning issues (pre-existing lints; unused local in test/features/energy/cloud_report_preview_screen_test.dart:235)
+flutter test             # 820 pass, 1 skip (needs Chrome); needs the sibling checkouts
 flutter build apk --debug --dart-define=ENERGYLENS_LOCAL_PILOT=true   # OK, build/app/outputs/flutter-apk/app-debug.apk
 ```
 - Single file: `flutter test test/features/discovery/pairing_test.dart`. Test run takes ~25 s; debug APK build ~2.5 min cold.
@@ -61,6 +61,7 @@ flutter build apk --debug --dart-define=ENERGYLENS_LOCAL_PILOT=true   # OK, buil
 - Release builds require real configured authentication; local/dummy auth stays in debug or local configuration.
 - Hub addresses must be HTTPS private IPv4 (10/8, 100.64/10, 172.16/12, 192.168/16, 127.0.0.1); pairing requires a `#sha256=` pin.
 - Credentials live only in `flutter_secure_storage`; Cloud keys are prefixed `energylens.cloud.`, hub keys `energylens.hub.`.
+- Backend/internal failures (5xx, network, timeout, unparseable) show only `internalErrorMessage` (`lib/core/backend_error.dart`); Cloud 401/403 sign the user out through `CloudApiClient.onSessionRejected`. No technical detail reaches the UI.
 - Commit messages: Conventional Commits.
 
 ## Cross-repo

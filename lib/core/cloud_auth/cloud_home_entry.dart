@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../backend_error.dart';
 import '../cloud_api/cloud_api_client.dart';
 import '../cloud_api/cloud_home.dart';
 
@@ -100,18 +101,16 @@ class _CloudHomeEntryState extends State<CloudHomeEntry> {
       setState(() {
         _uncertain = error.statusCode >= 500;
         _message = switch (error.statusCode) {
-          401 ||
-          403 => 'Your cloud sign-in expired. Sign out and sign in again.',
           409 => 'This form key was used for different home details. Edit a field and try again.',
           400 || 422 => 'Cloud rejected these home details. Check the fields and try again.',
-          _ => 'Could not confirm creation. Refresh homes before retrying unchanged details.',
+          _ => internalErrorMessage,
         };
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _uncertain = true;
-        _message = 'Could not confirm creation. Refresh homes before retrying unchanged details.';
+        _message = internalErrorMessage;
       });
     } finally {
       if (mounted) setState(() => _busy = false);

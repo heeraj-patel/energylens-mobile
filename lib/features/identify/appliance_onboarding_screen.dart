@@ -14,6 +14,7 @@ import 'photo_capture_service.dart';
 import 'cloud_usage_questions_screen.dart';
 import 'onboarding_draft_store.dart';
 import 'onboarding_persistence_repository.dart';
+import '../../core/backend_error.dart';
 
 class OcrIdentityFields {
   const OcrIdentityFields({
@@ -432,9 +433,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       }
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error = 'Could not load saved appliances from the hub.',
-        );
+        setState(() => _error = internalErrorMessage);
       }
     }
   }
@@ -482,7 +481,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
         setState(
           () => _deleteError = error is StateError
               ? error.message
-              : 'Could not delete the device. Check the hub connection.',
+              : internalErrorMessage,
         );
       }
     } finally {
@@ -739,7 +738,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
         setState(
           () => _error = error is StateError
               ? error.message
-              : 'Could not save the device. Check the hub connection.',
+              : internalErrorMessage,
         );
       }
     } finally {
@@ -866,14 +865,12 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
         setState(
           () => _error = error.statusCode == 409
               ? 'Cloud reported a conflict. Refresh your home inventory before trying again.'
-              : 'Could not confirm Cloud save (${error.code}). Refresh inventory before retrying unchanged details.',
+              : internalErrorMessage,
         );
       }
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error = 'Could not confirm Cloud save. Refresh inventory before retrying unchanged details.',
-        );
+        setState(() => _error = internalErrorMessage);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -895,10 +892,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
       if (mounted) setState(() => _estimates[item.id] = estimate);
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error =
-              'Could not check energy data. Try again when the hub is online.',
-        );
+        setState(() => _error = internalErrorMessage);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1047,9 +1041,7 @@ class _ApplianceOnboardingScreenState extends State<ApplianceOnboardingScreen> {
                       }),
                     ),
                 ] else if (_candidateLookupFailed)
-                  const Text(
-                    'Model suggestions unavailable. Enter or confirm the label model manually.',
-                  ),
+                  const Text(internalErrorMessage),
               ],
             ],
             const SizedBox(height: 16),

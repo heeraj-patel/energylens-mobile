@@ -6,6 +6,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'discovery_api.dart';
 import 'discovery_credentials.dart';
+import '../../core/backend_error.dart';
 
 /// Imports the operator's one-time local enrollment details.
 class HubPairingScreen extends StatefulWidget {
@@ -75,7 +76,7 @@ class _HubPairingScreenState extends State<HubPairingScreen> {
           _error = switch (error) {
             FormatException(:final message) => message,
             PairingException(:final message) => message,
-            _ => 'Could not verify or pair with the hub. Check its address, certificate pin, and enrollment details.',
+            _ => internalErrorMessage,
           };
         });
       }

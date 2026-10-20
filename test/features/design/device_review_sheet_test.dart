@@ -401,7 +401,7 @@ void main() {
       expect(
         find.text(
           failed
-              ? 'Catalog is unavailable. Check the details and save.'
+              ? 'Internal Error, Try again later'
               : 'No catalog match. Check the details and save.',
         ),
         findsOneWidget,

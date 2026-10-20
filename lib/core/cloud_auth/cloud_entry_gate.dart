@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:http/http.dart' as http;
 
+import '../backend_error.dart';
 import '../cloud_api/cloud_api_client.dart';
 import '../cloud_api/cloud_home.dart';
 import '../cloud_api/cloud_hub_claim_flow.dart';
@@ -182,17 +183,35 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     _auxiliaryDomainLifecycle =
         widget.auxiliaryDomainLifecycle ??
         CloudAuxiliaryDomainLifecycle.forCloudApi(_api);
+    _api.onSessionRejected = _signOutRejectedSession;
     _restore();
   }
 
   @override
   void dispose() {
+    _api.onSessionRejected = null;
     _invalidateDesignContext();
     if (widget.api == null) _api.close();
     _ownedLocalAuth?.close();
     _localEmail.dispose();
     _localPassword.dispose();
     super.dispose();
+  }
+
+  /// Cloud answered 401/403 (or the home cannot be verified): end the session
+  /// so the user returns to sign-in and gets a new one.
+  void _signOutRejectedSession() {
+    if (!mounted || !_authenticated) return;
+    _allowSavedSessionRetry = false;
+    _invalidateDesignContext();
+    _session.signOut().ignore();
+    setState(() {
+      _authenticated = false;
+      _selectedHome = null;
+      _homes = const [];
+      _homeLoading = false;
+      _message = 'Your cloud sign-in expired. Sign in again.';
+    });
   }
 
   void _clearSubmitErrorOnEdit() {
@@ -229,7 +248,9 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       final token = await _session.accessToken();
       if (token != null) await _validate();
     } catch (_) {
-      // Startup discovery is retried on Submit; keep the form usable.
+      if (mounted && epoch == _lifecycleEpoch) {
+        setState(() => _submitError = true);
+      }
     } finally {
       if (mounted && epoch == _lifecycleEpoch) setState(() => _busy = false);
     }
@@ -307,14 +328,15 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     } on CloudApiException catch (error) {
       if (!mounted || epoch != _lifecycleEpoch) return;
       _invalidateDesignContext();
-      if (error.statusCode == 401 || error.statusCode == 403) {
+      final rejected = isSessionRejectionStatus(error.statusCode);
+      if (rejected) {
         _allowSavedSessionRetry = false;
         await _session.signOut();
       }
       if (mounted) {
         setState(() {
           _authenticated = false;
-          if (_submitAttempted) {
+          if (_submitAttempted || !rejected) {
             _submitError = true;
             _message = null;
           }
@@ -326,10 +348,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       if (mounted) {
         setState(() {
           _authenticated = false;
-          if (_submitAttempted) {
-            _submitError = true;
-            _message = null;
-          }
+          _submitError = true;
+          _message = null;
         });
       }
     }
@@ -371,18 +391,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       }
     } on CloudApiException catch (error) {
       if (!mounted || epoch != _lifecycleEpoch) return;
-      if (error.statusCode == 401 || error.statusCode == 403) {
-        _invalidateDesignContext();
-        await _session.signOut();
-        if (mounted) {
-          setState(() {
-            _authenticated = false;
-            _selectedHome = null;
-            _homes = const [];
-            _homeLoading = false;
-            _message = 'Your cloud sign-in expired. Sign in again.';
-          });
-        }
+      if (isSessionRejectionStatus(error.statusCode)) {
+        _signOutRejectedSession();
         return;
       }
       if (_selectedHome != null) _invalidateDesignContext();
@@ -391,9 +401,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
           _homes = const [];
           _selectedHome = null;
           _homeLoading = false;
-          _homeListError = error.statusCode == 404
-              ? 'Cloud homes are not available yet.'
-              : 'Could not load homes (${error.code}). Refresh to try again.';
+          _homeListError = internalErrorMessage;
         });
       }
     } catch (_) {
@@ -404,7 +412,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
           _homes = const [];
           _selectedHome = null;
           _homeLoading = false;
-          _homeListError = 'Could not reach Cloud. Refresh to try again.';
+          _homeListError = internalErrorMessage;
         });
       }
     } finally {
@@ -429,16 +437,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     } on CloudApiException catch (error) {
       if (mounted &&
           epoch == _lifecycleEpoch &&
-          (error.statusCode == 401 || error.statusCode == 403)) {
-        _invalidateDesignContext();
-        await _session.signOut();
-        if (mounted) {
-          setState(() {
-            _authenticated = false;
-            _selectedHome = null;
-            _homes = const [];
-          });
-        }
+          isSessionRejectionStatus(error.statusCode)) {
+        _signOutRejectedSession();
       }
       rethrow;
     }
@@ -446,7 +446,10 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
 
   Future<void> _selectHome(CloudHome home) async {
     final accountId = _verifiedAccountId;
-    if (accountId == null || !_homes.any((item) => item.id == home.id)) return;
+    if (accountId == null || !_homes.any((item) => item.id == home.id)) {
+      _signOutRejectedSession();
+      return;
+    }
     // The current UI can still select legacy IDs; they never enter the typed
     // design context, whose household adapters require UUID home IDs.
     final epoch = ++_lifecycleEpoch;
@@ -735,7 +738,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                           Semantics(
                             liveRegion: true,
                             child: Text(
-                              'Internal error, Try again later',
+                              internalErrorMessage,
                               textAlign: TextAlign.center,
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(

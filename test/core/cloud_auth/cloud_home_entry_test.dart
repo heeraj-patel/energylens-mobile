@@ -54,7 +54,7 @@ void main() {
       await tester.ensureVisible(find.text('Create home'));
       await tester.tap(find.text('Create home'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Could not confirm creation'), findsOneWidget);
+      expect(find.text('Internal Error, Try again later'), findsOneWidget);
       await tester.tap(find.text('Create home'));
       await tester.pumpAndSettle();
       expect(keys.length, 2);

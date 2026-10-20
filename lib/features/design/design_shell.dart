@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show HandshakeException, SocketException, TlsException;
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show PlatformException;
+import 'package:http/http.dart' show ClientException;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../core/backend_error.dart';
 import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_api/cloud_energy_categories.dart';
 import '../../core/cloud_api/cloud_appliance_list.dart';
@@ -21,6 +24,7 @@ import '../identify/appliance_onboarding_screen.dart'
     show identityFieldsFromOcr, manufacturerHintFromOcr;
 import '../identify/photo_capture_service.dart';
 import '../discovery/device_data_refresh.dart';
+import '../discovery/discovery_api.dart' show HubRequestException, PairingException;
 import 'device_review_sheet.dart';
 import 'efficiency_domain_repository.dart';
 import 'efficiency_trailing_30_day_bindings.dart';
@@ -100,6 +104,7 @@ class DesignShell extends StatefulWidget {
 }
 
 class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
+  DateTime? _internalErrorShownAt;
   static const _pages = <String>{
     'dashboard',
     'devices',
@@ -411,8 +416,9 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
             isCurrent: current,
           );
         }
-      } catch (_) {
+      } catch (error) {
         // The visible page stays usable when Hub access is unavailable.
+        if (current()) _showInternalErrorFor(error);
       } finally {
         if (current() && attempted) {
           _deviceRefreshReloadPending = true;
@@ -503,8 +509,9 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
               )
             : await widget.localDeviceLifecycle?.energyCategories();
         if (categories != null) _sessionCategories = categories;
-      } catch (_) {
+      } catch (error) {
         // Keep the last list for this session when a category refresh fails.
+        _showInternalErrorFor(error);
       }
       if (!_isCurrentPageLoad(page, generation)) return;
       if (_sessionCategories case final categories?) {
@@ -611,6 +618,8 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
   Future<void> _readPage(String page, int generation) async {
     await _pageReads.load(page);
     if (!_isCurrentPageLoad(page, generation)) return;
+    final readError = _pageReads.latestError;
+    if (readError != null) _showInternalErrorFor(readError);
     if (page == 'settings') {
       await _applySettingsIdentity(generation);
       return;
@@ -768,11 +777,13 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
           _savedPlugs = plugs;
           await _applySavedAppliances(page, generation);
         }
-      } catch (_) {
+      } catch (error) {
         // Cloud appliances remain visible if the owned Hub is unavailable.
+        _showInternalErrorFor(error);
       }
-    } catch (_) {
+    } catch (error) {
       // A failed inventory read never creates a saved row from a draft.
+      _showInternalErrorFor(error);
     }
   }
 
@@ -1108,8 +1119,9 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
           generation: ticket.generation,
         ),
       );
-    } catch (_) {
+    } catch (error) {
       // The bundled answer remains visible if the household read fails.
+      _showInternalErrorFor(error);
     }
   }
 
@@ -1575,6 +1587,39 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     }
   }
 
+  /// Backend failures are 5xx, network, timeout and unparseable responses.
+  /// Session rejections (401/403) are handled centrally by signing out.
+  static bool _isBackendFailure(Object error) {
+    if (error is CloudApiException) {
+      return !isSessionRejectionStatus(error.statusCode) &&
+          !isInputRejectionStatus(error.statusCode);
+    }
+    if (error is HubRequestException) {
+      return !isInputRejectionStatus(error.statusCode);
+    }
+    return error is PairingException ||
+        error is SocketException ||
+        error is TimeoutException ||
+        error is ClientException ||
+        error is HandshakeException ||
+        error is TlsException ||
+        error is FormatException ||
+        error is TypeError;
+  }
+
+  void _showInternalErrorFor(Object error) {
+    if (!mounted || !_isBackendFailure(error)) return;
+    final now = DateTime.now();
+    final last = _internalErrorShownAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 5)) {
+      return;
+    }
+    _internalErrorShownAt = now;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text(internalErrorMessage)));
+  }
+
   void _photoMessage(String message) {
     if (!mounted || _page != 'settings_photo_scan_onboarding') return;
     ScaffoldMessenger.of(context)
@@ -1751,8 +1796,9 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
       );
       _archiveKeys.remove(applianceId);
       await _refreshSavedAppliances(page, generation);
-    } catch (_) {
+    } catch (writeError) {
       // Reconcile an uncertain response against the authoritative inventory.
+      var confirmed = false;
       try {
         final rows = await lifecycle.refreshSavedAppliances(
           context.accountId,
@@ -1762,6 +1808,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
             !rows.any((item) => item.id == applianceId) &&
             _isCurrentPageLoad(page, generation) &&
             identical(widget.designContextCoordinator?.context, context)) {
+          confirmed = true;
           _archiveKeys.remove(applianceId);
           _savedAppliances = rows;
           await _applySavedAppliances(page, generation);
@@ -1769,6 +1816,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
       } catch (_) {
         // Retain the row and retry key when neither write nor read is confirmed.
       }
+      if (!confirmed) _showInternalErrorFor(writeError);
     } finally {
       _archivingApplianceIds.remove(applianceId);
     }
@@ -1819,6 +1867,8 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
         _localInventory = result.inventory;
         await _applyLocalInventory(page, generation);
       }
+    } catch (error) {
+      _showInternalErrorFor(error);
     } finally {
       _deletingLocalIds.remove(id);
     }

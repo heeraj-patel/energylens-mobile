@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'cloud_local_auth.dart';
+import '../backend_error.dart';
 import 'cloud_auth.dart';
 import 'cloud_auth_link.dart';
 
@@ -103,14 +104,14 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
     } on CloudLocalAuthException catch (error) {
       if (mounted) {
         setState(
-          () => _error = error.statusCode == 404
-              ? 'Account creation is not available on this Cloud server.'
-              : 'Could not submit the request. Try again.',
+          () => _error = isInputRejectionStatus(error.statusCode)
+              ? 'Could not submit the request. Try again.'
+              : internalErrorMessage,
         );
       }
     } catch (_) {
       if (mounted) {
-        setState(() => _error = 'Could not submit the request. Try again.');
+        setState(() => _error = internalErrorMessage);
       }
     } finally {
       if (mounted) {
@@ -139,17 +140,15 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
     } on CloudLocalAuthException catch (error) {
       if (mounted) {
         setState(
-          () => _error = error.statusCode == 404
-              ? 'Email verification is not available on this Cloud server.'
-              : 'Could not verify this token. Check the email and try again.',
+          () => _error = isInputRejectionStatus(error.statusCode) ||
+                  error.statusCode == 401
+              ? 'Could not verify this token. Check the email and try again.'
+              : internalErrorMessage,
         );
       }
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error =
-              'Could not verify this token. Check the email and try again.',
-        );
+        setState(() => _error = internalErrorMessage);
       }
     } finally {
       _password.clear();

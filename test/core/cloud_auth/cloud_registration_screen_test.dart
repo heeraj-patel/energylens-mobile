@@ -234,7 +234,7 @@ void main() {
     await tester.tap(find.text('Request account'));
     await tester.pumpAndSettle();
     expect(
-      find.text('Could not submit the request. Try again.'),
+      find.text('Internal Error, Try again later'),
       findsOneWidget,
     );
     expect(find.textContaining('private backend detail'), findsNothing);
