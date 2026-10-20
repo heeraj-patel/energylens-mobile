@@ -6,6 +6,16 @@ class CloudEnergyMoney {
   final String amount;
   final String currency;
 
+  /// Compares validated decimal money without binary floating-point rounding.
+  bool hasSameValue(CloudEnergyMoney other) {
+    if (currency != other.currency) return false;
+    final left = amount.split('.');
+    final right = other.amount.split('.');
+    String fraction(List<String> parts) =>
+        (parts.length == 1 ? '' : parts[1]).replaceFirst(RegExp(r'0+$'), '');
+    return left[0] == right[0] && fraction(left) == fraction(right);
+  }
+
   factory CloudEnergyMoney.fromJson(Object? value) {
     final json = _object(value, 'money');
     _keys(json, const {'amount', 'currency'});
@@ -511,6 +521,85 @@ class CloudEfficiencyMonthToDate {
   }
 }
 
+/// Final trailing 30-day Efficiency amounts calculated by Cloud for a demo home.
+/// Mobile keeps these amounts as typed API values and performs no savings math.
+class CloudEfficiencyTrailing30Days {
+  const CloudEfficiencyTrailing30Days({
+    required this.periodCost,
+    required this.identifiedOpportunity,
+    required this.optimalBase,
+    required this.wasteOpportunity,
+    required this.awayOpportunity,
+    required this.peakRatesOpportunity,
+    required this.habitsOpportunity,
+    required this.nightTotalOpportunity,
+    required this.awayTotalOpportunity,
+    required this.chartSegmentWidthPercent,
+  });
+
+  final CloudEnergyMoney periodCost;
+  final CloudEnergyMoney identifiedOpportunity;
+  final CloudEnergyMoney optimalBase;
+  final CloudEnergyMoney wasteOpportunity;
+  final CloudEnergyMoney awayOpportunity;
+  final CloudEnergyMoney peakRatesOpportunity;
+  final CloudEnergyMoney habitsOpportunity;
+  final CloudEnergyMoney nightTotalOpportunity;
+  final CloudEnergyMoney awayTotalOpportunity;
+  final CloudEfficiencyChartSegmentWidthPercent chartSegmentWidthPercent;
+
+  factory CloudEfficiencyTrailing30Days.fromJson(Object? value) {
+    final json = _object(value, 'efficiency trailing 30 days');
+    _keys(json, const {
+      'period_cost',
+      'identified_opportunity',
+      'optimal_base',
+      'waste_opportunity',
+      'away_opportunity',
+      'peak_rates_opportunity',
+      'habits_opportunity',
+      'night_total_opportunity',
+      'away_total_opportunity',
+      'chart_segment_width_percent',
+      'waste_timing_basis',
+      'evidence_basis',
+    });
+    if (json['evidence_basis'] != 'synthetic' ||
+        json['waste_timing_basis'] != 'unknown_75_25_demo_fallback') {
+      throw const FormatException('Invalid Efficiency evidence basis');
+    }
+    final values = [
+      CloudEnergyMoney.fromJson(json['period_cost']),
+      CloudEnergyMoney.fromJson(json['identified_opportunity']),
+      CloudEnergyMoney.fromJson(json['optimal_base']),
+      CloudEnergyMoney.fromJson(json['waste_opportunity']),
+      CloudEnergyMoney.fromJson(json['away_opportunity']),
+      CloudEnergyMoney.fromJson(json['peak_rates_opportunity']),
+      CloudEnergyMoney.fromJson(json['habits_opportunity']),
+      CloudEnergyMoney.fromJson(json['night_total_opportunity']),
+      CloudEnergyMoney.fromJson(json['away_total_opportunity']),
+    ];
+    if (values.any((value) => value.currency != 'USD')) {
+      throw const FormatException('Invalid Efficiency currency');
+    }
+    return CloudEfficiencyTrailing30Days(
+      periodCost: values[0],
+      identifiedOpportunity: values[1],
+      optimalBase: values[2],
+      wasteOpportunity: values[3],
+      awayOpportunity: values[4],
+      peakRatesOpportunity: values[5],
+      habitsOpportunity: values[6],
+      nightTotalOpportunity: values[7],
+      awayTotalOpportunity: values[8],
+      chartSegmentWidthPercent:
+          CloudEfficiencyChartSegmentWidthPercent.fromJson(
+            json['chart_segment_width_percent'],
+          ),
+    );
+  }
+}
+
 class CloudEfficiencyChartSegmentWidthPercent {
   const CloudEfficiencyChartSegmentWidthPercent({
     required this.night,
@@ -553,6 +642,7 @@ class CloudHouseholdEnergyTrends {
     required this.totals,
     required this.buckets,
     this.efficiencyMonthToDate,
+    this.efficiencyTrailing30Days,
   });
 
   final CloudHouseholdEnergyMetadata metadata;
@@ -560,6 +650,7 @@ class CloudHouseholdEnergyTrends {
   final CloudEnergyAllocation totals;
   final List<CloudEnergyTrendBucket> buckets;
   final CloudEfficiencyMonthToDate? efficiencyMonthToDate;
+  final CloudEfficiencyTrailing30Days? efficiencyTrailing30Days;
 
   String get schemaRevision => metadata.schemaRevision;
   String get contentRevision => metadata.contentRevision;
@@ -600,8 +691,13 @@ class CloudHouseholdEnergyTrends {
         'totals',
         'buckets',
         'efficiency_month_to_date',
+        'efficiency_trailing_30_days',
       },
-      optional: const {'fixture_revision', 'efficiency_month_to_date'},
+      optional: const {
+        'fixture_revision',
+        'efficiency_month_to_date',
+        'efficiency_trailing_30_days',
+      },
     );
     if (json['view'] != 'energy_trends' || json['buckets'] is! List) {
       throw const FormatException('Invalid household energy trends');
@@ -624,6 +720,11 @@ class CloudHouseholdEnergyTrends {
           ? null
           : CloudEfficiencyMonthToDate.fromJson(
               json['efficiency_month_to_date'],
+            ),
+      efficiencyTrailing30Days: json['efficiency_trailing_30_days'] == null
+          ? null
+          : CloudEfficiencyTrailing30Days.fromJson(
+              json['efficiency_trailing_30_days'],
             ),
     );
   }

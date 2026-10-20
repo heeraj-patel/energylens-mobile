@@ -33,7 +33,7 @@ class LiveDeviceRow {
     this.usageCost,
     this.usefulCost,
     this.wasteCost,
-    this.state = 'standby',
+    this.state = 'offline',
     this.stateExpiresAt,
   });
 
@@ -158,7 +158,7 @@ LiveDevicesProjection prepareLiveDevicesProjection(DesignContextRead read) {
     final currentState = currentStates[appliance.id];
     DateTime? stateExpiresAt;
     if (currentState != null &&
-        currentState.state != 'standby' &&
+        currentState.state != 'offline' &&
         currentState.observedAt != null &&
         stateAsOf != null &&
         requestStartedAt != null) {
@@ -178,8 +178,8 @@ LiveDevicesProjection prepareLiveDevicesProjection(DesignContextRead read) {
         usefulCost: dailyCost?.usefulCost,
         wasteCost: dailyCost?.wasteCost,
         state: stateExpiresAt != null && !stateExpiresAt.isAfter(DateTime.now())
-            ? 'standby'
-            : currentState?.state ?? 'standby',
+            ? 'offline'
+            : currentState?.state ?? 'offline',
         stateExpiresAt: stateExpiresAt,
       ),
     );

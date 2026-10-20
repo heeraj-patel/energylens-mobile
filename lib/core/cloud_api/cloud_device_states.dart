@@ -21,18 +21,20 @@ class CloudDeviceState {
     final watts = json['watts'];
     if (id is! String ||
         id.isEmpty ||
-        !const {'active', 'idle', 'standby'}.contains(state) ||
+        !const {'active', 'idle', 'offline', 'standby'}.contains(state) ||
         (rawObserved != null && (observed == null || !observed.isUtc)) ||
         (watts != null && (watts is! num || !watts.isFinite || watts < 0)) ||
         (state == 'active' &&
             (observed == null || watts == null || watts <= 0)) ||
         (state == 'idle' && (observed == null || watts != 0)) ||
-        (state == 'standby' && (observed != null || watts != null))) {
+        ((state == 'offline' || state == 'standby') &&
+            (observed != null || watts != null))) {
       throw const FormatException('Invalid cloud device state');
     }
     return CloudDeviceState(
       applianceId: id,
-      state: state as String,
+      // Accept the previous Cloud enum during a staggered rollout.
+      state: state == 'standby' ? 'offline' : state as String,
       observedAt: observed,
       watts: (watts as num?)?.toDouble(),
     );

@@ -149,6 +149,49 @@ void main() {
     );
   });
 
+  test('selected home also binds the initially empty Settings home row', () {
+    final nodeCheck = Process.runSync('node', ['--version']);
+    if (nodeCheck.exitCode != 0) return;
+    final gate = DesignPageRequestGate();
+    final renderer = DesignTextBindingRenderer(gate);
+    final ticket = gate.select('home_1', 'settings');
+    final install = renderer.installationScript(ticket)!;
+    final update = renderer.updateScript(
+      ticket,
+      selectedHomeNameBindings('settings', 'Lake House'),
+    )!;
+    final testScript =
+        '''
+const label = {nodeType: 3, textContent: 'The Miller Home'};
+const header = {
+  childNodes: [label],
+  getAttribute: name => name === 'data-el-bind' ? 'settings_text_001' : null,
+};
+const home = {
+  childNodes: [],
+  textContent: '',
+  getAttribute: name => name === 'data-el-bind' ? 'settings_text_010' : null,
+};
+const document = {
+  querySelector: () => header,
+  querySelectorAll: () => [header, home],
+};
+const window = {};
+const Node = {TEXT_NODE: 3};
+const installed = eval(${jsonEncode(install)});
+const applied = eval(${jsonEncode(update)});
+console.log(JSON.stringify({installed, applied, header: label.textContent, home: home.textContent}));
+''';
+    final result = Process.runSync('node', ['-e', testScript]);
+    expect(result.exitCode, 0, reason: result.stderr.toString());
+    expect(jsonDecode(result.stdout as String), {
+      'installed': true,
+      'applied': true,
+      'header': 'Lake House',
+      'home': 'Lake House',
+    });
+  });
+
   test('encoded payload cannot become executable JavaScript', () {
     final gate = DesignPageRequestGate();
     final renderer = DesignTextBindingRenderer(gate);

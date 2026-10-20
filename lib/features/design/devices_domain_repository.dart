@@ -329,7 +329,7 @@ class DevicesDomainRepository {
     try {
       states = await (source as DevicesCurrentStateSource).deviceStates(homeId);
     } catch (_) {
-      // Without current telemetry the customer state is Standby. Older daily
+      // Without current telemetry the customer state is Offline. Older daily
       // measurements cannot establish that the device is still connected.
       return stale() ? null : snapshot;
     }

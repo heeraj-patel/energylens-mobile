@@ -28,7 +28,7 @@
     }
     const fields = Array.from(card.querySelectorAll('[data-el-bind]'));
     const stateText = (fields[2]?.textContent || '').trim().toLowerCase();
-    const state = ['active', 'idle', 'standby'].find(value => stateText.startsWith(value)) || null;
+    const state = ['active', 'idle', 'offline'].find(value => stateText.startsWith(value)) || null;
     const useful = money(fields[4]?.textContent || '');
     const waste = money(fields[6]?.textContent || '');
     return {card, name: (fields[0]?.textContent || '').trim(), state,

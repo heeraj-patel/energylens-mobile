@@ -79,13 +79,13 @@ function defaultRows() {
   return [
     card('A', 'Active', '$1.00', '$0.05'),
     card('B', 'Idle', '$0.10', '$0.30'),
-    card('C', 'Standby', '$0.05', '$0.15'),
+    card('C', 'Offline', '$0.05', '$0.15'),
     card('D', 'Active', '$0.20', '$0.02'),
     card('E', 'Idle', '$0.08', '$0.10'),
-    card('F', 'Standby', '$0.05', '$0.08'),
+    card('F', 'Offline', '$0.05', '$0.08'),
     card('G', 'Active', '$0.50', '$0.06'),
     card('H', 'Idle', '$0.10', '$0.03'),
-    card('I', 'Standby', '$0.01', '$0.09'),
+    card('I', 'Offline', '$0.01', '$0.09'),
     card('J', 'Active', '$0.70', '$0.01')
   ];
 }
@@ -147,16 +147,16 @@ test('keeps numbered pagination within the phone-width control row', () => {
 });
 
 test('sort and filter update count and reset to the first page', () => {
-  const page = makePage([...namedRows(15), card('ZZ Standby', 'Standby', '$0.10', '$0.99')]);
+  const page = makePage([...namedRows(15), card('ZZ Offline', 'Offline', '$0.10', '$0.99')]);
   page.next.click();
   assert.equal(page.summary.textContent, 'Showing 11–16 of 16 devices');
   page.sort.value = 'name';
   page.sort.dispatch('change');
   assert.equal(page.summary.textContent, 'Showing 1–10 of 16 devices');
-  page.filter.value = 'standby';
+  page.filter.value = 'offline';
   page.filter.dispatch('change');
   assert.equal(page.summary.textContent, 'Showing 1–1 of 1 devices');
-  assert.deepEqual(page.visible(), ['ZZ Standby']);
+  assert.deepEqual(page.visible(), ['ZZ Offline']);
   assert.equal(page.pagination.hidden, false);
   assert.equal(page.previous.disabled, true);
   assert.equal(page.next.disabled, true);

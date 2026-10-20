@@ -143,7 +143,7 @@ class TipsPageRenderer {
     body.append(detail);
     if (payload.page !== 'perks_tips' && row.monthlySavings) {
       const savings = document.createElement('span');
-      savings.className = 'px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container text-[11px] font-semibold flex-shrink-0';
+      savings.className = 'px-2 py-0.5 rounded-full bg-secondary-container el-useful-ink text-[11px] font-semibold flex-shrink-0';
       savings.textContent = row.monthlySavings;
       body.append(savings);
     }

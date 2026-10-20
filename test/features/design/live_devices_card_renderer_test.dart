@@ -75,7 +75,7 @@ void main() {
         'usageCost': null,
         'usefulCost': null,
         'wasteCost': null,
-        'state': 'standby',
+        'state': 'offline',
         'stateExpiresAt': null,
       },
     ]);
@@ -147,7 +147,7 @@ void main() {
         'usageCost': null,
         'usefulCost': null,
         'wasteCost': null,
-        'state': 'standby',
+        'state': 'offline',
         'stateExpiresAt': null,
       },
       {
@@ -157,7 +157,7 @@ void main() {
         'usageCost': null,
         'usefulCost': null,
         'wasteCost': null,
-        'state': 'standby',
+        'state': 'offline',
         'stateExpiresAt': null,
       },
       {
@@ -167,7 +167,7 @@ void main() {
         'usageCost': null,
         'usefulCost': null,
         'wasteCost': null,
-        'state': 'standby',
+        'state': 'offline',
         'stateExpiresAt': null,
       },
     ]);

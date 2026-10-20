@@ -104,7 +104,7 @@ class LiveDevicesCardRenderer {
         (row.usefulCost !== null && typeof row.usefulCost !== 'string') ||
         (row.wasteCost !== null && typeof row.wasteCost !== 'string') ||
         (row.stateExpiresAt !== null && !Number.isSafeInteger(row.stateExpiresAt)) ||
-        !['active', 'idle', 'standby'].includes(row.state)) return false;
+        !['active', 'idle', 'offline'].includes(row.state)) return false;
     const clone = template.cloneNode(true);
     const name = clone.querySelector('[data-el-bind="devices_text_022"]');
     const identity = clone.querySelector('[data-el-bind="devices_text_023"]');
@@ -122,7 +122,7 @@ class LiveDevicesCardRenderer {
     identity.textContent = row.identity;
     const expiresAt = row.stateExpiresAt;
     const initialState = expiresAt !== null && expiresAt <= Date.now()
-      ? 'standby' : row.state;
+      ? 'offline' : row.state;
     const setState = state => {
     const stateText = state[0].toUpperCase() + state.slice(1);
     status.className = state === 'active'
@@ -156,7 +156,7 @@ class LiveDevicesCardRenderer {
     if (row.usageCost !== null) clone.setAttribute('data-el-usage-cost', row.usageCost);
     if (wasteText !== null) clone.setAttribute('data-el-waste-cost', wasteText);
     cards.push(clone);
-    if (initialState !== 'standby' && expiresAt !== null) {
+    if (initialState !== 'offline' && expiresAt !== null) {
       const expire = () => {
         if (window.$_contextKey !== current || !clone.isConnected) return;
         const remaining = expiresAt - Date.now();
@@ -164,7 +164,7 @@ class LiveDevicesCardRenderer {
           setTimeout(expire, Math.min(remaining, 2147483647));
           return;
         }
-        setState('standby');
+        setState('offline');
         feed.dispatchEvent(new Event('energylens:devices-changed'));
       };
       setTimeout(expire, Math.max(0, expiresAt - Date.now()));

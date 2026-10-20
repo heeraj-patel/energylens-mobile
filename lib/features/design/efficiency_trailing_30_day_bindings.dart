@@ -9,26 +9,26 @@ import 'design_page_bridge.dart';
 import 'efficiency_domain_repository.dart';
 
 /// Binds the existing top value slots from the selected home's exact
-/// home-local month-to-date trends response. The packaged labels stay intact.
-List<DesignTextBinding>? prepareEfficiencyMonthToDateBindings(
+/// home-local trailing 30-day trends response. The packaged labels stay intact.
+List<DesignTextBinding>? prepareEfficiencyTrailing30DaysBindings(
   EfficiencyDomainSnapshot snapshot,
 ) {
-  final monthToDate = snapshot.monthToDate;
+  final trailing30Days = snapshot.trailing30Days;
   final dashboard = snapshot.energy.dashboard;
-  if (monthToDate == null ||
+  if (trailing30Days == null ||
       !snapshot.energy.matchesHomeAndSnapshot(snapshot.homeId) ||
-      monthToDate.homeId.toLowerCase() != snapshot.homeId.toLowerCase() ||
-      monthToDate.dataMode != snapshot.energy.dataMode ||
-      monthToDate.fixtureRevision != dashboard.fixtureRevision ||
-      monthToDate.timezone != dashboard.timezone ||
-      monthToDate.scope != dashboard.scope ||
-      monthToDate.granularity != 'day' ||
-      monthToDate.schemaRevision != dashboard.schemaRevision ||
-      monthToDate.availability == 'unavailable' ||
-      monthToDate.totals.availability == 'unavailable' ||
-      monthToDate.evidenceBasis == 'unavailable' ||
-      monthToDate.totals.evidenceBasis == 'unavailable' ||
-      monthToDate.generatedAt.difference(dashboard.generatedAt).abs() >
+      trailing30Days.homeId.toLowerCase() != snapshot.homeId.toLowerCase() ||
+      trailing30Days.dataMode != snapshot.energy.dataMode ||
+      trailing30Days.fixtureRevision != dashboard.fixtureRevision ||
+      trailing30Days.timezone != dashboard.timezone ||
+      trailing30Days.scope != dashboard.scope ||
+      trailing30Days.granularity != 'day' ||
+      trailing30Days.schemaRevision != dashboard.schemaRevision ||
+      trailing30Days.availability == 'unavailable' ||
+      trailing30Days.totals.availability == 'unavailable' ||
+      trailing30Days.evidenceBasis == 'unavailable' ||
+      trailing30Days.totals.evidenceBasis == 'unavailable' ||
+      trailing30Days.generatedAt.difference(dashboard.generatedAt).abs() >
           const Duration(minutes: 5)) {
     return null;
   }
@@ -36,34 +36,40 @@ List<DesignTextBinding>? prepareEfficiencyMonthToDateBindings(
   tz_data.initializeTimeZones();
   late final tz.Location location;
   try {
-    location = tz.getLocation(monthToDate.timezone);
+    location = tz.getLocation(trailing30Days.timezone);
   } catch (_) {
     return null;
   }
-  final current = tz.TZDateTime.from(monthToDate.generatedAt, location);
-  final monthStart = tz.TZDateTime(location, current.year, current.month);
+  final current = tz.TZDateTime.from(trailing30Days.generatedAt, location);
+  final periodStart = tz.TZDateTime(
+    location,
+    current.year,
+    current.month,
+    current.day - 29,
+  );
   final tomorrow = tz.TZDateTime(
     location,
     current.year,
     current.month,
     current.day + 1,
   );
-  if (!monthToDate.period.start.isAtSameMomentAs(monthStart) ||
-      !monthToDate.period.endExclusive.isAtSameMomentAs(tomorrow)) {
+  if (!trailing30Days.period.start.isAtSameMomentAs(periodStart) ||
+      !trailing30Days.period.endExclusive.isAtSameMomentAs(tomorrow)) {
     return null;
   }
 
-  final summary = monthToDate.efficiencyMonthToDate;
-  final total = summary?.monthToDateCost ?? monthToDate.totals.cost;
-  if (total == null || total.currency != 'USD') {
+  final summary = trailing30Days.efficiencyTrailing30Days;
+  if (summary == null) return null;
+  final total = summary.periodCost;
+  final trendCost = trailing30Days.totals.cost;
+  if (trendCost == null ||
+      !total.hasSameValue(trendCost) ||
+      total.currency != 'USD') {
     return null;
   }
   final formatted = formatDashboardUsd(total);
   if (formatted == null) return null;
-  if (summary == null) {
-    return [DesignTextBinding('efficiency_text_009', formatted)];
-  }
-  if (monthToDate.dataMode == 'household') return null;
+  if (trailing30Days.dataMode == 'household') return null;
   final opportunity = formatDashboardUsd(summary.identifiedOpportunity);
   final optimalBase = formatDashboardUsd(summary.optimalBase);
   final night = formatDashboardUsd(summary.nightTotalOpportunity);
@@ -91,9 +97,9 @@ List<DesignTextBinding>? prepareEfficiencyMonthToDateBindings(
 
 /// Applies backend-calculated chart widths and matching tooltip amounts.
 /// The four existing chart labels and DOM locations remain unchanged.
-String buildEfficiencyMonthToDateChartScript(
+String buildEfficiencyTrailing30DaysChartScript(
   DesignPageTicket ticket,
-  CloudEfficiencyMonthToDate summary,
+  CloudEfficiencyTrailing30Days summary,
 ) {
   final payload = jsonEncode({
     'homeId': ticket.homeId,

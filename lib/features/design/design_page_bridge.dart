@@ -253,8 +253,13 @@ class DesignTextBindingRenderer {
     const matches = elements.filter(node => node.getAttribute('data-el-bind') === row.id);
     if (matches.length !== 1) return false;
     const textNodes = Array.from(matches[0].childNodes).filter(node => node.nodeType === Node.TEXT_NODE);
-    if (textNodes.length !== 1) return false;
-    targets.push([textNodes[0], row.text]);
+    if (textNodes.length === 1) {
+      targets.push([textNodes[0], row.text]);
+    } else if (matches[0].childNodes.length === 0) {
+      targets.push([matches[0], row.text]);
+    } else {
+      return false;
+    }
   }
   for (const [node, value] of targets) node.textContent = value;
   return true;

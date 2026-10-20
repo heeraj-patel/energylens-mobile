@@ -14,7 +14,7 @@ import 'package:energylens_mobile/features/design/efficiency_away_domain_adapter
 import 'package:energylens_mobile/features/design/efficiency_habits_domain_adapter.dart';
 import 'package:energylens_mobile/features/design/efficiency_peak_rates_adapter.dart';
 import 'package:energylens_mobile/features/design/design_page_bridge.dart';
-import 'package:energylens_mobile/features/design/efficiency_month_to_date_bindings.dart';
+import 'package:energylens_mobile/features/design/efficiency_trailing_30_day_bindings.dart';
 
 const home = '11111111-1111-4111-8111-111111111111';
 
@@ -65,13 +65,13 @@ EfficiencyDomainSnapshot snapshot(EfficiencyPage page) {
     'totals': allocation('0.20'),
     'buckets': [],
   }, expectedHomeId: home);
-  final monthToDate = CloudHouseholdEnergyTrends.fromJson({
-    ...base('2026-10-01T00:00:00-05:00', dayEnd),
+  final trailing30Days = CloudHouseholdEnergyTrends.fromJson({
+    ...base('2026-09-07T00:00:00-05:00', dayEnd),
     'view': 'energy_trends',
     'granularity': 'day',
     'totals': allocation('6.00'),
-    'efficiency_month_to_date': {
-      'month_to_date_cost': {'amount': '6.000000', 'currency': 'USD'},
+    'efficiency_trailing_30_days': {
+      'period_cost': {'amount': '6.000000', 'currency': 'USD'},
       'identified_opportunity': {'amount': '16.300000', 'currency': 'USD'},
       'optimal_base': {'amount': '5.000000', 'currency': 'USD'},
       'waste_opportunity': {'amount': '1.000000', 'currency': 'USD'},
@@ -96,7 +96,7 @@ EfficiencyDomainSnapshot snapshot(EfficiencyPage page) {
     energy: DashboardDomainSnapshot(dashboard, hourly, isCurrent: () => true),
     operatingEstimates: const [],
     recommendations: const [],
-    monthToDate: monthToDate,
+    trailing30Days: trailing30Days,
   );
 }
 
@@ -288,7 +288,7 @@ void main() {
   });
 
   testWidgets(
-    'selected-home DesignShell injects API MTD values on all Efficiency routes',
+    'selected-home DesignShell injects API rolling values on all Efficiency routes',
     (tester) async {
       final platform = _WebPlatform();
       WebViewPlatform.instance = platform;
@@ -370,7 +370,7 @@ void main() {
               ? 2
               : i],
         );
-        final bindings = prepareEfficiencyMonthToDateBindings(source)!;
+        final bindings = prepareEfficiencyTrailing30DaysBindings(source)!;
         final pageBindings = [
           for (final binding in bindings)
             DesignTextBinding(
@@ -380,9 +380,9 @@ void main() {
         ];
         final install = renderer.installationScript(ticket)!;
         final update = renderer.updateScript(ticket, pageBindings)!;
-        final chart = buildEfficiencyMonthToDateChartScript(
+        final chart = buildEfficiencyTrailing30DaysChartScript(
           ticket,
-          source.monthToDate!.efficiencyMonthToDate!,
+          source.trailing30Days!.efficiencyTrailing30Days!,
         );
         final original = File('assets/design_pages/$route/app.html')
             .readAsStringSync();
@@ -434,7 +434,7 @@ const pre = document.createElement('pre'); pre.id = 'probe'; pre.textContent = J
         );
         expect(data['labels'], [
           'Identified Opportunity',
-          'Month to date',
+          'Last 30 days',
           'Optimal Base',
           'Avoidable Leak Breakdown',
           'Night',

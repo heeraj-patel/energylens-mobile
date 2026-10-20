@@ -14,7 +14,7 @@ import '../../core/cloud_api/cloud_appliance_list.dart';
 import '../../core/cloud_api/cloud_api_client.dart';
 import '../../core/cloud_api/cloud_catalog.dart';
 import '../../core/cloud_api/cloud_household_energy.dart'
-    show CloudEfficiencyMonthToDate;
+    show CloudEfficiencyTrailing30Days;
 import '../../core/cloud_api/cloud_home.dart' show newCloudIdempotencyKey;
 import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import '../identify/appliance_onboarding_screen.dart'
@@ -22,7 +22,7 @@ import '../identify/appliance_onboarding_screen.dart'
 import '../identify/photo_capture_service.dart';
 import 'device_review_sheet.dart';
 import 'efficiency_domain_repository.dart';
-import 'efficiency_month_to_date_bindings.dart';
+import 'efficiency_trailing_30_day_bindings.dart';
 import 'dashboard_chart_projection.dart';
 import 'dashboard_chart_renderer.dart';
 import 'dashboard_domain_repository.dart';
@@ -172,7 +172,7 @@ class _DesignShellState extends State<DesignShell> {
   DesignNumericBindings? _sampleDevicesBindings;
   List<DesignTextBinding>? _efficiencyBindings;
   DashboardTopSavingsBindings? _topSavingsBindings;
-  CloudEfficiencyMonthToDate? _efficiencyChartSummary;
+  CloudEfficiencyTrailing30Days? _efficiencyChartSummary;
   int? _peerTabScrollY;
   DesignPageTicket? _pageTicket;
   Timer? _tourTimer;
@@ -483,14 +483,14 @@ class _DesignShellState extends State<DesignShell> {
       final source = _efficiencySnapshot(read?.value);
       if (source == null) return;
       if (source.page != _efficiencyPageForRoute(page)) return;
-      final bindings = prepareEfficiencyMonthToDateBindings(source);
+      final bindings = prepareEfficiencyTrailing30DaysBindings(source);
       if (bindings == null ||
           !_isCurrentPageLoad(page, generation) ||
           !identical(_pageReads.latestRead, read)) {
         return;
       }
       _efficiencyBindings = bindings;
-      _efficiencyChartSummary = source.monthToDate?.efficiencyMonthToDate;
+      _efficiencyChartSummary = source.trailing30Days?.efficiencyTrailing30Days;
       await _applyEfficiencyBindings(page, generation);
       return;
     }
@@ -861,7 +861,6 @@ class _DesignShellState extends State<DesignShell> {
     int generation,
     DesignPageTicket ticket,
   ) async {
-    if (page == 'settings') return;
     final context = widget.designContextCoordinator?.context;
     if (!_isCurrentPageLoad(page, generation) ||
         !identical(_pageTicket, ticket) ||
@@ -1190,7 +1189,7 @@ class _DesignShellState extends State<DesignShell> {
       final chart = _efficiencyChartSummary;
       if (chart != null && _isCurrentPageLoad(page, generation)) {
         await _controller.runJavaScriptReturningResult(
-          buildEfficiencyMonthToDateChartScript(ticket, chart),
+          buildEfficiencyTrailing30DaysChartScript(ticket, chart),
         );
       }
     } catch (_) {

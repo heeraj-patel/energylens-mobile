@@ -131,6 +131,7 @@ String _withApprovedLabelChanges(String html, String pageId) {
   }
   if (pageId == 'devices') {
     return html
+        .replaceAll('Standby', 'Offline')
         .replaceFirst('add_circle', '')
         .replaceFirst(
           'Smart Plugs can be auto-calibrated or assigned to custom automation routines.',
@@ -152,7 +153,7 @@ String _withApprovedLabelChanges(String html, String pageId) {
     'efficiency_habits',
     'efficiency_peak_rates',
   }.contains(pageId)) {
-    return html.replaceFirst('Monthly Spend', 'Month to date');
+    return html.replaceFirst('Monthly Spend', 'Last 30 days');
   }
   return html;
 }
@@ -292,7 +293,7 @@ void main() {
       }
     });
 
-    test('Efficiency opportunity amounts use shared waste ink and tips are text only', () async {
+    test('Efficiency opportunity ink is green while waste costs stay amber', () async {
       const pages = [
         'efficiency',
         'efficiency_away',
@@ -306,7 +307,7 @@ void main() {
         expect(
           html,
           contains(
-            'class="el-waste-ink" data-el-bind="${pageId}_text_006">\$18.60',
+            'class="el-useful-ink" data-el-bind="${pageId}_text_006">\$18.60',
           ),
           reason: pageId,
         );
@@ -335,7 +336,7 @@ void main() {
         );
 
         if (pageId == 'efficiency') {
-          expect(_visibleText(packagedHtml), contains('Month to date'));
+          expect(_visibleText(packagedHtml), contains('Last 30 days'));
           expect(_visibleText(packagedHtml), isNot(contains('Monthly Spend')));
         }
         if (pageId == 'dashboard') {
@@ -498,7 +499,7 @@ void main() {
                       pageId == 'efficiency'
                           ? sourceHtml.replaceFirst(
                               'Monthly Spend',
-                              'Month to date',
+                              'Last 30 days',
                             )
                           : pageId == 'dashboard'
                           ? _withoutApprovedDashboardSummary(

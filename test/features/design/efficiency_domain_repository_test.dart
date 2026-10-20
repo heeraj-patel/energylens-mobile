@@ -164,13 +164,13 @@ class _Source implements EfficiencyDomainSource {
   }
 }
 
-class _MonthToDateSource extends _Source
-    implements EfficiencyMonthToDateDomainSource {
-  int monthToDateCalls = 0;
+class _Trailing30DaysSource extends _Source
+    implements EfficiencyTrailing30DayDomainSource {
+  int trailing30DaysCalls = 0;
 
   @override
-  Future<CloudHouseholdEnergyTrends> monthToDate(String home) async {
-    monthToDateCalls++;
+  Future<CloudHouseholdEnergyTrends> trailing30Days(String home) async {
+    trailing30DaysCalls++;
     final body = _body('energy_trends', home);
     body['granularity'] = 'day';
     return CloudHouseholdEnergyTrends.fromJson(body, expectedHomeId: home);
@@ -178,15 +178,15 @@ class _MonthToDateSource extends _Source
 }
 
 void main() {
-  test('each Efficiency route fetches its own month-to-date total', () async {
-    final source = _MonthToDateSource();
+  test('each Efficiency route fetches its own trailing 30-day total', () async {
+    final source = _Trailing30DaysSource();
     final repository = EfficiencyDomainRepository(source);
     for (final page in EfficiencyPage.values) {
       final snapshot = await repository.fetch(homeA, page);
-      expect(snapshot!.monthToDate?.granularity, 'day');
+      expect(snapshot!.trailing30Days?.granularity, 'day');
       expect(snapshot.page, page);
     }
-    expect(source.monthToDateCalls, EfficiencyPage.values.length);
+    expect(source.trailing30DaysCalls, EfficiencyPage.values.length);
   });
 
   test(
