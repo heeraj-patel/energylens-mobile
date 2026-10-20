@@ -1,3 +1,5 @@
+const electricityTariffLifetime = Duration(days: 90);
+
 class CloudTariff {
   const CloudTariff({
     this.id,
@@ -26,7 +28,7 @@ class CloudTariff {
 
   DateTime? get currentExpiresAt {
     final sourceExpiry = fuel == 'electricity'
-        ? sourceAsOf.toUtc().add(const Duration(days: 60))
+        ? sourceAsOf.toUtc().add(electricityTariffLifetime)
         : null;
     final effectiveExpiry = effectiveTo?.toUtc();
     if (sourceExpiry == null) return effectiveExpiry;

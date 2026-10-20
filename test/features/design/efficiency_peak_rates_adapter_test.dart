@@ -73,8 +73,8 @@ void main() {
     expect(snapshot.sourceAsOf, DateTime.utc(2025, 4, 1));
   });
 
-  test('expires a tariff exactly 60 days after source_as_of', () async {
-    final boundary = now.subtract(const Duration(days: 60));
+  test('expires a tariff exactly 90 days after source_as_of', () async {
+    final boundary = now.subtract(const Duration(days: 90));
     final snapshot = await EfficiencyPeakRatesAdapter(
       _Source([_tariff(sourceAsOf: boundary)]),
       clock: () => now,

@@ -111,11 +111,11 @@ void main() {
     api.close();
   });
 
-  testWidgets('cached utility rate disappears at 60-day source boundary', (
+  testWidgets('cached utility rate disappears at 90-day source boundary', (
     tester,
   ) async {
     final source = DateTime.utc(2026, 8, 14, 12);
-    final expiry = source.add(const Duration(days: 60));
+    final expiry = source.add(const Duration(days: 90));
     var now = expiry.subtract(const Duration(seconds: 1));
     final api = _api(
       MockClient(

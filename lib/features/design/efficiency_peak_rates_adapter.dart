@@ -45,14 +45,13 @@ class EfficiencyPeakRatesSnapshot {
 
 /// A conservative nonvisual adapter over the existing tariff API.
 /// The tariff API's `source_as_of` is its available discovery/check date.
-/// Rates expire 60 days after that date; future source dates are invalid.
+/// Rates expire 90 days after that date; future source dates are invalid.
 class EfficiencyPeakRatesAdapter {
   EfficiencyPeakRatesAdapter(this.source, {DateTime Function()? clock})
     : _clock = clock ?? DateTime.now;
 
   final EfficiencyPeakRatesSource source;
   final DateTime Function() _clock;
-  static const _rateLifetime = Duration(days: 60);
   static final _uuid = RegExp(
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
   );
@@ -96,7 +95,7 @@ class EfficiencyPeakRatesAdapter {
 
     final tariff = effective.single;
     final sourceDate = tariff.sourceAsOf.toUtc();
-    final isStale = !sourceDate.isAfter(now.subtract(_rateLifetime));
+    final isStale = !sourceDate.isAfter(now.subtract(electricityTariffLifetime));
     return EfficiencyPeakRatesSnapshot(
       homeId: homeId,
       status: isStale
