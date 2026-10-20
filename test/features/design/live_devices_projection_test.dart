@@ -147,6 +147,8 @@ void main() {
     const applianceA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const applianceB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
     const applianceC = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const applianceD = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const applianceE = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
     Map<String, Object?> money(String value) => {
       'amount': value,
       'currency': 'USD',
@@ -217,6 +219,22 @@ void main() {
                 waste: '0.800000',
               ),
             },
+            {
+              'appliance_id': applianceD,
+              'allocation': allocation(
+                cost: '0.100000',
+                useful: '0.096000',
+                waste: '0.004000',
+              ),
+            },
+            {
+              'appliance_id': applianceE,
+              'allocation': allocation(
+                cost: '0.100000',
+                useful: '0.095000',
+                waste: '0.005000',
+              ),
+            },
           ],
         },
       ],
@@ -227,6 +245,8 @@ void main() {
           item(applianceA, 'A'),
           item(applianceB, 'B', category: 'lighting'),
           item(applianceC, 'C'),
+          item(applianceD, 'D'),
+          item(applianceE, 'E'),
         ],
         costs: costs,
       ),
@@ -237,6 +257,9 @@ void main() {
     expect(projection.rows[1].wasteCost, '\$0.00');
     expect(projection.rows[2].usefulCost, isNull);
     expect(projection.rows[2].wasteCost, isNull);
+    expect(projection.rows[3].wasteCost, '<\$0.01');
+    expect(projection.rows[3].usefulCost, '\$0.10');
+    expect(projection.rows[4].wasteCost, '\$0.01');
   });
 
   test('estimated non-metered cost shows while measured stays unchanged', () {

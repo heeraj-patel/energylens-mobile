@@ -259,7 +259,7 @@ List<SeededDeviceRow> _additionalSeededRows(DevicesDomainSnapshot snapshot) {
           name: row.name!,
           totalCost: _costText(total)!,
           usefulCost: _costText(useful)!,
-          wasteCost: _costText(waste)!,
+          wasteCost: _wasteText(waste)!,
         ),
       );
     }
@@ -319,7 +319,7 @@ Map<String, _DailyRealCost> _realDailyCosts(DevicesDomainSnapshot snapshot) {
         (useful != null && waste != null && useful + waste > total)) {
       continue;
     }
-    rows[id] = _DailyRealCost(_costText(useful), _costText(waste), total);
+    rows[id] = _DailyRealCost(_costText(useful), _wasteText(waste), total);
   }
   return rows;
 }
@@ -339,4 +339,12 @@ String? _costText(BigInt? micros) {
   if (micros == null) return null;
   final cents = (micros + BigInt.from(5000)) ~/ BigInt.from(10000);
   return '\$${cents ~/ BigInt.from(100)}.${(cents % BigInt.from(100)).toString().padLeft(2, '0')}';
+}
+
+/// Positive waste under half a cent reads "<$0.01"; zero stays "$0.00".
+String? _wasteText(BigInt? micros) {
+  if (micros != null && micros > BigInt.zero && micros < BigInt.from(5000)) {
+    return '<\$0.01';
+  }
+  return _costText(micros);
 }

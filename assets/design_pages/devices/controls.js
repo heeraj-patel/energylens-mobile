@@ -14,6 +14,7 @@
   let currentPage = 1;
 
   function money(text) {
+    if (text.trim() === '<$0.01') return 0.005;
     const match = /^\$([0-9]+(?:\.[0-9]+)?)$/.exec(text.trim());
     return match ? Number(match[1]) : null;
   }

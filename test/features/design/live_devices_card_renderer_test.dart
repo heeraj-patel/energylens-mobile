@@ -107,6 +107,7 @@ void main() {
     expect(payload['rows'][0]['wasteCost'], '\$0.25');
     expect(script, contains("useful.textContent = row.usefulCost ?? 'N/A'"));
     expect(script, contains("waste.textContent = wasteText ?? 'N/A'"));
+    expect(script, contains("wasteText === '<\$0.01' ? 0.005"));
   });
 
   test('accepts Standalone with neutral status and no expiry timer', () {

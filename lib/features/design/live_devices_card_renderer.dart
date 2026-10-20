@@ -149,7 +149,7 @@ class LiveDevicesCardRenderer {
     waste.classList.remove('text-[#d97706]');
     waste.classList.remove('el-waste-ink');
     waste.classList.remove('text-on-surface-variant');
-    const wasteAmount = wasteText && Number(wasteText.replace(/[^0-9.]/g, ''));
+    const wasteAmount = wasteText && (wasteText === '<\$0.01' ? 0.005 : Number(wasteText.replace(/[^0-9.]/g, '')));
     waste.classList.add(wasteAmount > 0 ? 'el-waste-ink' : 'text-on-surface-variant');
     icon.textContent = 'devices_other';
     clone.setAttribute('data-el-live-device-id', row.id);
