@@ -840,7 +840,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onDevicesChanged: _refreshHub,
         autoScanDiscovery: widget.autoScanDiscovery,
         startInConnectAppliance: widget.startInConnectAppliance,
-        onboardingDrafts: widget.onboardingDrafts,
       ),
     };
     return Scaffold(
