@@ -4,7 +4,9 @@ import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_preferences.dart';
+import 'package:energylens_mobile/features/design/design_page_bridge.dart';
 import 'package:energylens_mobile/features/design/settings_domain_repository.dart';
+import 'package:energylens_mobile/features/design/settings_identity_renderer.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const homeA = '11111111-1111-4111-8111-111111111111';
@@ -97,7 +99,7 @@ void main() {
       expect(result?.homePreferences.goal, 'unspecified');
       expect(result?.homePreferencesEtag, '"1"');
       expect(result?.applianceCount, 1);
-      expect(result?.appliances.single.matchQuality, 'user_entered');
+      expect(result?.appliances?.single.matchQuality, 'user_entered');
     },
   );
 
@@ -113,6 +115,51 @@ void main() {
       expect(result?.applianceCount, 0);
     },
   );
+
+  test(
+    'inventory server failure preserves authenticated profile fields',
+    () async {
+      final result = await SettingsDomainRepository(
+        FakeSource(
+          email: 'owner@example.com',
+          applianceRead: (_) =>
+              throw const CloudApiException(500, 'server_error'),
+        ),
+      ).fetch(homeA);
+
+      expect(result?.email, 'owner@example.com');
+      expect(result?.postalCode, '60601');
+      expect(result?.home.id, homeA);
+      expect(result?.appliances, isNull);
+      expect(result?.applianceCount, isNull);
+      expect(
+        const SettingsIdentityRenderer().script(
+          ticket: const DesignPageTicket(homeA, 'settings', 1),
+          snapshot: result!,
+          expectedAccountId: 'account-id',
+        ),
+        isNotNull,
+      );
+    },
+  );
+
+  test('inventory authentication failure still rejects profile read', () async {
+    await expectLater(
+      SettingsDomainRepository(
+        FakeSource(
+          applianceRead: (_) =>
+              throw const CloudApiException(401, 'not_authenticated'),
+        ),
+      ).fetch(homeA),
+      throwsA(
+        isA<CloudApiException>().having(
+          (error) => error.statusCode,
+          'statusCode',
+          401,
+        ),
+      ),
+    );
+  });
 
   test('rejects home absent from account and cross-home inventory', () async {
     await expectLater(

@@ -58,7 +58,9 @@ class SettingsDomainSnapshot {
   final String homeEtag;
   final CloudHomePreferences homePreferences;
   final String homePreferencesEtag;
-  final List<CloudAppliance> appliances;
+
+  /// Null when inventory could not load; profile fields remain authoritative.
+  final List<CloudAppliance>? appliances;
 
   String? get email => account.email;
   String? get identity => account.authMethod == 'username_password'
@@ -70,7 +72,7 @@ class SettingsDomainSnapshot {
   String get postalCode => home.postalCode;
   String get timezone => home.timezone;
   bool get emailReportsEnabled => accountPreferences.emailReportsEnabled;
-  int get applianceCount => appliances.length;
+  int? get applianceCount => appliances?.length;
 
   String? get accountOwner => account.displayName;
 }
@@ -107,18 +109,30 @@ class SettingsDomainRepository {
       final homeData = await Future.wait<Object>([
         source.home(homeId),
         source.homePreferences(homeId),
-        source.appliances(homeId),
       ]);
       if (stale()) return null;
       final home = homeData[0] as CloudVersioned<CloudHome>;
       final homePreferences =
           homeData[1] as CloudVersioned<CloudHomePreferences>;
-      final appliances = homeData[2] as List<CloudAppliance>;
-      if (home.value.id != homeId ||
-          appliances.any((item) => item.homeId != homeId)) {
+      if (home.value.id != homeId) {
         throw const FormatException('Settings reads belong to different homes');
       }
-      _validateUniqueAppliances(appliances);
+      List<CloudAppliance>? appliances;
+      try {
+        appliances = await source.appliances(homeId);
+      } on CloudApiException catch (error) {
+        if (error.statusCode < 500) rethrow;
+        // Server inventory failure must not hide verified account/home fields.
+      }
+      if (stale()) return null;
+      if (appliances != null) {
+        if (appliances.any((item) => item.homeId != homeId)) {
+          throw const FormatException(
+            'Settings inventory belongs to another home',
+          );
+        }
+        _validateUniqueAppliances(appliances);
+      }
       return SettingsDomainSnapshot(
         account: accountAndHomes[0] as CloudAccount,
         homes: List.unmodifiable(homes),
@@ -132,7 +146,7 @@ class SettingsDomainRepository {
         homeEtag: home.etag,
         homePreferences: homePreferences.value,
         homePreferencesEtag: homePreferences.etag,
-        appliances: List.unmodifiable(appliances),
+        appliances: appliances == null ? null : List.unmodifiable(appliances),
       );
     } catch (_) {
       if (stale()) return null;

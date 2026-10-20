@@ -836,6 +836,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onUsageChanged: _saveApplianceUsage,
         cloudHome: widget.cloudHome,
         cloudApi: widget.cloudApi,
+        onboardingDrafts: widget.onboardingDrafts,
         onDevicesChanged: _refreshHub,
         autoScanDiscovery: widget.autoScanDiscovery,
         startInConnectAppliance: widget.startInConnectAppliance,

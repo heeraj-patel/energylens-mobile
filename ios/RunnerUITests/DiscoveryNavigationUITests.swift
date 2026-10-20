@@ -210,7 +210,9 @@ final class DiscoveryNavigationUITests: XCTestCase {
       .matching(NSPredicate(format: "label == %@", username))
       .firstMatch
     XCTAssertTrue(accountIdentity.waitForExistence(timeout: 60),
-                  "The reused Cloud session did not belong to the expected account")
+                  "The reused Cloud session did not show the expected username in Profile")
+    XCTAssertTrue(app.staticTexts["Account Owner"].exists, "Account Owner field was missing from Profile")
+    XCTAssertTrue(app.staticTexts["Zipcode (Tariff Zone)"].exists, "Zipcode field was missing from Profile")
     let manageDevices = app.descendants(matching: .any)
       .matching(NSPredicate(format: "label CONTAINS[c] %@", "Manage Devices"))
       .firstMatch
@@ -398,7 +400,9 @@ final class DiscoveryNavigationUITests: XCTestCase {
     let accountIdentity = app.descendants(matching: .any)
       .matching(NSPredicate(format: "label == %@", username))
       .firstMatch
-    XCTAssertTrue(accountIdentity.waitForExistence(timeout: 300), "Signed-in account identity was not visible in Settings")
+    XCTAssertTrue(accountIdentity.waitForExistence(timeout: 60), "Signed-in username was not visible in Profile")
+    XCTAssertTrue(app.staticTexts["Account Owner"].exists, "Account Owner field was missing from Profile")
+    XCTAssertTrue(app.staticTexts["Zipcode (Tariff Zone)"].exists, "Zipcode field was missing from Profile")
     XCTAssertFalse(passwordField.exists, "Password field remained after sign-in")
 
     let profile = XCTAttachment(screenshot: app.screenshot())
@@ -434,7 +438,7 @@ final class DiscoveryNavigationUITests: XCTestCase {
 
     XCTAssertTrue(usernameField.waitForExistence(timeout: 300), "Sign-out did not return to the sign-in form")
     XCTAssertTrue(passwordField.exists, "Fresh sign-in form did not show a password field")
-    XCTAssertFalse(accountIdentity.exists, "Signed-in account identity remained visible after sign-out")
+    XCTAssertFalse(accountIdentity.exists, "Signed-in username remained visible after sign-out")
     let freshForm = XCTAttachment(screenshot: app.screenshot())
     freshForm.name = "Cloud sign-in after sign-out"
     freshForm.lifetime = .keepAlways
