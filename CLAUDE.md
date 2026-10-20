@@ -15,7 +15,7 @@ Flutter app (package `energylens_mobile`) showing household and device electrici
 - `lib/core/cloud_api/`: Cloud `/v1` client (`/me`, `/homes`, `/hubs`, `/energy`, `/catalog`, `/usage-facts`, `/auth`) and DTOs.
 - `lib/features/discovery/`: hub HTTPS client (`discovery_api.dart`, hub `/v1` + `/v2` routes), pairing (`hub_pairing_screen.dart`, QR via `mobile_scanner`), stored credentials (`discovery_credentials.dart`). Plug discovery runs on the hub (scan API); the app does no mDNS/multicast.
 - `lib/features/identify/`: appliance onboarding, photo capture (`image_picker`), OCR (ML Kit), UPC (`mobile_scanner.analyzeImage`).
-- `lib/features/energy/`: Cloud energy screens, local estimate logic, Stop Waste programs (`local_pilot_programs.dart`).
+- `lib/features/energy/`: Cloud energy screens, Stop Waste programs (`local_pilot_programs.dart`).
 - `assets/design_pages/`: 14 pages; `app.html` is shipped, `code.html`/`screen.png` are byte-for-byte references. `shared/` holds chrome.js, CSS, bundled fonts.
 - `test/`: unit/widget tests mirroring `lib/`; `test/goldens/design_shell/` iOS simulator baseline (see its README). `tool/`: `design_visual_goldens.py` (iOS simulator capture/compare), `mark_design_bindings.py`.
 - `docs/`: binding-ID map (`design_page_binding_map.*`), copy inventory (`new-ui-copy-review.md`).
