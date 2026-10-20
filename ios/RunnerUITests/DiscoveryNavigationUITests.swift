@@ -211,8 +211,12 @@ final class DiscoveryNavigationUITests: XCTestCase {
       .firstMatch
     XCTAssertTrue(accountIdentity.waitForExistence(timeout: 60),
                   "The reused Cloud session did not show the expected username in Profile")
-    XCTAssertTrue(app.staticTexts["Account Owner"].exists, "Account Owner field was missing from Profile")
-    XCTAssertTrue(app.staticTexts["Zipcode (Tariff Zone)"].exists, "Zipcode field was missing from Profile")
+    XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label ==[c] %@", "Account Owner"))
+                    .firstMatch.waitForExistence(timeout: 60),
+                  "Account Owner field was missing from Profile")
+    XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label ==[c] %@", "Zipcode (Tariff Zone)"))
+                    .firstMatch.waitForExistence(timeout: 60),
+                  "Zipcode field was missing from Profile")
     let manageDevices = app.descendants(matching: .any)
       .matching(NSPredicate(format: "label CONTAINS[c] %@", "Manage Devices"))
       .firstMatch
@@ -401,8 +405,12 @@ final class DiscoveryNavigationUITests: XCTestCase {
       .matching(NSPredicate(format: "label == %@", username))
       .firstMatch
     XCTAssertTrue(accountIdentity.waitForExistence(timeout: 60), "Signed-in username was not visible in Profile")
-    XCTAssertTrue(app.staticTexts["Account Owner"].exists, "Account Owner field was missing from Profile")
-    XCTAssertTrue(app.staticTexts["Zipcode (Tariff Zone)"].exists, "Zipcode field was missing from Profile")
+    XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label ==[c] %@", "Account Owner"))
+                    .firstMatch.waitForExistence(timeout: 60),
+                  "Account Owner field was missing from Profile")
+    XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label ==[c] %@", "Zipcode (Tariff Zone)"))
+                    .firstMatch.waitForExistence(timeout: 60),
+                  "Zipcode field was missing from Profile")
     XCTAssertFalse(passwordField.exists, "Password field remained after sign-in")
 
     let profile = XCTAttachment(screenshot: app.screenshot())
