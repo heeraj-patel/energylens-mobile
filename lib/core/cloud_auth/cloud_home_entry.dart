@@ -102,7 +102,7 @@ class _CloudHomeEntryState extends State<CloudHomeEntry> {
         _uncertain = error.statusCode >= 500;
         _message = switch (error.statusCode) {
           409 => 'This form key was used for different home details. Edit a field and try again.',
-          400 || 422 => 'Cloud rejected these home details. Check the fields and try again.',
+          400 || 422 => 'Check the home details and try again.',
           _ => internalErrorMessage,
         };
       });
@@ -120,7 +120,7 @@ class _CloudHomeEntryState extends State<CloudHomeEntry> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('Your cloud homes'),
+      title: const Text('Your homes'),
       actions: [
         IconButton(
           tooltip: 'Sign out',
@@ -142,7 +142,7 @@ class _CloudHomeEntryState extends State<CloudHomeEntry> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Homes belong to your account. Local hub devices are not linked to a cloud home yet.',
+                'Homes belong to your account.',
               ),
               const SizedBox(height: 16),
               if (widget.loading)
@@ -162,7 +162,7 @@ class _CloudHomeEntryState extends State<CloudHomeEntry> {
                   !widget.loading)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Text('No cloud homes yet. Create one below.'),
+                  child: Text('No homes yet. Create one below.'),
                 ),
               for (final home in widget.homes)
                 Card(
@@ -187,7 +187,7 @@ class _CloudHomeEntryState extends State<CloudHomeEntry> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Home and postal location are saved in EnergyLens Cloud. Confirm the time zone before creating.',
+                  'Confirm the time zone before creating.',
                 ),
                 const SizedBox(height: 12),
                 TextField(

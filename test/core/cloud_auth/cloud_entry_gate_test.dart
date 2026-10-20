@@ -781,7 +781,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Your cloud homes'), findsOneWidget);
+    expect(find.text('Your homes'), findsOneWidget);
     expect(homesRequests, 1);
     api.close();
   });
