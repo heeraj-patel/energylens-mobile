@@ -59,3 +59,28 @@ class CloudEnergyResolution {
     );
   }
 }
+
+class CloudEnergyResolutionRefresh {
+  const CloudEnergyResolutionRefresh({
+    required this.applianceId,
+    required this.queuedAt,
+  });
+
+  final String applianceId;
+  final DateTime queuedAt;
+
+  factory CloudEnergyResolutionRefresh.fromJson(Map<String, dynamic> json) {
+    final queued = json['queued_at'];
+    final parsed = queued is String ? DateTime.tryParse(queued) : null;
+    if (json['appliance_id'] is! String ||
+        json['reason'] != 'owner_refresh' ||
+        parsed == null ||
+        !(queued as String).contains(RegExp(r'(Z|[+-]\d\d:\d\d)$'))) {
+      throw const FormatException('Invalid energy refresh');
+    }
+    return CloudEnergyResolutionRefresh(
+      applianceId: json['appliance_id'] as String,
+      queuedAt: parsed,
+    );
+  }
+}

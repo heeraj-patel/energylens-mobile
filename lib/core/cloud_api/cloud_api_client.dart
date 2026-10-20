@@ -44,6 +44,13 @@ class CloudApiException implements Exception {
   final int statusCode;
   final String code;
   final Map<String, dynamic> details;
+
+  /// Seconds to wait after a 429 `refresh_rate_limited`; null otherwise.
+  int? get retryAfterSeconds {
+    final value = details['retry_after_seconds'];
+    return statusCode == 429 && value is int && value >= 0 ? value : null;
+  }
+
   @override
   String toString() => 'Cloud API error $statusCode ($code)';
 }
@@ -114,6 +121,31 @@ class CloudApiClient {
       if (error.statusCode == 404) return null;
       rethrow;
     }
+  }
+
+  /// Queues an owner re-resolve. A 429 surfaces as [CloudApiException]
+  /// (`refresh_rate_limited`, [CloudApiException.retryAfterSeconds]).
+  Future<CloudEnergyResolutionRefresh> refreshEnergyResolution(
+    String homeId,
+    String applianceId, {
+    required String idempotencyKey,
+  }) async {
+    _validateIdempotencyKey(idempotencyKey);
+    final response = await _request(
+      'POST',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/appliances/${Uri.encodeComponent(applianceId)}/energy-resolution/refresh',
+      idempotencyKey: idempotencyKey,
+    );
+    if (response.statusCode != 202) {
+      throw const FormatException('Unexpected energy refresh response');
+    }
+    final refresh = CloudEnergyResolutionRefresh.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+    if (refresh.applianceId.toLowerCase() != applianceId.toLowerCase()) {
+      throw const FormatException('Energy refresh appliance changed');
+    }
+    return refresh;
   }
 
   Future<EnergyCategories?> energyCategories({String? etag}) async {
