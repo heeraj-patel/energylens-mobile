@@ -8,7 +8,6 @@ import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:energylens_mobile/features/discovery/discovery_api.dart';
 import 'package:energylens_mobile/features/discovery/discovery_credentials.dart';
 import 'package:energylens_mobile/features/discovery/discovery_screen.dart';
-import 'package:energylens_mobile/features/discovery/electricity_settings_screen.dart';
 import 'package:energylens_mobile/features/discovery/device_energy_detail_screen.dart';
 import 'package:energylens_mobile/features/identify/appliance_onboarding_screen.dart';
 import 'package:flutter/material.dart';
@@ -114,17 +113,6 @@ class _FirstClaimApi extends _ClaimDiscoveryApi {
   Future<bool> supportsNearbyDiscovery(String baseUrl, String token) async {
     customerReads++;
     return false;
-  }
-}
-
-class _DelayedPostalCredentials extends _ClaimCredentials {
-  final started = Completer<void>();
-  final finish = Completer<String?>();
-
-  @override
-  Future<String?> readPostalCode({OwnedPairingScope? scope}) {
-    if (!started.isCompleted) started.complete();
-    return finish.future;
   }
 }
 
@@ -1873,105 +1861,6 @@ void main() {
     );
   });
 
-  testWidgets('saves and reloads ZIP and optional household rate', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(800, 1000);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    final api = PersistingSettingsApi();
-    final credentials = FakeCredentials()
-      ..address = 'https://192.168.1.20:8787'
-      ..token = 'test-token';
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ElectricitySettingsScreen(api: api, credentials: credentials),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('householdPostalCode')),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.enterText(
-      find.byKey(const Key('householdPostalCode')),
-      '78732',
-    );
-    await tester.ensureVisible(
-      find.byKey(const Key('householdElectricityRate')),
-    );
-    await tester.enterText(
-      find.byKey(const Key('householdElectricityRate')),
-      '0.14',
-    );
-    await tester.ensureVisible(find.text('Save settings'));
-    await tester.tap(find.text('Save settings'));
-    await tester.pumpAndSettle();
-
-    expect(api.settings.postalCode, '78732');
-    expect(api.settings.rateUsdPerKwh, 0.14);
-    expect(
-      find.text('Electricity settings saved on this hub.'),
-      findsOneWidget,
-    );
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ElectricitySettingsScreen(api: api, credentials: credentials),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('householdElectricityRate')),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(
-      tester
-          .widget<TextField>(find.byKey(const Key('householdPostalCode')))
-          .controller!
-          .text,
-      '78732',
-    );
-    expect(
-      tester
-          .widget<TextField>(find.byKey(const Key('householdElectricityRate')))
-          .controller!
-          .text,
-      '0.14',
-    );
-  });
-
-  testWidgets('settings screen shows pending edits and validates ZIP codes', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(800, 1000);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    final api = PersistingSettingsApi()
-      ..settings = const ElectricitySettings(postalCode: '78732');
-    final credentials = FakeCredentials()
-      ..address = 'https://192.168.1.20:8787'
-      ..token = 'test-token';
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ElectricitySettingsScreen(api: api, credentials: credentials),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.pumpAndSettle();
-    expect(find.text('Settings loaded from this hub.'), findsOneWidget);
-    await tester.enterText(find.byKey(const Key('householdPostalCode')), '123');
-    await tester.pump();
-    expect(find.textContaining('Unsaved changes.'), findsOneWidget);
-    await tester.tap(find.text('Save settings'));
-    await tester.pumpAndSettle();
-    expect(find.text('Enter a five-digit US ZIP code.'), findsOneWidget);
-  });
-
   testWidgets('clears old hub devices when the hub address changes', (
     tester,
   ) async {
@@ -2059,134 +1948,6 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('No energy monitoring'), findsOneWidget);
-    },
-  );
-
-  testWidgets('settings ignores owned pairing restored after session change', (
-    tester,
-  ) async {
-    final started = Completer<void>();
-    final response = Completer<http.Response>();
-    final session = CloudSession(
-      config: _cloudConfig,
-      store: _TestTokenStore(),
-      authenticator: _TestAuthenticator(),
-    );
-    final cloud = CloudApiClient(
-      session: session,
-      client: MockClient((request) {
-        if (!started.isCompleted) started.complete();
-        return response.future;
-      }),
-    );
-    final credentials = _ClaimCredentials()
-      ..address = 'https://192.168.1.20:8787'
-      ..token = 'global-token';
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ElectricitySettingsScreen(
-          credentials: credentials,
-          cloudHome: const CloudHome(
-            id: _cloudHomeId,
-            name: 'Home',
-            timezone: 'America/Chicago',
-            countryCode: 'US',
-            postalCode: '60601',
-          ),
-          cloudApi: cloud,
-          preferenceScope: OwnedPairingScope(
-            origin: _cloudConfig.apiUrl,
-            profile: 'email_password',
-            accountId: 'account-a',
-            homeId: _cloudHomeId,
-          ),
-        ),
-      ),
-    );
-    await started.future;
-    await session.selectCredentialMethod('oidc');
-    response.complete(
-      http.Response(
-        jsonEncode({
-          'hubs': [
-            {
-              'hub_id': _cloudHubId,
-              'local_hub_id': _localHubId,
-              'home_id': _cloudHomeId,
-              'ownership_epoch': 3,
-              'version': 1,
-            },
-          ],
-        }),
-        200,
-      ),
-    );
-    await tester.pumpAndSettle();
-    final load = tester.widget<OutlinedButton>(
-      find.widgetWithText(OutlinedButton, 'Load from hub'),
-    );
-    expect(load.onPressed, isNull);
-    expect(
-      tester
-          .widget<TextField>(find.byKey(const Key('householdPostalCode')))
-          .controller
-          ?.text,
-      isEmpty,
-    );
-    cloud.close();
-  });
-
-  testWidgets(
-    'settings stops before ownership lookup after stale postal read',
-    (tester) async {
-      final credentials = _DelayedPostalCredentials();
-      final session = CloudSession(
-        config: _cloudConfig,
-        store: _TestTokenStore(),
-        authenticator: _TestAuthenticator(),
-      );
-      var ownershipRequests = 0;
-      final cloud = CloudApiClient(
-        session: session,
-        client: MockClient((_) async {
-          ownershipRequests++;
-          return http.Response('{"hubs":[]}', 200);
-        }),
-      );
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ElectricitySettingsScreen(
-            credentials: credentials,
-            cloudHome: const CloudHome(
-              id: _cloudHomeId,
-              name: 'Home',
-              timezone: 'America/Chicago',
-              countryCode: 'US',
-              postalCode: '60601',
-            ),
-            cloudApi: cloud,
-            preferenceScope: OwnedPairingScope(
-              origin: _cloudConfig.apiUrl,
-              profile: 'email_password',
-              accountId: 'account-a',
-              homeId: _cloudHomeId,
-            ),
-          ),
-        ),
-      );
-      await credentials.started.future;
-      await session.selectCredentialMethod('oidc');
-      credentials.finish.complete('A previous account ZIP');
-      await tester.pumpAndSettle();
-      expect(ownershipRequests, 0);
-      expect(
-        tester
-            .widget<TextField>(find.byKey(const Key('householdPostalCode')))
-            .controller
-            ?.text,
-        isEmpty,
-      );
-      cloud.close();
     },
   );
 

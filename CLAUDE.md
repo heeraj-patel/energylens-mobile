@@ -9,7 +9,7 @@ Flutter app (package `energylens_mobile`) showing household and device electrici
 - Android: `applicationId`/namespace `io.energylens.energylens_mobile`, AGP 9.1.0, Kotlin plugin 2.4.0, Gradle 9.3.1, Java/JVM 17, minSdk 24 / target+compile 36 (Flutter defaults, read from built APK).
 
 ## Layout
-- `lib/main.dart`: `EnergyLensApp`. `ENERGYLENS_LOCAL_PILOT=true` -> `DesignShell(localPilot)`; otherwise `CloudEntryGate` -> `DesignShell`. `HomeScreen` (older native UI) is only exercised by `test/widget_test.dart`.
+- `lib/main.dart`: `EnergyLensApp`. `ENERGYLENS_LOCAL_PILOT=true` -> `DesignShell(localPilot)`; otherwise `CloudEntryGate` -> `DesignShell`.
 - `lib/features/design/`: `design_shell.dart` loads `assets/design_pages/<page>/app.html` via `loadFlutterAsset`, injects data with `runJavaScript*`, receives events on JS channels (`EnergyLensNavigation`, `...DeviceReview`, `...PhotoCapture`, `...DeleteDevice`, `...Knowledge`). Domain repositories/adapters/renderers per page.
 - `lib/core/cloud_auth/`: config (`cloud_auth.dart`), OIDC via AppAuth, first-party username/email auth (`cloud_local_auth.dart`), dev TLS pin (`cloud_dev_tls.dart`), entry gate, registration/recovery.
 - `lib/core/cloud_api/`: Cloud `/v1` client (`/me`, `/homes`, `/hubs`, `/energy`, `/catalog`, `/usage-facts`, `/auth`) and DTOs.
@@ -26,8 +26,8 @@ All are compile-time `--dart-define`s. Template: `.env-example` -> `.env-local` 
 
 | Define | Read at | Meaning |
 |---|---|---|
-| `ENERGYLENS_LOCAL_PILOT` | main.dart:46 | `true`: account-free pilot shell. |
-| `ENERGYLENS_DESIGN_TOUR` | main.dart:127 | Auto-advance the 14 pages (pilot only). |
+| `ENERGYLENS_LOCAL_PILOT` | main.dart:21 | `true`: account-free pilot shell. |
+| `ENERGYLENS_DESIGN_TOUR` | main.dart:102 | Auto-advance the 14 pages (pilot only). |
 | `ENERGYLENS_DESIGN_TOUR_DWELL_SECONDS` | design_shell.dart:281 | Tour dwell, default 8. |
 | `ENERGYLENS_HUB_URL` | discovery_credentials.dart:18 | Fallback hub `https://<private IPv4>:PORT[#sha256=<64 hex>]`. |
 | `ENERGYLENS_CLOUD_API_URL` | cloud_auth.dart:28 | HTTPS origin, no path/query/fragment. |

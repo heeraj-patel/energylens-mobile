@@ -1,13 +1,8 @@
-import 'dart:convert';
-
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_recommendations.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
-import 'package:energylens_mobile/features/energy/cloud_recommendations_screen.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 const appliance = '22222222-2222-4222-8222-222222222222';
@@ -309,61 +304,4 @@ void main() {
       );
     },
   );
-
-  testWidgets('renders a newly supported recommendation rule', (tester) async {
-    const dishwasherId = '44444444-4444-4444-8444-444444444444';
-    final api = apiFor(
-      MockClient((request) async {
-        if (request.url.path.endsWith('/appliances')) {
-          return http.Response(
-            jsonEncode({
-              'appliances': [
-                {
-                  'id': dishwasherId,
-                  'home_id': home.id,
-                  'name': 'Dishwasher',
-                  'category': 'dishwasher',
-                  'identity': {
-                    'brand': 'Acme',
-                    'full_model': 'DW100',
-                    'fuel': 'electricity',
-                    'match_quality': 'confirmed_exact',
-                  },
-                },
-              ],
-            }),
-            200,
-          );
-        }
-        return http.Response(
-          jsonEncode({
-            'actions': [
-              {
-                ...action(),
-                'rule_id': 'dishwasher.cycle_options',
-                'appliance_id': dishwasherId,
-                'title': 'Review dishwasher cycle options',
-              },
-            ],
-            'as_of': '2026-10-01T12:00:00Z',
-          }),
-          200,
-        );
-      }),
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        home: CloudRecommendationsScreen(api: api, home: home),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Review dishwasher cycle options'), findsOneWidget);
-    expect(
-      find.byKey(
-        const Key('recommendation-dishwasher.cycle_options-$dishwasherId'),
-      ),
-      findsOneWidget,
-    );
-    api.close();
-  });
 }
