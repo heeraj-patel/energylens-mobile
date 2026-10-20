@@ -7,6 +7,7 @@ import '../../core/cloud_api/cloud_energy_categories.dart';
 import '../../core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import '../identify/onboarding_draft_store.dart';
 import '../identify/onboarding_persistence_repository.dart';
+import '../identify/usage_questions_panel.dart';
 import '../../core/backend_error.dart';
 
 /// Native review gate for a design-page device draft. Broad design types are
@@ -89,6 +90,8 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
   bool _saving = false;
   bool _failed = false;
   PendingOnboardingDraft? _pending;
+  CloudAppliance? _savedAppliance;
+  int _questionCount = 0;
 
   @override
   void initState() {
@@ -194,7 +197,11 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
       if (mounted &&
           saved != null &&
           widget.lifecycle.isVerifiedScope(widget.accountId, widget.homeId)) {
-        Navigator.of(context).pop<CloudAppliance>(saved);
+        if (widget.api == null) {
+          Navigator.of(context).pop<CloudAppliance>(saved);
+        } else {
+          setState(() => _savedAppliance = saved);
+        }
       }
     } catch (error) {
       // Keep the reviewed draft and operation key for an unchanged retry.
@@ -221,8 +228,84 @@ class _DeviceReviewSheetState extends State<DeviceReviewSheet> {
     super.dispose();
   }
 
+  void _finish() => Navigator.of(context).pop<CloudAppliance>(_savedAppliance);
+
+  Widget _questionsStep(CloudAppliance saved) => PopScope(
+    canPop: false,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop) _finish();
+    },
+    child: AlertDialog(
+      backgroundColor: UsageQuestionStyle.surfaceLowest,
+      surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      title: Text(
+        saved.name,
+        style: const TextStyle(
+          fontFamily: 'Manrope',
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          height: 1.3,
+          color: UsageQuestionStyle.onSurface,
+        ),
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_questionCount > 0) ...const [
+                Text(
+                  'Optional: a few answers make this estimate more accurate.',
+                  key: Key('usageQuestionsIntro'),
+                  style: UsageQuestionStyle.body,
+                ),
+                SizedBox(height: 8),
+              ],
+              UsageQuestionsPanel(
+                api: widget.api!,
+                homeId: widget.homeId,
+                applianceId: saved.id,
+                onLoaded: (count) {
+                  if (!mounted) return;
+                  if (count == 0) {
+                    _finish();
+                  } else {
+                    setState(() => _questionCount = count);
+                  }
+                },
+                onAllAnswered: _finish,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const Key('skipUsageQuestions'),
+          onPressed: _finish,
+          style: TextButton.styleFrom(
+            foregroundColor: UsageQuestionStyle.primary,
+            minimumSize: const Size(64, 48),
+            textStyle: UsageQuestionStyle.label,
+          ),
+          child: const Text('Skip'),
+        ),
+      ],
+    ),
+  );
+
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) {
+    final saved = _savedAppliance;
+    if (saved != null) return _questionsStep(saved);
+    return _reviewForm(context);
+  }
+
+  Widget _reviewForm(BuildContext context) => AlertDialog(
     title: const Text('Review device'),
     content: SingleChildScrollView(
       child: Column(

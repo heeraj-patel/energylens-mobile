@@ -4,6 +4,7 @@ import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_catalog.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_energy_categories.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_question.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_report_delivery.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_report_preview.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
@@ -39,7 +40,51 @@ CloudCatalogProduct catalogProduct({
   facts: const [],
 );
 
+CloudQuestion choiceQuestion(
+  String id,
+  String prompt,
+  Map<String, num> options,
+) => CloudQuestion(
+  id: id,
+  purpose: 'onboarding',
+  version: 2,
+  applianceId: applianceId,
+  identityRevision: 1,
+  prompt: prompt,
+  answerKind: 'choice',
+  unit: 'hours/week',
+  optional: true,
+  options: [
+    for (final e in options.entries)
+      CloudQuestionOption(key: e.key, value: e.value),
+  ],
+);
+
 class _CategoryApi implements CloudApiClient {
+  _CategoryApi([this.rows = const []]);
+
+  final List<CloudQuestion> rows;
+  final submitted = <CloudAnswerCreate>[];
+
+  @override
+  Future<List<CloudQuestion>> onboardingQuestions(
+    String homeId,
+    String applianceId,
+  ) async => rows;
+
+  @override
+  Future<List<CloudSavedAnswer>> currentQuestionAnswers(
+    String homeId,
+    String applianceId,
+  ) async => const [];
+
+  @override
+  Future<void> submitQuestionAnswers(
+    String homeId,
+    List<CloudAnswerCreate> answers, {
+    required String idempotencyKey,
+  }) async => submitted.addAll(answers);
+
   @override
   Future<EnergyCategories?> energyCategories({
     String? etag,
@@ -198,6 +243,7 @@ void main() {
     String? fccId,
     String? icId,
     String? upc,
+    _CategoryApi? api,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -209,7 +255,7 @@ void main() {
                   context: context,
                   builder: (_) => DeviceReviewSheet(
                     lifecycle: lifecycle,
-                    api: _CategoryApi(),
+                    api: api ?? _CategoryApi(),
                     accountId: account,
                     homeId: home,
                     homeName: 'Lake House',
@@ -539,5 +585,124 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Review device'), findsOneWidget);
     expect(source.details, 0);
+  });
+
+  group('usage questions step', () {
+    const tvHours = 'television.hours_per_week';
+    const season = 'space_heater.season_share';
+    final hours = choiceQuestion(
+      tvHours,
+      'About how many hours a day is this TV on?',
+      {'lt_1h': 3.5, '1_3h': 14, '3_5h': 28, '5_8h': 45.5, 'gt_8h': 70},
+    );
+    final share = choiceQuestion(
+      season,
+      'How much of the year do you use it?',
+      {'all_year': 1, '6_months': 0.5, '3_months': 0.25, '1_month': 0.083},
+    );
+
+    Future<(CloudAppliance? Function(), _CategoryApi)> reachStep(
+      WidgetTester tester,
+      List<CloudQuestion> questions,
+    ) async {
+      final lifecycle = _lifecycle(_Storage(), _Appliances());
+      await lifecycle.selectVerifiedHome(account, home);
+      final api = _CategoryApi(questions);
+      CloudAppliance? returned;
+      await open(
+        tester,
+        lifecycle,
+        api: api,
+        onResult: (value) => returned = value,
+      );
+      await choose(tester, 'reviewCategory', 'Kitchen');
+      await choose(tester, 'reviewDeviceType', 'Refrigerator');
+      await choose(tester, 'reviewEnergySource', 'Electricity');
+      await tester.tap(find.byKey(const Key('reviewSave')));
+      await tester.pumpAndSettle();
+      return (() => returned, api);
+    }
+
+    testWidgets('shows approved copy and options, skip answers nothing', (
+      tester,
+    ) async {
+      final (returned, api) = await reachStep(tester, [hours]);
+      expect(find.text('Review device'), findsNothing);
+      expect(
+        find.text('Optional: a few answers make this estimate more accurate.'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('About how many hours a day is this TV on?'),
+        findsOneWidget,
+      );
+      for (final label in [
+        'Less than 1 hour',
+        '1-3 hours',
+        '3-5 hours',
+        '5-8 hours',
+        'More than 8 hours',
+        'Not sure',
+        'Skip',
+      ]) {
+        expect(find.text(label), findsOneWidget);
+      }
+      await tester.tap(find.byKey(const Key('skipUsageQuestions')));
+      await tester.pumpAndSettle();
+      expect(api.submitted, isEmpty);
+      expect(returned()?.id, applianceId);
+      expect(find.text('Skip'), findsNothing);
+    });
+
+    testWidgets('a choice submits the option value and closes when done', (
+      tester,
+    ) async {
+      final (returned, api) = await reachStep(tester, [hours]);
+      await tester.tap(find.text('1-3 hours'));
+      await tester.pumpAndSettle();
+      expect(api.submitted, hasLength(1));
+      final json = api.submitted.single.toJson();
+      expect(json['question_id'], tvHours);
+      expect(json['status'], 'confirmed');
+      expect(json['value'], 14);
+      expect(returned()?.id, applianceId);
+    });
+
+    testWidgets('Not sure submits unknown and leaves other questions open', (
+      tester,
+    ) async {
+      final (returned, api) = await reachStep(tester, [hours, share]);
+      await tester.tap(find.byKey(const Key('usageOption-$season-unsure')));
+      await tester.pumpAndSettle();
+      final json = api.submitted.single.toJson();
+      expect(json['question_id'], season);
+      expect(json['status'], 'unknown');
+      expect(json['value'], isNull);
+      expect(returned(), isNull);
+      expect(find.text('Skip'), findsOneWidget);
+      await tester.tap(find.text('Skip'));
+      await tester.pumpAndSettle();
+      expect(api.submitted, hasLength(1));
+      expect(returned()?.id, applianceId);
+    });
+
+    testWidgets('no questions for the category closes straight away', (
+      tester,
+    ) async {
+      final (returned, api) = await reachStep(tester, const []);
+      expect(returned()?.id, applianceId);
+      expect(api.submitted, isEmpty);
+      expect(find.text('Skip'), findsNothing);
+    });
+
+    testWidgets('questions with unlabelled options are not shown', (
+      tester,
+    ) async {
+      final (returned, _) = await reachStep(tester, [
+        choiceQuestion('x.hours_per_week', 'Unlabelled?', {'odd_key': 1}),
+      ]);
+      expect(find.text('Unlabelled?'), findsNothing);
+      expect(returned()?.id, applianceId);
+    });
   });
 }
