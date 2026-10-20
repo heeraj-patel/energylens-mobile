@@ -51,11 +51,15 @@ CloudAttachment attachment(String home, {String? sensor = sensorId}) =>
       sensorId: sensor,
     );
 
-CloudSensor sensor(String home, {int epoch = 2}) => CloudSensor(
+CloudSensor sensor(
+  String home, {
+  int epoch = 2,
+  List<String> capabilities = const ['power'],
+}) => CloudSensor(
   id: sensorId,
   homeId: home,
   kind: 'plug',
-  capabilities: const ['power'],
+  capabilities: capabilities,
   hubId: 'hub',
   ownershipEpoch: epoch,
   localSensorId: 'local',
@@ -179,6 +183,101 @@ FakeSource paged(
 );
 
 void main() {
+  test(
+    'energy monitoring requires an active power and energy sensor',
+    () async {
+      Future<DeviceInventoryItem> inventory(
+        List<CloudAttachment> attachments,
+        List<CloudSensor> sensors,
+      ) async {
+        final source = FakeSource(
+          applianceRead: (home) async => [appliance(home)],
+          attachmentRead: (_) async => attachments,
+          sensorRead: (_) async => sensors,
+          summaryRead: (_, _) async => const CloudMeteredSummaryPage(
+            granularity: 'day',
+            summaries: [],
+            nextCursor: null,
+          ),
+        );
+        return (await DevicesDomainRepository(source).fetch(homeA))!
+            .items
+            .single;
+      }
+
+      final meter = sensor(homeA, capabilities: const ['power', 'energy']);
+      final relay = sensor(homeA, capabilities: const ['relay']);
+      final power = sensor(homeA);
+      final energy = sensor(homeA, capabilities: const ['energy']);
+      final link = attachment(homeA);
+      expect((await inventory([], [meter])).hasEnergyMonitoring, isFalse);
+      expect((await inventory([link], [meter])).hasEnergyMonitoring, isTrue);
+      for (final endpoint in [relay, power, energy]) {
+        final result = await inventory([link], [endpoint]);
+        expect(result.hasEnergyMonitoring, isFalse);
+        expect(result.activeAttachmentIds, [attachmentId]);
+      }
+      expect(
+        (await inventory(
+          [
+            CloudAttachment(
+              id: attachmentId,
+              homeId: homeA,
+              applianceId: applianceId,
+              startedAt: day.subtract(const Duration(days: 1)),
+              endedAt: day,
+              sensorId: sensorId,
+            ),
+          ],
+          [meter],
+        )).hasEnergyMonitoring,
+        isFalse,
+      );
+      expect((await inventory([link], [])).hasEnergyMonitoring, isFalse);
+      final otherSensor = CloudSensor(
+        id: '66666666-6666-4666-8666-666666666666',
+        homeId: homeA,
+        kind: 'relay',
+        capabilities: const ['relay'],
+        hubId: 'hub',
+        ownershipEpoch: 2,
+        localSensorId: 'other',
+        version: 1,
+      );
+      final otherLink = CloudAttachment(
+        id: '77777777-7777-4777-8777-777777777777',
+        homeId: homeA,
+        applianceId: applianceId,
+        startedAt: day,
+        sensorId: otherSensor.id,
+      );
+      final mixed = await inventory([otherLink, link], [otherSensor, meter]);
+      expect(mixed.hasEnergyMonitoring, isTrue);
+      expect(mixed.activeAttachmentIds, [otherLink.id, link.id]);
+    },
+  );
+
+  test(
+    'sensor inventory failure does not invent Standalone evidence',
+    () async {
+      final source = FakeSource(
+        applianceRead: (home) async => [appliance(home)],
+        attachmentRead: (home) async => [attachment(home)],
+        sensorRead: (_) async =>
+            throw StateError('sensor inventory unavailable'),
+        summaryRead: (_, _) async => const CloudMeteredSummaryPage(
+          granularity: 'day',
+          summaries: [],
+          nextCursor: null,
+        ),
+      );
+      await expectLater(
+        DevicesDomainRepository(source).fetch(homeA),
+        throwsA(isA<StateError>()),
+      );
+    },
+  );
+
   test(
     'traverses unchanged pages and keeps local ranking non-global',
     () async {

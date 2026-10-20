@@ -84,10 +84,12 @@ class DeviceInventoryItem {
     required this.appliance,
     required this.activeAttachmentIds,
     required this.measuredBuckets,
+    this.hasEnergyMonitoring = false,
   });
   final CloudAppliance appliance;
   final List<String> activeAttachmentIds;
   final List<DeviceMeasuredBucket> measuredBuckets;
+  final bool hasEnergyMonitoring;
 
   /// A single observed bucket, not a device or period total.
   double? get latestMeasuredBucketWh =>
@@ -329,8 +331,8 @@ class DevicesDomainRepository {
     try {
       states = await (source as DevicesCurrentStateSource).deviceStates(homeId);
     } catch (_) {
-      // Without current telemetry the customer state is Offline. Older daily
-      // measurements cannot establish that the device is still connected.
+      // Monitored devices without current telemetry are Offline. Attachment
+      // evidence remains available even when the state read fails.
       return stale() ? null : snapshot;
     }
     if (stale()) return null;
@@ -637,6 +639,11 @@ DevicesDomainSnapshot _compose(
       appliance: appliance,
       activeAttachmentIds: List.unmodifiable(active.map((a) => a.id)),
       measuredBuckets: List.unmodifiable(buckets),
+      hasEnergyMonitoring: active.any((attachment) {
+        final capabilities = bySensor[attachment.sensorId]!.capabilities;
+        return capabilities.contains('power') &&
+            capabilities.contains('energy');
+      }),
     );
   }).toList()..sort((a, b) => a.appliance.id.compareTo(b.appliance.id));
 

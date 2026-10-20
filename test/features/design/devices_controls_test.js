@@ -162,6 +162,33 @@ test('sort and filter update count and reset to the first page', () => {
   assert.equal(page.next.disabled, true);
 });
 
+test('Standalone filter separates unmonitored devices from Offline', () => {
+  const html = fs.readFileSync(
+    path.join(__dirname, '../../../assets/design_pages/devices/app.html'), 'utf8');
+  assert.match(html, /<option value="standalone">Standalone<\/option>/);
+  const page = makePage([
+    ...namedRows(11),
+    card('Standalone A', 'Standalone', '$0.20', '$0.80'),
+    card('Standalone B', 'Standalone', '$0.10', '$0.10'),
+    card('Disconnected', 'Offline', '$0.05', '$0.50')
+  ]);
+  page.next.click();
+  page.filter.value = 'standalone';
+  page.filter.dispatch('change');
+  assert.equal(page.summary.textContent, 'Showing 1–2 of 2 devices');
+  assert.deepEqual(page.visible(), ['Standalone A', 'Standalone B']);
+  page.sort.value = 'name';
+  page.sort.dispatch('change');
+  assert.deepEqual(page.visible(), ['Standalone A', 'Standalone B']);
+  page.filter.value = 'offline';
+  page.filter.dispatch('change');
+  assert.deepEqual(page.visible(), ['Disconnected']);
+  page.filter.value = 'all';
+  page.filter.dispatch('change');
+  assert.equal(page.summary.textContent, 'Showing 1–10 of 14 devices');
+  assert.equal(page.next.disabled, false);
+});
+
 test('shows zero range and hides pagination when filter has no matches', () => {
   const page = makePage([card('Idle', 'Idle', '$0.10', '$0.01')]);
   page.filter.value = 'active';

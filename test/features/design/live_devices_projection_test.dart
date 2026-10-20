@@ -1,5 +1,6 @@
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_appliance_list.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_device_states.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_household_energy.dart';
 import 'package:energylens_mobile/features/design/design_context_coordinator.dart';
 import 'package:energylens_mobile/features/design/devices_domain_repository.dart';
@@ -16,6 +17,7 @@ DeviceInventoryItem item(
   List<DeviceMeasuredBucket> buckets = const [],
   String category = 'other',
   String? demoDeviceId,
+  bool hasEnergyMonitoring = false,
 }) => DeviceInventoryItem(
   appliance: CloudAppliance(
     id: id,
@@ -31,6 +33,7 @@ DeviceInventoryItem item(
   ),
   activeAttachmentIds: const [],
   measuredBuckets: buckets,
+  hasEnergyMonitoring: hasEnergyMonitoring,
 );
 
 DesignContextRead read({
@@ -41,6 +44,8 @@ DesignContextRead read({
   bool hasMore = false,
   CloudHouseholdEnergyTrends? costs,
   CloudApplianceDataMode? dataMode,
+  CloudDeviceStates? states,
+  DateTime? statesRequestStartedAt,
 }) => DesignContextRead(
   accountId: 'account',
   homeId: home,
@@ -61,6 +66,8 @@ DesignContextRead read({
         ? 'fixture_v1'
         : null,
     sampleDayCosts: costs,
+    deviceStates: states,
+    deviceStatesRequestStartedAt: statesRequestStartedAt,
     isCurrent: isCurrent ?? () => true,
   ),
 );
@@ -73,6 +80,67 @@ void main() {
     energyWh: 1250,
     coveredSeconds: 3600,
     attachmentId: 'attachment',
+  );
+
+  test(
+    'monitor attachment, rather than telemetry or history, selects status',
+    () {
+      final now = DateTime.now().toUtc();
+      CloudDeviceStates states(List<CloudDeviceState> entries) =>
+          CloudDeviceStates(homeId: homeA, asOf: now, states: entries);
+      CloudDeviceState live(String id, String state, Duration age) =>
+          CloudDeviceState(
+            applianceId: id,
+            state: state,
+            observedAt: now.subtract(age),
+            watts: state == 'active' ? 20 : 0,
+          );
+      final projected = prepareLiveDevicesProjection(
+        read(
+          items: [
+            item('a', 'Former meter', buckets: [bucket]),
+            item('b', 'Meter active', hasEnergyMonitoring: true),
+            item('c', 'Meter idle', hasEnergyMonitoring: true),
+            item('d', 'Meter stale', hasEnergyMonitoring: true),
+            item('e', 'Meter missing', hasEnergyMonitoring: true),
+            item('f', 'Meter offline', hasEnergyMonitoring: true),
+            item('g', 'Unmonitored with raw active state'),
+          ],
+          states: states([
+            live('b', 'active', const Duration(minutes: 1)),
+            live('c', 'idle', const Duration(minutes: 1)),
+            live('d', 'active', const Duration(minutes: 16)),
+            const CloudDeviceState(applianceId: 'f', state: 'offline'),
+            live('g', 'active', const Duration(minutes: 1)),
+          ]),
+          statesRequestStartedAt: now,
+        ),
+      );
+      expect(projected.rows.map((row) => row.state), [
+        'standalone',
+        'active',
+        'idle',
+        'offline',
+        'offline',
+        'offline',
+        'standalone',
+      ]);
+      expect(projected.rows.first.measuredBucket?.energyWh, 1250);
+      expect(projected.rows.first.stateExpiresAt, isNull);
+      expect(projected.rows.last.stateExpiresAt, isNull);
+      expect(projected.rows[1].stateExpiresAt, isNotNull);
+      expect(projected.rows[2].stateExpiresAt, isNotNull);
+      expect(
+        prepareLiveDevicesProjection(
+          read(
+            items: [
+              item('b', 'Meter missing state read', hasEnergyMonitoring: true),
+            ],
+          ),
+        ).rows.single.state,
+        'offline',
+      );
+    },
   );
 
   test('real card values use only supported appliance split for today', () {

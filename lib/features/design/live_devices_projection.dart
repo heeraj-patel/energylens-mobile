@@ -157,7 +157,8 @@ LiveDevicesProjection prepareLiveDevicesProjection(DesignContextRead read) {
     final dailyCost = dailyCosts[appliance.id];
     final currentState = currentStates[appliance.id];
     DateTime? stateExpiresAt;
-    if (currentState != null &&
+    if (item.hasEnergyMonitoring &&
+        currentState != null &&
         currentState.state != 'offline' &&
         currentState.observedAt != null &&
         stateAsOf != null &&
@@ -177,7 +178,9 @@ LiveDevicesProjection prepareLiveDevicesProjection(DesignContextRead read) {
         usageCost: dailyCost == null ? null : _costText(dailyCost.totalMicros),
         usefulCost: dailyCost?.usefulCost,
         wasteCost: dailyCost?.wasteCost,
-        state: stateExpiresAt != null && !stateExpiresAt.isAfter(DateTime.now())
+        state: !item.hasEnergyMonitoring
+            ? 'standalone'
+            : stateExpiresAt != null && !stateExpiresAt.isAfter(DateTime.now())
             ? 'offline'
             : currentState?.state ?? 'offline',
         stateExpiresAt: stateExpiresAt,

@@ -109,6 +109,46 @@ void main() {
     expect(script, contains("waste.textContent = wasteText ?? 'N/A'"));
   });
 
+  test('accepts Standalone with neutral status and no expiry timer', () {
+    const renderer = LiveDevicesCardRenderer();
+    final script = renderer.appendScript(
+      projection: _projection(homeA, [
+        const LiveDeviceRow(
+          applianceId: 'standalone-device',
+          name: 'Fridge',
+          measuredBucket: null,
+          usefulCost: '\$0.75',
+          wasteCost: '\$0.25',
+          state: 'standalone',
+        ),
+      ]),
+      generation: 1,
+    );
+    final encoded = RegExp("atob\\('([^']+)'\\)").firstMatch(script)!.group(1)!;
+    final payload =
+        jsonDecode(utf8.decode(base64Decode(encoded))) as Map<String, dynamic>;
+    expect(payload['rows'][0]['state'], 'standalone');
+    expect(payload['rows'][0]['stateExpiresAt'], isNull);
+    expect(payload['rows'][0]['usefulCost'], '\$0.75');
+    expect(script, contains("['active', 'idle', 'offline', 'standalone']"));
+    expect(
+      script,
+      contains("clone.setAttribute('data-el-device-state', state)"),
+    );
+    expect(
+      script,
+      contains(
+        "status.replaceChildren(dot, document.createTextNode(stateText))",
+      ),
+    );
+    expect(
+      script,
+      contains(
+        "if ((initialState === 'active' || initialState === 'idle') && expiresAt !== null)",
+      ),
+    );
+  });
+
   test('uses only Cloud-supplied waste cost for live rows', () {
     const renderer = LiveDevicesCardRenderer();
     final script = renderer.appendScript(
@@ -206,6 +246,7 @@ void main() {
             model: 'F100',
             measuredBucket: null,
             wasteCost: '\$0.25',
+            state: 'standalone',
           ),
         ]),
         generation: 1,
@@ -216,6 +257,7 @@ void main() {
             applianceId: 'a2',
             name: 'Renamed Fridge',
             measuredBucket: null,
+            state: 'standalone',
           ),
         ]),
         generation: 1,
@@ -261,6 +303,8 @@ assert.equal(appended[0].textContent.includes('Useful:N/A'), true);
 assert.equal(appended[0].textContent.includes('Waste:N/A'), true);
 assert.equal(appended[1].textContent.includes('Acme F100'), true);
 assert.equal(appended[1].textContent.includes('Waste:$0.25'), true);
+assert.equal(appended[1].getAttribute('data-el-device-state'), 'standalone');
+assert.equal(appended[1].textContent.includes('Standalone'), true);
 const supportedWaste = Array.from(appended[1].querySelectorAll('span')).find(node => node.textContent === '$0.25');
 assert.equal(supportedWaste.classList.contains('el-waste-ink'), true);
 assert.equal(appended[0].textContent.includes('Idle (3h)'), false);
@@ -273,6 +317,7 @@ assert.equal(w.eval(p.refresh), true);
 assert.equal(feed.children.length, originals.length + 1);
 appended = Array.from(feed.children).slice(originals.length);
 assert.equal(appended[0].querySelector('.font-semibold.text-on-surface.truncate').textContent, 'Renamed Fridge');
+assert.equal(appended[0].getAttribute('data-el-device-state'), 'standalone');
 assert.equal(w.eval(p.install2), true);
 assert.equal(w.eval(p.stale), false);
 assert.equal(feed.children.length, originals.length + 1);
