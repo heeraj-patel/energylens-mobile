@@ -63,6 +63,41 @@ void main() {
     },
   );
 
+  test('discovery names reject blank and placeholder values', () {
+    for (final name in [null, '', '  ', ' UnNaMeD DeViCe ']) {
+      final candidate = NearbyDeviceCandidate.fromJson({
+        ...candidateJson,
+        'name': name,
+      });
+      expect(candidate.usableName, isNull);
+    }
+    final fallback = NearbyDeviceCandidate.fromJson({
+      ...candidateJson,
+      'name': ' Unnamed Device ',
+      'device_label': '  Smart plug  ',
+    });
+    expect(fallback.usableName, 'Smart plug');
+    expect(fallback.displayName, 'Smart plug');
+    expect(fallback.usableDeviceLabel, 'Smart plug');
+    expect(
+      NearbyDeviceCandidate.fromJson({
+        ...candidateJson,
+        'name': 'Kitchen strip',
+      }).usableName,
+      'Kitchen strip',
+    );
+    expect(
+      const DiscoveredPlug(
+        id: 'plug',
+        ip: '192.168.1.10',
+        model: 'unnamed device',
+        meterStatus: 'absent',
+        alias: ' Office plug ',
+      ).usableName,
+      'Office plug',
+    );
+  });
+
   test('scan identity and saved state decode with older Hub fallback', () {
     final old = NearbyDeviceCandidate.fromJson(candidateJson);
     expect(old.alreadySaved, isFalse);

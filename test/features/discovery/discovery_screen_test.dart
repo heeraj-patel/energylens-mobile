@@ -505,6 +505,48 @@ class SavingApi extends FakeDiscoveryApi {
   }
 }
 
+class _DeletingSavedApi extends FakeDiscoveryApi {
+  final plugs = <SavedPlug>[
+    const SavedPlug(
+      id: 'plug-a',
+      ip: '192.168.1.41',
+      model: 'HS103',
+      name: 'First plug',
+      room: 'Office',
+      meterStatus: 'absent',
+      lastVerifiedAt: 100,
+    ),
+    const SavedPlug(
+      id: 'plug-b',
+      ip: '192.168.1.42',
+      model: 'HS103',
+      name: 'Second plug',
+      room: 'Office',
+      meterStatus: 'absent',
+      lastVerifiedAt: 100,
+    ),
+  ];
+  final deleted = <String>[];
+  Completer<void>? pending;
+  bool fail = false;
+
+  @override
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async =>
+      List.of(plugs);
+
+  @override
+  Future<void> deleteSavedPlug(
+    String baseUrl,
+    String token,
+    String plugId,
+  ) async {
+    deleted.add(plugId);
+    if (pending case final operation?) await operation.future;
+    if (fail) throw StateError('Hub failed');
+    plugs.removeWhere((plug) => plug.id == plugId);
+  }
+}
+
 class _FixtureApplianceApi extends SavingApi {
   _FixtureApplianceApi({required String manufacturer, required String model})
     : _appliance = SavedAppliance(
@@ -2239,6 +2281,153 @@ void main() {
     expect(find.text('No energy monitoring'), findsOneWidget);
     expect(find.text('Connected appliance or lamp'), findsNothing);
     expect(find.text('Identify connected appliance'), findsOneWidget);
+  });
+
+  testWidgets(
+    'Delete removes only the chosen saved plug after hub success and restart',
+    (tester) async {
+      final api = _DeletingSavedApi();
+      final credentials = FakeCredentials()
+        ..address = 'https://192.168.1.20:8787'
+        ..token = 'test-token';
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(api: api, credentials: credentials),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('First plug'), 220);
+      final firstCard = find.ancestor(
+        of: find.text('First plug'),
+        matching: find.byType(Card),
+      );
+      final delete = find.descendant(
+        of: firstCard,
+        matching: find.text('Delete'),
+      );
+      await tester.ensureVisible(delete);
+      await tester.pumpAndSettle();
+      await tester.tap(delete);
+      await tester.pumpAndSettle();
+      expect(api.deleted, ['plug-a']);
+      expect(find.text('First plug'), findsNothing);
+      expect(api.plugs.map((plug) => plug.id), ['plug-b']);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(api: api, credentials: credentials),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('Second plug'), 220);
+      expect(find.text('First plug'), findsNothing);
+      expect(find.text('Second plug'), findsOneWidget);
+      final secondCard = find.ancestor(
+        of: find.text('Second plug'),
+        matching: find.byType(Card),
+      );
+      final secondDelete = find.descendant(
+        of: secondCard,
+        matching: find.text('Delete'),
+      );
+      await tester.ensureVisible(secondDelete);
+      await tester.pumpAndSettle();
+      await tester.tap(secondDelete);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('No smart plugs saved on this hub yet.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'Delete remains pending without duplicate requests and retains row on failure',
+    (tester) async {
+      final api = _DeletingSavedApi()..pending = Completer<void>();
+      final credentials = FakeCredentials()
+        ..address = 'https://192.168.1.20:8787'
+        ..token = 'test-token';
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(api: api, credentials: credentials),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('First plug'), 220);
+      final firstCard = find.ancestor(
+        of: find.text('First plug'),
+        matching: find.byType(Card),
+      );
+      final delete = find.descendant(
+        of: firstCard,
+        matching: find.text('Delete'),
+      );
+      await tester.ensureVisible(delete);
+      await tester.pumpAndSettle();
+      await tester.tap(delete);
+      await tester.pump();
+      expect(api.deleted, ['plug-a']);
+      expect(
+        tester
+            .widget<TextButton>(
+              find.ancestor(of: delete, matching: find.byType(TextButton)),
+            )
+            .onPressed,
+        isNull,
+      );
+      api.fail = true;
+      api.pending!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('First plug'), findsOneWidget);
+      expect(api.plugs.length, 2);
+      await tester.scrollUntilVisible(find.text('Couldn’t connect. Try again.'), -300);
+      expect(find.text('Couldn’t connect. Try again.'), findsOneWidget);
+    },
+  );
+
+  testWidgets('stale Delete completion does not change another hub view', (
+    tester,
+  ) async {
+    final api = _DeletingSavedApi()..pending = Completer<void>();
+    final credentials = FakeCredentials()
+      ..address = 'https://192.168.1.20:8787'
+      ..token = 'test-token';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(api: api, credentials: credentials),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('First plug'), 220);
+    final firstCard = find.ancestor(
+      of: find.text('First plug'),
+      matching: find.byType(Card),
+    );
+    final delete = find.descendant(
+      of: firstCard,
+      matching: find.text('Delete'),
+    );
+    await tester.ensureVisible(delete);
+    await tester.pumpAndSettle();
+    await tester.tap(delete);
+    await tester.pump();
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 1500));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.ensureVisible(find.text('Connection details'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('Connection details'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.ensureVisible(find.byKey(const Key('hubAddress')));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.enterText(
+      find.byKey(const Key('hubAddress')),
+      'https://192.168.1.21:8787',
+    );
+    api.pending!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('First plug'), findsNothing);
+    expect(find.text('No smart plugs saved on this hub yet.'), findsOneWidget);
   });
 
   testWidgets('links a saved appliance to the plug without making it a meter', (

@@ -71,6 +71,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   String? _nearbyScanToken;
   int _scanEpoch = 0;
   List<SavedPlug> _saved = const [];
+  int _savedLoadEpoch = 0;
   final Map<String, CloudAppliance> _cloudAttached = {};
   final Map<int, EnergyEstimate> _estimates = {};
   bool _busy = false;
@@ -81,6 +82,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   String? _pairedHubId;
   bool _searched = false;
   final Set<String> _statusChecking = {};
+  final Set<String> _deletingSavedPlugs = {};
   final Map<String, String> _plugCheckFeedback = {};
   final Map<String, String> _plugUpdateFeedback = {};
   String? _error;
@@ -372,6 +374,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     _cancelActiveNearbyScan();
     setState(() {
       _saved = const [];
+      _savedLoadEpoch++;
       _nearbySaved = const [];
       _cloudAttached.clear();
       _hubConnected = false;
@@ -616,9 +619,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   Future<bool> _loadSaved() async {
     if (!_canUseHubCustomerApi) return false;
+    final epoch = _savedLoadEpoch;
     var requiresPairing = false;
     try {
       final plugs = await _hubApi.saved(_hub.text.trim(), _token.text.trim());
+      if (epoch != _savedLoadEpoch) return false;
       if (mounted) {
         setState(() {
           _saved = plugs;
@@ -647,6 +652,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         }
       }
     } catch (error) {
+      if (epoch != _savedLoadEpoch) return false;
       requiresPairing = error is HubRequestException && error.requiresPairing;
       _debugLog('load saved plugs failed: ${_describeHubError(error)}');
       if (mounted) {
@@ -767,6 +773,47 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       }
     } finally {
       if (mounted) setState(() => _statusChecking.remove(plug.id));
+    }
+  }
+
+  Future<void> _deleteSavedPlug(SavedPlug plug) async {
+    if (_deletingSavedPlugs.contains(plug.id) || !_canUseHubCustomerApi) return;
+    final hub = _hub.text.trim();
+    final token = _token.text.trim();
+    final scope = _pairingScope?.identity;
+    final cloud = widget.cloudApi;
+    final generation = cloud?.session.generation;
+    final ownershipEpoch = _pairedOwnershipEpoch;
+    final api = _hubApi;
+    bool current() =>
+        mounted &&
+        hub == _hub.text.trim() &&
+        token == _token.text.trim() &&
+        scope == _pairingScope?.identity &&
+        generation == cloud?.session.generation &&
+        ownershipEpoch == _pairedOwnershipEpoch;
+    setState(() => _deletingSavedPlugs.add(plug.id));
+    _savedLoadEpoch++;
+    try {
+      await api.deleteSavedPlug(hub, token, plug.id);
+      if (!current()) return;
+      setState(() {
+        _saved = [
+          for (final saved in _saved)
+            if (saved.id != plug.id) saved,
+        ];
+        _cloudAttached.remove(plug.id);
+        _plugCheckFeedback.remove(plug.id);
+        _plugUpdateFeedback.remove(plug.id);
+        _statusChecking.remove(plug.id);
+        _error = null;
+      });
+    } catch (_) {
+      if (current()) {
+        setState(() => _error = 'Couldn’t connect. Try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _deletingSavedPlugs.remove(plug.id));
     }
   }
 
@@ -1345,7 +1392,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           setState(() {
             _nearbyState = scan.state;
             for (final candidate in scan.candidates) {
-              collected[candidate.id] = candidate;
+              if (candidate.usableName == null) {
+                collected.remove(candidate.id);
+              } else {
+                collected[candidate.id] = candidate;
+              }
             }
             _nearbyCandidates = collected.values.toList(growable: false);
             _hubConnected = true;
@@ -1392,9 +1443,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (!mounted) return;
       setState(() {
         final byId = <String, DiscoveredPlug>{
-          for (final candidate in _candidates) candidate.id: candidate,
-          for (final candidate in results) candidate.id: candidate,
+          for (final candidate in _candidates)
+            if (candidate.usableName != null) candidate.id: candidate,
+          for (final candidate in results)
+            if (candidate.usableName != null) candidate.id: candidate,
         };
+        for (final candidate in results) {
+          if (candidate.usableName == null) byId.remove(candidate.id);
+        }
         _candidates = byId.values.toList();
         _searched = true;
         _hubConnected = true;
@@ -1536,7 +1592,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   }
 
   Widget _nearbyRow(NearbyDeviceCandidate candidate, {String? subtitle}) {
-    final overline = candidate.deviceLabel?.trim();
+    final overline = candidate.usableDeviceLabel;
     return ListTile(
       key: Key('nearby-${candidate.id}'),
       contentPadding: EdgeInsets.zero,
@@ -1971,7 +2027,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           throw StateError('Search stopped. Try again.');
         }
         for (final found in scan.candidates) {
-          if (identity.matches(found.stableIdentity)) matches[found.id] = found;
+          if (identity.matches(found.stableIdentity)) {
+            if (found.usableName == null) {
+              matches.remove(found.id);
+            } else {
+              matches[found.id] = found;
+            }
+          }
         }
         if (scan.nextCursor case final cursor?) {
           scan = await _hubApi.nearbyScan(hub, token, scan.id, cursor: cursor);
@@ -2256,7 +2318,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   ),
                 ),
                 IconButton(
-                  onPressed: _busy ? null : _loadSaved,
+                  onPressed: _busy || _deletingSavedPlugs.isNotEmpty
+                      ? null
+                      : _loadSaved,
                   icon: const Icon(Icons.refresh),
                   tooltip: 'Refresh saved plugs',
                 ),
@@ -2346,6 +2410,23 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                               : 'Change connected appliance',
                         ),
                       ),
+                      TextButton.icon(
+                        onPressed:
+                            _deletingSavedPlugs.contains(plug.id) ||
+                                !_canUseHubCustomerApi
+                            ? null
+                            : () => _deleteSavedPlug(plug),
+                        icon: _deletingSavedPlugs.contains(plug.id)
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.delete_outline),
+                        label: const Text('Delete'),
+                      ),
                     ],
                   ),
                 ),
@@ -2384,11 +2465,7 @@ class _PlugCandidateCard extends StatelessWidget {
           color: saved ? theme.colorScheme.primary : null,
         ),
         title: Text(
-          savedName?.isNotEmpty == true
-              ? savedName!
-              : candidate.alias?.isNotEmpty == true
-              ? candidate.alias!
-              : candidate.model,
+          savedName?.isNotEmpty == true ? savedName! : candidate.usableName!,
           style: theme.textTheme.titleMedium,
         ),
         subtitle: Text(

@@ -8,6 +8,45 @@ void main() {
   const fingerprint =
       'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
 
+  test(
+    'saved plug delete sends authenticated DELETE for the stable ID',
+    () async {
+      final context = SecurityContext()
+        ..useCertificateChain('test/fixtures/hub_tls_test_cert.pem')
+        ..usePrivateKey('test/fixtures/hub_tls_test_key.pem');
+      final server = await HttpServer.bindSecure(
+        InternetAddress.loopbackIPv4,
+        0,
+        context,
+      );
+      String? method;
+      String? path;
+      String? authorization;
+      server.listen((request) async {
+        method = request.method;
+        path = request.uri.toString();
+        authorization = request.headers.value(HttpHeaders.authorizationHeader);
+        request.response.headers.contentType = ContentType.json;
+        request.response.write('{"deleted_id":"plug/1"}');
+        await request.response.close();
+      });
+      try {
+        const certificatePin =
+            '50c731cdfd5802849c6e68983836566463b7cf40f95ae5e0c6575c81772251e9';
+        await DiscoveryApi().deleteSavedPlug(
+          'https://127.0.0.1:${server.port}#sha256=$certificatePin',
+          'secret',
+          'plug/1',
+        );
+        expect(method, 'DELETE');
+        expect(path, '/v1/devices/plug%2F1');
+        expect(authorization, 'Bearer secret');
+      } finally {
+        await server.close(force: true);
+      }
+    },
+  );
+
   test('accepts HTTPS LAN and Tailscale addresses and strips the pin', () {
     final lan = HubEndpoint.parse('https://192.168.1.20:18787');
     expect(lan.uri.toString(), 'https://192.168.1.20:18787');

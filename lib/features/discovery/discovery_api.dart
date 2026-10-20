@@ -199,6 +199,16 @@ class IdentificationCandidate {
   };
 }
 
+String? _usableDiscoveryName(String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null ||
+      trimmed.isEmpty ||
+      trimmed.toLowerCase() == 'unnamed device') {
+    return null;
+  }
+  return trimmed;
+}
+
 class DiscoveredPlug {
   const DiscoveredPlug({
     required this.id,
@@ -233,6 +243,8 @@ class DiscoveredPlug {
   final String model;
   final String meterStatus;
   final String? alias;
+  String? get usableName =>
+      _usableDiscoveryName(alias) ?? _usableDiscoveryName(model);
   final String? mac;
   final String? localProtocol;
   final int? httpPort;
@@ -335,13 +347,15 @@ class NearbyDeviceCandidate {
   );
 
   String get displayName {
-    final value = name?.trim().isNotEmpty == true
-        ? name!.trim()
-        : deviceLabel?.trim().isNotEmpty == true
-        ? deviceLabel!.trim()
-        : model?.trim();
-    return value == null || value.isEmpty ? 'Unnamed device' : value;
+    return usableName ?? 'Unnamed device';
   }
+
+  String? get usableName =>
+      _usableDiscoveryName(name) ??
+      _usableDiscoveryName(deviceLabel) ??
+      _usableDiscoveryName(model);
+
+  String? get usableDeviceLabel => _usableDiscoveryName(deviceLabel);
 
   bool get isGoveeAccountDevice => sources.contains('govee_cloud');
 
@@ -1594,6 +1608,19 @@ class DiscoveryApi {
     return (response as List<dynamic>)
         .map((item) => SavedPlug.fromJson(item as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<void> deleteSavedPlug(
+    String baseUrl,
+    String token,
+    String plugId,
+  ) async {
+    await _request(
+      baseUrl,
+      token,
+      '/v1/devices/${Uri.encodeComponent(plugId)}',
+      'DELETE',
+    );
   }
 
   Future<SavedPlug> refreshPlugStatus(

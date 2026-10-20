@@ -154,6 +154,27 @@ class _Api extends DiscoveryApi {
   }
 }
 
+class _PagedApi extends _Api {
+  _PagedApi(super.candidate, this.pages);
+
+  final List<NearbyScan> pages;
+  int pageIndex = 0;
+
+  @override
+  Future<NearbyScan> startNearbyScan(String baseUrl, String token) async {
+    pageIndex = 0;
+    return pages[pageIndex++];
+  }
+
+  @override
+  Future<NearbyScan> nearbyScan(
+    String baseUrl,
+    String token,
+    String scanId, {
+    String? cursor,
+  }) async => pages[pageIndex++];
+}
+
 void main() {
   NearbyDeviceCandidate candidate({
     String id = 'candidate',
@@ -182,6 +203,62 @@ void main() {
     capabilities: const [NearbyDeviceCapability('energy', 'unknown')],
     model: 'Living room TV',
   );
+
+  testWidgets('later unnamed scan update removes a stale candidate', (
+    tester,
+  ) async {
+    final named = candidate();
+    final unnamed = NearbyDeviceCandidate.fromJson({
+      'candidate_id': named.id,
+      'scan_id': named.scanId,
+      'expires_at_ms': named.expiresAtMs,
+      'name': ' UNNAMED DEVICE ',
+      'addresses': <dynamic>[],
+      'sources': <dynamic>[],
+      'capabilities': <dynamic>[],
+      'requires_action': false,
+    });
+    final api = _PagedApi(named, [
+      NearbyScan(
+        id: 'scan',
+        state: 'running',
+        expiresAtMs: named.expiresAtMs,
+        candidates: [named],
+        nextCursor: 'next',
+      ),
+      NearbyScan(
+        id: 'scan',
+        state: 'complete',
+        expiresAtMs: named.expiresAtMs,
+        candidates: [unnamed],
+      ),
+    ]);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(api: api, credentials: _Credentials()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Scan for plugs'));
+    await tester.pumpAndSettle();
+    expect(find.text('Living room TV'), findsNothing);
+    expect(find.text('Unnamed device'), findsNothing);
+    expect(find.text('No devices found'), findsOneWidget);
+
+    api.pages
+      ..clear()
+      ..add(
+        NearbyScan(
+          id: 'scan-2',
+          state: 'complete',
+          expiresAtMs: named.expiresAtMs,
+          candidates: [named],
+        ),
+      );
+    await tester.tap(find.text('Scan for plugs'));
+    await tester.pumpAndSettle();
+    expect(find.text('Living room TV'), findsOneWidget);
+  });
 
   testWidgets('generic discovery shows a simple name and Add row', (
     tester,
@@ -504,6 +581,38 @@ void main() {
     expect(api.scanCount, 2);
     expect(api.adoptionCount, 1);
     expect(find.widgetWithText(TextButton, 'Add'), findsNothing);
+  });
+
+  testWidgets('unnamed refresh cannot adopt a formerly named candidate', (
+    tester,
+  ) async {
+    const identity = NearbyStableIdentity('ssdp', 'uuid:tv-one');
+    final api = _Api(candidate(expiresAtMs: 1, stableIdentity: identity))
+      ..refreshedCandidates = [
+        NearbyDeviceCandidate.fromJson({
+          'candidate_id': 'fresh',
+          'scan_id': 'scan-2',
+          'expires_at_ms': 4102444800000,
+          'name': ' Unnamed device ',
+          'stable_identity': {'source': 'ssdp', 'value': 'uuid:tv-one'},
+          'addresses': <dynamic>[],
+          'sources': <dynamic>[],
+          'capabilities': <dynamic>[],
+          'requires_action': false,
+        }),
+      ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(api: api, credentials: _Credentials()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Scan for plugs'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Add'));
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect(api.adoptionCount, 0);
   });
 
   testWidgets('server expiry race gets one verified refresh and retry', (
