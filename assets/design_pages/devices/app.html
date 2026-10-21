@@ -110,19 +110,15 @@
     }
   </style>
 <link rel="stylesheet" href="../shared/fonts.css"><script src="../shared/chrome.js"></script><link rel="stylesheet" href="../shared/mobile_refinements.css"></head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen"><div id="el-header"></div><main class="flex-1 flex flex-col relative w-full pt-16 pb-20 bg-surface"><div class="flex flex-col w-full px-gutter space-y-space-md pb-space-lg">
+<div class="el-devices-heading flex items-center justify-between gap-2 pt-space-sm">
+<h1 class="el-page-title el-compact-page-title" data-el-bind="devices_text_003">MONITORED DEVICES</h1>
+<a class="el-overview-chip" data-path="settings" href="#" data-el-action="devices_action_003"><span data-el-bind="devices_text_004">Daily Overview</span></a>
+</div>
 <!-- Subtle Ambient Glow Card -->
 <div class="relative w-full overflow-hidden rounded-xl bg-surface-container-lowest border border-surface-container-high/80 p-space-md shadow-sm">
 <div class="absolute -top-12 -right-12 w-44 h-44 bg-primary-container/30 rounded-full blur-3xl pointer-events-none"></div>
 <div class="absolute -bottom-10 -left-10 w-36 h-36 bg-secondary-container/40 rounded-full blur-2xl pointer-events-none"></div>
-<!-- Header Section -->
 <div class="relative z-10 flex flex-col gap-space-sm">
-<div class="flex items-start justify-between gap-space-sm">
-<div class="flex flex-col">
-<span class="el-page-title el-compact-page-title" data-el-bind="devices_text_003">HOME DEVICES</span>
-
-</div>
-<a class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container text-primary hover:bg-surface-container-high border border-outline-variant/50 transition-colors shadow-xs shrink-0" data-path="settings" href="#" data-el-action="devices_action_003"><span class="material-symbols-outlined text-[16px]">monitoring</span><span class="font-label-md text-[12px] font-semibold" data-el-bind="devices_text_004">Daily Overview</span></a>
-</div>
 <!-- Quick Glancer Stats Mini-Bar -->
 <div class="grid grid-cols-2 gap-2 mt-2"><div class="flex flex-col rounded-lg bg-surface-container-low border border-surface-container-highest/60 p-2.5"><span class="font-label-md text-[12px] tracking-wide uppercase text-on-surface-variant" data-el-bind="devices_text_008">Useful cost</span><span class="el-devices-summary-value font-headline-lg font-semibold el-useful-ink tracking-tight" data-el-bind="devices_text_009">$6.83<span class="el-devices-summary-unit font-normal text-on-surface-variant ml-0.5" data-el-bind="devices_text_010">/day</span></span></div><div class="flex flex-col rounded-lg bg-surface-container-low border border-surface-container-highest/60 p-2.5"><span class="font-label-md text-[12px] tracking-wide uppercase text-on-surface-variant" data-el-bind="devices_text_005">Waste cost</span><span class="el-devices-summary-value font-headline-lg font-semibold el-waste-ink tracking-tight" data-el-bind="devices_text_006">$1.96<span class="el-devices-summary-unit font-normal text-on-surface-variant ml-0.5" data-el-bind="devices_text_007">/day</span></span></div></div>
 </div>

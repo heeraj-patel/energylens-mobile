@@ -25,7 +25,7 @@ PAGES = (
 )
 PAGE_MARKERS = {
     "dashboard": "Useful cost",
-    "devices": "HOME DEVICES",
+    "devices": "MONITORED DEVICES",
     "efficiency": "Monthly Overview",
     "efficiency_away": "While You're Away",
     "efficiency_habits": "Everyday Habits & Routine Diagnoses",
