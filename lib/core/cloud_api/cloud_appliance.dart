@@ -16,6 +16,8 @@ class CloudAppliance {
     this.icId,
     this.serialNumber,
     this.upc,
+    this.buildYear,
+    this.bulbLabel,
     this.version,
     this.createdAt,
     this.updatedAt,
@@ -40,6 +42,8 @@ class CloudAppliance {
   final String? icId;
   final String? serialNumber;
   final String? upc;
+  final int? buildYear;
+  final BulbLabel? bulbLabel;
   final int? version;
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -83,6 +87,10 @@ class CloudAppliance {
       icId: identity['ic_id'] as String?,
       serialNumber: identity['serial_number'] as String?,
       upc: identity['upc'] as String?,
+      buildYear: identity['build_year'] as int?,
+      bulbLabel: identity['bulb_label'] == null
+          ? null
+          : BulbLabel.fromJson(identity['bulb_label'] as Map<String, dynamic>),
       version: json['version'] as int?,
       createdAt: _optionalInstant(json['created_at']),
       updatedAt: _optionalInstant(json['updated_at']),
@@ -233,6 +241,7 @@ class CloudApplianceIdentityPatch {
     this.icId,
     this.serialNumber,
     this.upc,
+    this.buildYear,
     this.bulbLabel,
   });
   final String brand;
@@ -246,6 +255,7 @@ class CloudApplianceIdentityPatch {
   final String? icId;
   final String? serialNumber;
   final String? upc;
+  final int? buildYear;
   final BulbLabel? bulbLabel;
   Map<String, dynamic> toJson() => {
     'brand': brand,
@@ -259,6 +269,7 @@ class CloudApplianceIdentityPatch {
     if (icId != null) 'ic_id': icId,
     if (serialNumber != null) 'serial_number': serialNumber,
     if (upc != null) 'upc': upc,
+    if (buildYear != null) 'build_year': buildYear,
     if (bulbLabel != null) 'bulb_label': bulbLabel!.toJson(),
   };
 }
@@ -273,6 +284,12 @@ class BulbLabel {
   final String loadKind;
   final int? bulbCount;
   final double? combinedInputWatts;
+
+  factory BulbLabel.fromJson(Map<String, dynamic> json) => BulbLabel(
+    loadKind: json['load_kind'] as String,
+    bulbCount: json['bulb_count'] as int?,
+    combinedInputWatts: (json['combined_input_watts'] as num?)?.toDouble(),
+  );
 
   Map<String, dynamic> toJson() => {
     'load_kind': loadKind,

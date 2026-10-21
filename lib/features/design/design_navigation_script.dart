@@ -38,6 +38,13 @@ String buildDesignNavigationScript(String page) {
         const button = event.target.closest('button');
         if (!button) return;
         const action = button.dataset.elAction;
+        const editApplianceId = button.getAttribute?.('data-el-edit-appliance-id');
+        if (page === 'settings_manage_devices' && editApplianceId) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          send('edit_appliance:' + editApplianceId);
+          return;
+        }
         if (page === 'settings' && (action === 'settings_action_edit_home' || action === 'settings_action_edit_zip')) {
           event.preventDefault();
           event.stopImmediatePropagation();
