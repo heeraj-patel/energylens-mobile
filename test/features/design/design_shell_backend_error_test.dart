@@ -7,6 +7,7 @@ import 'package:energylens_mobile/features/design/dashboard_domain_repository.da
 import 'package:energylens_mobile/features/design/design_context_coordinator.dart';
 import 'package:energylens_mobile/features/design/design_shell.dart';
 import 'package:energylens_mobile/features/design/efficiency_domain_repository.dart';
+import 'package:flutter/foundation.dart' as foundation;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
@@ -123,6 +124,33 @@ void main() {
       expect(find.text(internalErrorMessage), findsOneWidget);
     });
   }
+
+  testWidgets('debug diagnostic contains only type, status and path', (
+    tester,
+  ) async {
+    final lines = <String>[];
+    final previous = foundation.debugPrint;
+    foundation.debugPrint = (message, {wrapWidth}) {
+      if (message != null) lines.add(message);
+    };
+    try {
+      await _open(
+        tester,
+        const CloudApiException(
+          503,
+          'secret-error-code',
+          path: '/v1/homes/owner/dashboard',
+        ),
+      );
+      expect(find.text(internalErrorMessage), findsOneWidget);
+      expect(lines.where((line) => line.startsWith('ELR-064 ')), [
+        'ELR-064 type=CloudApiException status=503 path=/v1/homes/owner/dashboard',
+      ]);
+      expect(lines.join(), isNot(contains('secret-error-code')));
+    } finally {
+      foundation.debugPrint = previous;
+    }
+  });
 
   for (final error in <Object>[
     const CloudApiException(401, 'not_authenticated'),

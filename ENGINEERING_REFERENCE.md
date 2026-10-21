@@ -21,7 +21,7 @@ scripts/deploy-ios-simulator.sh --cloud --device SIMULATOR_UDID
 For shared `GeekHome` work on this Mac or `geekom-a4-max`, use a separate
 private profile with the currently verified GeekHome Cloud HTTPS origin
 `https://192.168.68.136:18092` and its matching certificate pin. This Mac's
-current `.env-local` still targets its separate `niksim` Cloud on port `18091`;
+current `.env-local` still targets its separate `niksim` Cloud on port `18092`;
 do not use it for shared GeekHome builds. Set `ENERGYLENS_LOCAL_PILOT=false`,
 `ENERGYLENS_CLOUD_LOCAL_AUTH_ENABLED=true` for the configured local email
 authentication, and leave `ENERGYLENS_HUB_URL` empty for Cloud-owned Hub
@@ -87,7 +87,7 @@ server runtime configuration before retrying.
 
 If the sign-in screen shows `Internal Error, Try again later` before credentials
 are submitted, first check the Cloud API target compiled into the simulator app.
-The local `niksim` Cloud API uses port `18091`; the separate Geekom Cloud API
+The local `niksim` Cloud API uses port `18092`; the separate Geekom Cloud API
 uses port `18092`. Check that the HTTPS origin in
 `.env-local` is the current Cloud API origin, that its `/v1/auth/config` returns
 HTTP 200 with `username_password`, and that the configured development pin is

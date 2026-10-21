@@ -40,10 +40,12 @@ class CloudApiException implements Exception {
     this.statusCode,
     this.code, {
     this.details = const {},
+    this.path,
   });
   final int statusCode;
   final String code;
   final Map<String, dynamic> details;
+  final String? path;
 
   /// Seconds to wait after a 429 `refresh_rate_limited`; null otherwise.
   int? get retryAfterSeconds {
@@ -53,6 +55,32 @@ class CloudApiException implements Exception {
 
   @override
   String toString() => 'Cloud API error $statusCode ($code)';
+}
+
+class CloudRequestFailureContext {
+  const CloudRequestFailureContext(this.type, this.statusCode, this.path);
+  final String type;
+  final int? statusCode;
+  final String path;
+}
+
+final Expando<CloudRequestFailureContext> _requestFailureContexts =
+    Expando<CloudRequestFailureContext>();
+final Expando<String> _responsePaths = Expando<String>();
+
+CloudRequestFailureContext? cloudRequestFailureContext(Object error) {
+  if (error is CloudApiException && error.path != null) {
+    return CloudRequestFailureContext(
+      'CloudApiException',
+      error.statusCode,
+      error.path!,
+    );
+  }
+  return _requestFailureContexts[error];
+}
+
+class CloudResponseFormatException extends FormatException {
+  CloudResponseFormatException();
 }
 
 class CloudAccount {
@@ -97,6 +125,30 @@ class CloudApiClient {
     : _client = client ?? cloudHttpClient(session.config);
   final CloudSession session;
   final http.Client _client;
+
+  T _parseResponse<T>(http.Response response, T Function() parse) {
+    final path = _responsePaths[response] ?? 'unavailable';
+    try {
+      return parse();
+    } on FormatException catch (error) {
+      final contextual = CloudResponseFormatException();
+      _requestFailureContexts[contextual] = CloudRequestFailureContext(
+        error.runtimeType == FormatException
+            ? 'FormatException'
+            : error.runtimeType.toString(),
+        response.statusCode,
+        path,
+      );
+      throw contextual;
+    } catch (error) {
+      _requestFailureContexts[error] = CloudRequestFailureContext(
+        error.runtimeType.toString(),
+        response.statusCode,
+        path,
+      );
+      rethrow;
+    }
+  }
 
   /// Called once when Cloud rejects the current session (401/403) or a signed-in
   /// request has no usable token. The session owner signs the user out.
@@ -208,9 +260,12 @@ class CloudApiClient {
     final response = await get(
       '/v1/homes/${Uri.encodeComponent(homeId)}/dashboard',
     );
-    return CloudHouseholdDashboard.fromJson(
-      _decodeObject(response.body),
-      expectedHomeId: homeId,
+    return _parseResponse(
+      response,
+      () => CloudHouseholdDashboard.fromJson(
+        _decodeObject(response.body),
+        expectedHomeId: homeId,
+      ),
     );
   }
 
@@ -219,9 +274,12 @@ class CloudApiClient {
     final response = await get(
       '/v1/homes/${Uri.encodeComponent(homeId)}/top-savings-move',
     );
-    return CloudTopSavingsMove.fromJson(
-      _decodeObject(response.body),
-      expectedHomeId: homeId,
+    return _parseResponse(
+      response,
+      () => CloudTopSavingsMove.fromJson(
+        _decodeObject(response.body),
+        expectedHomeId: homeId,
+      ),
     );
   }
 
@@ -249,14 +307,19 @@ class CloudApiClient {
     final response = await get(
       '/v1/homes/${Uri.encodeComponent(homeId)}/energy-trends?$query',
     );
-    final value = CloudHouseholdEnergyTrends.fromJson(
-      _decodeObject(response.body),
-      expectedHomeId: homeId,
+    final value = _parseResponse(
+      response,
+      () => CloudHouseholdEnergyTrends.fromJson(
+        _decodeObject(response.body),
+        expectedHomeId: homeId,
+      ),
     );
-    if (value.granularity != granularity) {
-      throw const FormatException('Household energy granularity changed');
-    }
-    return value;
+    return _parseResponse(response, () {
+      if (value.granularity != granularity) {
+        throw const FormatException('Household energy granularity changed');
+      }
+      return value;
+    });
   }
 
   static final RegExp _householdHomeUuid = RegExp(
@@ -626,8 +689,11 @@ class CloudApiClient {
 
   Future<CloudAccount> me() async {
     final response = await get('/v1/me');
-    return CloudAccount.fromJson(
-      jsonDecode(response.body) as Map<String, dynamic>,
+    return _parseResponse(
+      response,
+      () => CloudAccount.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      ),
     );
   }
 
@@ -701,12 +767,16 @@ class CloudApiClient {
 
   Future<List<CloudHome>> homes() async {
     final response = await get('/v1/homes');
-    final value = jsonDecode(response.body) as Map<String, dynamic>;
-    final items = value['homes'];
-    if (items is! List) throw const FormatException('Invalid cloud home list');
-    return items
-        .map((item) => CloudHome.fromJson(item as Map<String, dynamic>))
-        .toList();
+    return _parseResponse(response, () {
+      final value = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = value['homes'];
+      if (items is! List) {
+        throw const FormatException('Invalid cloud home list');
+      }
+      return items
+          .map((item) => CloudHome.fromJson(item as Map<String, dynamic>))
+          .toList();
+    });
   }
 
   Future<List<CloudAppliance>> appliances(String homeId) async {
@@ -993,9 +1063,12 @@ class CloudApiClient {
     final response = await get(
       '/v1/homes/${Uri.encodeComponent(homeId)}/recommendations?capability=gas_dryer_recommendations_v1',
     );
-    return CloudRecommendationBatch.fromJson(
-      jsonDecode(response.body) as Map<String, dynamic>,
-      applianceIds.map((id) => id.toLowerCase()).toSet(),
+    return _parseResponse(
+      response,
+      () => CloudRecommendationBatch.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+        applianceIds.map((id) => id.toLowerCase()).toSet(),
+      ),
     );
   }
 
@@ -1193,8 +1266,11 @@ class CloudApiClient {
     final response = await get(
       '/v1/homes/${Uri.encodeComponent(homeId)}/programs?$query',
     );
-    return CloudProgramPage.fromJson(
-      jsonDecode(response.body) as Map<String, dynamic>,
+    return _parseResponse(
+      response,
+      () => CloudProgramPage.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      ),
     );
   }
 
@@ -1205,8 +1281,11 @@ class CloudApiClient {
     final response = await get(
       '/v1/homes/${Uri.encodeComponent(homeId)}/programs',
     );
-    return CloudProgramPage.fromJson(
-      jsonDecode(response.body) as Map<String, dynamic>,
+    return _parseResponse(
+      response,
+      () => CloudProgramPage.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      ),
     );
   }
 
@@ -1690,14 +1769,33 @@ class CloudApiClient {
       return http.Response.fromStream(await _client.send(request));
     }
 
-    var body = await send(token);
+    http.Response body;
+    try {
+      body = await send(token);
+    } catch (error) {
+      _requestFailureContexts[error] = CloudRequestFailureContext(
+        error.runtimeType.toString(),
+        null,
+        uri.path,
+      );
+      rethrow;
+    }
     if (sessionGeneration != session.generation) {
       throw const CloudApiException(401, 'not_authenticated');
     }
     if (body.statusCode == 401) {
       final fresh = await session.refreshAccessToken();
       if (fresh != null && sessionGeneration == session.generation) {
-        body = await send(fresh);
+        try {
+          body = await send(fresh);
+        } catch (error) {
+          _requestFailureContexts[error] = CloudRequestFailureContext(
+            error.runtimeType.toString(),
+            null,
+            uri.path,
+          );
+          rethrow;
+        }
       }
     }
     if (sessionGeneration != session.generation) {
@@ -1717,8 +1815,14 @@ class CloudApiClient {
           details = json['details'] as Map<String, dynamic>;
         }
       } catch (_) {}
-      throw CloudApiException(body.statusCode, code, details: details);
+      throw CloudApiException(
+        body.statusCode,
+        code,
+        details: details,
+        path: uri.path,
+      );
     }
+    _responsePaths[body] = uri.path;
     return body;
   }
 
