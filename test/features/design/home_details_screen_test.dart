@@ -173,4 +173,129 @@ void main() {
       expect(find.text('Open'), findsOneWidget);
     },
   );
+
+  testWidgets('G-C9: gas rate saves a natural_gas therm tariff', (
+    tester,
+  ) async {
+    final tariffBodies = <Map<String, dynamic>>[];
+    var patches = 0;
+    final client = MockClient((request) async {
+      final path = request.url.path;
+      Map<String, Object?> home() => {
+        'id': _homeId,
+        'name': 'Original Home',
+        'timezone': 'America/Chicago',
+        'location': {'country_code': 'US', 'postal_code': '60601'},
+        'version': 1,
+      };
+      if (path == '/v1/me') {
+        return http.Response(
+          jsonEncode({
+            'id': 'owner',
+            'email': 'owner@example.com',
+            'email_verified': true,
+          }),
+          200,
+        );
+      }
+      if (path == '/v1/homes' && request.method == 'GET') {
+        return http.Response(
+          jsonEncode({
+            'homes': [home()],
+          }),
+          200,
+        );
+      }
+      if (path == '/v1/me/preferences') {
+        return http.Response(
+          jsonEncode({
+            'schema_version': 1,
+            'version': 1,
+            'email_reports_enabled': false,
+          }),
+          200,
+          headers: {'etag': '"1"'},
+        );
+      }
+      if (path == '/v1/homes/$_homeId/preferences') {
+        return http.Response(
+          jsonEncode({
+            'schema_version': 1,
+            'version': 1,
+            'goal': 'unspecified',
+            'comfort_priority': 'unknown',
+          }),
+          200,
+          headers: {'etag': '"1"'},
+        );
+      }
+      if (path == '/v1/homes/$_homeId/appliances') {
+        return http.Response(jsonEncode({'appliances': []}), 200);
+      }
+      if (path == '/v1/homes/$_homeId' && request.method == 'GET') {
+        return http.Response(jsonEncode(home()), 200, headers: {'etag': '"1"'});
+      }
+      if (path == '/v1/homes/$_homeId' && request.method == 'PATCH') {
+        patches++;
+        return http.Response(jsonEncode(home()), 200);
+      }
+      if (path == '/v1/homes/$_homeId/tariffs' && request.method == 'POST') {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        tariffBodies.add(body);
+        return http.Response(
+          jsonEncode({
+            ...body,
+            'id': 'tariff-1',
+            'home_id': _homeId,
+            'revision': 1,
+          }),
+          201,
+        );
+      }
+      fail('Unexpected ${request.method} $path');
+    });
+    bool? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              result = await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  builder: (_) => HomeDetailsScreen(
+                    api: _api(client),
+                    homeId: _homeId,
+                    isCurrentHome: () => true,
+                  ),
+                ),
+              );
+            },
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    final gasField = find.widgetWithText(TextField, 'Gas rate (\$/therm)');
+    expect(gasField, findsOneWidget);
+    await tester.enterText(gasField, 'abc');
+    await tester.pump();
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      isNull,
+    );
+    await tester.enterText(gasField, '1.25');
+    await tester.pump();
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+    expect(patches, 0);
+    expect(tariffBodies, hasLength(1));
+    expect(tariffBodies.single['fuel'], 'natural_gas');
+    expect(tariffBodies.single['rate'], '1.25');
+    expect(tariffBodies.single['rate_unit'], 'therm');
+    expect(tariffBodies.single['rate_kind'], 'user_tariff');
+    expect(tariffBodies.single['is_fallback'], false);
+    expect(result, true);
+  });
 }

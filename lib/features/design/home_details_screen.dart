@@ -29,6 +29,9 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
   final _name = TextEditingController();
   final _postal = TextEditingController();
   final _country = TextEditingController();
+  final _gasRate = TextEditingController();
+  String _gasRateKey = newCloudIdempotencyKey();
+  String? _gasRateAt;
   bool _loading = true;
   bool _saving = false;
   bool _conflict = false;
@@ -65,7 +68,7 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
       countryCode: _country.text,
       postalCode: _postal.text,
     );
-    if (valid == null) return;
+    if (valid == null || !_gasRateValid) return;
     setState(() {
       _saving = true;
       _conflict = false;
@@ -76,19 +79,24 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
       final locationChanged =
           valid.countryCode != before.home.countryCode ||
           valid.postalCode != before.home.postalCode;
-      if (valid.name == before.home.name && !locationChanged) {
-        if (mounted && widget.isCurrentHome()) Navigator.of(context).pop(true);
-        return;
+      if (valid.name != before.home.name || locationChanged) {
+        final after = await _settings.updateHome(
+          CloudHomePatch(
+            name: valid.name == before.home.name ? null : valid.name,
+            countryCode: locationChanged ? valid.countryCode : null,
+            postalCode: locationChanged ? valid.postalCode : null,
+          ),
+          idempotencyKey: newCloudIdempotencyKey(),
+        );
+        if (!mounted || !widget.isCurrentHome() || after == null) return;
       }
-      final after = await _settings.updateHome(
-        CloudHomePatch(
-          name: valid.name == before.home.name ? null : valid.name,
-          countryCode: locationChanged ? valid.countryCode : null,
-          postalCode: locationChanged ? valid.postalCode : null,
-        ),
-        idempotencyKey: newCloudIdempotencyKey(),
-      );
-      if (!mounted || !widget.isCurrentHome() || after == null) return;
+      if (_gasRate.text.trim().isNotEmpty) {
+        await _saveGasRate();
+        if (!mounted || !widget.isCurrentHome()) return;
+        _gasRate.clear();
+        _gasRateKey = newCloudIdempotencyKey();
+        _gasRateAt = null;
+      }
       if (locationChanged &&
           _settings.lastHomeTimezoneResolution == 'unresolved') {
         setState(() => _timezoneUnresolved = true);
@@ -112,8 +120,41 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
     }
   }
 
+  static final _gasRatePattern = RegExp(
+    r'^(0|[1-9][0-9]{0,9})(\.[0-9]{1,8})?$',
+  );
+
+  bool get _gasRateValid {
+    final text = _gasRate.text.trim();
+    if (text.isEmpty) return true;
+    return _gasRatePattern.hasMatch(text) && double.parse(text) > 0;
+  }
+
+  /// A user gas tariff effective now, in USD per therm. The timestamp stays
+  /// fixed with the idempotency key so a retry sends the identical body.
+  Future<void> _saveGasRate() {
+    final now = _gasRateAt ??= DateTime.now()
+        .toUtc()
+        .toIso8601String()
+        .replaceFirst(RegExp(r'\.\d+Z$'), 'Z');
+    return widget.api.createGasTariff(widget.homeId, {
+      'fuel': 'natural_gas',
+      'rate': _gasRate.text.trim(),
+      'rate_unit': 'therm',
+      'currency': 'USD',
+      'rate_kind': 'user_tariff',
+      'source_ref': 'energylens-mobile:settings',
+      'source_as_of': now,
+      'is_fallback': false,
+      'fixed_charge': null,
+      'effective_from': now,
+      'effective_to': null,
+    }, idempotencyKey: _gasRateKey);
+  }
+
   @override
   void dispose() {
+    _gasRate.dispose();
     _settings.clear();
     _name.dispose();
     _postal.dispose();
@@ -155,6 +196,16 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
             enabled: !_loading && !_saving,
             decoration: const InputDecoration(labelText: 'Country'),
           ),
+          TextField(
+            controller: _gasRate,
+            enabled: !_loading && !_saving,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (_) => setState(() {
+              _gasRateKey = newCloudIdempotencyKey();
+              _gasRateAt = null;
+            }),
+            decoration: const InputDecoration(labelText: 'Gas rate (\$/therm)'),
+          ),
           if (_conflict)
             const Text('Home details changed elsewhere. Reload and try again.'),
           if (_backendFailed) const Text(internalErrorMessage),
@@ -164,7 +215,11 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
             ),
           const SizedBox(height: 24),
           FilledButton(
-            onPressed: _loading || _saving || _settings.snapshot == null
+            onPressed:
+                _loading ||
+                    _saving ||
+                    _settings.snapshot == null ||
+                    !_gasRateValid
                 ? null
                 : _save,
             child: const Text('Save changes'),
