@@ -186,6 +186,66 @@ void main() {
     }
   });
 
+  test('parses gas dryer allocation and keeps old payloads valid', () {
+    final parsed = CloudEnergyAllocation.fromJson({
+      ..._allocation(),
+      'energy': {'value': '59.4', 'unit': 'kWh'},
+      'cost': {'amount': '10.88', 'currency': 'USD'},
+      'fuel': 'natural_gas',
+      'gas_energy': {'value': '22.7', 'unit': 'therm'},
+      'gas_energy_kwh_eq': {'value': '665.3', 'unit': 'kWh'},
+      'total_energy_kwh_eq': {'value': '724.7', 'unit': 'kWh'},
+      'gas_cost': {'amount': '33.62', 'currency': 'USD'},
+      'total_cost': {'amount': '44.50', 'currency': 'USD'},
+      'standby_cost': null,
+      'gas_rate_basis': 'national_average',
+      'gas_basis': 'derived_from_cef',
+      'waste_basis': 'rated_standby',
+    });
+    expect(parsed.fuel, 'natural_gas');
+    expect(parsed.gasEnergy!.value, '22.7');
+    expect(parsed.gasEnergy!.unit, 'therm');
+    expect(parsed.gasEnergyKwhEq!.value, '665.3');
+    expect(parsed.totalEnergyKwhEq!.value, '724.7');
+    expect(parsed.gasCost!.amount, '33.62');
+    expect(parsed.totalCost!.amount, '44.50');
+    expect(parsed.standbyCost, isNull);
+    expect(parsed.gasRateBasis, 'national_average');
+    expect(parsed.gasBasis, 'derived_from_cef');
+    expect(parsed.wasteBasis, 'rated_standby');
+
+    final old = CloudEnergyAllocation.fromJson(_allocation());
+    expect(old.fuel, isNull);
+    expect(old.gasEnergy, isNull);
+    expect(old.gasCost, isNull);
+    expect(old.gasBasis, isNull);
+
+    final standby = CloudEnergyAllocation.fromJson({
+      ..._allocation(),
+      'standby_cost': {'amount': '0.12', 'currency': 'USD'},
+    });
+    expect(standby.standbyCost!.amount, '0.12');
+  });
+
+  test('rejects invalid gas fields', () {
+    for (final bad in [
+      {
+        'gas_energy': {'value': '22.7', 'unit': 'kWh'},
+      },
+      {
+        'gas_energy_kwh_eq': {'value': '665.3', 'unit': 'therm'},
+      },
+      {'fuel': 'coal'},
+      {'gas_rate_basis': 'home_tariff'},
+      {'gas_basis': 'measured'},
+    ]) {
+      expect(
+        () => CloudEnergyAllocation.fromJson({..._allocation(), ...bad}),
+        throwsFormatException,
+      );
+    }
+  });
+
   test('parses synthetic split and scoped device rows in both responses', () {
     const applianceId = '10000000-0000-4000-8000-000000000001';
     final split = _allocation(sample: true)

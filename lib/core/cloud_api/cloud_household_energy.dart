@@ -44,6 +44,23 @@ class CloudEnergyQuantity {
   }
 }
 
+/// Natural gas quantity; therms only, kept apart from electric kWh.
+class CloudFuelQuantity {
+  const CloudFuelQuantity({required this.value, required this.unit});
+  final String value;
+  final String unit;
+
+  factory CloudFuelQuantity.fromJson(Object? value) {
+    final json = _object(value, 'fuel quantity');
+    _keys(json, const {'value', 'unit'});
+    final amount = _decimal(json['value'], 'fuel quantity value');
+    if (json['unit'] != 'therm') {
+      throw const FormatException('Invalid fuel quantity unit');
+    }
+    return CloudFuelQuantity(value: amount, unit: 'therm');
+  }
+}
+
 class CloudEnergyAllocation {
   const CloudEnergyAllocation({
     required this.energy,
@@ -58,6 +75,15 @@ class CloudEnergyAllocation {
     required this.evidenceBasis,
     this.wasteBasis,
     this.rateBasis,
+    this.fuel,
+    this.gasEnergy,
+    this.gasEnergyKwhEq,
+    this.totalEnergyKwhEq,
+    this.gasCost,
+    this.totalCost,
+    this.standbyCost,
+    this.gasRateBasis,
+    this.gasBasis,
   });
 
   final CloudEnergyQuantity? energy;
@@ -74,6 +100,17 @@ class CloudEnergyAllocation {
   /// Provenance markers for tracking only; never shown on screen.
   final String? wasteBasis;
   final String? rateBasis;
+
+  /// Gas fields are absent or null on electric-only and older payloads.
+  final String? fuel;
+  final CloudFuelQuantity? gasEnergy;
+  final CloudEnergyQuantity? gasEnergyKwhEq;
+  final CloudEnergyQuantity? totalEnergyKwhEq;
+  final CloudEnergyMoney? gasCost;
+  final CloudEnergyMoney? totalCost;
+  final CloudEnergyMoney? standbyCost;
+  final String? gasRateBasis;
+  final String? gasBasis;
 
   factory CloudEnergyAllocation.fromJson(Object? value) {
     final json = _object(value, 'allocation');
@@ -92,8 +129,29 @@ class CloudEnergyAllocation {
         'evidence_basis',
         'waste_basis',
         'rate_basis',
+        'fuel',
+        'gas_energy',
+        'gas_energy_kwh_eq',
+        'total_energy_kwh_eq',
+        'gas_cost',
+        'total_cost',
+        'standby_cost',
+        'gas_rate_basis',
+        'gas_basis',
       },
-      optional: const {'waste_basis', 'rate_basis'},
+      optional: const {
+        'waste_basis',
+        'rate_basis',
+        'fuel',
+        'gas_energy',
+        'gas_energy_kwh_eq',
+        'total_energy_kwh_eq',
+        'gas_cost',
+        'total_cost',
+        'standby_cost',
+        'gas_rate_basis',
+        'gas_basis',
+      },
     );
     return CloudEnergyAllocation(
       energy: _nullable(json['energy'], CloudEnergyQuantity.fromJson),
@@ -132,11 +190,53 @@ class CloudEnergyAllocation {
       }, 'allocation evidence basis'),
       wasteBasis: _nullable(
         json['waste_basis'],
-        (v) => _enumValue(v, const {'standby', 'floor', 'demo'}, 'waste basis'),
+        (v) => _enumValue(v, const {
+          'standby',
+          'floor',
+          'demo',
+          'rated_standby',
+        }, 'waste basis'),
       ),
       rateBasis: _nullable(
         json['rate_basis'],
         (v) => _enumValue(v, const {'home_tariff', 'us_average'}, 'rate basis'),
+      ),
+      fuel: _nullable(
+        json['fuel'],
+        (v) => _enumValue(v, const {
+          'electricity',
+          'natural_gas',
+          'propane',
+        }, 'fuel'),
+      ),
+      gasEnergy: _nullable(json['gas_energy'], CloudFuelQuantity.fromJson),
+      gasEnergyKwhEq: _nullable(
+        json['gas_energy_kwh_eq'],
+        CloudEnergyQuantity.fromJson,
+      ),
+      totalEnergyKwhEq: _nullable(
+        json['total_energy_kwh_eq'],
+        CloudEnergyQuantity.fromJson,
+      ),
+      gasCost: _nullable(json['gas_cost'], CloudEnergyMoney.fromJson),
+      totalCost: _nullable(json['total_cost'], CloudEnergyMoney.fromJson),
+      standbyCost: _nullable(json['standby_cost'], CloudEnergyMoney.fromJson),
+      gasRateBasis: _nullable(
+        json['gas_rate_basis'],
+        (v) => _enumValue(v, const {
+          'user_tariff',
+          'state_average',
+          'national_average',
+          'static',
+        }, 'gas rate basis'),
+      ),
+      gasBasis: _nullable(
+        json['gas_basis'],
+        (v) => _enumValue(v, const {
+          'rated_fact',
+          'derived_from_cef',
+          'typical',
+        }, 'gas basis'),
       ),
     );
   }
