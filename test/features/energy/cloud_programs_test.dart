@@ -178,6 +178,31 @@ void main() {
     );
   });
 
+  test(
+    'accepts omitted, empty and populated research facts without display',
+    () {
+      expect(CloudProgramPage.fromJson(page()).programs, hasLength(1));
+      for (final facts in [
+        <dynamic>[],
+        <dynamic>[
+          {'source': 'internal'},
+        ],
+      ]) {
+        final parsed = CloudProgramPage.fromJson({
+          ...page(),
+          'research_facts': facts,
+        });
+        expect(parsed.programs, hasLength(1));
+      }
+      for (final facts in [null, 'wrong', {}]) {
+        expect(
+          () => CloudProgramPage.fromJson({...page(), 'research_facts': facts}),
+          throwsFormatException,
+        );
+      }
+    },
+  );
+
   test('accepts every availability returned by the owner program route', () {
     const availability = [
       'open',
@@ -341,7 +366,10 @@ void main() {
       ),
       client: MockClient((request) async {
         seen.add(request);
-        return http.Response(jsonEncode(page()), 200);
+        return http.Response(
+          jsonEncode({...page(), 'research_facts': []}),
+          200,
+        );
       }),
     );
     expect(

@@ -211,12 +211,15 @@ class CloudRecommendationBatch {
     if (rows is! List || rows.length > 200 || asOf == null) {
       throw const FormatException('Invalid cloud recommendation list');
     }
-    final actions = rows.map((row) {
-      if (row is! Map<String, dynamic>) {
-        throw const FormatException('Invalid cloud recommendation');
+    final actions = <CloudRecommendation>[];
+    for (final row in rows) {
+      if (row is! Map<String, dynamic>) continue;
+      try {
+        actions.add(CloudRecommendation.fromJson(row, applianceIds));
+      } on FormatException {
+        // A malformed action cannot invalidate other owned actions.
       }
-      return CloudRecommendation.fromJson(row, applianceIds);
-    }).toList();
+    }
     final keys = actions
         .map((action) => '${action.applianceId.toLowerCase()}/${action.ruleId}')
         .toSet();

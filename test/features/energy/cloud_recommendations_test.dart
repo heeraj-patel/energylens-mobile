@@ -72,7 +72,7 @@ void main() {
       'candidate',
     );
     expect(
-      () => CloudRecommendationBatch.fromJson(
+      CloudRecommendationBatch.fromJson(
         {
           'actions': [
             {...action(), 'appliance_id': foreign},
@@ -80,8 +80,8 @@ void main() {
           'as_of': body['as_of'],
         },
         {appliance},
-      ),
-      throwsFormatException,
+      ).actions,
+      isEmpty,
     );
     final benefit = CloudRecommendation.fromJson(
       {
@@ -153,7 +153,7 @@ void main() {
 
   test('active action requires evidence and duplicate rules fail closed', () {
     expect(
-      () => CloudRecommendationBatch.fromJson(
+      CloudRecommendationBatch.fromJson(
         {
           'actions': [
             {...action(), 'state': 'active', 'next_question': null},
@@ -161,8 +161,8 @@ void main() {
           'as_of': '2026-10-01T12:00:00Z',
         },
         {appliance},
-      ),
-      throwsFormatException,
+      ).actions,
+      isEmpty,
     );
     expect(
       () => CloudRecommendationBatch.fromJson(
@@ -261,7 +261,7 @@ void main() {
     );
     expect(parsed.actions.map((item) => item.ruleId), ruleIds);
     expect(
-      () => CloudRecommendationBatch.fromJson(
+      CloudRecommendationBatch.fromJson(
         {
           'actions': [
             {...action(), 'rule_id': 'unrecognized.future_rule'},
@@ -269,8 +269,8 @@ void main() {
           'as_of': '2026-10-01T12:00:00Z',
         },
         {appliance},
-      ),
-      throwsFormatException,
+      ).actions,
+      isEmpty,
     );
   });
 
@@ -287,7 +287,7 @@ void main() {
       expect(parsed.actions, hasLength(1));
       expect(parsed.actions.single.applianceId, appliance);
       expect(
-        () => CloudRecommendationBatch.fromJson(
+        CloudRecommendationBatch.fromJson(
           {
             'actions': [
               {
@@ -299,9 +299,42 @@ void main() {
             'as_of': '2026-10-01T12:00:00Z',
           },
           {appliance},
-        ),
-        throwsFormatException,
+        ).actions,
+        isEmpty,
       );
     },
   );
+
+  test('skips malformed and foreign rows while preserving valid order', () {
+    final parsed = CloudRecommendationBatch.fromJson(
+      {
+        'actions': [
+          action(),
+          'malformed',
+          {...action(), 'rule_id': 'unknown'},
+          {...action(), 'appliance_id': foreign},
+          {...action(), 'rule_id': 'fan.speed_setting'},
+        ],
+        'as_of': '2026-10-01T12:00:00Z',
+      },
+      {appliance},
+    );
+    expect(parsed.actions.map((item) => item.ruleId), [
+      'computer.sleep_settings',
+      'fan.speed_setting',
+    ]);
+  });
+
+  test('invalid envelope still rejects the batch', () {
+    for (final body in [
+      {'actions': 'bad', 'as_of': '2026-10-01T12:00:00Z'},
+      {'actions': [], 'as_of': 'bad'},
+      {'actions': List.filled(201, action()), 'as_of': '2026-10-01T12:00:00Z'},
+    ]) {
+      expect(
+        () => CloudRecommendationBatch.fromJson(body, {appliance}),
+        throwsFormatException,
+      );
+    }
+  });
 }

@@ -336,8 +336,16 @@ class CloudProgramPage {
     final asOf = _instant(json['as_of']);
     final reason = json['reason'];
     if (json.keys.any(
-          (key) => !{'programs', 'as_of', 'reason', 'coverage'}.contains(key),
+          (key) => !{
+            'programs',
+            'as_of',
+            'reason',
+            'coverage',
+            'research_facts',
+          }.contains(key),
         ) ||
+        (json.containsKey('research_facts') &&
+            json['research_facts'] is! List) ||
         rows is! List ||
         rows.length > 100 ||
         asOf == null ||

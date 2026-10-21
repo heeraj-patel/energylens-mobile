@@ -67,9 +67,13 @@ function makePage(rows = defaultRows()) {
     createElement: () => new Element()
   };
   for (const item of rows) feed.appendChild(item);
+  const helper = fs.readFileSync(
+    path.join(__dirname, '../../../assets/design_pages/shared/list_pagination.js'), 'utf8');
   const script = fs.readFileSync(
     path.join(__dirname, '../../../assets/design_pages/devices/controls.js'), 'utf8');
-  vm.runInNewContext(script, {document});
+  const context = {document, window: {}};
+  vm.runInNewContext(helper, context);
+  vm.runInNewContext(script, context);
   const visible = () => feed.children.filter(item => !item.hidden)
     .map(item => item.fields?.[0].textContent || item.getAttribute('data-el-device-name'));
   return {feed, filter, sort, summary, pagination, pageNumbers, previous, next, visible};

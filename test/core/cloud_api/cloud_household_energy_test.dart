@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_household_energy.dart';
@@ -370,7 +371,14 @@ void main() {
       final client = _api(
         MockClient((request) async {
           seen.add(request);
-          return http.Response(jsonEncode(_trends(sample: true)), 200);
+          final json = _trends(sample: true);
+          (json['totals'] as Map<String, dynamic>)
+            ..['waste_basis'] = 'demo'
+            ..['rate_basis'] = 'us_average';
+          ((json['buckets'] as List).single['allocation']
+                  as Map<String, dynamic>)['rate_basis'] =
+              'home_tariff';
+          return http.Response(jsonEncode(json), 200);
         }),
       );
       final result = await client.householdEnergyTrends(
@@ -385,6 +393,9 @@ void main() {
       expect(result.buckets, hasLength(1));
       expect(result.buckets.single.coverageFraction, '1');
       expect(result.buckets.single.allocation.evidenceBasis, 'synthetic');
+      expect(result.totals.wasteBasis, 'demo');
+      expect(result.totals.rateBasis, 'us_average');
+      expect(result.buckets.single.allocation.rateBasis, 'home_tariff');
       expect(
         result.buckets.single.allocation.cost!.amount,
         '2.4680000000000000002',
@@ -402,14 +413,16 @@ void main() {
           seen.add(request);
           final json = _trends(sample: true);
           json['granularity'] = 'day';
+          (json['totals'] as Map<String, dynamic>)['rate_basis'] = 'us_average';
           return http.Response(jsonEncode(json), 200);
         }),
       );
-      await client.householdEnergyTrends(
+      final result = await client.householdEnergyTrends(
         homeId,
         granularity: 'day',
         window: 'trailing_30_days',
       );
+      expect(result.totals.rateBasis, 'us_average');
       expect(seen.single.url.queryParameters, {
         'granularity': 'day',
         'window': 'trailing_30_days',
@@ -659,6 +672,118 @@ void main() {
     );
     unavailable.close();
   });
+
+  test(
+    'failed reads retain status and request path without response text',
+    () async {
+      final api = _api(
+        MockClient((request) async {
+          if (request.url.path.endsWith('/dashboard')) {
+            return http.Response('{"secret":"bad"}', 200);
+          }
+          return http.Response('{"code":"private-code"}', 503);
+        }),
+      );
+      Object? parseError;
+      Object? httpError;
+      try {
+        await api.householdDashboard(homeId);
+      } catch (error) {
+        parseError = error;
+      }
+      try {
+        await api.householdEnergyTrends(homeId, granularity: 'hour');
+      } catch (error) {
+        httpError = error;
+      }
+      expect(parseError, isA<FormatException>());
+      expect(cloudRequestFailureContext(parseError!)?.statusCode, 200);
+      expect(
+        cloudRequestFailureContext(parseError)?.path,
+        '/v1/homes/$homeId/dashboard',
+      );
+      expect(httpError, isA<CloudApiException>());
+      expect(cloudRequestFailureContext(httpError!)?.statusCode, 503);
+      expect(
+        cloudRequestFailureContext(httpError)?.path,
+        '/v1/homes/$homeId/energy-trends',
+      );
+      api.close();
+    },
+  );
+
+  test(
+    'transport failure retains request path with unavailable status',
+    () async {
+      final api = _api(
+        MockClient((_) async => throw const SocketException('private-host')),
+      );
+      Object? failure;
+      try {
+        await api.householdDashboard(homeId);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure, isA<SocketException>());
+      final context = cloudRequestFailureContext(failure!);
+      expect(context?.type, 'SocketException');
+      expect(context?.statusCode, isNull);
+      expect(context?.path, '/v1/homes/$homeId/dashboard');
+      api.close();
+    },
+  );
+
+  test('concurrent parse failures retain their own endpoint paths', () async {
+    final api = _api(MockClient((_) async => http.Response('{}', 200)));
+    Future<Object> failure(Future<Object> request) async {
+      try {
+        await request;
+      } catch (error) {
+        return error;
+      }
+      throw StateError('Expected a parse failure');
+    }
+
+    final errors = await Future.wait([
+      failure(api.householdDashboard(homeId)),
+      failure(api.householdEnergyTrends(homeId, granularity: 'hour')),
+    ]);
+    expect(errors, everyElement(isA<FormatException>()));
+    expect(errors[0], isNot(same(errors[1])));
+    expect(
+      cloudRequestFailureContext(errors[0])?.path,
+      '/v1/homes/$homeId/dashboard',
+    );
+    expect(
+      cloudRequestFailureContext(errors[1])?.path,
+      '/v1/homes/$homeId/energy-trends',
+    );
+    api.close();
+  });
+
+  test(
+    'malformed appliance, estimate and hub reads retain 200 and path',
+    () async {
+      final api = _api(MockClient((_) async => http.Response('{}', 200)));
+      final reads = <String, Future<Object>>{
+        '/v1/homes/$homeId/appliances': api.applianceList(homeId),
+        '/v1/homes/$homeId/estimates': api.estimates(homeId),
+        '/v1/homes/$homeId/hubs': api.hubs(homeId),
+      };
+      for (final entry in reads.entries) {
+        Object? failure;
+        try {
+          await entry.value;
+        } catch (error) {
+          failure = error;
+        }
+        expect(failure, isA<FormatException>());
+        expect(cloudRequestFailureContext(failure!)?.statusCode, 200);
+        expect(cloudRequestFailureContext(failure)?.path, entry.key);
+      }
+      api.close();
+    },
+  );
 
   test(
     'sample dashboard preserves null as-of and requires fixture revision',

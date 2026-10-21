@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io' show HandshakeException, SocketException, TlsException;
 
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
+    show TargetPlatform, debugPrint, defaultTargetPlatform, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:http/http.dart' show ClientException;
@@ -1630,6 +1630,14 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
       return;
     }
     _internalErrorShownAt = now;
+    if (kDebugMode) {
+      final request = cloudRequestFailureContext(error);
+      debugPrint(
+        'ELR-064 type=${request?.type ?? error.runtimeType} '
+        'status=${request?.statusCode ?? (error is HubRequestException ? error.statusCode : 'unavailable')} '
+        'path=${request?.path ?? 'unavailable'}',
+      );
+    }
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(const SnackBar(content: Text(internalErrorMessage)));

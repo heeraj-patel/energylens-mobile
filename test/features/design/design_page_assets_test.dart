@@ -48,6 +48,11 @@ String _visibleText(String html) {
       .trim();
 }
 
+String _withoutTipsPaginationText(String text, String pageId) =>
+    pageId == 'tips_efficiency' || pageId == 'tips_care_upgrades'
+    ? text.replaceFirst(' chevron_left chevron_right', '')
+    : text;
+
 String _withApprovedPolish(String text, String pageId) {
   if (pageId == 'dashboard') {
     return text.replaceFirst(
@@ -293,34 +298,37 @@ void main() {
       }
     });
 
-    test('Efficiency opportunity ink is green while waste costs stay amber', () async {
-      const pages = [
-        'efficiency',
-        'efficiency_away',
-        'efficiency_habits',
-        'efficiency_peak_rates',
-      ];
-      for (final pageId in pages) {
-        final html = await rootBundle.loadString(
-          'assets/design_pages/$pageId/app.html',
-        );
-        expect(
-          html,
-          contains(
-            'class="el-useful-ink" data-el-bind="${pageId}_text_006">\$18.60',
-          ),
-          reason: pageId,
-        );
-        expect(
-          RegExp(
-            r'<span class="[^"]*bg-amber-100 el-waste-ink[^"]*" data-el-bind="[^"]+">\+?\$[^<]+</span>',
-          ).allMatches(html),
-          isNotEmpty,
-          reason: pageId,
-        );
-        expect(html, isNot(contains('tips_and_updates')), reason: pageId);
-      }
-    });
+    test(
+      'Efficiency opportunity ink is green while waste costs stay amber',
+      () async {
+        const pages = [
+          'efficiency',
+          'efficiency_away',
+          'efficiency_habits',
+          'efficiency_peak_rates',
+        ];
+        for (final pageId in pages) {
+          final html = await rootBundle.loadString(
+            'assets/design_pages/$pageId/app.html',
+          );
+          expect(
+            html,
+            contains(
+              'class="el-useful-ink" data-el-bind="${pageId}_text_006">\$18.60',
+            ),
+            reason: pageId,
+          );
+          expect(
+            RegExp(
+              r'<span class="[^"]*bg-amber-100 el-waste-ink[^"]*" data-el-bind="[^"]+">\+?\$[^<]+</span>',
+            ).allMatches(html),
+            isNotEmpty,
+            reason: pageId,
+          );
+          expect(html, isNot(contains('tips_and_updates')), reason: pageId);
+        }
+      },
+    );
 
     test('source and packaged page content stays unchanged outside chrome', () async {
       for (final pageId in _pageIds) {
@@ -480,13 +488,16 @@ void main() {
         }
         expect(
           _withoutRestoredProfileActions(
-            _visibleText(
-              _withoutApprovedDeviceSections(
-                _withoutApprovedRevealControls(
-                  _withSourceFallbackValues(packagedHtml, pageId),
+            _withoutTipsPaginationText(
+              _visibleText(
+                _withoutApprovedDeviceSections(
+                  _withoutApprovedRevealControls(
+                    _withSourceFallbackValues(packagedHtml, pageId),
+                  ),
+                  pageId,
                 ),
-                pageId,
               ),
+              pageId,
             ),
             pageId,
           ),
