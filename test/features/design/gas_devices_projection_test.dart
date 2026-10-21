@@ -183,7 +183,7 @@ void main() {
       cost: '0.200000',
       useful: '0.150000',
       waste: '0.050000',
-      wasteBasis: 'floor',
+      wasteBasis: 'standby',
       fuel: 'natural_gas',
       gasCost: '0.400000',
       gasKnown: true,
@@ -227,9 +227,9 @@ void main() {
     expect(row.wasteCost, isNull);
   });
 
-  test('metered gas row does not show measured waste', () {
+  test('metered gas row shows the waste the Cloud sends', () {
     final row = _row(projection, meteredGas);
-    expect(row.wasteCost, isNull);
+    expect(row.wasteCost, '\$0.05');
     expect(row.usageCost, '\$0.60');
   });
 
