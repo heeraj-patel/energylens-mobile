@@ -56,6 +56,8 @@ class CloudEnergyAllocation {
     required this.unclassifiedCost,
     required this.availability,
     required this.evidenceBasis,
+    this.wasteBasis,
+    this.rateBasis,
   });
 
   final CloudEnergyQuantity? energy;
@@ -69,20 +71,30 @@ class CloudEnergyAllocation {
   final String availability;
   final String evidenceBasis;
 
+  /// Provenance markers for tracking only; never shown on screen.
+  final String? wasteBasis;
+  final String? rateBasis;
+
   factory CloudEnergyAllocation.fromJson(Object? value) {
     final json = _object(value, 'allocation');
-    _keys(json, const {
-      'energy',
-      'cost',
-      'useful_energy',
-      'useful_cost',
-      'waste_energy',
-      'waste_cost',
-      'unclassified_energy',
-      'unclassified_cost',
-      'availability',
-      'evidence_basis',
-    });
+    _keys(
+      json,
+      const {
+        'energy',
+        'cost',
+        'useful_energy',
+        'useful_cost',
+        'waste_energy',
+        'waste_cost',
+        'unclassified_energy',
+        'unclassified_cost',
+        'availability',
+        'evidence_basis',
+        'waste_basis',
+        'rate_basis',
+      },
+      optional: const {'waste_basis', 'rate_basis'},
+    );
     return CloudEnergyAllocation(
       energy: _nullable(json['energy'], CloudEnergyQuantity.fromJson),
       cost: _nullable(json['cost'], CloudEnergyMoney.fromJson),
@@ -118,6 +130,14 @@ class CloudEnergyAllocation {
         'synthetic',
         'unavailable',
       }, 'allocation evidence basis'),
+      wasteBasis: _nullable(
+        json['waste_basis'],
+        (v) => _enumValue(v, const {'standby', 'floor', 'demo'}, 'waste basis'),
+      ),
+      rateBasis: _nullable(
+        json['rate_basis'],
+        (v) => _enumValue(v, const {'home_tariff', 'us_average'}, 'rate basis'),
+      ),
     );
   }
 }

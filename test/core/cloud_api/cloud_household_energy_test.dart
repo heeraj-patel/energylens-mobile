@@ -153,6 +153,39 @@ void main() {
     );
   });
 
+  test('parses waste_basis and rate_basis on Cloud allocations', () {
+    final row = _allocation()
+      ..['useful_energy'] = {'value': '9', 'unit': 'kWh'}
+      ..['waste_energy'] = {'value': '0.5', 'unit': 'kWh'}
+      ..['waste_cost'] = {'amount': '0.01', 'currency': 'USD'}
+      ..['waste_basis'] = 'floor'
+      ..['rate_basis'] = 'us_average';
+    final json = _dashboard()
+      ..['totals'] = row
+      ..['device_allocations'] = [
+        {'device_id': 'demo-device-02', 'name': null, 'allocation': row},
+      ];
+    final parsed = CloudHouseholdDashboard.fromJson(
+      json,
+      expectedHomeId: homeId,
+    );
+    expect(parsed.totals.wasteBasis, 'floor');
+    expect(parsed.totals.rateBasis, 'us_average');
+    final device = parsed.deviceAllocations.single.allocation;
+    expect(device.wasteBasis, 'floor');
+    expect(device.rateBasis, 'us_average');
+    expect(CloudEnergyAllocation.fromJson(_allocation()).wasteBasis, isNull);
+    for (final bad in [
+      {'waste_basis': 'unknown'},
+      {'rate_basis': 'regional_average'},
+    ]) {
+      expect(
+        () => CloudEnergyAllocation.fromJson({..._allocation(), ...bad}),
+        throwsFormatException,
+      );
+    }
+  });
+
   test('parses synthetic split and scoped device rows in both responses', () {
     const applianceId = '10000000-0000-4000-8000-000000000001';
     final split = _allocation(sample: true)
