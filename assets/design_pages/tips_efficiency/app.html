@@ -126,7 +126,7 @@
 <!-- TAB PANELS CONTAINER -->
 <div class="flex flex-col gap-space-md w-full"><!-- Efficiency Tab Content -->
 <div class="flex flex-col gap-3.5 w-full" id="tab-panel-efficiency" role="tabpanel">  <!-- Section 1: Efficient Usage -->
-  <div class="flex flex-col gap-2 p-3 rounded-2xl bg-surface-container-low border border-surface-container-high/80 shadow-sm">
+  <div data-el-tip-group class="flex flex-col gap-2 p-3 rounded-2xl bg-surface-container-low border border-surface-container-high/80 shadow-sm">
     <div class="flex items-center justify-between pb-1.5 border-b border-surface-container-high/60">
       <div class="flex items-center gap-1.5">
         <span class="material-symbols-outlined text-primary text-[18px]">electric_bolt</span>
@@ -136,18 +136,18 @@
     </div>
     <div class="flex flex-col gap-2">
       <!-- Item 1: Power-Off Scheduling -->
-      <div class="el-tip-room p-2.5 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 transition-all"><div class="w-8 h-8 rounded-lg bg-surface-container-low flex items-center justify-center text-primary flex-shrink-0">
+      <div data-el-tip-item class="el-tip-room p-2.5 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 transition-all"><div class="w-8 h-8 rounded-lg bg-surface-container-low flex items-center justify-center text-primary flex-shrink-0">
             <span class="material-symbols-outlined text-[18px]">bedtime</span>
           </div><span class="font-semibold text-slate-900 text-[13px] leading-tight truncate" data-el-bind="tips_efficiency_text_011">Power-Off Scheduling</span><span class="text-on-surface-variant text-[11px] leading-tight truncate" data-el-bind="tips_efficiency_text_012">Schedule power-off during Night or Away hours</span><span class="el-useful-ink px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-semibold text-[11px] flex-shrink-0" data-el-bind="tips_efficiency_text_013">Save ~$12/mo</span></div>
       <!-- Item 2: Smart Strips & Plugs -->
-      <div class="el-tip-room p-2.5 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 transition-all"><div class="w-8 h-8 rounded-lg bg-surface-container-low flex items-center justify-center text-primary flex-shrink-0">
+      <div data-el-tip-item class="el-tip-room p-2.5 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 transition-all"><div class="w-8 h-8 rounded-lg bg-surface-container-low flex items-center justify-center text-primary flex-shrink-0">
             <span class="material-symbols-outlined text-[18px]">power</span>
           </div><span class="font-semibold text-slate-900 text-[13px] leading-tight truncate" data-el-bind="tips_efficiency_text_014">Smart Strips &amp; Plugs</span><span class="text-on-surface-variant text-[11px] leading-tight truncate" data-el-bind="tips_efficiency_text_015">Auto-isolate idle gear and standby loss</span><span class="el-useful-ink px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-semibold text-[11px] flex-shrink-0" data-el-bind="tips_efficiency_text_016">Save ~$8/mo</span></div>
     </div>
   </div>
 
   <!-- Section 2: Usage Patterns Changes -->
-  <div class="flex flex-col gap-2 p-3 rounded-2xl bg-surface-container-low border border-surface-container-high/80 shadow-sm">
+  <div data-el-tip-group class="flex flex-col gap-2 p-3 rounded-2xl bg-surface-container-low border border-surface-container-high/80 shadow-sm">
     <div class="flex items-center justify-between pb-1.5 border-b border-surface-container-high/60">
       <div class="flex items-center gap-1.5">
         <span class="material-symbols-outlined text-primary text-[18px]">schedule</span>
@@ -157,15 +157,15 @@
     </div>
     <div class="flex flex-col gap-2">
       <!-- Item 1: Off-Peak Hours -->
-      <div class="el-tip-room p-2.5 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 transition-all"><div class="w-8 h-8 rounded-lg bg-surface-container-low flex items-center justify-center text-primary flex-shrink-0">
+      <div data-el-tip-item class="el-tip-room p-2.5 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 transition-all"><div class="w-8 h-8 rounded-lg bg-surface-container-low flex items-center justify-center text-primary flex-shrink-0">
             <span class="material-symbols-outlined text-[18px]">wb_twilight</span>
           </div><span class="font-semibold text-slate-900 text-[13px] leading-tight truncate" data-el-bind="tips_efficiency_text_019">Off-Peak Hours</span><span class="text-on-surface-variant text-[11px] leading-tight truncate" data-el-bind="tips_efficiency_text_020">Run heavy loads like laundry after 8 PM</span><span class="el-useful-ink px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-semibold text-[11px] flex-shrink-0" data-el-bind="tips_efficiency_text_021">Save ~$18/mo</span></div>
       <!-- Item 2: Weather-Aware Usage -->
-      <div class="el-tip-room p-2.5 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 transition-all"><div class="w-8 h-8 rounded-lg bg-surface-container-low flex items-center justify-center text-primary flex-shrink-0">
+      <div data-el-tip-item class="el-tip-room p-2.5 rounded-xl bg-surface-container-lowest border border-surface-container-high/80 transition-all"><div class="w-8 h-8 rounded-lg bg-surface-container-low flex items-center justify-center text-primary flex-shrink-0">
             <span class="material-symbols-outlined text-[18px]">thermostat</span>
           </div><span class="font-semibold text-slate-900 text-[13px] leading-tight truncate" data-el-bind="tips_efficiency_text_022">Weather-Aware Usage</span><span class="text-on-surface-variant text-[11px] leading-tight truncate" data-el-bind="tips_efficiency_text_023">Float thermostat ±2°F during peak weather</span><span class="el-useful-ink px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-semibold text-[11px] flex-shrink-0" data-el-bind="tips_efficiency_text_024">Save ~$14/mo</span></div>
     </div>
-  </div><div id="el-live-tips" class="flex flex-col gap-space-sm"></div></div></div>
+  </div><div id="el-live-tips" data-el-tip-group class="flex flex-col gap-space-sm"></div><div id="tips-pagination-footer" class="col-span-full flex flex-wrap items-center justify-between gap-2 pt-2" hidden style="display:none"><span id="tips-pagination-summary" class="font-label-md text-[13px] text-on-surface-variant font-medium"></span><div id="tips-pagination" class="flex items-center gap-1.5"><button id="tips-previous-page" type="button" aria-label="Previous page" class="w-8 h-8 rounded-lg bg-surface-container-lowest border border-outline-variant/60 text-on-surface flex items-center justify-center disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span class="material-symbols-outlined text-[18px]" aria-hidden="true">chevron_left</span></button><div id="tips-page-numbers" class="flex items-center gap-1"></div><button id="tips-next-page" type="button" aria-label="Next page" class="w-8 h-8 rounded-lg bg-surface-container-lowest border border-outline-variant/60 text-on-surface flex items-center justify-center disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span class="material-symbols-outlined text-[18px]" aria-hidden="true">chevron_right</span></button></div></div></div></div>
 </div>
 <script>
   function switchTab(target) {
@@ -202,7 +202,7 @@
       icon.classList.remove('rotate-180');
     }
   }
-</script></main><div id="el-footer"></div><script>EnergyLensChrome.mount({"activeTab":"tips","homeName":"The Miller Home","pageLabel":"Perks And Tips","leadingIcon":"bolt","profileImage":"../shared/images/image-3.jpg","tabIcons":["space_dashboard","devices","energy_savings_leaf","savings","settings"],"tabLabels":["Dashboard","Devices","Efficiency","Tips","Settings"],"headerActions":["tips_efficiency_action_001","tips_efficiency_action_002"],"headerBindings":["tips_efficiency_text_001","tips_efficiency_text_002"],"footerActions":["tips_efficiency_action_007","tips_efficiency_action_008","tips_efficiency_action_009","tips_efficiency_action_010","tips_efficiency_action_011"],"footerBindings":["tips_efficiency_text_025","tips_efficiency_text_026","tips_efficiency_text_027","tips_efficiency_text_028","tips_efficiency_text_029"]});</script>
+</script><script src="../shared/list_pagination.js"></script><script src="../shared/tips_pagination.js"></script></main><div id="el-footer"></div><script>EnergyLensChrome.mount({"activeTab":"tips","homeName":"The Miller Home","pageLabel":"Perks And Tips","leadingIcon":"bolt","profileImage":"../shared/images/image-3.jpg","tabIcons":["space_dashboard","devices","energy_savings_leaf","savings","settings"],"tabLabels":["Dashboard","Devices","Efficiency","Tips","Settings"],"headerActions":["tips_efficiency_action_001","tips_efficiency_action_002"],"headerBindings":["tips_efficiency_text_001","tips_efficiency_text_002"],"footerActions":["tips_efficiency_action_007","tips_efficiency_action_008","tips_efficiency_action_009","tips_efficiency_action_010","tips_efficiency_action_011"],"footerBindings":["tips_efficiency_text_025","tips_efficiency_text_026","tips_efficiency_text_027","tips_efficiency_text_028","tips_efficiency_text_029"]});</script>
 
 
 </body></html>

@@ -259,10 +259,11 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const scripts = JSON.parse(process.argv[1]);
 class Element {
-  constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.textContent = ''; this.className = ''; this.style = {}; }
+  constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.events = []; this.textContent = ''; this.className = ''; this.style = {}; }
   append(node) { node.parent = this; this.children.push(node); }
   replaceChildren() { this.children = []; }
   setAttribute(key, value) { this.attributes[key] = value; }
+  dispatchEvent(event) { this.events.push(event.type); }
   remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); this.parent = null; }
   get isConnected() { return !!this.parent; }
 }
@@ -275,7 +276,7 @@ function render(page, script, generation = 3, startMs = Date.UTC(2026, 9, 13, 11
     getElementById: id => id === ({perks_tips:'el-live-programs', tips_efficiency:'el-live-tips', tips_care_upgrades:'el-live-care'})[page] ? mount : null,
     createElement: tag => new Element(tag),
   };
-  const context = {document, Date: {now: () => nowMs},
+  const context = {document, Event: class { constructor(type) { this.type = type; } }, Date: {now: () => nowMs},
     setTimeout: (fn, delay) => timers.push({fn, at: nowMs + delay}),
     window: {__energyLensTextBindingContext: {homeId:'11111111-1111-4111-8111-111111111111', page, generation}}};
   const accepted = vm.runInNewContext(script, context);
@@ -307,6 +308,8 @@ assert.equal(tips.mount.children[1].children[0].children[0].children[1].textCont
 assert.equal(tips.mount.children[1].children[0].children[0].children[2].textContent, 'Find usage information.');
 const efficiencyCards = tips.mount.children[1].children;
 assert.equal(efficiencyCards.length, 3);
+assert.ok(efficiencyCards.every(card => Object.hasOwn(card.attributes, 'data-el-tip-item')));
+assert.deepEqual(tips.mount.events, ['energylens:tips-changed']);
 assert.equal(efficiencyCards[1].children[0].tag, 'div');
 assert.equal(efficiencyCards[1].children[0].children[0].children[0].href, 'https://manufacturer.example/eco-guide');
 assert.equal(efficiencyCards[1].children[0].children[0].children[0].textContent, 'Supported action');
@@ -319,6 +322,8 @@ const care = render('tips_care_upgrades', scripts.care);
 assert.deepEqual(care.mount.children[1].children.map(row => row.children[0].children[0].textContent || row.children[0].children[0].children[0].textContent), ['Supported action', 'Supported action']);
 assert.equal(care.mount.children[1].children[0].children[0].children[3].textContent, 'Save ~$0.42/mo');
 assert.equal(care.mount.children[1].children.length, 2);
+assert.ok(care.mount.children[1].children.every(card => Object.hasOwn(card.attributes, 'data-el-tip-item')));
+assert.deepEqual(care.mount.events, ['energylens:tips-changed']);
 assert.equal(render('perks_tips', scripts.programs, 4).accepted, false);
 assert.equal(render('tips_efficiency', scripts.programs).accepted, false);
 ''',

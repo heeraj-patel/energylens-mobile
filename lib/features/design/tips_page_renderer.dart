@@ -97,7 +97,15 @@ class TipsPageRenderer {
     payload.page === 'tips_care_upgrades'
       ? payload.recommendations.filter(row => row.tipCategory === 'care' || row.tipCategory === 'upgrade')
       : payload.recommendations;
-  if (!rows.length) return true;
+  const notifyTipsChanged = () => {
+    if (payload.page !== 'perks_tips') {
+      mount.dispatchEvent(new Event('energylens:tips-changed', {bubbles: true}));
+    }
+  };
+  if (!rows.length) {
+    notifyTipsChanged();
+    return true;
+  }
   const heading = document.createElement('h2');
   heading.className = 'text-xs font-bold uppercase tracking-wider text-slate-500 font-label-md';
   heading.textContent = payload.page === 'perks_tips' ? 'Other' : 'For your devices';
@@ -109,6 +117,7 @@ class TipsPageRenderer {
   for (const row of rows) {
     const card = document.createElement('article');
     card.className = 'p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm';
+    if (payload.page !== 'perks_tips') card.setAttribute('data-el-tip-item', '');
     card.setAttribute('data-el-source-id', row.id);
     const body = payload.page === 'perks_tips' ? document.createElement('a') : document.createElement('div');
     body.className = 'block';
@@ -157,6 +166,7 @@ class TipsPageRenderer {
     list.append(card);
     if (payload.page === 'perks_tips') timedCards.push({card, expiresAt: row.expiresAt});
   }
+  notifyTipsChanged();
   if (timedCards.length && typeof setTimeout === 'function') {
     const pruneExpired = () => {
       const active = window.__energyLensTextBindingContext;
