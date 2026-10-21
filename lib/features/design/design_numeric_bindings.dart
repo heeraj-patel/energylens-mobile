@@ -11,15 +11,31 @@ import 'devices_domain_repository.dart';
 /// Dormant native preparation only. A missing value stays unknown; no packaged
 /// sample text is a fallback. This result is never sent to the DesignShell.
 class DesignNumericBindings {
-  const DesignNumericBindings(this.bindings, this.unknownBindingIds);
+  const DesignNumericBindings(
+    this.bindings,
+    this.unknownBindingIds, {
+    this.gasLine,
+  });
 
   final List<DesignTextBinding> bindings;
   final Set<String> unknownBindingIds;
+
+  /// Dashboard gas line text (G-C8); null when the home has no priced gas.
+  final String? gasLine;
 
   String encode() => encodeDesignTextBindings(bindings);
 }
 
 const _dashboardDailyIds = <String>{'dashboard_text_006', 'dashboard_text_009'};
+
+/// The Dashboard cost card's period suffix (the text behind dashboard_text_007).
+const dashboardPeriodSuffix = '/day';
+
+/// G-C8, from the home totals' separate gas line (T1).
+String? dashboardGasLine(CloudEnergyAllocation totals) {
+  final money = formatDashboardUsd(totals.gasCost);
+  return money == null ? null : 'Gas appliances: $money$dashboardPeriodSuffix';
+}
 
 final bool _timeZonesReady = _initializeTimeZones();
 
@@ -269,6 +285,9 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
   return DesignNumericBindings(
     List.unmodifiable(bindings),
     Set.unmodifiable(unknown),
+    gasLine: dashboard.totals.availability == 'unavailable'
+        ? null
+        : dashboardGasLine(dashboard.totals),
   );
 }
 

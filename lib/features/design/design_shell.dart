@@ -33,6 +33,7 @@ import 'efficiency_trailing_30_day_bindings.dart';
 import 'dashboard_chart_projection.dart';
 import 'dashboard_chart_renderer.dart';
 import 'dashboard_domain_repository.dart';
+import 'dashboard_gas_line_renderer.dart';
 import 'dashboard_top_savings_bindings.dart';
 import 'design_context_coordinator.dart';
 import 'design_numeric_bindings.dart';
@@ -168,6 +169,8 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
   late final DashboardChartRenderer _chartRenderer = DashboardChartRenderer(
     _bindingGate,
   );
+  late final DashboardGasLineRenderer _gasLineRenderer =
+      DashboardGasLineRenderer(_bindingGate);
   String _dashboardGranularity = 'day';
   int _pageLoadGeneration = 0;
   int _knowledgeRequestGeneration = 0;
@@ -1219,6 +1222,10 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     if (script == null) return;
     try {
       await _controller.runJavaScriptReturningResult(script);
+      final gasScript = _gasLineRenderer.script(ticket, projection.gasLine);
+      if (gasScript != null) {
+        await _controller.runJavaScriptReturningResult(gasScript);
+      }
     } catch (_) {
       // The packaged values remain visible on script failure.
     }

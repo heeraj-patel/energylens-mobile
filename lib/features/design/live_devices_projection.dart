@@ -305,15 +305,22 @@ Map<String, _DailyRealCost> _realDailyCosts(DevicesDomainSnapshot snapshot) {
     final id = row.applianceId;
     if (id == null || row.deviceId != null || rows.containsKey(id)) continue;
     final allocation = row.allocation;
+    if (!const {
+      'measured',
+      'mixed',
+      'estimated',
+    }.contains(allocation.evidenceBasis)) {
+      continue;
+    }
+    if (_isGasFuel(allocation.fuel)) {
+      final gas = _gasRowCost(allocation);
+      if (gas != null) rows[id] = gas;
+      continue;
+    }
     final total = _usdMicros(allocation.cost);
     final useful = _usdMicros(allocation.usefulCost);
     final waste = _usdMicros(allocation.wasteCost);
     if (total == null ||
-        !const {
-          'measured',
-          'mixed',
-          'estimated',
-        }.contains(allocation.evidenceBasis) ||
         (useful != null && useful > total) ||
         (waste != null && waste > total) ||
         (useful != null && waste != null && useful + waste > total)) {
@@ -322,6 +329,24 @@ Map<String, _DailyRealCost> _realDailyCosts(DevicesDomainSnapshot snapshot) {
     rows[id] = _DailyRealCost(_costText(useful), _wasteText(waste), total);
   }
   return rows;
+}
+
+bool _isGasFuel(String? fuel) => fuel == 'natural_gas' || fuel == 'propane';
+
+/// Gas appliances show one cost (owner rule B3): Useful is the useful electric
+/// cost plus gas_cost; Waste stays whatever the allocation reports.
+_DailyRealCost? _gasRowCost(CloudEnergyAllocation a) {
+  final electric = _usdMicros(a.cost);
+  final gas = _usdMicros(a.gasCost);
+  final waste = _usdMicros(a.wasteCost);
+  if (electric == null && gas == null) return null;
+  if (waste != null && waste > (electric ?? BigInt.zero)) return null;
+  final electricUseful =
+      _usdMicros(a.usefulCost) ??
+      (electric == null ? null : electric - (waste ?? BigInt.zero));
+  final useful = (electricUseful ?? BigInt.zero) + (gas ?? BigInt.zero);
+  final total = (electric ?? BigInt.zero) + (gas ?? BigInt.zero);
+  return _DailyRealCost(_costText(useful), _wasteText(waste), total);
 }
 
 BigInt? _usdMicros(CloudEnergyMoney? value) {

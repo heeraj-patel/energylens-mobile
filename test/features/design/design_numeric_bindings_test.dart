@@ -646,4 +646,57 @@ void main() {
     expect(prepared.unknownBindingIds, contains('devices_text_006'));
     expect(prepared.unknownBindingIds, contains('devices_text_091'));
   });
+
+  group('Dashboard gas line (G-C8)', () {
+    void withGas(Map<String, dynamic> json, String? cost) {
+      json['totals']['fuel'] = null;
+      json['totals']['gas_cost'] = cost == null
+          ? null
+          : {'amount': cost, 'currency': 'USD'};
+    }
+
+    test('shows the separate gas total with the cost card period suffix', () {
+      final result = prepareDesignNumericBindings(
+        _dashboardRead(
+          useful: '6.96',
+          waste: '0.02',
+          alterDashboard: (json) => withGas(json, '1.2345'),
+          alterTrends: (json) => withGas(json, '1.2345'),
+        ),
+      );
+      expect(result.gasLine, 'Gas appliances: \$1.23/day');
+      expect(dashboardPeriodSuffix, '/day');
+      expect(result.bindings.map((b) => b.text), ['\$6.96', '\$0.02']);
+    });
+
+    test('is absent for an electric-only home and electric totals match', () {
+      final electric = prepareDesignNumericBindings(
+        _dashboardRead(useful: '6.96', waste: '0.02'),
+      );
+      final gas = prepareDesignNumericBindings(
+        _dashboardRead(
+          useful: '6.96',
+          waste: '0.02',
+          alterDashboard: (json) => withGas(json, '2.00'),
+          alterTrends: (json) => withGas(json, '2.00'),
+        ),
+      );
+      expect(electric.gasLine, isNull);
+      expect(
+        gas.bindings.map((b) => '${b.id}=${b.text}'),
+        electric.bindings.map((b) => '${b.id}=${b.text}'),
+      );
+    });
+
+    test('is absent when gas appliances have no priced gas', () {
+      final result = prepareDesignNumericBindings(
+        _dashboardRead(
+          useful: '6.96',
+          waste: '0.02',
+          alterDashboard: (json) => withGas(json, null),
+        ),
+      );
+      expect(result.gasLine, isNull);
+    });
+  });
 }
