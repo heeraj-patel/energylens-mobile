@@ -334,11 +334,14 @@ Map<String, _DailyRealCost> _realDailyCosts(DevicesDomainSnapshot snapshot) {
 bool _isGasFuel(String? fuel) => fuel == 'natural_gas' || fuel == 'propane';
 
 /// Gas appliances show one cost (owner rule B3): Useful is the useful electric
-/// cost plus gas_cost; Waste stays whatever the allocation reports.
+/// cost plus gas_cost. Unknown gas use shows no cost; only rated standby is Waste.
 _DailyRealCost? _gasRowCost(CloudEnergyAllocation a) {
+  if (a.gasEnergy == null) return null;
   final electric = _usdMicros(a.cost);
   final gas = _usdMicros(a.gasCost);
-  final waste = _usdMicros(a.wasteCost);
+  final waste = a.wasteBasis == 'rated_standby'
+      ? _usdMicros(a.wasteCost)
+      : null;
   if (electric == null && gas == null) return null;
   if (waste != null && waste > (electric ?? BigInt.zero)) return null;
   final electricUseful =

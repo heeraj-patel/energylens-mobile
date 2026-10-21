@@ -12,6 +12,8 @@ const dryer = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const boiler = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const noRate = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const gasOnly = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const unknownGas = '11111111-2222-4222-8222-222222222222';
+const meteredGas = '33333333-3333-4333-8333-333333333333';
 const tagged = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 
 DeviceInventoryItem _item(String id, String name) => DeviceInventoryItem(
@@ -43,6 +45,7 @@ Map<String, Object?> _allocation(
   String? unclassified,
   String? fuel,
   String? gasCost,
+  bool gasKnown = false,
   String? totalCost,
   String? wasteBasis,
 }) => {
@@ -58,6 +61,7 @@ Map<String, Object?> _allocation(
   'evidence_basis': basis,
   'waste_basis': ?wasteBasis,
   'fuel': ?fuel,
+  if (gasKnown) 'gas_energy': {'value': '1.0', 'unit': 'therm'},
   if (gasCost != null) 'gas_cost': _money(gasCost),
   if (totalCost != null) 'total_cost': _money(totalCost),
   if (wasteBasis == 'rated_standby' && waste != null)
@@ -140,6 +144,7 @@ void main() {
       unclassified: '0.100000',
       fuel: 'natural_gas',
       gasCost: '0.500000',
+      gasKnown: true,
       totalCost: '0.600000',
     ),
     boiler: _allocation(
@@ -150,6 +155,7 @@ void main() {
       wasteBasis: 'rated_standby',
       fuel: 'natural_gas',
       gasCost: '0.400000',
+      gasKnown: true,
       totalCost: '0.600000',
     ),
     noRate: _allocation(
@@ -157,8 +163,31 @@ void main() {
       cost: '0.100000',
       unclassified: '0.100000',
       fuel: 'natural_gas',
+      gasKnown: true,
     ),
-    gasOnly: _allocation('estimated', fuel: 'natural_gas', gasCost: '0.500000'),
+    gasOnly: _allocation(
+      'estimated',
+      fuel: 'natural_gas',
+      gasCost: '0.500000',
+      gasKnown: true,
+    ),
+    unknownGas: _allocation(
+      'estimated',
+      cost: '0.100000',
+      unclassified: '0.100000',
+      fuel: 'natural_gas',
+      gasCost: '0.500000',
+    ),
+    meteredGas: _allocation(
+      'measured',
+      cost: '0.200000',
+      useful: '0.150000',
+      waste: '0.050000',
+      wasteBasis: 'floor',
+      fuel: 'natural_gas',
+      gasCost: '0.400000',
+      gasKnown: true,
+    ),
   });
 
   test('electric device rows are unchanged, with or without fuel', () {
@@ -189,6 +218,19 @@ void main() {
     expect(row.usefulCost, '\$0.10');
     expect(row.usageCost, '\$0.10');
     expect(row.wasteCost, isNull);
+  });
+
+  test('gas row with unknown gas use shows no cost', () {
+    final row = _row(projection, unknownGas);
+    expect(row.usefulCost, isNull);
+    expect(row.usageCost, isNull);
+    expect(row.wasteCost, isNull);
+  });
+
+  test('metered gas row does not show measured waste', () {
+    final row = _row(projection, meteredGas);
+    expect(row.wasteCost, isNull);
+    expect(row.usageCost, '\$0.60');
   });
 
   test('gas row with no electric cost shows the gas cost', () {
