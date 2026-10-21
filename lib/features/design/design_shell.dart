@@ -1627,7 +1627,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
       final request = cloudRequestFailureContext(error);
       debugPrint(
         'ELR-064 type=${request?.type ?? error.runtimeType} '
-        'status=${request?.statusCode ?? 'unavailable'} '
+        'status=${request?.statusCode ?? (error is HubRequestException ? error.statusCode : 'unavailable')} '
         'path=${request?.path ?? 'unavailable'}',
       );
     }

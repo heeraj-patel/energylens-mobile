@@ -215,6 +215,20 @@ void main() {
     },
   );
 
+  test('malformed usage facts retain response status and safe path', () async {
+    final client = api(MockClient((_) async => http.Response('{}', 200)));
+    Object? failure;
+    try {
+      await client.usageFacts(scope);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure, isA<FormatException>());
+    expect(cloudRequestFailureContext(failure!)?.statusCode, 200);
+    expect(cloudRequestFailureContext(failure)?.path, '/v1/usage-facts');
+    client.close();
+  });
+
   test('usage facts parses standby power as a reference fact', () async {
     final standby = fact()
       ..['measurement_kind'] = 'standby_power'

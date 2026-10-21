@@ -69,11 +69,13 @@ final Expando<CloudRequestFailureContext> _requestFailureContexts =
 final Expando<String> _responsePaths = Expando<String>();
 
 CloudRequestFailureContext? cloudRequestFailureContext(Object error) {
-  if (error is CloudApiException && error.path != null) {
+  if (error is CloudApiException) {
     return CloudRequestFailureContext(
       'CloudApiException',
       error.statusCode,
-      error.path!,
+      error.path == null
+          ? 'unavailable'
+          : Uri.tryParse(error.path!)?.path ?? 'unavailable',
     );
   }
   return _requestFailureContexts[error];
@@ -494,17 +496,19 @@ class CloudApiClient {
     }
     final query = Uri(queryParameters: scope.toQueryParameters()).query;
     final response = await get('/v1/usage-facts?$query');
-    final result = CloudReviewedUsageFacts.fromJson(
-      jsonDecode(response.body) as Map<String, dynamic>,
-    );
-    if (result.scope.category != scope.category ||
-        result.scope.manufacturer != scope.manufacturer ||
-        result.scope.model != scope.model ||
-        result.scope.fuel != scope.fuel ||
-        result.scope.variant != scope.variant) {
-      throw const FormatException('Reviewed usage fact scope changed');
-    }
-    return result;
+    return _parseResponse(response, () {
+      final result = CloudReviewedUsageFacts.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      );
+      if (result.scope.category != scope.category ||
+          result.scope.manufacturer != scope.manufacturer ||
+          result.scope.model != scope.model ||
+          result.scope.fuel != scope.fuel ||
+          result.scope.variant != scope.variant) {
+        throw const FormatException('Reviewed usage fact scope changed');
+      }
+      return result;
+    });
   }
 
   static bool _validScopeField(String value, int maxLength) =>
@@ -787,63 +791,65 @@ class CloudApiClient {
     final response = await get(
       '/v1/homes/${Uri.encodeComponent(homeId)}/appliances',
     );
-    final body = _decodeObject(response.body);
-    final modeHeader = _caseInsensitiveHeader(
-      response.headers,
-      'x-energylens-data-mode',
-    );
-    final revisionHeader = _caseInsensitiveHeader(
-      response.headers,
-      'x-energylens-fixture-revision',
-    );
-    final inventoryRevision = _caseInsensitiveHeader(
-      response.headers,
-      'x-energylens-inventory-revision',
-    );
-    if (inventoryRevision != null &&
-        !RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
-            .hasMatch(inventoryRevision)) {
-      throw const FormatException('Invalid cloud inventory revision');
-    }
-    final CloudApplianceDataMode dataMode;
-    final String? fixtureRevision;
-    if (modeHeader == null && revisionHeader == null) {
-      dataMode = CloudApplianceDataMode.household;
-      fixtureRevision = null;
-    } else if (modeHeader == 'household' && revisionHeader == null) {
-      dataMode = CloudApplianceDataMode.household;
-      fixtureRevision = null;
-    } else if (modeHeader == 'sample' &&
-        revisionHeader != null &&
-        RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
-            .hasMatch(revisionHeader)) {
-      dataMode = CloudApplianceDataMode.sample;
-      fixtureRevision = revisionHeader;
-    } else if (modeHeader == 'mixed' &&
-        revisionHeader != null &&
-        RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
-            .hasMatch(revisionHeader)) {
-      dataMode = CloudApplianceDataMode.mixed;
-      fixtureRevision = revisionHeader;
-    } else {
-      throw const FormatException('Invalid cloud appliance provenance');
-    }
-    final rows = body['appliances'];
-    if (rows is! List || rows.any((row) => row is! Map<String, dynamic>)) {
-      throw const FormatException('Invalid cloud appliance list');
-    }
-    final appliances = rows
-        .map((row) => CloudAppliance.fromJson(row as Map<String, dynamic>))
-        .toList();
-    if (appliances.any((item) => item.homeId != homeId)) {
-      throw const FormatException('Cloud appliance belongs to another home');
-    }
-    return CloudApplianceList(
-      appliances: List.unmodifiable(appliances),
-      dataMode: dataMode,
-      fixtureRevision: fixtureRevision,
-      inventoryRevision: inventoryRevision,
-    );
+    return _parseResponse(response, () {
+      final body = _decodeObject(response.body);
+      final modeHeader = _caseInsensitiveHeader(
+        response.headers,
+        'x-energylens-data-mode',
+      );
+      final revisionHeader = _caseInsensitiveHeader(
+        response.headers,
+        'x-energylens-fixture-revision',
+      );
+      final inventoryRevision = _caseInsensitiveHeader(
+        response.headers,
+        'x-energylens-inventory-revision',
+      );
+      if (inventoryRevision != null &&
+          !RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+              .hasMatch(inventoryRevision)) {
+        throw const FormatException('Invalid cloud inventory revision');
+      }
+      final CloudApplianceDataMode dataMode;
+      final String? fixtureRevision;
+      if (modeHeader == null && revisionHeader == null) {
+        dataMode = CloudApplianceDataMode.household;
+        fixtureRevision = null;
+      } else if (modeHeader == 'household' && revisionHeader == null) {
+        dataMode = CloudApplianceDataMode.household;
+        fixtureRevision = null;
+      } else if (modeHeader == 'sample' &&
+          revisionHeader != null &&
+          RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+              .hasMatch(revisionHeader)) {
+        dataMode = CloudApplianceDataMode.sample;
+        fixtureRevision = revisionHeader;
+      } else if (modeHeader == 'mixed' &&
+          revisionHeader != null &&
+          RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+              .hasMatch(revisionHeader)) {
+        dataMode = CloudApplianceDataMode.mixed;
+        fixtureRevision = revisionHeader;
+      } else {
+        throw const FormatException('Invalid cloud appliance provenance');
+      }
+      final rows = body['appliances'];
+      if (rows is! List || rows.any((row) => row is! Map<String, dynamic>)) {
+        throw const FormatException('Invalid cloud appliance list');
+      }
+      final appliances = rows
+          .map((row) => CloudAppliance.fromJson(row as Map<String, dynamic>))
+          .toList();
+      if (appliances.any((item) => item.homeId != homeId)) {
+        throw const FormatException('Cloud appliance belongs to another home');
+      }
+      return CloudApplianceList(
+        appliances: List.unmodifiable(appliances),
+        dataMode: dataMode,
+        fixtureRevision: fixtureRevision,
+        inventoryRevision: inventoryRevision,
+      );
+    });
   }
 
   Future<List<CloudTariff>> electricityTariffs(String homeId) =>
@@ -979,20 +985,22 @@ class CloudApiClient {
     final response = await get(
       '/v1/homes/${Uri.encodeComponent(homeId)}/estimates',
     );
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
-    final rows = body['estimates'];
-    final asOf = body['as_of'] is String
-        ? DateTime.tryParse(body['as_of'] as String)
-        : null;
-    if (rows is! List || asOf == null) {
-      throw const FormatException('Invalid cloud estimate list');
-    }
-    return CloudEstimateBatch(
-      estimates: rows
-          .map((row) => CloudEstimate.fromJson(row as Map<String, dynamic>))
-          .toList(),
-      asOf: asOf,
-    );
+    return _parseResponse(response, () {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final rows = body['estimates'];
+      final asOf = body['as_of'] is String
+          ? DateTime.tryParse(body['as_of'] as String)
+          : null;
+      if (rows is! List || asOf == null) {
+        throw const FormatException('Invalid cloud estimate list');
+      }
+      return CloudEstimateBatch(
+        estimates: rows
+            .map((row) => CloudEstimate.fromJson(row as Map<String, dynamic>))
+            .toList(),
+        asOf: asOf,
+      );
+    });
   }
 
   Future<CloudDeviceStates> deviceStates(String homeId) async {
@@ -1576,15 +1584,17 @@ class CloudApiClient {
 
   Future<List<HubOwnership>> hubs(String homeId) async {
     final response = await get('/v1/homes/${Uri.encodeComponent(homeId)}/hubs');
-    final rows = (jsonDecode(response.body) as Map<String, dynamic>)['hubs'];
-    if (rows is! List) throw const FormatException('Invalid cloud hub list');
-    return rows.map((row) {
-      final hub = HubOwnership.fromJson(row as Map<String, dynamic>);
-      if (hub.homeId != homeId) {
-        throw const FormatException('Cloud hub belongs to another home');
-      }
-      return hub;
-    }).toList();
+    return _parseResponse(response, () {
+      final rows = (jsonDecode(response.body) as Map<String, dynamic>)['hubs'];
+      if (rows is! List) throw const FormatException('Invalid cloud hub list');
+      return rows.map((row) {
+        final hub = HubOwnership.fromJson(row as Map<String, dynamic>);
+        if (hub.homeId != homeId) {
+          throw const FormatException('Cloud hub belongs to another home');
+        }
+        return hub;
+      }).toList();
+    });
   }
 
   Future<HubOwnership> finishHubClaim(

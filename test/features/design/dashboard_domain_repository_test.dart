@@ -489,6 +489,23 @@ void main() {
     }
   });
 
+  test('matching totals ignore allocation provenance differences', () async {
+    final dashboard = _body('dashboard');
+    final trends = _body('energy_trends');
+    (dashboard['totals'] as Map<String, dynamic>)
+      ..['waste_basis'] = 'floor'
+      ..['rate_basis'] = 'home_tariff';
+    (trends['totals'] as Map<String, dynamic>)['rate_basis'] = 'us_average';
+    final source = _Reads(
+      (_) async => _dashboard(dashboard),
+      (_) async => _trends(trends),
+    );
+    final snapshot = await DashboardDomainRepository(source).fetch(homeA);
+    expect(snapshot, isNotNull);
+    expect(snapshot!.dashboard.totals.wasteBasis, 'floor');
+    expect(snapshot.trends.totals.rateBasis, 'us_average');
+  });
+
   test('home switch and sign-out discard in-flight reads', () async {
     final oldDashboard = Completer<CloudHouseholdDashboard>();
     final oldTrends = Completer<CloudHouseholdEnergyTrends>();
