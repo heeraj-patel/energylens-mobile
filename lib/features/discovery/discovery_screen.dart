@@ -73,6 +73,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   int _scanEpoch = 0;
   List<SavedPlug> _saved = const [];
   int _savedLoadEpoch = 0;
+  int _nearbySavedLoadEpoch = 0;
+  int _hubDataEpoch = 0;
   final Map<String, CloudAppliance> _cloudAttached = {};
   final Map<int, EnergyEstimate> _estimates = {};
   bool _busy = false;
@@ -84,8 +86,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   bool _searched = false;
   final Set<String> _statusChecking = {};
   final Set<String> _deletingSavedPlugs = {};
+  final Map<String, Object> _deleteSavedOperations = {};
   final Map<String, String> _plugCheckFeedback = {};
   final Map<String, String> _plugUpdateFeedback = {};
+  final Map<String, String> _plugDeleteErrors = {};
   String? _error;
   CloudHubClaimFlow? _claimFlow;
   bool _claimBusy = false;
@@ -207,9 +211,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (mounted) setState(() => _claimMessage = error.message);
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _claimMessage = internalErrorMessage,
-        );
+        setState(() => _claimMessage = internalErrorMessage);
       }
     } finally {
       if (mounted) setState(() => _claimBusy = false);
@@ -366,13 +368,17 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         _estimates.isEmpty &&
         _candidates.isEmpty &&
         !_searched &&
-        !_nearbyAvailable) {
+        !_nearbyAvailable &&
+        _plugDeleteErrors.isEmpty &&
+        _deletingSavedPlugs.isEmpty) {
       return;
     }
     _cancelActiveNearbyScan();
     setState(() {
       _saved = const [];
       _savedLoadEpoch++;
+      _nearbySavedLoadEpoch++;
+      _hubDataEpoch++;
       _nearbySaved = const [];
       _cloudAttached.clear();
       _hubConnected = false;
@@ -384,6 +390,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       _nearbyState = null;
       _scanEpoch++;
       _searched = false;
+      _plugDeleteErrors.clear();
+      _deletingSavedPlugs.clear();
+      _deleteSavedOperations.clear();
       _error = null;
     });
   }
@@ -523,9 +532,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           return;
         }
         if (_cloudHubOwned && !_paired && !_hubRefusedAccess) {
-          setState(
-            () => _error = internalErrorMessage,
-          );
+          setState(() => _error = internalErrorMessage);
         }
         if (ownerships.isEmpty) {
           // A first claim needs the bootstrap pairing, but it cannot read
@@ -616,20 +623,44 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   Future<bool> _loadSaved() async {
     if (!_canUseHubCustomerApi) return false;
-    final epoch = _savedLoadEpoch;
+    final epoch = ++_savedLoadEpoch;
+    final hubDataEpoch = _hubDataEpoch;
+    final hub = _hub.text.trim();
+    final token = _token.text.trim();
+    final scope = _pairingScope?.identity;
+    final cloud = widget.cloudApi;
+    final generation = cloud?.session.generation;
+    final ownershipEpoch = _pairedOwnershipEpoch;
+    final api = _hubApi;
+    bool current() =>
+        mounted &&
+        epoch == _savedLoadEpoch &&
+        hubDataEpoch == _hubDataEpoch &&
+        hub == _hub.text.trim() &&
+        token == _token.text.trim() &&
+        scope == _pairingScope?.identity &&
+        generation == cloud?.session.generation &&
+        ownershipEpoch == _pairedOwnershipEpoch &&
+        _canUseHubCustomerApi;
     var requiresPairing = false;
     try {
-      final plugs = await _hubApi.saved(_hub.text.trim(), _token.text.trim());
-      if (epoch != _savedLoadEpoch) return false;
+      final plugs = await api.saved(hub, token);
+      if (!current()) return false;
       if (mounted) {
         setState(() {
           _saved = plugs;
+          _plugDeleteErrors.removeWhere(
+            (id, _) => !plugs.any((plug) => plug.id == id),
+          );
           _hubConnected = true;
           _error = null;
         });
         await _syncAdoptedPlugSensors(plugs);
-        await _loadCloudAttachments(plugs);
+        if (!current()) return false;
+        await _loadCloudAttachments(plugs, isCurrent: current);
+        if (!current()) return false;
         for (final plug in plugs) {
+          if (!current()) return false;
           final appliance = plug.connectedAppliance;
           if (appliance == null) continue;
           if (plug.connectionStatus == 'identity_changed') {
@@ -637,19 +668,15 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             continue;
           }
           try {
-            final estimate = await _hubApi.estimate(
-              _hub.text.trim(),
-              _token.text.trim(),
-              appliance.id,
-            );
-            if (mounted) setState(() => _estimates[appliance.id] = estimate);
+            final estimate = await api.estimate(hub, token, appliance.id);
+            if (current()) setState(() => _estimates[appliance.id] = estimate);
           } catch (_) {
             // The plug remains visible when the source cache is unavailable.
           }
         }
       }
     } catch (error) {
-      if (epoch != _savedLoadEpoch) return false;
+      if (!current()) return false;
       requiresPairing = error is HubRequestException && error.requiresPairing;
       _debugLog('load saved plugs failed: ${_describeHubError(error)}');
       if (mounted) {
@@ -659,23 +686,39 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         });
       }
     } finally {
-      if (!requiresPairing) await _loadNearbySaved();
+      if (current() && !requiresPairing) await _loadNearbySaved();
     }
     return requiresPairing;
   }
 
   Future<void> _loadNearbySaved() async {
+    if (!_canUseHubCustomerApi) return;
+    final epoch = ++_nearbySavedLoadEpoch;
+    final hubDataEpoch = _hubDataEpoch;
     final hub = _hub.text.trim();
     final token = _token.text.trim();
+    final scope = _pairingScope?.identity;
+    final cloud = widget.cloudApi;
+    final generation = cloud?.session.generation;
+    final ownershipEpoch = _pairedOwnershipEpoch;
+    final api = _hubApi;
+    bool current() =>
+        mounted &&
+        epoch == _nearbySavedLoadEpoch &&
+        hubDataEpoch == _hubDataEpoch &&
+        hub == _hub.text.trim() &&
+        token == _token.text.trim() &&
+        scope == _pairingScope?.identity &&
+        generation == cloud?.session.generation &&
+        ownershipEpoch == _pairedOwnershipEpoch &&
+        _canUseHubCustomerApi;
     try {
-      if (!await _hubApi.supportsNearbyDiscovery(hub, token)) {
+      if (!await api.supportsNearbyDiscovery(hub, token)) {
         return;
       }
-      if (!mounted || hub != _hub.text.trim() || token != _token.text.trim()) {
-        return;
-      }
-      final devices = await _hubApi.nearbyInventory(hub, token);
-      if (mounted && hub == _hub.text.trim() && token == _token.text.trim()) {
+      if (!current()) return;
+      final devices = await api.nearbyInventory(hub, token);
+      if (current()) {
         setState(() => _nearbySaved = devices);
       }
     } catch (_) {
@@ -683,7 +726,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
   }
 
-  Future<void> _loadCloudAttachments(Iterable<SavedPlug> plugs) async {
+  Future<void> _loadCloudAttachments(
+    Iterable<SavedPlug> plugs, {
+    bool Function()? isCurrent,
+  }) async {
     final cloud = widget.cloudApi;
     final home = widget.cloudHome;
     if (cloud == null || home == null || plugs.isEmpty) return;
@@ -716,7 +762,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         final appliance = applianceById[active.single.applianceId];
         if (appliance != null) attached[plug.id] = appliance;
       }
-      if (mounted) {
+      if (mounted && (isCurrent?.call() ?? true)) {
         setState(() {
           _cloudAttached
             ..clear()
@@ -762,9 +808,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       });
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _plugCheckFeedback[plug.id] = internalErrorMessage,
-        );
+        setState(() => _plugCheckFeedback[plug.id] = internalErrorMessage);
       }
     } finally {
       if (mounted) setState(() => _statusChecking.remove(plug.id));
@@ -779,36 +823,56 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     final cloud = widget.cloudApi;
     final generation = cloud?.session.generation;
     final ownershipEpoch = _pairedOwnershipEpoch;
+    final hubDataEpoch = _hubDataEpoch;
     final api = _hubApi;
+    final operation = Object();
     bool current() =>
         mounted &&
         hub == _hub.text.trim() &&
         token == _token.text.trim() &&
         scope == _pairingScope?.identity &&
         generation == cloud?.session.generation &&
-        ownershipEpoch == _pairedOwnershipEpoch;
-    setState(() => _deletingSavedPlugs.add(plug.id));
+        ownershipEpoch == _pairedOwnershipEpoch &&
+        hubDataEpoch == _hubDataEpoch;
+    setState(() {
+      _deletingSavedPlugs.add(plug.id);
+      _deleteSavedOperations[plug.id] = operation;
+      _plugDeleteErrors.remove(plug.id);
+    });
     _savedLoadEpoch++;
     try {
       await api.deleteSavedPlug(hub, token, plug.id);
       if (!current()) return;
+      _savedLoadEpoch++;
+      _nearbySavedLoadEpoch++;
       setState(() {
         _saved = [
           for (final saved in _saved)
             if (saved.id != plug.id) saved,
         ];
+        _nearbySaved = [
+          for (final device in _nearbySaved)
+            if (device.id != plug.id) device,
+        ];
         _cloudAttached.remove(plug.id);
         _plugCheckFeedback.remove(plug.id);
         _plugUpdateFeedback.remove(plug.id);
+        _plugDeleteErrors.remove(plug.id);
         _statusChecking.remove(plug.id);
-        _error = null;
       });
-    } catch (_) {
+      await _loadSaved();
+    } catch (error) {
       if (current()) {
-        setState(() => _error = internalErrorMessage);
+        _debugLog('delete saved plug failed: ${_describeHubError(error)}');
+        setState(() => _plugDeleteErrors[plug.id] = internalErrorMessage);
       }
     } finally {
-      if (mounted) setState(() => _deletingSavedPlugs.remove(plug.id));
+      if (mounted && identical(_deleteSavedOperations[plug.id], operation)) {
+        setState(() {
+          _deletingSavedPlugs.remove(plug.id);
+          _deleteSavedOperations.remove(plug.id);
+        });
+      }
     }
   }
 
@@ -827,9 +891,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (mounted) setState(() => _estimates[appliance.id] = estimate);
     } catch (error) {
       if (mounted) {
-        setState(
-          () => _error = _hubFailureMessage(error),
-        );
+        setState(() => _error = _hubFailureMessage(error));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -979,9 +1041,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       }
     } catch (error) {
       if (mounted) {
-        setState(
-          () => _error = _hubFailureMessage(error),
-        );
+        setState(() => _error = _hubFailureMessage(error));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1278,9 +1338,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       await _syncAdoptedPlugSensors(_saved);
     } catch (error) {
       if (mounted) {
-        setState(
-          () => _error = _hubFailureMessage(error),
-        );
+        setState(() => _error = _hubFailureMessage(error));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1818,9 +1876,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (!legacy) openDevice = adopted;
     } catch (error) {
       if (mounted) {
-        setState(
-          () => _error = internalErrorMessage,
-        );
+        setState(() => _error = internalErrorMessage);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1874,8 +1930,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             setState(() => _saved = plugs);
             plug = plugs.where((item) => item.id == device.id).firstOrNull;
           } catch (_) {
-            if (mounted)
-              setState(() => _error = internalErrorMessage);
+            if (mounted) setState(() => _error = internalErrorMessage);
             return;
           } finally {
             if (mounted) setState(() => _busy = false);
@@ -1908,8 +1963,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               ownership.homeId != home.id ||
               ownership.localHubId != _pairedHubId ||
               ownership.ownershipEpoch != _pairedOwnershipEpoch) {
-            if (mounted)
-              setState(() => _error = internalErrorMessage);
+            if (mounted) setState(() => _error = internalErrorMessage);
             return;
           }
           origin = CloudNearbyOrigin(
@@ -1925,8 +1979,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               )
               .toList();
           if (matches.length > 1) {
-            if (mounted)
-              setState(() => _error = internalErrorMessage);
+            if (mounted) setState(() => _error = internalErrorMessage);
             return;
           }
           linked = matches.firstOrNull;
@@ -2321,7 +2374,34 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         'Smart plug · Saved',
                         style: theme.textTheme.labelLarge,
                       ),
-                      Text(plug.name, style: theme.textTheme.titleMedium),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              plug.name,
+                              style: theme.textTheme.titleMedium,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          TextButton.icon(
+                            onPressed:
+                                _deletingSavedPlugs.contains(plug.id) ||
+                                    !_canUseHubCustomerApi
+                                ? null
+                                : () => _deleteSavedPlug(plug),
+                            icon: _deletingSavedPlugs.contains(plug.id)
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.delete_outline),
+                            label: const Text('Delete'),
+                          ),
+                        ],
+                      ),
                       Text(
                         '${plug.model} · ${plug.room.isEmpty ? 'No room' : plug.room}',
                       ),
@@ -2391,23 +2471,16 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                               : 'Change connected appliance',
                         ),
                       ),
-                      TextButton.icon(
-                        onPressed:
-                            _deletingSavedPlugs.contains(plug.id) ||
-                                !_canUseHubCustomerApi
-                            ? null
-                            : () => _deleteSavedPlug(plug),
-                        icon: _deletingSavedPlugs.contains(plug.id)
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.delete_outline),
-                        label: const Text('Delete'),
-                      ),
+                      if (_plugDeleteErrors[plug.id] case final message?) ...[
+                        const SizedBox(height: 8),
+                        Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            message,
+                            style: TextStyle(color: theme.colorScheme.error),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

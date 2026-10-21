@@ -515,12 +515,38 @@ class _DeletingSavedApi extends FakeDiscoveryApi {
     ),
   ];
   final deleted = <String>[];
+  final savedReads = <String>[];
+  final nearbyReads = <String>[];
+  final queuedSavedReads = <Completer<List<SavedPlug>>>[];
+  final queuedNearbyReads = <Completer<List<NearbySavedDevice>>>[];
+  bool savedReadFails = false;
+  bool nearbyEnabled = false;
   Completer<void>? pending;
   bool fail = false;
 
   @override
-  Future<List<SavedPlug>> saved(String baseUrl, String token) async =>
-      List.of(plugs);
+  Future<List<SavedPlug>> saved(String baseUrl, String token) async {
+    savedReads.add(baseUrl);
+    if (queuedSavedReads.isNotEmpty) return queuedSavedReads.removeAt(0).future;
+    if (savedReadFails) throw StateError('Refresh failed');
+    return List.of(plugs);
+  }
+
+  @override
+  Future<bool> supportsNearbyDiscovery(String baseUrl, String token) async =>
+      nearbyEnabled;
+
+  @override
+  Future<List<NearbySavedDevice>> nearbyInventory(
+    String baseUrl,
+    String token,
+  ) async {
+    nearbyReads.add(baseUrl);
+    if (queuedNearbyReads.isNotEmpty) {
+      return queuedNearbyReads.removeAt(0).future;
+    }
+    return [for (final plug in plugs) NearbySavedDevice(plug.id, plug.name)];
+  }
 
   @override
   Future<void> deleteSavedPlug(
@@ -987,10 +1013,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(
-        find.text(
-          'Internal Error, Try again later',
-          skipOffstage: false,
-        ),
+        find.text('Internal Error, Try again later', skipOffstage: false),
         findsOneWidget,
       );
       cloud.close();
@@ -1032,11 +1055,18 @@ void main() {
           final path = request.url.path;
           if (path == '/v1/energy-categories') {
             return http.Response(
-              jsonEncode({'version': 1, 'groups': [
-                {'key': 'office', 'label': 'Office', 'types': [
-                  {'key': 'computer', 'label': 'Computer'},
-                ]},
-              ]}),
+              jsonEncode({
+                'version': 1,
+                'groups': [
+                  {
+                    'key': 'office',
+                    'label': 'Office',
+                    'types': [
+                      {'key': 'computer', 'label': 'Computer'},
+                    ],
+                  },
+                ],
+              }),
               200,
               headers: {'etag': '"1"'},
             );
@@ -1635,41 +1665,35 @@ void main() {
     expect(energy.readingCount, 1);
   });
 
-  testWidgets(
-    'opens concise measured detail without source labels',
-    (tester) async {
-      tester.view.physicalSize = const Size(800, 1200);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      final credentials = FakeCredentials()
-        ..address = 'https://192.168.1.20:8787'
-        ..token = 'test-token';
-      await tester.pumpWidget(
-        MaterialApp(
-          home: DiscoveryScreen(
-            api: DeviceDetailApi(),
-            credentials: credentials,
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        find.text('View energy details').first,
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.tap(find.text('View energy details').first);
-      await tester.pumpAndSettle();
-      expect(find.text('Appliance energy'), findsOneWidget);
-      expect(find.text('Last 30 days'), findsOneWidget);
-      expect(find.text('Energy · 0.2 kWh'), findsOneWidget);
-      expect(find.textContaining('EPA'), findsNothing);
-    },
-  );
-
-  testWidgets('verified meter ignores attached estimate', (
+  testWidgets('opens concise measured detail without source labels', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final credentials = FakeCredentials()
+      ..address = 'https://192.168.1.20:8787'
+      ..token = 'test-token';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(api: DeviceDetailApi(), credentials: credentials),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('View energy details').first,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('View energy details').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Appliance energy'), findsOneWidget);
+    expect(find.text('Last 30 days'), findsOneWidget);
+    expect(find.text('Energy · 0.2 kWh'), findsOneWidget);
+    expect(find.textContaining('EPA'), findsNothing);
+  });
+
+  testWidgets('verified meter ignores attached estimate', (tester) async {
     final api = MeasuredEstimateApi();
     await tester.pumpWidget(
       MaterialApp(
@@ -1696,9 +1720,7 @@ void main() {
     expect(find.textContaining('Measurement coverage'), findsNothing);
   });
 
-  testWidgets('shows measured energy without sample metadata', (
-    tester,
-  ) async {
+  testWidgets('shows measured energy without sample metadata', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: DeviceEnergyDetailScreen(
@@ -1724,9 +1746,7 @@ void main() {
     expect(find.textContaining('Sampled '), findsNothing);
   });
 
-  testWidgets('verified meter never uses a retained estimate', (
-    tester,
-  ) async {
+  testWidgets('verified meter never uses a retained estimate', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: DeviceEnergyDetailScreen(
@@ -1757,9 +1777,7 @@ void main() {
     expect(find.textContaining('18.0 kWh'), findsNothing);
   });
 
-  testWidgets('requests the monthly meter period', (
-    tester,
-  ) async {
+  testWidgets('requests the monthly meter period', (tester) async {
     final api = PeriodRaceApi();
     await tester.pumpWidget(
       MaterialApp(
@@ -2042,7 +2060,7 @@ void main() {
   testWidgets(
     'Delete removes only the chosen saved plug after hub success and restart',
     (tester) async {
-      final api = _DeletingSavedApi();
+      final api = _DeletingSavedApi()..nearbyEnabled = true;
       final credentials = FakeCredentials()
         ..address = 'https://192.168.1.20:8787'
         ..token = 'test-token';
@@ -2052,6 +2070,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      final initialReads = api.savedReads.length;
       await tester.scrollUntilVisible(find.text('First plug'), 220);
       final firstCard = find.ancestor(
         of: find.text('First plug'),
@@ -2066,7 +2085,10 @@ void main() {
       await tester.tap(delete);
       await tester.pumpAndSettle();
       expect(api.deleted, ['plug-a']);
+      expect(api.savedReads.length, initialReads + 1);
+      expect(api.nearbyReads.length, greaterThanOrEqualTo(2));
       expect(find.text('First plug'), findsNothing);
+      expect(find.byKey(const Key('nearby-saved-plug-a')), findsNothing);
       expect(api.plugs.map((plug) => plug.id), ['plug-b']);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpWidget(
@@ -2096,6 +2118,284 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'Delete waits for Hub success before refreshing either inventory',
+    (tester) async {
+      final api = _DeletingSavedApi()
+        ..nearbyEnabled = true
+        ..pending = Completer<void>();
+      final credentials = FakeCredentials()
+        ..address = 'https://192.168.1.20:8787'
+        ..token = 'test-token';
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(api: api, credentials: credentials),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final savedBefore = api.savedReads.length;
+      final nearbyBefore = api.nearbyReads.length;
+      await tester.scrollUntilVisible(find.text('First plug'), 220);
+      final card = find.ancestor(
+        of: find.text('First plug'),
+        matching: find.byType(Card),
+      );
+      await tester.tap(
+        find.descendant(of: card, matching: find.text('Delete')),
+      );
+      await tester.pump();
+      expect(api.savedReads.length, savedBefore);
+      expect(api.nearbyReads.length, nearbyBefore);
+      expect(find.text('First plug'), findsOneWidget);
+      api.pending!.complete();
+      await tester.pumpAndSettle();
+      expect(api.savedReads.length, savedBefore + 1);
+      expect(api.nearbyReads.length, nearbyBefore + 1);
+      expect(find.text('First plug'), findsNothing);
+    },
+  );
+
+  testWidgets('Delete refresh uses current Hub row data for sibling plugs', (
+    tester,
+  ) async {
+    final api = _DeletingSavedApi()..pending = Completer<void>();
+    final credentials = FakeCredentials()
+      ..address = 'https://192.168.1.20:8787'
+      ..token = 'test-token';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(api: api, credentials: credentials),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('First plug').first,
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
+    final card = find.ancestor(
+      of: find.text('First plug').first,
+      matching: find.byType(Card),
+    );
+    await tester.tap(find.descendant(of: card, matching: find.text('Delete')));
+    api.plugs[1] = const SavedPlug(
+      id: 'plug-b',
+      ip: '192.168.1.42',
+      model: 'HS103',
+      name: 'Updated sibling',
+      room: 'Kitchen',
+      meterStatus: 'absent',
+      lastVerifiedAt: 101,
+    );
+    api.pending!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Updated sibling'), findsOneWidget);
+    expect(find.text('Second plug'), findsNothing);
+  });
+
+  testWidgets('Failed refresh leaves successful deletion visible', (
+    tester,
+  ) async {
+    final api = _DeletingSavedApi()..pending = Completer<void>();
+    final credentials = FakeCredentials()
+      ..address = 'https://192.168.1.20:8787'
+      ..token = 'test-token';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(api: api, credentials: credentials),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('First plug'), 220);
+    final card = find.ancestor(
+      of: find.text('First plug'),
+      matching: find.byType(Card),
+    );
+    await tester.tap(find.descendant(of: card, matching: find.text('Delete')));
+    api.savedReadFails = true;
+    api.pending!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('First plug'), findsNothing);
+    expect(find.text('Second plug'), findsOneWidget);
+    expect(api.deleted, ['plug-a']);
+  });
+
+  testWidgets('A saved read started before DELETE cannot restore its row', (
+    tester,
+  ) async {
+    final api = _DeletingSavedApi();
+    final credentials = FakeCredentials()
+      ..address = 'https://192.168.1.20:8787'
+      ..token = 'test-token';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(api: api, credentials: credentials),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final stale = Completer<List<SavedPlug>>();
+    api.queuedSavedReads.add(stale);
+    await tester.tap(find.byTooltip('Refresh saved plugs'));
+    await tester.pump();
+    await tester.scrollUntilVisible(find.text('First plug'), 220);
+    final card = find.ancestor(
+      of: find.text('First plug'),
+      matching: find.byType(Card),
+    );
+    await tester.tap(find.descendant(of: card, matching: find.text('Delete')));
+    await tester.pumpAndSettle();
+    expect(find.text('First plug'), findsNothing);
+    stale.complete([
+      const SavedPlug(
+        id: 'plug-a',
+        ip: '192.168.1.41',
+        model: 'HS103',
+        name: 'First plug',
+        room: 'Office',
+        meterStatus: 'absent',
+        lastVerifiedAt: 100,
+      ),
+    ]);
+    await tester.pumpAndSettle();
+    expect(find.text('First plug'), findsNothing);
+    expect(find.text('Second plug'), findsOneWidget);
+  });
+
+  testWidgets('A nearby read started before DELETE cannot restore its row', (
+    tester,
+  ) async {
+    final api = _DeletingSavedApi()..nearbyEnabled = true;
+    final credentials = FakeCredentials()
+      ..address = 'https://192.168.1.20:8787'
+      ..token = 'test-token';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(api: api, credentials: credentials),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final stale = Completer<List<NearbySavedDevice>>();
+    api.queuedNearbyReads.add(stale);
+    await tester.tap(find.byTooltip('Refresh saved plugs'));
+    await tester.pump();
+    expect(api.queuedNearbyReads, isEmpty);
+    await tester.scrollUntilVisible(find.text('First plug'), 220);
+    final card = find.ancestor(
+      of: find.text('First plug'),
+      matching: find.byType(Card),
+    );
+    await tester.tap(find.descendant(of: card, matching: find.text('Delete')));
+    await tester.pumpAndSettle();
+    stale.complete(const [NearbySavedDevice('plug-a', 'First plug')]);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('nearby-saved-plug-a')), findsNothing);
+    expect(find.text('First plug'), findsNothing);
+  });
+
+  testWidgets(
+    'A late saved read cannot show old Hub rows after address switch',
+    (tester) async {
+      final api = _DeletingSavedApi();
+      final credentials = FakeCredentials()
+        ..address = 'https://192.168.1.20:8787'
+        ..token = 'test-token';
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(api: api, credentials: credentials),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final stale = Completer<List<SavedPlug>>();
+      api.queuedSavedReads.add(stale);
+      await tester.tap(find.byTooltip('Refresh saved plugs'));
+      await tester.pump();
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, 1500));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.ensureVisible(find.text('Connection details'));
+      await tester.tap(find.text('Connection details'));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('hubAddress')));
+      await tester.enterText(
+        find.byKey(const Key('hubAddress')),
+        'https://192.168.1.21:8787',
+      );
+      await tester.pump();
+      stale.complete(List.of(api.plugs));
+      await tester.pumpAndSettle();
+      expect(find.text('First plug'), findsNothing);
+      expect(find.text('Second plug'), findsNothing);
+    },
+  );
+
+  testWidgets('Old Hub delete does not block the same ID on a new Hub', (
+    tester,
+  ) async {
+    final oldDelete = Completer<void>();
+    final newDelete = Completer<void>();
+    final api = _DeletingSavedApi()..pending = oldDelete;
+    final credentials = FakeCredentials()
+      ..address = 'https://192.168.1.20:8787'
+      ..token = 'test-token';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(api: api, credentials: credentials),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('First plug'), 220);
+    final oldCard = find.ancestor(
+      of: find.text('First plug'),
+      matching: find.byType(Card),
+    );
+    await tester.tap(
+      find.descendant(of: oldCard, matching: find.text('Delete')),
+    );
+    await tester.pump();
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 1500));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.ensureVisible(find.text('Connection details'));
+    await tester.tap(find.text('Connection details'));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('hubAddress')));
+    await tester.enterText(
+      find.byKey(const Key('hubAddress')),
+      'https://192.168.1.21:8787',
+    );
+    await tester.pump();
+    await tester.ensureVisible(find.byTooltip('Refresh saved plugs'));
+    await tester.tap(find.byTooltip('Refresh saved plugs'));
+    await tester.pumpAndSettle();
+    expect(api.savedReads.last, 'https://192.168.1.21:8787');
+    api.pending = newDelete;
+    await tester.scrollUntilVisible(
+      find.text('First plug'),
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
+    final newCard = find.ancestor(
+      of: find.text('First plug'),
+      matching: find.byType(Card),
+    );
+    final newDeleteLabel = find.descendant(
+      of: newCard,
+      matching: find.text('Delete'),
+    );
+    final newButton = find.ancestor(
+      of: newDeleteLabel,
+      matching: find.byType(TextButton),
+    );
+    expect(tester.widget<TextButton>(newButton).onPressed, isNotNull);
+    await tester.tap(newDeleteLabel);
+    await tester.pump();
+    expect(api.deleted, ['plug-a', 'plug-a']);
+    oldDelete.complete();
+    await tester.pump();
+    expect(tester.widget<TextButton>(newButton).onPressed, isNull);
+    newDelete.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('First plug'), findsNothing);
+  });
 
   testWidgets(
     'Delete remains pending without duplicate requests and retains row on failure',
@@ -2137,8 +2437,95 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('First plug'), findsOneWidget);
       expect(api.plugs.length, 2);
-      await tester.scrollUntilVisible(find.text('Internal Error, Try again later'), -300);
-      expect(find.text('Internal Error, Try again later'), findsOneWidget);
+      final error = find.text('Internal Error, Try again later');
+      final secondCard = find.ancestor(
+        of: find.text('Second plug'),
+        matching: find.byType(Card),
+      );
+      expect(find.descendant(of: firstCard, matching: error), findsOneWidget);
+      expect(find.descendant(of: secondCard, matching: error), findsNothing);
+      expect(error, findsOneWidget);
+      await tester.ensureVisible(error);
+      await tester.pump();
+      expect(
+        tester.getTopLeft(error).dy,
+        greaterThan(tester.getBottomLeft(delete).dy),
+      );
+      expect(
+        tester.getBottomLeft(error).dy,
+        lessThan(tester.getBottomLeft(firstCard).dy),
+      );
+
+      api
+        ..pending = Completer<void>()
+        ..fail = false;
+      await tester.ensureVisible(delete);
+      await tester.pump();
+      await tester.tap(delete);
+      await tester.pump();
+      expect(error, findsNothing);
+      expect(api.deleted, ['plug-a', 'plug-a']);
+      expect(
+        tester
+            .widget<TextButton>(
+              find.ancestor(of: delete, matching: find.byType(TextButton)),
+            )
+            .onPressed,
+        isNull,
+      );
+      api.pending!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('First plug'), findsNothing);
+      expect(find.text('Second plug'), findsOneWidget);
+      expect(error, findsNothing);
+    },
+  );
+
+  testWidgets(
+    'Delete errors stay with their plugs when another retry succeeds',
+    (tester) async {
+      final api = _DeletingSavedApi()..fail = true;
+      final credentials = FakeCredentials()
+        ..address = 'https://192.168.1.20:8787'
+        ..token = 'test-token';
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(api: api, credentials: credentials),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('First plug'), 220);
+      final firstCard = find.ancestor(
+        of: find.text('First plug'),
+        matching: find.byType(Card),
+      );
+      final firstDelete = find.descendant(
+        of: firstCard,
+        matching: find.text('Delete'),
+      );
+      await tester.ensureVisible(firstDelete);
+      await tester.tap(firstDelete);
+      await tester.pumpAndSettle();
+      final secondCard = find.ancestor(
+        of: find.text('Second plug'),
+        matching: find.byType(Card),
+      );
+      final secondDelete = find.descendant(
+        of: secondCard,
+        matching: find.text('Delete'),
+      );
+      await tester.ensureVisible(secondDelete);
+      await tester.tap(secondDelete);
+      await tester.pumpAndSettle();
+      final error = find.text('Internal Error, Try again later');
+      expect(error, findsNWidgets(2));
+      api.fail = false;
+      await tester.ensureVisible(firstDelete);
+      await tester.tap(firstDelete);
+      await tester.pumpAndSettle();
+      expect(find.text('First plug'), findsNothing);
+      expect(find.descendant(of: secondCard, matching: error), findsOneWidget);
+      expect(error, findsOneWidget);
     },
   );
 
@@ -2180,10 +2567,101 @@ void main() {
       find.byKey(const Key('hubAddress')),
       'https://192.168.1.21:8787',
     );
+    api.fail = true;
     api.pending!.complete();
     await tester.pumpAndSettle();
     expect(find.text('First plug'), findsNothing);
     expect(find.text('No smart plugs saved on this hub yet.'), findsOneWidget);
+    expect(find.text('Internal Error, Try again later'), findsNothing);
+  });
+
+  testWidgets('Delete error clears when hub changes and plug ID reappears', (
+    tester,
+  ) async {
+    final api = _DeletingSavedApi()..fail = true;
+    final credentials = FakeCredentials()
+      ..address = 'https://192.168.1.20:8787'
+      ..token = 'test-token';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(api: api, credentials: credentials),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('First plug'), 220);
+    final firstCard = find.ancestor(
+      of: find.text('First plug'),
+      matching: find.byType(Card),
+    );
+    final delete = find.descendant(
+      of: firstCard,
+      matching: find.text('Delete'),
+    );
+    await tester.ensureVisible(delete);
+    await tester.pump();
+    await tester.tap(delete);
+    await tester.pumpAndSettle();
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
+
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 1500));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.ensureVisible(find.text('Connection details'));
+    await tester.tap(find.text('Connection details'));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('hubAddress')));
+    await tester.enterText(
+      find.byKey(const Key('hubAddress')),
+      'https://192.168.1.21:8787',
+    );
+    await tester.pump();
+    expect(find.text('Internal Error, Try again later'), findsNothing);
+    await tester.ensureVisible(find.text('Saved smart plugs'));
+    final refresh = find.byTooltip('Refresh saved plugs');
+    await tester.tap(refresh);
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('First plug'),
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('First plug'), findsOneWidget);
+    expect(find.text('Internal Error, Try again later'), findsNothing);
+  });
+
+  testWidgets('refresh drops Delete errors for plugs no longer saved', (
+    tester,
+  ) async {
+    final api = _DeletingSavedApi()..fail = true;
+    final credentials = FakeCredentials()
+      ..address = 'https://192.168.1.20:8787'
+      ..token = 'test-token';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(api: api, credentials: credentials),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('First plug'), 220);
+    final firstCard = find.ancestor(
+      of: find.text('First plug'),
+      matching: find.byType(Card),
+    );
+    final delete = find.descendant(
+      of: firstCard,
+      matching: find.text('Delete'),
+    );
+    await tester.ensureVisible(delete);
+    await tester.tap(delete);
+    await tester.pumpAndSettle();
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
+
+    api.plugs.removeWhere((plug) => plug.id == 'plug-a');
+    await tester.ensureVisible(find.byTooltip('Refresh saved plugs'));
+    await tester.tap(find.byTooltip('Refresh saved plugs'));
+    await tester.pumpAndSettle();
+    expect(find.text('First plug'), findsNothing);
+    expect(find.text('Second plug'), findsOneWidget);
+    expect(find.text('Internal Error, Try again later'), findsNothing);
   });
 
   testWidgets('links a saved appliance to the plug without making it a meter', (
