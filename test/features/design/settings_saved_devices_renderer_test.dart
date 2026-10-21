@@ -74,6 +74,7 @@ void main() {
           'fuel': 'electric',
           'variant': '',
           'persisted': true,
+          'editable': false,
         },
       ],
     });
@@ -126,6 +127,7 @@ void main() {
         'fuel': 'electric',
         'variant': '',
         'persisted': false,
+        'editable': false,
       },
     ]);
     expect(script, contains('if (row.persisted)'));
@@ -155,6 +157,7 @@ void main() {
         'fuel': '',
         'variant': '',
         'persisted': false,
+        'editable': false,
         'plug': true,
       },
     ]);
@@ -196,6 +199,30 @@ void main() {
     expect(
       append,
       contains("candidate.getAttribute('data-el-model') === row.model"),
+    );
+  });
+
+  test('edit action applies only to persisted appliance rows when enabled', () {
+    final script = renderer.appendScript(
+      homeId: homeA,
+      generation: 7,
+      allowIdentityEdit: true,
+      appliances: [
+        appliance('real'),
+        appliance('demo', demoDeviceId: 'demo-device-01'),
+      ],
+      savedPlugs: const [CloudSavedPlug(id: 'plug', name: 'Plug', model: 'P1')],
+    );
+    final rows = payloadOf(script)['rows'] as List<dynamic>;
+    expect(rows.map((row) => row['editable']), [true, false, false]);
+    expect(script, contains("edit.textContent = 'Edit'"));
+    expect(
+      script,
+      contains("edit.setAttribute('aria-label', 'Edit ' + row.name)"),
+    );
+    expect(
+      script,
+      contains("edit.setAttribute('data-el-edit-appliance-id', row.id)"),
     );
   });
 }

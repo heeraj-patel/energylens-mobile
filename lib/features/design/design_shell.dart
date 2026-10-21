@@ -25,7 +25,8 @@ import '../identify/appliance_onboarding_screen.dart'
 import '../identify/cloud_usage_questions_screen.dart';
 import '../identify/photo_capture_service.dart';
 import '../discovery/device_data_refresh.dart';
-import '../discovery/discovery_api.dart' show HubRequestException, PairingException;
+import '../discovery/discovery_api.dart'
+    show HubRequestException, PairingException;
 import 'device_review_sheet.dart';
 import 'efficiency_domain_repository.dart';
 import 'efficiency_trailing_30_day_bindings.dart';
@@ -60,6 +61,7 @@ import 'local_pilot_device_review_sheet.dart';
 import 'local_settings_devices_renderer.dart';
 import 'local_pilot_settings.dart';
 import 'home_details_screen.dart';
+import 'appliance_identity_edit_screen.dart';
 import 'account_profile_screen.dart';
 
 /// The approved design files are complete mobile pages. Keep their markup and
@@ -189,6 +191,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
   final List<String> _history = [];
   String _page = 'dashboard';
   bool _reviewOpen = false;
+  bool _identityEditOpen = false;
   bool _capturingPhoto = false;
   final Set<String> _archivingApplianceIds = <String>{};
   final Map<String, String> _archiveKeys = <String, String>{};
@@ -437,6 +440,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
         _deviceRefreshReloadRunning ||
         !mounted ||
         _reviewOpen ||
+        _identityEditOpen ||
         _capturingPhoto ||
         _navigating ||
         !_pageReady) {
@@ -453,6 +457,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
           scope != _currentDeviceRefreshScope() ||
           !_isCurrentPageLoad(page, generation) ||
           _reviewOpen ||
+          _identityEditOpen ||
           _capturingPhoto ||
           _navigating) {
         return;
@@ -1401,6 +1406,8 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
           generation: generation,
           appliances: rows,
           savedPlugs: _savedPlugs,
+          allowIdentityEdit:
+              page == 'settings_manage_devices' && widget.settingsApi != null,
         ),
       );
     } catch (_) {
@@ -1823,6 +1830,57 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _editSavedAppliance(String applianceId) async {
+    if (_identityEditOpen ||
+        _page != 'settings_manage_devices' ||
+        widget.localPilot ||
+        widget.designTour ||
+        widget.settingsApi == null) {
+      return;
+    }
+    final context = widget.designContextCoordinator?.context;
+    final lifecycle = widget.onboardingLifecycle;
+    final row = _savedAppliances
+        ?.where((item) => item.id == applianceId)
+        .firstOrNull;
+    if (context == null ||
+        context.mode != DesignContextMode.household ||
+        lifecycle == null ||
+        !lifecycle.isVerifiedScope(context.accountId, context.homeId) ||
+        row == null ||
+        row.homeId != context.homeId ||
+        row.archivedAt != null ||
+        row.demoDeviceId != null) {
+      return;
+    }
+    final generation = _pageLoadGeneration;
+    bool current() =>
+        mounted &&
+        _isCurrentPageLoad('settings_manage_devices', generation) &&
+        identical(widget.designContextCoordinator?.context, context) &&
+        lifecycle.isVerifiedScope(context.accountId, context.homeId);
+    if (!current()) return;
+    _identityEditOpen = true;
+    try {
+      final saved = await Navigator.of(this.context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) => ApplianceIdentityEditScreen(
+            api: widget.settingsApi!,
+            homeId: context.homeId,
+            applianceId: applianceId,
+            isCurrentScope: current,
+          ),
+        ),
+      );
+      if (saved == true && current()) {
+        await _refreshSavedAppliances('settings_manage_devices', generation);
+      }
+    } finally {
+      _identityEditOpen = false;
+      if (_deviceRefreshReloadPending) unawaited(_reloadAfterDeviceRefresh());
+    }
+  }
+
   Future<void> _deleteLocalAppliance(String rawId) async {
     final id = int.tryParse(rawId);
     final inventory = _localInventory;
@@ -1917,6 +1975,10 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
   }
 
   Future<void> _open(String route) async {
+    if (route.startsWith('edit_appliance:')) {
+      await _editSavedAppliance(route.substring('edit_appliance:'.length));
+      return;
+    }
     if (route == 'discover_devices') {
       if (widget.localPilot && !widget.designTour) {
         if (_page != 'settings_manage_devices' ||

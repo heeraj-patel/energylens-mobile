@@ -29,6 +29,7 @@ class SettingsSavedDevicesRenderer {
     required int generation,
     required List<CloudAppliance> appliances,
     List<CloudSavedPlug> savedPlugs = const [],
+    bool allowIdentityEdit = false,
   }) {
     final ids = <String>{};
     final rows = <Map<String, Object?>>[];
@@ -51,6 +52,7 @@ class SettingsSavedDevicesRenderer {
         'fuel': appliance.fuel,
         'variant': appliance.variant ?? '',
         'persisted': appliance.demoDeviceId == null,
+        'editable': allowIdentityEdit && appliance.demoDeviceId == null,
       });
     }
     final plugIds = <String>{};
@@ -67,6 +69,7 @@ class SettingsSavedDevicesRenderer {
         'fuel': '',
         'variant': '',
         'persisted': false,
+        'editable': false,
         'plug': true,
       });
     }
@@ -88,6 +91,7 @@ class SettingsSavedDevicesRenderer {
         typeof row.brand !== 'string' || typeof row.model !== 'string' ||
         typeof row.fuel !== 'string' || typeof row.variant !== 'string' ||
         typeof row.persisted !== 'boolean' ||
+        typeof row.editable !== 'boolean' ||
         (row.plug !== undefined && typeof row.plug !== 'boolean')) return false;
     const card = document.createElement('div');
     card.className = 'p-3 rounded-lg bg-surface-container-low/50 border border-outline-variant/20 flex items-center gap-3';
@@ -108,6 +112,15 @@ class SettingsSavedDevicesRenderer {
     identity.textContent = [row.brand, row.model].filter(Boolean).join(' ');
     labels.append(name, identity);
     card.append(iconBox, labels);
+    if (row.editable) {
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'shrink-0 min-w-11 min-h-11 px-2 rounded-lg font-label-md text-xs font-semibold text-primary';
+      edit.textContent = 'Edit';
+      edit.setAttribute('aria-label', 'Edit ' + row.name);
+      edit.setAttribute('data-el-edit-appliance-id', row.id);
+      card.appendChild(edit);
+    }
     if (row.persisted) {
       const remove = document.createElement('button');
       remove.type = 'button';

@@ -7,6 +7,58 @@ import 'package:energylens_mobile/core/cloud_api/cloud_energy_categories.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('saved appliance Edit routes only from Manage Devices', () async {
+    final file =
+        await File(
+          '${Directory.systemTemp.path}/energylens-edit-navigation-${DateTime.now().microsecondsSinceEpoch}.json',
+        ).writeAsString(
+          jsonEncode({
+            'manage': buildDesignNavigationScript('settings_manage_devices'),
+            'manual': buildDesignNavigationScript(
+              'settings_manual_device_entry',
+            ),
+          }),
+        );
+    try {
+      final result = await Process.run('node', [
+        '-e',
+        r'''
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const scripts = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+for (const [page, script] of Object.entries(scripts)) {
+  const routes = [];
+  let clickHandler;
+  globalThis.document = {addEventListener(_, handler) { clickHandler = handler; }};
+  globalThis.EnergyLensNavigation = {postMessage(route) { routes.push(route); }};
+  eval(script);
+  const button = {
+    dataset: {},
+    getAttribute(name) { return name === 'data-el-edit-appliance-id' ? 'device-1' : null; },
+    closest() { return null; },
+    cloneNode() { return {textContent: 'Edit', querySelectorAll() { return []; }}; }
+  };
+  let prevented = false;
+  clickHandler({
+    target: {closest(selector) { return selector === 'button' ? button : null; }},
+    preventDefault() { prevented = true; },
+    stopImmediatePropagation() {},
+  });
+  if (page === 'manage') {
+    assert.equal(prevented, true);
+    assert.deepEqual(routes, ['edit_appliance:device-1']);
+  } else {
+    assert.deepEqual(routes, []);
+  }
+}
+''',
+        file.path,
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    } finally {
+      await file.delete();
+    }
+  });
   test('a live Devices card routes its appliance id and name', () async {
     final script = buildDesignNavigationScript('devices');
     final file = await File(

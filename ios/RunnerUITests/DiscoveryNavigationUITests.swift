@@ -527,7 +527,7 @@ final class DiscoveryNavigationUITests: XCTestCase {
       "Devices", "Manage")).firstMatch
     XCTAssertTrue(devices.waitForExistence(timeout: 30), "Devices navigation was unavailable")
     tapNavigation(devices)
-    XCTAssertTrue(exactLabel("HOME DEVICES").waitForExistence(timeout: 60),
+    XCTAssertTrue(exactLabel("MONITORED DEVICES").waitForExistence(timeout: 60),
                   "Devices energy page did not finish navigating")
     let deviceLamp = exactLabel(lampName)
     XCTAssertTrue(deviceLamp.waitForExistence(timeout: 90),
