@@ -3,8 +3,8 @@ import 'dart:convert';
 import '../../core/cloud_api/cloud_appliance.dart';
 import 'cloud_saved_plug_inventory.dart';
 
-/// Adds verified-home inventory to the three Settings device-entry assets.
-/// The packaged rows stay intact; appended rows make no telemetry claim.
+/// Shows verified-home inventory on the Settings device-entry pages.
+/// Packaged fallback rows remain only until a verified inventory is available.
 class SettingsSavedDevicesRenderer {
   const SettingsSavedDevicesRenderer();
 
@@ -135,11 +135,9 @@ class SettingsSavedDevicesRenderer {
     }
     cards.push(card);
   }
-  for (const card of list.querySelectorAll('[data-el-saved-appliance-id]')) card.remove();
-  for (const card of list.querySelectorAll('[data-el-saved-plug-id]')) card.remove();
-  for (const card of cards) list.appendChild(card);
+  list.replaceChildren(...cards);
   const count = document.getElementById('configured-count');
-  if (count) count.textContent = String(list.children.length);
+  if (count) count.textContent = String(cards.length);
   // A discovered candidate is removed only when all identity fields are
   // explicitly present and exactly equal to the saved inventory identity.
   for (const candidate of document.querySelectorAll('[data-el-discovered-candidate]')) {

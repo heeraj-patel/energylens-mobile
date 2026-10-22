@@ -162,10 +162,7 @@ void main() {
       },
     ]);
     expect(script, contains("'data-el-saved-plug-id'"));
-    expect(
-      script,
-      contains("list.querySelectorAll('[data-el-saved-plug-id]')"),
-    );
+    expect(script, contains('list.replaceChildren(...cards)'));
     expect(script, contains('!row.plug &&'));
   });
 
@@ -187,14 +184,8 @@ void main() {
     expect(install, contains('current.generation >= expected.generation'));
     expect(append, contains('current.homeId !== payload.homeId'));
     expect(append, contains('current.generation !== payload.generation'));
-    expect(
-      append,
-      contains("list.querySelectorAll('[data-el-saved-appliance-id]')"),
-    );
-    expect(
-      append,
-      contains("count.textContent = String(list.children.length)"),
-    );
+    expect(append, contains('list.replaceChildren(...cards)'));
+    expect(append, contains('count.textContent = String(cards.length)'));
     expect(append, contains('candidate.hasAttribute(field)'));
     expect(
       append,
