@@ -346,7 +346,7 @@ void main() {
     expect(find.text('Submit'), findsOneWidget);
     await tester.tap(find.text('Submit'));
     await tester.pumpAndSettle();
-    expect(find.text('Invalid username or password.'), findsOneWidget);
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
   });
 
   testWidgets('invalid development pin cannot start a request', (tester) async {
@@ -555,7 +555,7 @@ void main() {
     expect(capabilities, 2);
     expect(session.credentialMethod, 'username_password');
     expect(login?.body, contains('"username":"nik"'));
-    expect(find.text('Internal Error, Try again later'), findsOneWidget);
+    expect(find.text('Invalid username or password.'), findsOneWidget);
     expect(
       tester
           .widget<TextField>(find.byKey(const Key('localSignInEmail')))
