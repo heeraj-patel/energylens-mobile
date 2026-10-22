@@ -201,6 +201,23 @@ void main() {
   });
 
   test(
+    'session scope change notifies an open private viewer immediately',
+    () async {
+      final session = CloudSession(
+        config: config,
+        store: MemoryStore()..tokens = const CloudTokens(accessToken: 'old'),
+        authenticator: FakeAuthenticator(),
+      );
+      final seen = <int>[];
+      session.generationChanges.addListener(() => seen.add(session.generation));
+      final signOut = session.signOut();
+      expect(seen, [1]);
+      expect(session.generationChanges.value, 1);
+      await signOut;
+    },
+  );
+
+  test(
     'configuration fails closed for missing or mismatched callback and HTTP',
     () {
       expect(CloudAuthConfig.fromEnvironment().isConfigured, isFalse);

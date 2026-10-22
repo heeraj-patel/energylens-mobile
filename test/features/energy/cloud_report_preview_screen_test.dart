@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:printing/printing.dart';
 
 const home = CloudHome(
   id: '11111111-1111-4111-8111-111111111111',
@@ -558,4 +559,119 @@ void main() {
       api.close();
     },
   );
+
+  test(
+    'report PDF download sends owner digest and rejects non-PDF bytes',
+    () async {
+      var valid = true;
+      final api = _api(
+        MockClient((request) async {
+          expect(request.method, 'GET');
+          expect(
+            request.url.path,
+            '/v1/homes/${home.id}/reports/previews/$previewId/pdf',
+          );
+          expect(request.headers['authorization'], 'Bearer owner-token');
+          expect(request.headers['x-report-snapshot-sha256'], 'a' * 64);
+          return http.Response(
+            valid ? '%PDF-test' : 'not a PDF',
+            200,
+            headers: {'content-type': 'application/pdf'},
+          );
+        }),
+      );
+      expect(await api.reportPDF(home.id, previewId, 'a' * 64), hasLength(9));
+      valid = false;
+      await expectLater(
+        api.reportPDF(home.id, previewId, 'a' * 64),
+        throwsA(isA<FormatException>()),
+      );
+      api.close();
+    },
+  );
+
+  testWidgets('PDF action uses approved progress and error copy', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var pendingPDF = Completer<http.Response>();
+    final api = _api(
+      MockClient((request) async {
+        if (request.url.path.endsWith('/appliances')) {
+          return http.Response(
+            jsonEncode({
+              'appliances': [
+                {
+                  'id': applianceId,
+                  'home_id': home.id,
+                  'name': 'Washer',
+                  'category': 'washer',
+                  'identity': {
+                    'brand': 'LG',
+                    'full_model': 'WM3070HWA',
+                    'fuel': 'electricity',
+                    'match_quality': 'confirmed_exact',
+                  },
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path.endsWith('/reports/preview')) {
+          return http.Response(jsonEncode(_preview()), 201);
+        }
+        if (request.url.path.endsWith('/reports/previews/$previewId')) {
+          return http.Response(jsonEncode(_preview()), 200);
+        }
+        if (request.url.path.endsWith('/reports/previews/$previewId/pdf')) {
+          return pendingPDF.future;
+        }
+        fail('Unexpected request: ${request.url.path}');
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudReportPreviewScreen(api: api, home: home),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('reportAppliance-$applianceId')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create private preview'));
+    await tester.pumpAndSettle();
+    expect(find.text('View PDF'), findsOneWidget);
+    expect(find.text('Save or share PDF'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('viewReportPDF')));
+    await tester.tap(find.byKey(const Key('viewReportPDF')));
+    await tester.pump();
+    expect(find.text('Preparing PDF…'), findsOneWidget);
+    pendingPDF.complete(http.Response('{"code":"preview_stale"}', 409));
+    await tester.pumpAndSettle();
+    expect(find.text('Couldn’t prepare the PDF. Try again.'), findsOneWidget);
+    expect(find.text('✉ Email Report Now'), findsOneWidget);
+    pendingPDF = Completer<http.Response>();
+    await tester.ensureVisible(find.byKey(const Key('viewReportPDF')));
+    await tester.tap(find.byKey(const Key('viewReportPDF')));
+    await tester.pump();
+    pendingPDF.complete(
+      http.Response(
+        '%PDF-test',
+        200,
+        headers: {'content-type': 'application/pdf'},
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(PdfPreview), findsOneWidget);
+    final signOut = api.session.signOut();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(PdfPreview), findsNothing);
+    await signOut;
+    api.close();
+  });
 }

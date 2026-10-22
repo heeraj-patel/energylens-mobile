@@ -1,4 +1,7 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 
 import '../../core/cloud_api/cloud_api_client.dart';
 import '../../core/cloud_api/cloud_appliance.dart';
@@ -32,6 +35,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
   CloudReportPreview? _preview;
   String? _error;
   bool _busy = false;
+  bool _pdfPreparing = false;
   String _key = newCloudIdempotencyKey();
   final TextEditingController _recipients = TextEditingController();
   bool _approved = false;
@@ -225,6 +229,63 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
     }
   }
 
+  Future<void> _preparePDF({required bool share}) async {
+    final preview = _preview;
+    if (_busy || !_hasVerifiedScope || preview == null || preview.isStale) {
+      return;
+    }
+    final homeId = widget.home.id;
+    final previewId = preview.id;
+    final digest = preview.snapshotSha256;
+    final sessionGeneration = widget.api.session.generation;
+    setState(() {
+      _busy = true;
+      _pdfPreparing = true;
+      _error = null;
+    });
+    try {
+      final bytes = await widget.api.reportPDF(homeId, previewId, digest);
+      if (!mounted ||
+          !_hasVerifiedScope ||
+          widget.home.id != homeId ||
+          widget.api.session.generation != sessionGeneration ||
+          _preview?.id != previewId ||
+          _preview?.snapshotSha256 != digest) {
+        return;
+      }
+      if (share) {
+        await Printing.sharePdf(
+          bytes: bytes,
+          filename: 'energylens-report.pdf',
+        );
+      } else {
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => _ReportPDFScreen(
+              bytes: bytes,
+              api: widget.api,
+              lifecycle: widget.lifecycle,
+              accountId: widget.accountId,
+              homeId: homeId,
+              sessionGeneration: sessionGeneration,
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted && _hasVerifiedScope) {
+        setState(() => _error = 'Couldn’t prepare the PDF. Try again.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _pdfPreparing = false;
+        });
+      }
+    }
+  }
+
   Future<void> _sendDelivery() async {
     final current = _preview;
     if (!_hasVerifiedScope ||
@@ -344,6 +405,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
                     ),
                     if (_busy)
                       const LinearProgressIndicator(key: Key('reportLoading')),
+                    if (_pdfPreparing) const Text('Preparing PDF…'),
                     if (_error != null)
                       Text(_error!, key: const Key('reportError')),
                     if (_appliances == null)
@@ -438,6 +500,21 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
                               ListTile(title: Text(assumption)),
                           ],
                         ),
+                      const SizedBox(height: 16),
+                      OutlinedButton(
+                        key: const Key('viewReportPDF'),
+                        onPressed: _busy || preview.isStale
+                            ? null
+                            : () => _preparePDF(share: false),
+                        child: const Text('View PDF'),
+                      ),
+                      OutlinedButton(
+                        key: const Key('shareReportPDF'),
+                        onPressed: _busy || preview.isStale
+                            ? null
+                            : () => _preparePDF(share: true),
+                        child: const Text('Save or share PDF'),
+                      ),
                       if (_currentDeliveryId == null && !preview.isStale) ...[
                         const SizedBox(height: 16),
                         TextField(
@@ -495,6 +572,91 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
                     ],
                   ],
                 ),
+              ),
+            ),
+          ),
+        );
+}
+
+class _ReportPDFScreen extends StatefulWidget {
+  const _ReportPDFScreen({
+    required this.bytes,
+    required this.api,
+    required this.lifecycle,
+    required this.accountId,
+    required this.homeId,
+    required this.sessionGeneration,
+  });
+
+  final Uint8List bytes;
+  final CloudApiClient api;
+  final CloudAuxiliaryDomainLifecycle? lifecycle;
+  final String? accountId;
+  final String homeId;
+  final int sessionGeneration;
+
+  @override
+  State<_ReportPDFScreen> createState() => _ReportPDFScreenState();
+}
+
+class _ReportPDFScreenState extends State<_ReportPDFScreen> {
+  bool get _active {
+    final lifecycle = widget.lifecycle;
+    return widget.api.session.generation == widget.sessionGeneration &&
+        (lifecycle == null ||
+            (widget.accountId != null &&
+                lifecycle.isVerifiedScope(widget.accountId!, widget.homeId)));
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.lifecycle?.scopeChanges.addListener(_onScopeChanged);
+    widget.api.session.generationChanges.addListener(_onScopeChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.lifecycle?.scopeChanges.removeListener(_onScopeChanged);
+    widget.api.session.generationChanges.removeListener(_onScopeChanged);
+    super.dispose();
+  }
+
+  void _onScopeChanged() {
+    if (!mounted || _active) return;
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_active && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => !_active
+      ? const SizedBox.shrink()
+      : Scaffold(
+          appBar: AppBar(title: const Text('View PDF')),
+          body: PdfPreview(
+            build: (_) async => widget.bytes,
+            allowPrinting: false,
+            allowSharing: false,
+            canChangeOrientation: false,
+            canChangePageFormat: false,
+            canDebug: false,
+            useActions: false,
+          ),
+          bottomNavigationBar: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: FilledButton(
+                onPressed: _active
+                    ? () => Printing.sharePdf(
+                        bytes: widget.bytes,
+                        filename: 'energylens-report.pdf',
+                      )
+                    : null,
+                child: const Text('Save or share PDF'),
               ),
             ),
           ),

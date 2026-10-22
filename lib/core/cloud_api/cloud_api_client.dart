@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -227,12 +228,16 @@ class CloudApiClient {
           headers: const {'Accept': 'application/json'},
         )
         .timeout(const Duration(seconds: 15));
-    if (response.statusCode == 404) return null;
-    if (response.statusCode != 200)
+    if (response.statusCode == 404) {
+      return null;
+    }
+    if (response.statusCode != 200) {
       throw CloudApiException(response.statusCode, 'auth_config_unavailable');
+    }
     final body = jsonDecode(response.body);
-    if (body is! Map<String, dynamic>)
+    if (body is! Map<String, dynamic>) {
       throw const FormatException('Invalid Cloud auth capabilities');
+    }
     return CloudAuthCapabilities.fromJson(body, session.config);
   }
 
@@ -653,6 +658,37 @@ class CloudApiClient {
       throw const FormatException('Report preview ID changed');
     }
     return preview;
+  }
+
+  Future<Uint8List> reportPDF(
+    String homeId,
+    String previewId,
+    String snapshotSha256,
+  ) async {
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(snapshotSha256)) {
+      throw ArgumentError.value(snapshotSha256, 'snapshotSha256');
+    }
+    final response = await _request(
+      'GET',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/reports/previews/${Uri.encodeComponent(previewId)}/pdf',
+      reportSnapshotSha256: snapshotSha256,
+    );
+    final contentType = _caseInsensitiveHeader(
+      response.headers,
+      'content-type',
+    );
+    final bytes = response.bodyBytes;
+    if (contentType?.split(';').first.trim() != 'application/pdf' ||
+        bytes.length < 5 ||
+        bytes.length > 8 * 1024 * 1024 ||
+        bytes[0] != 0x25 ||
+        bytes[1] != 0x50 ||
+        bytes[2] != 0x44 ||
+        bytes[3] != 0x46 ||
+        bytes[4] != 0x2d) {
+      throw const FormatException('Invalid report PDF response');
+    }
+    return bytes;
   }
 
   Future<CloudReportDelivery> queueReportDelivery(
@@ -1743,6 +1779,7 @@ class CloudApiClient {
     String? idempotencyKey,
     String? ifMatch,
     String? ifNoneMatch,
+    String? reportSnapshotSha256,
   }) async {
     final sessionGeneration = session.generation;
     if (!session.config.hasCloudSignIn) {
@@ -1776,6 +1813,9 @@ class CloudApiClient {
       }
       if (ifMatch != null) request.headers['If-Match'] = ifMatch;
       if (ifNoneMatch != null) request.headers['If-None-Match'] = ifNoneMatch;
+      if (reportSnapshotSha256 != null) {
+        request.headers['X-Report-Snapshot-SHA256'] = reportSnapshotSha256;
+      }
       return http.Response.fromStream(await _client.send(request));
     }
 

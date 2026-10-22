@@ -129,18 +129,17 @@ abstract interface class CloudTokenStore {
 class SecureCloudTokenStore implements CloudTokenStore {
   SecureCloudTokenStore({
     required String origin,
-    required String profile,
+    required this._profile,
     FlutterSecureStorage? storage,
   }) : _storage = storage ?? const FlutterSecureStorage(),
-       _origin = Uri.parse(origin).origin,
-       _profile = profile;
+       _origin = Uri.parse(origin).origin;
   final FlutterSecureStorage _storage;
   final String _origin;
   String _profile;
   Future<void> _tail = Future.value();
   Future<T> _ordered<T>(Future<T> Function() action) {
     final result = _tail.then((_) => action());
-    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return result;
   }
 
@@ -317,9 +316,16 @@ class CloudSession {
   Future<CloudTokens?>? _refreshInFlight;
   int? _refreshGeneration;
   int _generation = 0;
+  final ValueNotifier<int> _generationChanges = ValueNotifier<int>(0);
   bool _accepting = true;
   Future<void> _storageTail = Future.value();
   int get generation => _generation;
+  ValueListenable<int> get generationChanges => _generationChanges;
+
+  int _advanceGeneration() {
+    _generationChanges.value = ++_generation;
+    return _generation;
+  }
 
   Future<void> selectCredentialMethod(String method) async {
     if (method != 'username_password' &&
@@ -328,7 +334,7 @@ class CloudSession {
       throw ArgumentError.value(method, 'method');
     }
     if (method == credentialMethod) return;
-    final generation = ++_generation;
+    final generation = _advanceGeneration();
     _accepting = false;
     await _orderedWrite(() async {
       if (generation != _generation) return;
@@ -445,7 +451,7 @@ class CloudSession {
     if (!config.isConfigured) {
       throw StateError('Cloud sign-in is not configured');
     }
-    final generation = ++_generation;
+    final generation = _advanceGeneration();
     _accepting = false;
     await _clearIfCurrent(generation);
     final tokens = await authenticator.signIn(config);
@@ -458,7 +464,7 @@ class CloudSession {
     if (!config.isLocalAuthConfigured || localAuth == null) {
       throw StateError('Local Cloud sign-in is not configured');
     }
-    final generation = ++_generation;
+    final generation = _advanceGeneration();
     _accepting = false;
     await _clearIfCurrent(generation);
     final tokens = await localAuth!.login(email, password);
@@ -471,7 +477,7 @@ class CloudSession {
   }
 
   Future<void> signOut() async {
-    _generation++;
+    _advanceGeneration();
     _accepting = false;
     CloudTokens? tokens;
     await _orderedWrite(() async {
