@@ -23,6 +23,8 @@ import '../identify/cloud_usage_questions_screen.dart';
 import 'device_energy_detail_screen.dart';
 import '../../core/backend_error.dart';
 
+const bool _developerMode = String.fromEnvironment('DEVELOPER_MODE') == 'TRUE';
+
 String? _makeModelIdentity(String? manufacturer, String? model) {
   final make = manufacturer?.trim() ?? '';
   final fullModel = model?.trim() ?? '';
@@ -2136,43 +2138,44 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       style: theme.textTheme.titleMedium,
                     ),
                   ),
-                  TextButton(
-                    onPressed: () => setState(
-                      () => _showConnectionSettings = !_showConnectionSettings,
+                  if (_developerMode)
+                    TextButton(
+                      onPressed: () => setState(
+                        () =>
+                            _showConnectionSettings = !_showConnectionSettings,
+                      ),
+                      child: Text(
+                        _showConnectionSettings
+                            ? 'Hide details'
+                            : 'Connection details',
+                      ),
                     ),
-                    child: Text(
-                      _showConnectionSettings
-                          ? 'Hide details'
-                          : 'Connection details',
-                    ),
-                  ),
                 ],
               ),
             ],
             if (widget.cloudHome != null &&
                 widget.cloudApi != null &&
-                _paired) ...[
+                (!_paired || (!_claimedThisSession && !_cloudHubOwned))) ...[
               const SizedBox(height: 16),
               Text(
                 'Cloud home: ${widget.cloudHome!.name}',
                 style: theme.textTheme.titleMedium,
               ),
-              const SizedBox(height: 6),
-              const Text(
-                'Link this paired hub to the selected cloud home. The hub must be registered for cloud claims.',
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _claimBusy || _claimedThisSession ? null : _claimHub,
-                icon: const Icon(Icons.cloud_done_outlined),
-                label: Text(
-                  _claimBusy
-                      ? 'Linking hub…'
-                      : _claimedThisSession
-                      ? 'Hub linked to home'
-                      : 'Link paired hub to home',
+              if (!_paired) ...[
+                const SizedBox(height: 6),
+                const Text(
+                  'Link this paired hub to the selected cloud home. The hub must be registered for cloud claims.',
                 ),
-              ),
+              ],
+              const SizedBox(height: 8),
+              if (_paired && !_claimedThisSession && !_cloudHubOwned)
+                OutlinedButton.icon(
+                  onPressed: _claimBusy ? null : _claimHub,
+                  icon: const Icon(Icons.cloud_done_outlined),
+                  label: Text(
+                    _claimBusy ? 'Linking hub…' : 'Link paired hub to home',
+                  ),
+                ),
               if (_claimMessage != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -2182,49 +2185,47 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   ),
                 ),
             ],
-            if (!_hubConnected || _showConnectionSettings) ...[
-              Text(
-                'Connect to your local hub',
-                style: theme.textTheme.titleLarge,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Connect the plug to the same Wi-Fi network as your local hub. Pair this phone with the hub, then scan for TP-Link Kasa plugs or enter a local plug IP.',
-              ),
-              const SizedBox(height: 18),
-              FilledButton.icon(
-                onPressed: _busy ? null : _openPairing,
-                icon: const Icon(Icons.phonelink_lock),
-                label: Text(
-                  _paired ? 'Pair with a different hub' : 'Pair with hub',
+            if (!_paired ||
+                (_developerMode &&
+                    (!_hubConnected || _showConnectionSettings))) ...[
+              if (!_paired)
+                Text(
+                  'Connect to your local hub',
+                  style: theme.textTheme.titleLarge,
                 ),
-              ),
-              if (_pairedHubId != null) ...[
+              const SizedBox(height: 8),
+              if (!_paired)
+                const Text(
+                  'Connect the plug to the same Wi-Fi network as your local hub. Pair this phone with the hub, then scan for TP-Link Kasa plugs or enter a local plug IP.',
+                ),
+              const SizedBox(height: 18),
+              if (!_paired || _developerMode)
+                FilledButton.icon(
+                  onPressed: _busy ? null : _openPairing,
+                  icon: const Icon(Icons.phonelink_lock),
+                  label: Text(
+                    _paired ? 'Pair with a different hub' : 'Pair with hub',
+                  ),
+                ),
+              if (_developerMode && _pairedHubId != null) ...[
                 const SizedBox(height: 8),
                 Text('Paired hub: $_pairedHubId'),
               ],
-              if (_paired && !_hubConnected) ...[
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : _restore,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Retry hub connection'),
-                ),
-              ],
               const SizedBox(height: 16),
-              TextField(
-                key: const Key('hubAddress'),
-                controller: _hub,
-                decoration: InputDecoration(
-                  labelText: _paired ? 'Paired hub address' : 'Hub address',
-                  hintText: 'https://192.168.68.136:18787#sha256=…',
-                  border: OutlineInputBorder(),
+              if (!_paired || _developerMode)
+                TextField(
+                  key: const Key('hubAddress'),
+                  controller: _hub,
+                  decoration: InputDecoration(
+                    labelText: _paired ? 'Paired hub address' : 'Hub address',
+                    hintText: 'https://192.168.68.136:18787#sha256=…',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  readOnly: _paired,
+                  onChanged: (_) => _invalidateHubData(),
                 ),
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                readOnly: _paired,
-                onChanged: (_) => _invalidateHubData(),
-              ),
               const SizedBox(height: 12),
               if (!_paired)
                 TextField(
@@ -2237,6 +2238,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   autocorrect: false,
                   onChanged: (_) => _invalidateHubData(),
                 ),
+            ],
+            if (_paired && !_hubConnected) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _restore,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry hub connection'),
+              ),
             ],
             const SizedBox(height: 16),
             FilledButton.icon(

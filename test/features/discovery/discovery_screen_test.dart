@@ -15,6 +15,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+const bool _testDeveloperMode =
+    String.fromEnvironment('DEVELOPER_MODE') == 'TRUE';
+
 const _cloudHomeId = '11111111-1111-4111-8111-111111111111';
 const _cloudHubId = '22222222-2222-4222-8222-222222222222';
 const _cloudSensorId = '33333333-3333-4333-8333-333333333333';
@@ -934,7 +937,29 @@ void main() {
       } else {
         expect(api.scans, 1);
         expect(find.text('Hub connected'), findsOneWidget);
-        await tester.scrollUntilVisible(find.text('Saved office plug'), 300);
+        if (_testDeveloperMode) {
+          await tester.tap(find.text('Connection details'));
+          await tester.pumpAndSettle();
+          expect(find.text('Pair with a different hub'), findsOneWidget);
+          expect(find.textContaining('Paired hub:'), findsOneWidget);
+          expect(find.text('Paired hub address'), findsOneWidget);
+        } else {
+          expect(find.text('Connection details'), findsNothing);
+          expect(find.text('Pair with a different hub'), findsNothing);
+          expect(find.textContaining('Paired hub:'), findsNothing);
+          expect(find.text('Paired hub address'), findsNothing);
+        }
+        expect(find.text('Link paired hub to home'), findsNothing);
+        expect(find.textContaining('Link this paired hub'), findsNothing);
+        expect(
+          find.textContaining('Pair this phone with the hub'),
+          findsNothing,
+        );
+        await tester.scrollUntilVisible(
+          find.text('Saved office plug'),
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
         expect(find.text('Saved office plug'), findsOneWidget);
         expect(
           store.values.values.any((v) => v.contains('auto-paired-token')),
@@ -1556,8 +1581,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Link paired hub to home'));
-      await tester.pumpAndSettle();
+      expect(find.text('Link paired hub to home'), findsNothing);
 
       expect(sensorCreates, 0);
       await tester.tap(find.text('Scan for plugs'));
@@ -1878,6 +1902,7 @@ void main() {
   testWidgets('clears old hub devices when the hub address changes', (
     tester,
   ) async {
+    if (!_testDeveloperMode) return;
     final api = SavingApi()
       ..plug = const SavedPlug(
         id: 'old-plug',
@@ -2071,7 +2096,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       final initialReads = api.savedReads.length;
-      await tester.scrollUntilVisible(find.text('First plug'), 220);
+      await tester.scrollUntilVisible(
+        find.text('First plug'),
+        220,
+        scrollable: find.byType(Scrollable).first,
+      );
       final firstCard = find.ancestor(
         of: find.text('First plug'),
         matching: find.byType(Card),
@@ -2097,7 +2126,11 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('Second plug'), 220);
+      await tester.scrollUntilVisible(
+        find.text('Second plug'),
+        220,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('First plug'), findsNothing);
       expect(find.text('Second plug'), findsOneWidget);
       final secondCard = find.ancestor(
@@ -2136,7 +2169,11 @@ void main() {
       await tester.pumpAndSettle();
       final savedBefore = api.savedReads.length;
       final nearbyBefore = api.nearbyReads.length;
-      await tester.scrollUntilVisible(find.text('First plug'), 220);
+      await tester.scrollUntilVisible(
+        find.text('First plug'),
+        220,
+        scrollable: find.byType(Scrollable).first,
+      );
       final card = find.ancestor(
         of: find.text('First plug'),
         matching: find.byType(Card),
@@ -2207,7 +2244,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('First plug'), 220);
+    await tester.scrollUntilVisible(
+      find.text('First plug'),
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
     final card = find.ancestor(
       of: find.text('First plug'),
       matching: find.byType(Card),
@@ -2238,7 +2279,11 @@ void main() {
     api.queuedSavedReads.add(stale);
     await tester.tap(find.byTooltip('Refresh saved plugs'));
     await tester.pump();
-    await tester.scrollUntilVisible(find.text('First plug'), 220);
+    await tester.scrollUntilVisible(
+      find.text('First plug'),
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
     final card = find.ancestor(
       of: find.text('First plug'),
       matching: find.byType(Card),
@@ -2280,7 +2325,11 @@ void main() {
     await tester.tap(find.byTooltip('Refresh saved plugs'));
     await tester.pump();
     expect(api.queuedNearbyReads, isEmpty);
-    await tester.scrollUntilVisible(find.text('First plug'), 220);
+    await tester.scrollUntilVisible(
+      find.text('First plug'),
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
     final card = find.ancestor(
       of: find.text('First plug'),
       matching: find.byType(Card),
@@ -2296,6 +2345,7 @@ void main() {
   testWidgets(
     'A late saved read cannot show old Hub rows after address switch',
     (tester) async {
+      if (!_testDeveloperMode) return;
       final api = _DeletingSavedApi();
       final credentials = FakeCredentials()
         ..address = 'https://192.168.1.20:8787'
@@ -2331,6 +2381,7 @@ void main() {
   testWidgets('Old Hub delete does not block the same ID on a new Hub', (
     tester,
   ) async {
+    if (!_testDeveloperMode) return;
     final oldDelete = Completer<void>();
     final newDelete = Completer<void>();
     final api = _DeletingSavedApi()..pending = oldDelete;
@@ -2343,7 +2394,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('First plug'), 220);
+    await tester.scrollUntilVisible(
+      find.text('First plug'),
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
     final oldCard = find.ancestor(
       of: find.text('First plug'),
       matching: find.byType(Card),
@@ -2410,7 +2465,11 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('First plug'), 220);
+      await tester.scrollUntilVisible(
+        find.text('First plug'),
+        220,
+        scrollable: find.byType(Scrollable).first,
+      );
       final firstCard = find.ancestor(
         of: find.text('First plug'),
         matching: find.byType(Card),
@@ -2494,7 +2553,11 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('First plug'), 220);
+      await tester.scrollUntilVisible(
+        find.text('First plug'),
+        220,
+        scrollable: find.byType(Scrollable).first,
+      );
       final firstCard = find.ancestor(
         of: find.text('First plug'),
         matching: find.byType(Card),
@@ -2532,6 +2595,7 @@ void main() {
   testWidgets('stale Delete completion does not change another hub view', (
     tester,
   ) async {
+    if (!_testDeveloperMode) return;
     final api = _DeletingSavedApi()..pending = Completer<void>();
     final credentials = FakeCredentials()
       ..address = 'https://192.168.1.20:8787'
@@ -2542,7 +2606,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('First plug'), 220);
+    await tester.scrollUntilVisible(
+      find.text('First plug'),
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
     final firstCard = find.ancestor(
       of: find.text('First plug'),
       matching: find.byType(Card),
@@ -2578,6 +2646,7 @@ void main() {
   testWidgets('Delete error clears when hub changes and plug ID reappears', (
     tester,
   ) async {
+    if (!_testDeveloperMode) return;
     final api = _DeletingSavedApi()..fail = true;
     final credentials = FakeCredentials()
       ..address = 'https://192.168.1.20:8787'
@@ -2588,7 +2657,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('First plug'), 220);
+    await tester.scrollUntilVisible(
+      find.text('First plug'),
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
     final firstCard = find.ancestor(
       of: find.text('First plug'),
       matching: find.byType(Card),
@@ -2641,7 +2714,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('First plug'), 220);
+    await tester.scrollUntilVisible(
+      find.text('First plug'),
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
     final firstCard = find.ancestor(
       of: find.text('First plug'),
       matching: find.byType(Card),
@@ -2823,7 +2900,22 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Paired hub: hub-1'), findsOneWidget);
+    expect(
+      find.text('Paired hub: hub-1'),
+      _testDeveloperMode ? findsOneWidget : findsNothing,
+    );
+    expect(
+      find.text('Pair with a different hub'),
+      _testDeveloperMode ? findsOneWidget : findsNothing,
+    );
+    expect(
+      find.text('Paired hub address'),
+      _testDeveloperMode ? findsOneWidget : findsNothing,
+    );
+    expect(find.text('Connect to your local hub'), findsNothing);
+    expect(find.text('Link paired hub to home'), findsNothing);
+    expect(find.textContaining('Link this paired hub'), findsNothing);
+    expect(find.textContaining('Pair this phone with the hub'), findsNothing);
     expect(find.text('Hub temporarily unavailable.'), findsOneWidget);
     expect(find.text('Retry hub connection'), findsOneWidget);
     expect(api.checks, 1);
