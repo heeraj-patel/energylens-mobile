@@ -291,12 +291,6 @@ body main.pt-16 {
   line-height: var(--el-header-page-line-height) !important;
 }
 
-.el-app-header-icon {
-  background-color: rgb(186 230 255 / 50%) !important;
-  border: 1px solid rgb(125 211 252 / 40%) !important;
-  color: #006686 !important;
-}
-
 .el-app-profile {
   box-shadow: 0 0 0 2px #7dd3fc !important;
 }

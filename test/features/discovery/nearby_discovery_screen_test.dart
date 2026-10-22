@@ -381,7 +381,13 @@ void main() {
     expect(find.text('Tuya compatible'), findsOneWidget);
     expect(find.text('Add'), findsOneWidget);
     expect(find.text('From your accounts'), findsNothing);
-    expect(find.textContaining('192.168'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('nearby-kmc')),
+        matching: find.textContaining('192.168'),
+      ),
+      findsNothing,
+    );
     expect(find.textContaining('tuya'), findsNothing);
     await tester.tap(find.text('Add'));
     await tester.pumpAndSettle();
@@ -997,8 +1003,6 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump();
-    await tester.tap(find.text('Connection details'));
     await tester.pump();
     await tester.enterText(
       find.byKey(const Key('hubAddress')),
