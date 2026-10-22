@@ -276,6 +276,30 @@ void main() {
       expect(find.text('Skip'), findsNothing);
     });
 
+    testWidgets('shows the water heater household size question', (
+      tester,
+    ) async {
+      final household = choice(
+        'water_heater.household_size',
+        'How many people live in your home?',
+        [
+          ['people_0_2', 38],
+          ['people_3_5', 64],
+          ['people_6_plus', 91],
+        ],
+      );
+      final posts = await open(tester, questions: [household]);
+      expect(find.text('How many people live in your home?'), findsOneWidget);
+      for (final label in ['0 to 2', '3 to 5', '6+', 'Not sure']) {
+        expect(find.text(label), findsOneWidget);
+      }
+      await tester.tap(find.text('6+'));
+      await tester.pumpAndSettle();
+      final answer = (jsonDecode(posts.single.body)['answers'] as List).single;
+      expect(answer['question_id'], 'water_heater.household_size');
+      expect(answer['value'], 91);
+    });
+
     testWidgets('shows the saved answer as selected', (tester) async {
       await open(
         tester,

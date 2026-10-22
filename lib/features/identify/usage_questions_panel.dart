@@ -43,7 +43,7 @@ abstract final class UsageQuestionStyle {
 
 const notSureLabel = 'Not sure';
 
-// Option key -> approved label (Q-C3, Q-C5, Q-C7, Q-C9, Q-C13), in display order.
+// Option key -> approved label (Q-C3, Q-C5, Q-C7, Q-C9, Q-C13, household size), in display order.
 const _optionLabels = <String, String>{
   'lt_1h': 'Less than 1 hour',
   '1_3h': '1-3 hours',
@@ -63,6 +63,9 @@ const _optionLabels = <String, String>{
   '2007_or_older': '2007 or older',
   'yes': 'Yes',
   'no': 'No',
+  'people_0_2': '0 to 2',
+  'people_3_5': '3 to 5',
+  'people_6_plus': '6+',
 };
 
 /// Questions the app can show: choice questions whose every option has an

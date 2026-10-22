@@ -14,6 +14,9 @@ const noRate = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const gasOnly = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const unknownGas = '11111111-2222-4222-8222-222222222222';
 const meteredGas = '33333333-3333-4333-8333-333333333333';
+const unpriced = '44444444-4444-4444-8444-444444444444';
+const propane = '55555555-5555-4555-8555-555555555555';
+const summed = '66666666-6666-4666-8666-666666666666';
 const tagged = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 
 DeviceInventoryItem _item(String id, String name) => DeviceInventoryItem(
@@ -48,8 +51,9 @@ Map<String, Object?> _allocation(
   bool gasKnown = false,
   String? totalCost,
   String? wasteBasis,
+  bool electricEnergy = false,
 }) => {
-  'energy': null,
+  'energy': electricEnergy ? {'value': '1.0', 'unit': 'kWh'} : null,
   'cost': cost == null ? null : _money(cost),
   'useful_energy': null,
   'useful_cost': useful == null ? null : _money(useful),
@@ -178,6 +182,29 @@ void main() {
       fuel: 'natural_gas',
       gasCost: '0.500000',
     ),
+    unpriced: _allocation(
+      'estimated',
+      unclassified: '0.100000',
+      fuel: 'natural_gas',
+      gasCost: '0.500000',
+      gasKnown: true,
+      electricEnergy: true,
+    ),
+    propane: _allocation(
+      'estimated',
+      cost: '0.100000',
+      unclassified: '0.100000',
+      fuel: 'propane',
+      gasKnown: true,
+    ),
+    summed: _allocation(
+      'estimated',
+      cost: '0.100000',
+      unclassified: '0.100000',
+      fuel: 'natural_gas',
+      gasCost: '0.500000',
+      gasKnown: true,
+    ),
     meteredGas: _allocation(
       'measured',
       cost: '0.200000',
@@ -213,11 +240,39 @@ void main() {
     expect(row.usageCost, '\$0.60');
   });
 
-  test('gas row without a gas rate shows electric cost only', () {
+  test('gas row without a gas rate shows no cost', () {
     final row = _row(projection, noRate);
-    expect(row.usefulCost, '\$0.10');
-    expect(row.usageCost, '\$0.10');
+    expect(row.usefulCost, isNull);
+    expect(row.usageCost, isNull);
     expect(row.wasteCost, isNull);
+  });
+
+  test('gas row with unpriced electric energy shows no cost', () {
+    final row = _row(projection, unpriced);
+    expect(row.usageCost, isNull);
+  });
+
+  test('propane row shows no cost', () {
+    final row = _row(projection, propane);
+    expect(row.usageCost, isNull);
+  });
+
+  test('gas row without totalCost sums electric and gas', () {
+    expect(_row(projection, summed).usageCost, '\$0.60');
+  });
+
+  test('gas row prefers the Cloud totalCost', () {
+    final p = _project({
+      dryer: _allocation(
+        'estimated',
+        cost: '0.100000',
+        fuel: 'natural_gas',
+        gasCost: '0.500000',
+        gasKnown: true,
+        totalCost: '0.700000',
+      ),
+    });
+    expect(_row(p, dryer).usageCost, '\$0.70');
   });
 
   test('gas row with unknown gas use shows no cost', () {
