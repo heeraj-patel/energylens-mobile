@@ -116,6 +116,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   CloudAuthCapabilities? _capabilities;
   bool _submitAttempted = false;
   bool _submitError = false;
+  bool _invalidCredentials = false;
   bool _allowSavedSessionRetry = true;
   String? _verifiedAccountId;
   int _lifecycleEpoch = 0;
@@ -215,7 +216,12 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   }
 
   void _clearSubmitErrorOnEdit() {
-    if (_submitError && mounted) setState(() => _submitError = false);
+    if (_submitError && mounted) {
+      setState(() {
+        _submitError = false;
+        _invalidCredentials = false;
+      });
+    }
   }
 
   Future<void> _loadCapabilities(int epoch) async {
@@ -485,6 +491,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       _busy = true;
       _message = null;
       _submitError = false;
+      _invalidCredentials = false;
     });
     try {
       final login = _session.signIn();
@@ -525,6 +532,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       _busy = true;
       _message = null;
       _submitError = false;
+      _invalidCredentials = false;
     });
     final epoch = _lifecycleEpoch;
     try {
@@ -537,9 +545,12 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         return;
       }
       await _validate();
-    } on CloudLocalAuthException {
+    } on CloudLocalAuthException catch (error) {
       if (mounted && epoch == _lifecycleEpoch) {
-        setState(() => _submitError = true);
+        setState(() {
+          _submitError = true;
+          _invalidCredentials = error.statusCode == 401;
+        });
       }
     } catch (_) {
       if (mounted && epoch == _lifecycleEpoch) {
@@ -547,8 +558,12 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       }
     } finally {
       final failed = _submitError;
+      final invalidCredentials = _invalidCredentials;
       if (_localPassword.text == password) _localPassword.clear();
-      if (failed) _submitError = true;
+      if (failed) {
+        _submitError = true;
+        _invalidCredentials = invalidCredentials;
+      }
       if (mounted && epoch == _lifecycleEpoch) setState(() => _busy = false);
     }
   }
@@ -558,6 +573,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     _submitAttempted = true;
     setState(() {
       _submitError = false;
+      _invalidCredentials = false;
       _message = null;
     });
     if (!_clientConfigUsable) {
@@ -738,7 +754,9 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                           Semantics(
                             liveRegion: true,
                             child: Text(
-                              internalErrorMessage,
+                              _invalidCredentials
+                                  ? 'Invalid username or password.'
+                                  : internalErrorMessage,
                               textAlign: TextAlign.center,
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
