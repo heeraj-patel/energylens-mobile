@@ -211,6 +211,11 @@ final class DiscoveryNavigationUITests: XCTestCase {
       .firstMatch
     XCTAssertTrue(accountIdentity.waitForExistence(timeout: 60),
                   "The reused Cloud session did not show the expected username in Profile")
+    let selectedHome = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label ==[c] %@", expectedCloudHome))
+      .firstMatch
+    XCTAssertTrue(selectedHome.waitForExistence(timeout: 60),
+                  "Profile did not show the selected Cloud home")
     XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label ==[c] %@", "Account Owner"))
                     .firstMatch.waitForExistence(timeout: 60),
                   "Account Owner field was missing from Profile")
@@ -238,9 +243,6 @@ final class DiscoveryNavigationUITests: XCTestCase {
       .firstMatch
     XCTAssertTrue(connected.waitForExistence(timeout: 120),
                   "The current owned Hub pairing did not connect automatically")
-    XCTAssertTrue(app.descendants(matching: .any)
-      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Cloud home: \(expectedCloudHome)"))
-      .firstMatch.exists, "The automatic pairing was not scoped to the selected Cloud home")
 
     if ProcessInfo.processInfo.environment["ENERGYLENS_TEST_REQUIRE_SAVED_PLUG"] == "0" {
       let evidence = XCTAttachment(screenshot: app.screenshot())
