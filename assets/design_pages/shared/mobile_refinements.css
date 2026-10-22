@@ -102,6 +102,61 @@ body[class*="font-body-md"] {
   fill: var(--el-waste-graph) !important;
 }
 
+svg[data-el-chart="dashboard-trends"] {
+  height: 200px;
+  overflow: visible;
+  touch-action: pan-y;
+}
+
+svg[data-el-chart="dashboard-trends"] .el-chart-title,
+svg[data-el-chart="dashboard-trends"] .el-chart-tick,
+svg[data-el-chart="dashboard-trends"] .el-chart-x-label {
+  fill: var(--el-tab-idle-ink);
+  font-family: var(--el-label-font-family);
+  font-size: 11px;
+}
+
+svg[data-el-chart="dashboard-trends"] .el-chart-title {
+  fill: var(--el-heading-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+svg[data-el-chart="dashboard-trends"] .el-chart-grid {
+  stroke: #d8e2ed;
+  stroke-dasharray: 3 3;
+}
+
+svg[data-el-chart="dashboard-trends"] .el-chart-baseline {
+  stroke: #8496a3;
+}
+
+svg[data-el-chart="dashboard-trends"] .el-chart-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+svg[data-el-chart="dashboard-trends"] .el-chart-bar:focus-visible {
+  outline: none;
+}
+
+svg[data-el-chart="dashboard-trends"] .el-chart-bar:focus-visible .el-chart-hit {
+  stroke: var(--el-heading-ink);
+  stroke-width: 2px;
+  stroke-dasharray: 4 3;
+}
+
+svg[data-el-chart="dashboard-trends"] .el-chart-tooltip-back {
+  fill: var(--el-heading-ink);
+}
+
+svg[data-el-chart="dashboard-trends"] .el-chart-tooltip-period,
+svg[data-el-chart="dashboard-trends"] .el-chart-tooltip-amount {
+  fill: white;
+  font-family: var(--el-label-font-family);
+  font-size: 11px;
+}
+
 .el-waste-segment-night {
   background-color: var(--el-waste-segment-night) !important;
 }

@@ -40,6 +40,16 @@ class DashboardChartProjection {
             location,
             granularity,
           ),
+          periodLabel: _periodLabel(
+            tz.TZDateTime(
+              location,
+              bucket.startLocalDate.year,
+              bucket.startLocalDate.month,
+              bucket.startLocalDate.day,
+            ),
+            location,
+            granularity,
+          ),
           usefulCents: BigInt.from(bucket.usefulCents),
           wasteCents: BigInt.from(bucket.wasteCents),
         ),
@@ -142,6 +152,7 @@ class DashboardChartProjection {
       observed.add(
         DashboardChartBar(
           label: _label(bucket.period.start, location, granularity),
+          periodLabel: _periodLabel(bucket.period.start, location, granularity),
           usefulCents: bucketUseful,
           wasteCents: bucketWaste,
         ),
@@ -220,10 +231,12 @@ BigInt? _usdMicros(CloudEnergyMoney? money) {
 class DashboardChartBar {
   const DashboardChartBar({
     required this.label,
+    required this.periodLabel,
     required this.usefulCents,
     required this.wasteCents,
   });
   final String label;
+  final String periodLabel;
   final BigInt usefulCents;
   final BigInt wasteCents;
   BigInt get totalCents => usefulCents + wasteCents;
@@ -260,6 +273,16 @@ String _label(DateTime start, tz.Location location, String granularity) {
     'day' => _weekdays[local.weekday - 1],
     'week' => '${_months[local.month - 1]} ${local.day}',
     _ => _months[local.month - 1],
+  };
+}
+
+String _periodLabel(DateTime start, tz.Location location, String granularity) {
+  final local = tz.TZDateTime.from(start, location);
+  final full = '${_months[local.month - 1]} ${local.day}, ${local.year}';
+  return switch (granularity) {
+    'day' => full,
+    'week' => 'Week of $full',
+    _ => '${_months[local.month - 1]} ${local.year}',
   };
 }
 

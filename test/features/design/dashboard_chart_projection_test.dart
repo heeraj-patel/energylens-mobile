@@ -107,6 +107,7 @@ void main() {
       'day',
     );
     expect(chart?.bars.single.label, 'Tue');
+    expect(chart?.bars.single.periodLabel, 'Oct 6, 2026');
   });
   test('day chart uses observed split buckets and excludes future days', () {
     final read = snapshot('day', [
@@ -120,10 +121,25 @@ void main() {
     ]);
     final chart = DashboardChartProjection.fromSnapshot(read, 'day');
     expect(chart!.bars.map((row) => row.label), ['Mon', 'Tue']);
+    expect(chart.bars.map((row) => row.periodLabel), [
+      'Oct 5, 2026',
+      'Oct 6, 2026',
+    ]);
     expect(chart.bars.last.usefulCents, BigInt.from(70));
     expect(chart.periodTotal, '\$1.00');
     expect(chart.usefulTotal, '\$0.70');
     expect(chart.wasteTotal, '\$0.20');
+  });
+
+  test('weekly tooltip date uses the actual home-local bucket start', () {
+    final chart = DashboardChartProjection.fromSnapshot(
+      snapshot('week', [
+        bucket('2026-10-01T00:00:00-05:00', '2026-10-08T00:00:00-05:00'),
+      ]),
+      'week',
+    );
+    expect(chart?.bars.single.label, 'Oct 1');
+    expect(chart?.bars.single.periodLabel, 'Week of Oct 1, 2026');
   });
 
   test('monthly chart takes the last five observed months', () {
@@ -151,38 +167,42 @@ void main() {
       'Sep',
       'Oct',
     ]);
+    expect(chart.bars.last.periodLabel, 'Oct 2026');
   });
 
-  test('mixed chart retains demo split with separate unclassified real row', () {
-    final demoRows = [
-      for (var i = 0; i < 18; i++)
-        {
-          'device_id': 'demo-device-${(i + 1).toString().padLeft(2, '0')}',
-          'appliance_id': null,
-          'name': null,
-          'allocation': allocation(),
+  test(
+    'mixed chart retains demo split with separate unclassified real row',
+    () {
+      final demoRows = [
+        for (var i = 0; i < 18; i++)
+          {
+            'device_id': 'demo-device-${(i + 1).toString().padLeft(2, '0')}',
+            'appliance_id': null,
+            'name': null,
+            'allocation': allocation(),
+          },
+      ];
+      final real = {
+        'appliance_id': '22222222-2222-4222-8222-222222222222',
+        'device_id': null,
+        'name': null,
+        'allocation': {
+          ...allocation(split: false),
+          'evidence_basis': 'measured',
         },
-    ];
-    final real = {
-      'appliance_id': '22222222-2222-4222-8222-222222222222',
-      'device_id': null,
-      'name': null,
-      'allocation': {
-        ...allocation(split: false),
-        'evidence_basis': 'measured',
-      },
-    };
-    final row = bucket(
-      '2026-10-06T00:00:00-05:00',
-      '2026-10-07T00:00:00-05:00',
-    )..['device_allocations'] = [...demoRows, real];
-    final chart = DashboardChartProjection.fromSnapshot(
-      snapshot('day', [row], mixed: true),
-      'day',
-    );
-    expect(chart?.bars.single.usefulCents, BigInt.from(1260));
-    expect(chart?.bars.single.wasteCents, BigInt.from(360));
-  });
+      };
+      final row = bucket(
+        '2026-10-06T00:00:00-05:00',
+        '2026-10-07T00:00:00-05:00',
+      )..['device_allocations'] = [...demoRows, real];
+      final chart = DashboardChartProjection.fromSnapshot(
+        snapshot('day', [row], mixed: true),
+        'day',
+      );
+      expect(chart?.bars.single.usefulCents, BigInt.from(1260));
+      expect(chart?.bars.single.wasteCents, BigInt.from(360));
+    },
+  );
 
   test('missing split and stale context never produce a live chart', () {
     final rows = [
