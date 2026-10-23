@@ -17,7 +17,7 @@ void main() {
   var clipboard = '';
   for (final usernameMode in [true, false]) {
     testWidgets(
-      '${usernameMode ? 'username' : 'email'} reset accepts 8 and rejects 7 characters',
+      '${usernameMode ? 'username' : 'email'} reset uses Unicode character boundary',
       (tester) async {
         var requests = 0;
         final client =
@@ -25,7 +25,7 @@ void main() {
                 baseUrl: 'https://api.example',
                 client: MockClient((request) async {
                   requests++;
-                  expect(jsonDecode(request.body)['password'], '12345678');
+                  expect(jsonDecode(request.body)['password'], 'éééééééé');
                   return http.Response('', 204);
                 }),
               )
@@ -85,11 +85,28 @@ void main() {
         }
         await tester.enterText(
           find.byKey(const Key('resetPassword')),
-          '12345678',
+          'ééééééé',
         );
         await tester.enterText(
           find.byKey(const Key('resetConfirm')),
-          '12345678',
+          'ééééééé',
+        );
+        await tester.tap(find.byKey(const Key('submitPasswordReset')));
+        await tester.pumpAndSettle();
+        expect(requests, 0);
+        if (!usernameMode) {
+          clipboard = '$_origin/reset-password#token=$_token';
+          await tester.ensureVisible(find.byKey(const Key('pasteResetLink')));
+          await tester.tap(find.byKey(const Key('pasteResetLink')));
+          await tester.pumpAndSettle();
+        }
+        await tester.enterText(
+          find.byKey(const Key('resetPassword')),
+          'éééééééé',
+        );
+        await tester.enterText(
+          find.byKey(const Key('resetConfirm')),
+          'éééééééé',
         );
         await tester.tap(find.byKey(const Key('submitPasswordReset')));
         await tester.pumpAndSettle();

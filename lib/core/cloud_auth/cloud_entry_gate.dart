@@ -783,7 +783,12 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         'handoff_login_http_${error.statusCode}',
         sink: widget.recoveryDiagnosticSink,
       );
-      if (mounted) setState(() => _submitError = true);
+      if (mounted) {
+        setState(() {
+          _submitError = true;
+          _invalidCredentials = error.invalidCredentials;
+        });
+      }
     } on TimeoutException {
       recordCloudRecoveryEvent(
         'handoff_login_timeout',

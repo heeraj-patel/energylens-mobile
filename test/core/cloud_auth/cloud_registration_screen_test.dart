@@ -115,7 +115,7 @@ void main() {
         .setMockMethodCallHandler(SystemChannels.platform, null);
   });
 
-  testWidgets('username signup accepts 8 bytes and rejects 7 bytes', (
+  testWidgets('username signup accepts 8 characters and rejects 7', (
     tester,
   ) async {
     final service = _BoundaryRegistration();
@@ -139,15 +139,26 @@ void main() {
     expect(service.passwords, isEmpty);
     await tester.enterText(
       find.byKey(const Key('registrationPassword')),
-      '12345678',
+      'ééééééé',
     );
     await tester.enterText(
       find.byKey(const Key('registrationConfirm')),
-      '12345678',
+      'ééééééé',
     );
     await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
     await tester.pumpAndSettle();
-    expect(service.passwords, ['12345678']);
+    expect(service.passwords, isEmpty);
+    await tester.enterText(
+      find.byKey(const Key('registrationPassword')),
+      'éééééééé',
+    );
+    await tester.enterText(
+      find.byKey(const Key('registrationConfirm')),
+      'éééééééé',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+    await tester.pumpAndSettle();
+    expect(service.passwords, ['éééééééé']);
   });
 
   testWidgets('registration is hidden without an injected capability', (

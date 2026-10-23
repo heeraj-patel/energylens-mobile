@@ -842,100 +842,132 @@ void main() {
     local.close();
   });
 
-  testWidgets('reset 204 with login 401 records handoff failure and pops', (
-    tester,
-  ) async {
-    const localConfig = CloudAuthConfig(
-      issuer: '',
-      audience: '',
-      clientId: '',
-      redirectUrl: '',
-      apiUrl: 'https://api.example',
-      localAuthEnabled: true,
-    );
-    final events = <String>[];
-    var resets = 0;
-    var logins = 0;
-    final local = CloudLocalAuthClient(
-      baseUrl: localConfig.apiUrl,
-      client: MockClient((request) async {
-        if (request.url.path == '/v1/auth/local/reset-password') {
-          resets++;
-          return http.Response('', 204);
-        }
-        if (request.url.path == '/v1/auth/local/login') {
-          logins++;
-          return http.Response('', 401);
-        }
-        return http.Response('', 404);
-      }),
-    );
-    final session = CloudSession(
-      config: localConfig,
-      store: Store()..tokens = null,
-      authenticator: Auth(),
-      localAuth: local,
-    );
-    final api = CloudApiClient(
-      session: session,
-      client: MockClient((request) async {
-        if (request.url.path == '/v1/auth/config') {
-          return http.Response(
-            '{"schema_version":1,"methods":["username_password"],'
-            '"registration_enabled":false,"email_verification_required":false,'
-            '"password_recovery_enabled":true,"session_logout_revokes_access":true}',
-            200,
-          );
-        }
-        return http.Response('', 404);
-      }),
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        home: CloudEntryGate(
+  for (final (label, status, body, invalidCredentials) in [
+    ('401', 401, '', true),
+    (
+      'exact username 400',
+      400,
+      '{"code":"invalid_request","message":"invalid username or password"}',
+      true,
+    ),
+    (
+      'unrelated 400',
+      400,
+      '{"code":"invalid_request","message":"invalid JSON"}',
+      false,
+    ),
+    ('500', 500, '', false),
+    ('transport failure', null, '', false),
+  ]) {
+    testWidgets(
+      'reset 204 with login $label records handoff failure and pops',
+      (tester) async {
+        const localConfig = CloudAuthConfig(
+          issuer: '',
+          audience: '',
+          clientId: '',
+          redirectUrl: '',
+          apiUrl: 'https://api.example',
+          localAuthEnabled: true,
+        );
+        final events = <String>[];
+        var resets = 0;
+        var logins = 0;
+        final local = CloudLocalAuthClient(
+          baseUrl: localConfig.apiUrl,
+          client: MockClient((request) async {
+            if (request.url.path == '/v1/auth/local/reset-password') {
+              resets++;
+              return http.Response('', 204);
+            }
+            if (request.url.path == '/v1/auth/local/login') {
+              logins++;
+              if (status == null) throw StateError('network unavailable');
+              return http.Response(body, status);
+            }
+            return http.Response('', 404);
+          }),
+        );
+        final session = CloudSession(
+          config: localConfig,
+          store: Store()..tokens = null,
+          authenticator: Auth(),
+          localAuth: local,
+        );
+        final api = CloudApiClient(
           session: session,
-          api: api,
-          homeCreateStorage: MemoryDraftStorage(),
-          activeHomeStorage: MemoryDraftStorage(),
-          recoveryDiagnosticSink: events.add,
-          homeBuilder: (_, _, _, _) => const Text('Private Home'),
-        ),
-      ),
+          client: MockClient((request) async {
+            if (request.url.path == '/v1/auth/config') {
+              return http.Response(
+                '{"schema_version":1,"methods":["username_password"],'
+                '"registration_enabled":false,"email_verification_required":false,'
+                '"password_recovery_enabled":true,"session_logout_revokes_access":true}',
+                200,
+              );
+            }
+            return http.Response('', 404);
+          }),
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: CloudEntryGate(
+              session: session,
+              api: api,
+              homeCreateStorage: MemoryDraftStorage(),
+              activeHomeStorage: MemoryDraftStorage(),
+              recoveryDiagnosticSink: events.add,
+              homeBuilder: (_, _, _, _) => const Text('Private Home'),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Forgot password?'));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('recoveryUserId')),
+          'alice',
+        );
+        await tester.enterText(
+          find.byKey(const Key('resetPassword')),
+          'replacement password 123',
+        );
+        await tester.enterText(
+          find.byKey(const Key('resetConfirm')),
+          'replacement password 123',
+        );
+        await tester.ensureVisible(
+          find.byKey(const Key('submitPasswordReset')),
+        );
+        await tester.tap(find.byKey(const Key('submitPasswordReset')));
+        await tester.pumpAndSettle();
+        expect(resets, 1);
+        expect(logins, 1);
+        expect(find.byKey(const Key('recoveryUserId')), findsNothing);
+        expect(
+          find.text(
+            invalidCredentials
+                ? 'Invalid username or password.'
+                : 'Internal Error, Try again later',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          events,
+          containsAllInOrder([
+            'reset_post_start',
+            'reset_post_204',
+            'handoff_login_start',
+            status == null ? 'handoff_failure' : 'handoff_login_http_$status',
+            'handoff_route_pop',
+          ]),
+        );
+        expect(events.join(' '), isNot(contains('alice')));
+        expect(events.join(' '), isNot(contains('replacement')));
+        api.close();
+        local.close();
+      },
     );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Forgot password?'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('recoveryUserId')), 'alice');
-    await tester.enterText(
-      find.byKey(const Key('resetPassword')),
-      'replacement password 123',
-    );
-    await tester.enterText(
-      find.byKey(const Key('resetConfirm')),
-      'replacement password 123',
-    );
-    await tester.ensureVisible(find.byKey(const Key('submitPasswordReset')));
-    await tester.tap(find.byKey(const Key('submitPasswordReset')));
-    await tester.pumpAndSettle();
-    expect(resets, 1);
-    expect(logins, 1);
-    expect(find.byKey(const Key('recoveryUserId')), findsNothing);
-    expect(find.text('Internal Error, Try again later'), findsOneWidget);
-    expect(
-      events,
-      containsAllInOrder([
-        'reset_post_start',
-        'reset_post_204',
-        'handoff_login_start',
-        'handoff_login_http_401',
-        'handoff_route_pop',
-      ]),
-    );
-    expect(events.join(' '), isNot(contains('alice')));
-    expect(events.join(' '), isNot(contains('replacement')));
-    api.close();
-    local.close();
-  });
+  }
   testWidgets('native design builder receives gate-owned verified lifecycle', (
     tester,
   ) async {

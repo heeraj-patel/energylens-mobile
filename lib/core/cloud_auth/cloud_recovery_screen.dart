@@ -177,9 +177,7 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
       _confirm.clear();
       return;
     }
-    if ((widget.usernameMode
-            ? utf8.encode(password).length < 8
-            : password.runes.length < 8) ||
+    if (password.runes.length < 8 ||
         utf8.encode(password).length > 1024 ||
         password.codeUnits.contains(0) ||
         password != _confirm.text) {

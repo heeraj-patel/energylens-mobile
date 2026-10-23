@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 
 import '../../core/cloud_api/cloud_api_client.dart';
@@ -87,7 +85,7 @@ class _AccountProfileScreenState extends State<AccountProfileScreen> {
         email.isEmpty || _currentPassword.text.isEmpty,
       AccountProfileField.password =>
         _currentPassword.text.isEmpty ||
-            utf8.encode(_newPassword.text).length < 8 ||
+            _newPassword.text.runes.length < 8 ||
             _newPassword.text != _confirmPassword.text,
     };
     if (invalid) {

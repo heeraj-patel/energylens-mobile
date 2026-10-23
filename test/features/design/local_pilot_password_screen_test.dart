@@ -3,29 +3,35 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  for (final password in ['1234567', '12345678', 'éééa', 'éééé']) {
-    testWidgets('profile password ${password.length} character boundary', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: AccountProfileScreen.localPilotPassword(
-            isCurrentAccount: () => true,
+  for (final password in [
+    '1234567',
+    '12345678',
+    'ééééééé',
+    'éééééééé',
+    '😀😀😀😀😀😀😀',
+    '😀😀😀😀😀😀😀😀',
+  ]) {
+    testWidgets(
+      'profile password ${password.runes.length} character boundary',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AccountProfileScreen.localPilotPassword(
+              isCurrentAccount: () => true,
+            ),
           ),
-        ),
-      );
-      await tester.enterText(find.byType(TextField).at(0), 'current');
-      await tester.enterText(find.byType(TextField).at(1), password);
-      await tester.enterText(find.byType(TextField).at(2), password);
-      await tester.tap(find.text('Save changes'));
-      await tester.pumpAndSettle();
-      expect(
-        find.text('Couldn’t save changes. Check the fields and try again.'),
-        (password == '1234567' || password == 'éééa')
-            ? findsOneWidget
-            : findsNothing,
-      );
-    });
+        );
+        await tester.enterText(find.byType(TextField).at(0), 'current');
+        await tester.enterText(find.byType(TextField).at(1), password);
+        await tester.enterText(find.byType(TextField).at(2), password);
+        await tester.tap(find.text('Save changes'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Couldn’t save changes. Check the fields and try again.'),
+          (password.runes.length < 8) ? findsOneWidget : findsNothing,
+        );
+      },
+    );
   }
   for (final values in [
     ['', 'new-password-123', 'new-password-123'],
