@@ -105,6 +105,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   HubOwnership? _cloudOwnership;
   int? _pairedOwnershipEpoch;
   bool _restoreDone = false;
+  bool _hubConnectionAttempted = false;
+  String? _verifiedPairingHubId;
+  String? _verifiedPairingAddress;
   bool _cloudHubOwned = false;
   bool _hubRefusedAccess = false;
   bool _onboardingFinished = false;
@@ -431,7 +434,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   }
 
   Future<void> _restore() async {
-    _restoreDone = false;
+    if (mounted) {
+      setState(() {
+        _restoreDone = false;
+        _hubConnectionAttempted = false;
+        _verifiedPairingHubId = null;
+        _verifiedPairingAddress = null;
+      });
+    }
     try {
       if (widget.cloudHome != null) {
         final cloud = widget.cloudApi;
@@ -514,12 +524,15 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           if (ownership.homeId != scope.homeId) continue;
           if (pairing != null) {
             try {
+              _hubConnectionAttempted = true;
               await widget.api.verifyStoredPairing(
                 StoredHubIdentity(
                   address: pairing.address,
                   hubId: pairing.hubId,
                 ),
               );
+              _verifiedPairingHubId = pairing.hubId;
+              _verifiedPairingAddress = pairing.address;
             } catch (_) {
               // A current directory publication can repair an address or pin
               // change without trusting anything learned from the LAN.
@@ -567,10 +580,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           // household inventory before Cloud ownership is established.
           final pairing = await widget.credentials.readPairing();
           if (!current() || pairing == null) return;
+          _hubConnectionAttempted = true;
           await widget.api.verifyStoredPairing(
             StoredHubIdentity(address: pairing.address, hubId: pairing.hubId),
           );
           if (!current()) return;
+          _verifiedPairingHubId = pairing.hubId;
+          _verifiedPairingAddress = pairing.address;
           setState(() {
             _paired = true;
             _pairedHubId = pairing.hubId;
@@ -591,9 +607,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           _hub.text = pairing.address;
           _token.text = pairing.token;
         });
+        _hubConnectionAttempted = true;
         await _hubApi.verifyStoredPairing(
           StoredHubIdentity(address: pairing.address, hubId: pairing.hubId),
         );
+        _verifiedPairingHubId = pairing.hubId;
+        _verifiedPairingAddress = pairing.address;
         try {
           if (await _ownedHub() != null && mounted) {
             setState(() => _claimedThisSession = true);
@@ -627,7 +646,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
   }
 
-  Future<void> _openPairing() async {
+  Future<bool> _openPairing() async {
+    final initialScope = _pairingScope?.identity;
+    final initialGeneration = widget.cloudApi?.session.generation;
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (pairingContext) => HubPairingScreen(
@@ -655,7 +676,19 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       }
       _invalidateHubData();
       await _restore();
+      final pairing = await widget.credentials.readPairing();
+      return mounted &&
+          initialScope == _pairingScope?.identity &&
+          initialGeneration == widget.cloudApi?.session.generation &&
+          pairing != null &&
+          _verifiedPairingHubId == pairing.hubId &&
+          _verifiedPairingAddress == pairing.address;
     }
+    return false;
+  }
+
+  Future<void> _pairAndClaimHub() async {
+    if (await _openPairing() && mounted) await _claimHub();
   }
 
   Future<bool> _loadSaved() async {
@@ -2243,7 +2276,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               const SizedBox(height: 18),
               if (!_paired || _developerMode)
                 FilledButton.icon(
-                  onPressed: _busy ? null : _openPairing,
+                  onPressed: _busy
+                      ? null
+                      : widget.newHomeOnboarding && !_paired
+                      ? _pairAndClaimHub
+                      : _openPairing,
                   icon: const Icon(Icons.phonelink_lock),
                   label: Text(
                     _paired ? 'Pair with a different hub' : 'Pair with hub',
@@ -2284,7 +2321,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             if (_paired && !_hubConnected) ...[
               const SizedBox(height: 8),
               OutlinedButton.icon(
-                onPressed: _busy ? null : _restore,
+                onPressed:
+                    _busy ||
+                        _claimBusy ||
+                        !_restoreDone ||
+                        !_hubConnectionAttempted ||
+                        !_canUseHubCustomerApi
+                    ? null
+                    : _restore,
                 icon: const Icon(Icons.refresh),
                 label: const Text('Retry hub connection'),
               ),
