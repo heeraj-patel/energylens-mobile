@@ -4,7 +4,6 @@ import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_estimate.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_programs.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_recommendations.dart';
-import 'package:energylens_mobile/core/cloud_api/cloud_usage_facts.dart';
 import 'package:energylens_mobile/features/design/tips_domain_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -67,16 +66,14 @@ CloudEstimate estimate({String id = applianceId}) => CloudEstimate(
 );
 
 class FakeSource implements TipsDomainSource {
-  FakeSource({this.inventory, this.programRead, this.factRead});
+  FakeSource({this.inventory, this.programRead});
 
   final Future<List<CloudAppliance>> Function(String)? inventory;
   final Future<CloudProgramPage> Function(String)? programRead;
-  final Future<CloudReviewedUsageFacts> Function(CloudUsageFactScope)? factRead;
   List<CloudRecommendation> actions = [recommendation()];
   List<CloudEstimate> estimateRows = [estimate()];
   int programCalls = 0;
   int estimateCalls = 0;
-  int factCalls = 0;
 
   @override
   Future<List<CloudAppliance>> appliances(String homeId) =>
@@ -110,13 +107,6 @@ class FakeSource implements TipsDomainSource {
       asOf: DateTime.utc(2026, 10, 6),
     );
   }
-
-  @override
-  Future<CloudReviewedUsageFacts> usageFacts(CloudUsageFactScope scope) {
-    factCalls++;
-    return factRead?.call(scope) ??
-        Future.value(CloudReviewedUsageFacts(scope: scope, facts: const []));
-  }
 }
 
 void main() {
@@ -132,7 +122,6 @@ void main() {
     expect(result.eligibility, isNull);
     expect(source.programCalls, 1);
     expect(source.estimateCalls, 0);
-    expect(source.factCalls, 0);
   });
 
   test('efficiency keeps operating cost separate from savings', () async {
@@ -160,7 +149,6 @@ void main() {
     expect(result.savingsAmount, isNull);
     expect(result.programs, isNull);
     expect(source.programCalls, 0);
-    expect(source.factCalls, 0);
   });
 
   test('every Tips page retains all actions in source order', () async {
@@ -238,21 +226,31 @@ void main() {
     expect(result.savingsAmount, isNull);
   });
 
-  test('care fetches only exact reviewed fact scope', () async {
-    final exact = FakeSource();
-    final result = await TipsDomainRepository(exact)
-        .fetch(homeA, TipsPage.careUpgrades);
-    expect(exact.factCalls, 1);
-    expect(result!.usageFactsByAppliance[applianceId]?.facts, isEmpty);
-    expect(result.savingsAmount, isNull);
-
-    final unknown = FakeSource(
-      inventory: (home) async => [appliance(home, exact: false)],
+  test('care page carries appliance fuel in the snapshot', () async {
+    final source = FakeSource(
+      inventory: (home) async => [
+        appliance(home),
+        CloudAppliance(
+          id: 'AAAAAAAA-3333-4333-8333-333333333333',
+          homeId: home,
+          name: 'Dryer',
+          category: 'dryer',
+          room: null,
+          brand: 'Brand',
+          fullModel: 'Model',
+          fuel: 'natural_gas',
+          variant: null,
+          matchQuality: 'unverified',
+        ),
+      ],
     );
-    final unknownResult = await TipsDomainRepository(unknown)
+    final result = await TipsDomainRepository(source)
         .fetch(homeA, TipsPage.careUpgrades);
-    expect(unknown.factCalls, 0);
-    expect(unknownResult!.usageFactsByAppliance, isEmpty);
+    expect(result!.applianceFuels, {
+      applianceId: 'electricity',
+      'aaaaaaaa-3333-4333-8333-333333333333': 'natural_gas',
+    });
+    expect(result.savingsAmount, isNull);
   });
 
   test(
@@ -277,25 +275,6 @@ void main() {
       );
     },
   );
-
-  test('rejects reviewed facts for another exact scope', () async {
-    final source = FakeSource(
-      factRead: (scope) async => CloudReviewedUsageFacts(
-        scope: const CloudUsageFactScope(
-          category: 'dryer',
-          manufacturer: 'Brand',
-          model: 'Model',
-          fuel: 'electricity',
-          variant: 'standard',
-        ),
-        facts: const [],
-      ),
-    );
-    await expectLater(
-      TipsDomainRepository(source).fetch(homeA, TipsPage.careUpgrades),
-      throwsFormatException,
-    );
-  });
 
   test('home switch and sign-out discard in-flight reads', () async {
     final pending = Completer<CloudProgramPage>();
@@ -324,23 +303,19 @@ void main() {
     );
     expect(await old, isNull);
 
-    final pendingFacts = Completer<CloudReviewedUsageFacts>();
+    final pendingPrograms = Completer<CloudProgramPage>();
     final signOut = TipsDomainRepository(
-      FakeSource(factRead: (_) => pendingFacts.future),
+      FakeSource(programRead: (_) => pendingPrograms.future),
     );
-    final read = signOut.fetch(homeA, TipsPage.careUpgrades);
+    final read = signOut.fetch(homeA, TipsPage.perksTips);
     await Future<void>.delayed(Duration.zero);
     signOut.clear();
-    pendingFacts.complete(
-      CloudReviewedUsageFacts(
-        scope: const CloudUsageFactScope(
-          category: 'refrigerator',
-          manufacturer: 'Brand',
-          model: 'Model',
-          fuel: 'electricity',
-          variant: 'standard',
-        ),
-        facts: const [],
+    pendingPrograms.complete(
+      CloudProgramPage(
+        programs: const [],
+        asOf: DateTime.utc(2026, 10, 6),
+        locationRequired: true,
+        coverage: null,
       ),
     );
     expect(await read, isNull);

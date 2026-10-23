@@ -106,8 +106,6 @@ TipsDomainSnapshot snapshot(
       ],
   applianceNames: names,
   operatingEstimates: const [],
-  usageFactsByAppliance: const {},
-  factsIncomplete: false,
 );
 
 CloudRecommendation reviewedRecommendation(

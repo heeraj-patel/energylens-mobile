@@ -3,7 +3,6 @@ import '../../core/cloud_api/cloud_appliance.dart';
 import '../../core/cloud_api/cloud_estimate.dart';
 import '../../core/cloud_api/cloud_programs.dart';
 import '../../core/cloud_api/cloud_recommendations.dart';
-import '../../core/cloud_api/cloud_usage_facts.dart';
 
 /// Source records for the three Tips pages. None of these reads has a shared
 /// snapshot token, so the adapter does not derive totals or savings from them.
@@ -15,7 +14,6 @@ abstract interface class TipsDomainSource {
     Set<String> applianceIds,
   );
   Future<CloudEstimateBatch> estimates(String homeId);
-  Future<CloudReviewedUsageFacts> usageFacts(CloudUsageFactScope scope);
 }
 
 class CloudTipsDomainSource implements TipsDomainSource {
@@ -34,9 +32,6 @@ class CloudTipsDomainSource implements TipsDomainSource {
   ) => api.recommendations(homeId, applianceIds);
   @override
   Future<CloudEstimateBatch> estimates(String homeId) => api.estimates(homeId);
-  @override
-  Future<CloudReviewedUsageFacts> usageFacts(CloudUsageFactScope scope) =>
-      api.usageFacts(scope);
 }
 
 enum TipsPage { perksTips, efficiency, careUpgrades }
@@ -48,9 +43,8 @@ class TipsDomainSnapshot {
     required this.programs,
     required this.recommendations,
     this.applianceNames = const {},
+    this.applianceFuels = const {},
     required this.operatingEstimates,
-    required this.usageFactsByAppliance,
-    required this.factsIncomplete,
   });
 
   final String homeId;
@@ -63,12 +57,11 @@ class TipsDomainSnapshot {
   final List<CloudRecommendation> recommendations;
   final Map<String, String> applianceNames;
 
+  /// Lowercase appliance id to its fuel string.
+  final Map<String, String> applianceFuels;
+
   /// These are operating estimates, never proposed savings.
   final List<CloudEstimate> operatingEstimates;
-  final Map<String, CloudReviewedUsageFacts> usageFactsByAppliance;
-
-  /// Some exact identities were deliberately not queried due to the bound.
-  final bool factsIncomplete;
 
   String? get promotion => null;
   String? get savingsAmount => null;
@@ -129,21 +122,6 @@ class TipsDomainRepository {
         throw const FormatException('Estimate is outside home inventory');
       }
 
-      final facts = <String, CloudReviewedUsageFacts>{};
-      var factsIncomplete = false;
-      if (page == TipsPage.careUpgrades) {
-        final exact = appliances.where(_hasExactScope).toList();
-        factsIncomplete = exact.length > _maxFactReads;
-        for (final appliance in exact.take(_maxFactReads)) {
-          final scope = _scope(appliance);
-          final result = await source.usageFacts(scope);
-          if (stale()) return null;
-          if (!_sameScope(scope, result.scope)) {
-            throw const FormatException('Reviewed usage fact scope changed');
-          }
-          facts[appliance.id] = result;
-        }
-      }
       return TipsDomainSnapshot(
         homeId: homeId,
         page: page,
@@ -153,9 +131,11 @@ class TipsDomainRepository {
           for (final appliance in appliances)
             appliance.id.toLowerCase(): appliance.name,
         }),
+        applianceFuels: Map.unmodifiable({
+          for (final appliance in appliances)
+            appliance.id.toLowerCase(): appliance.fuel,
+        }),
         operatingEstimates: List.unmodifiable(estimates),
-        usageFactsByAppliance: Map.unmodifiable(facts),
-        factsIncomplete: factsIncomplete,
       );
     } catch (_) {
       if (stale()) return null;
@@ -164,38 +144,6 @@ class TipsDomainRepository {
   }
 }
 
-const _maxFactReads = 20;
 final _uuid = RegExp(
   r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
 );
-
-bool _hasExactScope(CloudAppliance appliance) =>
-    appliance.matchQuality == 'confirmed_exact' &&
-    _validScopeField(appliance.category, 60) &&
-    _validScopeField(appliance.brand, 120) &&
-    _validScopeField(appliance.fullModel, 120) &&
-    appliance.variant != null &&
-    _validScopeField(appliance.variant!, 100) &&
-    (appliance.fuel == 'electricity' ||
-        (appliance.fuel == 'natural_gas' && appliance.category == 'dryer'));
-
-bool _validScopeField(String value, int maxLength) =>
-    value.isNotEmpty &&
-    value.length <= maxLength &&
-    value.trim() == value &&
-    !value.codeUnits.any((unit) => unit < 32 || unit == 127);
-
-CloudUsageFactScope _scope(CloudAppliance appliance) => CloudUsageFactScope(
-  category: appliance.category,
-  manufacturer: appliance.brand,
-  model: appliance.fullModel,
-  fuel: appliance.fuel,
-  variant: appliance.variant ?? '',
-);
-
-bool _sameScope(CloudUsageFactScope a, CloudUsageFactScope b) =>
-    a.category == b.category &&
-    a.manufacturer == b.manufacturer &&
-    a.model == b.model &&
-    a.fuel == b.fuel &&
-    a.variant == b.variant;

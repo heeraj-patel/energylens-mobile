@@ -32,8 +32,6 @@ TipsDomainSnapshot _tips(String homeId, TipsPage page) => TipsDomainSnapshot(
   programs: null,
   recommendations: const [],
   operatingEstimates: const [],
-  usageFactsByAppliance: const {},
-  factsIncomplete: false,
 );
 
 VerifiedDesignContext _context(
