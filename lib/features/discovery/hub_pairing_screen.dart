@@ -14,10 +14,12 @@ class HubPairingScreen extends StatefulWidget {
     super.key,
     this.api = const DiscoveryApi(),
     this.credentials = const DiscoveryCredentials(),
+    this.onSetUpLater,
   });
 
   final DiscoveryApi api;
   final DiscoveryCredentials credentials;
+  final VoidCallback? onSetUpLater;
 
   @override
   State<HubPairingScreen> createState() => _HubPairingScreenState();
@@ -29,6 +31,7 @@ class _HubPairingScreenState extends State<HubPairingScreen> {
   final _hubId = TextEditingController();
   final _secret = TextEditingController();
   bool _busy = false;
+  bool _pairingFailed = false;
   String? _error;
 
   Future<void> _scanQr() async {
@@ -45,6 +48,7 @@ class _HubPairingScreenState extends State<HubPairingScreen> {
     setState(() {
       _busy = true;
       _error = null;
+      _pairingFailed = false;
     });
     try {
       final PairingDetails details;
@@ -64,6 +68,7 @@ class _HubPairingScreenState extends State<HubPairingScreen> {
       final random = Random.secure();
       final clientId =
           'energylens-mobile-${List<int>.generate(16, (_) => random.nextInt(256)).map((byte) => byte.toRadixString(16).padLeft(2, '0')).join()}';
+      _pairingFailed = true;
       await widget.credentials.claimAndStore(
         details,
         clientId: clientId,
@@ -170,6 +175,15 @@ class _HubPairingScreenState extends State<HubPairingScreen> {
             onPressed: _busy ? null : _pair,
             child: Text(_busy ? 'Verifying hub…' : 'Verify and pair'),
           ),
+          if (_pairingFailed &&
+              _error != null &&
+              widget.onSetUpLater != null) ...[
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _busy ? null : widget.onSetUpLater,
+              child: const Text('Set up later'),
+            ),
+          ],
         ],
       ),
     ),

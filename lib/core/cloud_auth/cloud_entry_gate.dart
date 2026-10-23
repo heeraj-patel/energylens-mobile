@@ -45,6 +45,7 @@ class CloudEntryGate extends StatefulWidget {
     required this.homeBuilder,
     this.verifiedHomeBuilder,
     this.verifiedDesignHomeBuilder,
+    this.newHomeBuilder,
     this.session,
     this.api,
     this.registrationService,
@@ -83,6 +84,13 @@ class CloudEntryGate extends StatefulWidget {
     DesignContextCoordinator designContextCoordinator,
   )?
   verifiedDesignHomeBuilder;
+  final Widget Function(
+    CloudHome selectedHome,
+    CloudApiClient cloudApi,
+    CloudAuxiliaryDomainLifecycle lifecycle,
+    VoidCallback onCloudHubLinked,
+  )?
+  newHomeBuilder;
   final CloudSession? session;
   final CloudApiClient? api;
   final CloudRegistrationService? registrationService;
@@ -114,6 +122,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   String? _message;
   List<CloudHome> _homes = const [];
   CloudHome? _selectedHome;
+  String? _newHomeOnboardingId;
   String? _homeListError;
   bool _homeLoading = false;
   bool _homeListLoaded = false;
@@ -136,6 +145,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     _verifiedAccountId = null;
     _verifiedDisplayName = null;
     _selectedHome = null;
+    _newHomeOnboardingId = null;
     _homes = const [];
     _homeListLoaded = false;
     _designContextCoordinator.signOut();
@@ -825,10 +835,25 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
           _lifecycleEpoch++;
           CloudHubClaimFlow.invalidatePendingClaims().ignore();
           _allowRememberedRestore = false;
+          _newHomeOnboardingId = null;
           _designContextCoordinator.signOut();
           _auxiliaryDomainLifecycle.clear().ignore();
           setState(() => _selectedHome = null);
           _loadHomes();
+        }
+
+        if (_newHomeOnboardingId == selected.id &&
+            widget.newHomeBuilder != null) {
+          return widget.newHomeBuilder!(
+            selected,
+            _api,
+            _auxiliaryDomainLifecycle,
+            () {
+              if (mounted && _selectedHome?.id == selected.id) {
+                setState(() => _newHomeOnboardingId = null);
+              }
+            },
+          );
         }
 
         return widget.verifiedDesignHomeBuilder?.call(
@@ -858,6 +883,10 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         initialOwnerName: _verifiedDisplayName ?? '',
         onSaveOwner: _saveOwnerName,
         onSelect: _selectHome,
+        onSelectCreated: (home) {
+          _newHomeOnboardingId = home.id;
+          _selectHome(home);
+        },
         onSignOut: () {
           _signOut();
         },

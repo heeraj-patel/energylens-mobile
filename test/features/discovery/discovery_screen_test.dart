@@ -12,6 +12,7 @@ import 'package:energylens_mobile/features/discovery/device_energy_detail_screen
 import 'package:energylens_mobile/features/identify/appliance_onboarding_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -100,6 +101,7 @@ class _FirstClaimCredentials extends FakeCredentials {
 class _FirstClaimApi extends _ClaimDiscoveryApi {
   int customerReads = 0;
   int identityChecks = 0;
+  bool failCustomerReads = false;
 
   @override
   Future<void> verifyStoredPairing(StoredHubIdentity pairing) async {
@@ -109,6 +111,9 @@ class _FirstClaimApi extends _ClaimDiscoveryApi {
   @override
   Future<List<SavedPlug>> saved(String baseUrl, String token) async {
     customerReads++;
+    if (failCustomerReads) {
+      throw HubRequestException(503, 'unavailable', 'Hub unavailable');
+    }
     return const [];
   }
 
@@ -1331,6 +1336,7 @@ void main() {
       final api = _FirstClaimApi();
       final credentials = _FirstClaimCredentials();
       var owned = false;
+      var linkedCalls = 0;
       final cloud = CloudApiClient(
         session: CloudSession(
           config: _cloudConfig,
@@ -1373,6 +1379,8 @@ void main() {
           ),
           cloudApi: cloud,
           accountId: 'account-a',
+          newHomeOnboarding: true,
+          onCloudHubLinked: () => linkedCalls++,
         ),
       );
 
@@ -1382,9 +1390,11 @@ void main() {
       expect(api.identityChecks, 1);
       expect(api.customerReads, 0);
       expect(find.text('Hub connected'), findsNothing);
+      expect(linkedCalls, 0);
 
       // The existing claim flow establishes ownership and a fresh pairing.
       owned = true;
+      api.failCustomerReads = true;
       credentials.ownedPairing = const StoredPairingCredential(
         address: 'https://192.168.1.20:8787#sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         hubId: _localHubId,
@@ -1395,6 +1405,11 @@ void main() {
       await tester.pumpWidget(screen());
       await tester.pumpAndSettle();
       expect(api.customerReads, greaterThan(0));
+      expect(linkedCalls, 0);
+      api.failCustomerReads = false;
+      await tester.pumpWidget(screen());
+      await tester.pumpAndSettle();
+      expect(linkedCalls, 1);
       cloud.close();
     },
   );
@@ -1439,6 +1454,59 @@ void main() {
       cloud.close();
     },
   );
+
+  testWidgets('new-home claim failure offers setup later and keeps retry', (
+    tester,
+  ) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    var linkedCalls = 0;
+    final cloud = CloudApiClient(
+      session: CloudSession(
+        config: _cloudConfig,
+        store: _TestTokenStore(),
+        authenticator: _TestAuthenticator(),
+      ),
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/homes/$_cloudHomeId/hubs') {
+          return http.Response('{"hubs":[]}', 200);
+        }
+        if (request.url.path == '/v1/homes/$_cloudHomeId/hub-claims') {
+          return http.Response('{}', 409);
+        }
+        return http.Response('{}', 404);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(
+          api: _FirstClaimApi(),
+          credentials: _FirstClaimCredentials(),
+          cloudHome: const CloudHome(
+            id: _cloudHomeId,
+            name: 'Selected home',
+            timezone: 'America/Chicago',
+            countryCode: 'US',
+            postalCode: '60601',
+          ),
+          cloudApi: cloud,
+          accountId: 'account-a',
+          newHomeOnboarding: true,
+          onCloudHubLinked: () => linkedCalls++,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Set up later'), findsNothing);
+    await tester.tap(find.text('Link paired hub to home'));
+    await tester.pumpAndSettle();
+    expect(find.text('Set up later'), findsOneWidget);
+    expect(find.text('Link paired hub to home'), findsOneWidget);
+    expect(linkedCalls, 0);
+    await tester.tap(find.text('Set up later'));
+    await tester.tap(find.text('Set up later'));
+    expect(linkedCalls, 1);
+    cloud.close();
+  });
 
   testWidgets('first claim ignores a legacy pairing after session change', (
     tester,

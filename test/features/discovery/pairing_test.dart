@@ -67,6 +67,41 @@ PairingDetails _details() => PairingDetails.fromJson({
 });
 
 void main() {
+  testWidgets('setup later appears only after a failed onboarding pair', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    var dashboardRequested = false;
+    final transport = _FakePairingTransport(hubId: 'wrong-hub');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HubPairingScreen(
+          api: DiscoveryApi(pairingTransport: transport),
+          credentials: DiscoveryCredentials(storage: _MemorySecureStore()),
+          onSetUpLater: () => dashboardRequested = true,
+        ),
+      ),
+    );
+    expect(find.text('Set up later'), findsNothing);
+    await tester.enterText(
+      find.byKey(const Key('operatorPairingJson')),
+      jsonEncode({
+        'address': _address,
+        'hub_id': 'hub-1',
+        'enrollment_secret': 'secret',
+      }),
+    );
+    await tester.ensureVisible(find.text('Verify and pair'));
+    await tester.tap(find.text('Verify and pair'));
+    await tester.pumpAndSettle();
+    expect(find.text('Set up later'), findsOneWidget);
+    expect(find.text('Verify and pair'), findsOneWidget);
+    await tester.tap(find.text('Set up later'));
+    expect(dashboardRequested, isTrue);
+  });
+
   test('owned pairing requires matching owner, hub and epoch', () async {
     final store = _MemorySecureStore();
     final credentials = DiscoveryCredentials(storage: store);

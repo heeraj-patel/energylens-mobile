@@ -113,6 +113,17 @@ class EnergyLensApp extends StatelessWidget {
               },
             )
           : CloudEntryGate(
+              newHomeBuilder:
+                  (cloudHome, cloudApi, lifecycle, onCloudHubLinked) =>
+                      DiscoveryScreen(
+                        autoScan: true,
+                        newHomeOnboarding: true,
+                        cloudHome: cloudHome,
+                        cloudApi: cloudApi,
+                        accountId: lifecycle.verifiedAccountId,
+                        onboardingDrafts: lifecycle.drafts,
+                        onCloudHubLinked: onCloudHubLinked,
+                      ),
               homeBuilder: (cloudHome, signOut, changeHome, cloudApi) =>
                   DesignShell(
                     homeName: cloudHome?.name ?? 'The Miller Home',
