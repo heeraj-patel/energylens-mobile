@@ -46,6 +46,7 @@ class TipsDomainSnapshot {
     this.applianceFuels = const {},
     required this.operatingEstimates,
     this.weather,
+    this.peakDemand,
   });
 
   final String homeId;
@@ -66,6 +67,9 @@ class TipsDomainSnapshot {
 
   /// Weather block of the recommendations read; null when absent.
   final CloudWeather? weather;
+
+  /// Peak demand block of the recommendations read; null when absent.
+  final CloudPeakDemand? peakDemand;
 
   String? get promotion => null;
   String? get savingsAmount => null;
@@ -141,6 +145,7 @@ class TipsDomainRepository {
         }),
         operatingEstimates: List.unmodifiable(estimates),
         weather: batch.weather,
+        peakDemand: batch.peakDemand,
       );
     } catch (_) {
       if (stale()) return null;

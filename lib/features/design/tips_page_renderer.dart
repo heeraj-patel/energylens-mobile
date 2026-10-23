@@ -49,6 +49,13 @@ class TipsPageRenderer {
     'hot_run': 'Hot spell',
     'cold_run': 'Cold spell',
   };
+  static const peakDemandTitle = 'Peak demand days';
+  static const peakDemandNotice =
+      'Austin Energy tells selected customers about Peak Energy Demand Days '
+      'by email, text or call. EnergyLens cannot see which days they are.';
+  static const peakDemandWindow =
+      'On those days, Austin Energy asks customers to save energy from 1 to 7 pm.';
+  static const peakDemandChip = 'Peak demand day';
   static const eccAttribution =
       'Data Source: Environment and Climate Change Canada';
   static const _months = [
@@ -128,6 +135,23 @@ class TipsPageRenderer {
     };
   }
 
+  static Map<String, Object?>? _peakDemandPayload(CloudPeakDemand? peak) {
+    if (peak == null) return null;
+    return {
+      'title': peakDemandTitle,
+      'notice': peakDemandNotice,
+      'window': peakDemandWindow,
+      'tips': [
+        for (final tip in peak.homeTips)
+          {
+            'text': tip.sourceText,
+            'url': tip.sourceUrl.toString(),
+            'host': tip.sourceUrl.host,
+          },
+      ],
+    };
+  }
+
   String script(
     DesignPageTicket ticket,
     TipsDomainSnapshot snapshot, {
@@ -156,6 +180,9 @@ class TipsPageRenderer {
       'weather': ticket.page == 'tips_efficiency'
           ? _weatherPayload(snapshot.weather)
           : null,
+      'peakDemand': ticket.page == 'tips_efficiency'
+          ? _peakDemandPayload(snapshot.peakDemand)
+          : null,
       'recommendations': [
         for (final action in snapshot.recommendations)
           {
@@ -178,6 +205,9 @@ class TipsPageRenderer {
             'isWeather': action.weatherContext != null,
             'weatherChip': weatherChip(action.weatherContext),
             'weatherCost': weatherCostLine(action.weatherContext),
+            'peakChip': action.peakDemandContext == null
+                ? null
+                : peakDemandChip,
           },
       ],
     });
@@ -271,6 +301,47 @@ class TipsPageRenderer {
     group.append(tipList);
     mount.append(group);
   }
+  if (payload.page === 'tips_efficiency' && payload.peakDemand) {
+    const group = document.createElement('div');
+    group.setAttribute('data-el-tip-group', '');
+    group.setAttribute('data-el-peak-demand-card', '');
+    group.className = 'flex flex-col gap-space-xs p-space-sm rounded-xl bg-surface-container-low border border-surface-container-high/80 shadow-sm';
+    const header = document.createElement('div');
+    header.className = 'flex items-center justify-between pb-1 border-b border-surface-container-high/60';
+    const label = document.createElement('div');
+    label.className = 'flex items-center gap-1.5';
+    const icon = document.createElement('span');
+    icon.className = 'material-symbols-outlined text-primary text-[18px]';
+    icon.textContent = 'home';
+    const peakTitle = document.createElement('h3');
+    peakTitle.className = 'font-bold tracking-tight text-slate-900 text-[14px]';
+    peakTitle.textContent = payload.peakDemand.title;
+    label.append(icon, peakTitle);
+    header.append(label);
+    group.append(header);
+    for (const text of [payload.peakDemand.notice, payload.peakDemand.window]) {
+      const line = document.createElement('p');
+      line.className = detailClass;
+      line.setAttribute('data-el-peak-demand-line', '');
+      line.textContent = text;
+      group.append(line);
+    }
+    const tipList = document.createElement('div');
+    tipList.className = 'flex flex-col gap-1.5';
+    payload.peakDemand.tips.forEach((tip, index) => {
+      const card = document.createElement('article');
+      card.className = 'p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm';
+      card.setAttribute('data-el-tip-item', '');
+      card.setAttribute('data-el-source-id', 'peak_demand/home/' + index);
+      const body = document.createElement('div');
+      body.className = 'block';
+      body.append(researchRow(tip.text, tip.host, tip.url));
+      card.append(body);
+      tipList.append(card);
+    });
+    group.append(tipList);
+    mount.append(group);
+  }
   if (!rows.length) {
     notifyTipsChanged();
     return true;
@@ -352,6 +423,13 @@ class TipsPageRenderer {
           trigger.textContent = row.weatherChip;
           body.append(trigger);
         }
+        if (row.peakChip) {
+          const peak = document.createElement('span');
+          peak.className = 'px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-semibold text-[11px]';
+          peak.setAttribute('data-el-peak-demand-trigger', '');
+          peak.textContent = row.peakChip;
+          body.append(peak);
+        }
         if (row.weatherCost) {
           const cost = document.createElement('p');
           cost.className = detailClass;
@@ -359,7 +437,7 @@ class TipsPageRenderer {
           cost.textContent = row.weatherCost;
           body.append(cost);
         }
-        if ((payload.page === 'tips_care_upgrades' || row.isWeather) && row.researchText && row.researchUrl) {
+        if ((payload.page === 'tips_care_upgrades' || row.isWeather || row.peakChip) && row.researchText && row.researchUrl) {
           body.append(researchRow(row.researchText, row.researchHost, row.researchUrl));
         }
         if (row.monthlySavings) {
