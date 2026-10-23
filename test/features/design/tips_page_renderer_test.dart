@@ -10,6 +10,21 @@ import 'package:flutter_test/flutter_test.dart';
 
 const home = '11111111-1111-4111-8111-111111111111';
 const appliance = '22222222-2222-4222-8222-222222222222';
+const applianceB = '44444444-4444-4444-8444-444444444444';
+const applianceC = '55555555-5555-4555-8555-555555555555';
+const applianceD = '66666666-6666-4666-8666-666666666666';
+
+CloudRecommendation candidate(String next, String applianceId) =>
+    CloudRecommendation(
+      ruleId: 'general.gather_information',
+      applianceId: applianceId,
+      state: 'candidate',
+      title: 'Gather details',
+      explanation: 'Generic explanation.',
+      nextQuestion: next,
+      evidenceCount: 0,
+      scenarioRefs: const [],
+    );
 
 CloudProgram program(
   String id,
@@ -41,6 +56,7 @@ TipsDomainSnapshot snapshot(
   TipsPage page, [
   List<CloudRecommendation>? recommendations,
   List<CloudProgram>? programs,
+  Map<String, String> names = const {appliance: 'Saved appliance'},
 ]) => TipsDomainSnapshot(
   homeId: home,
   page: page,
@@ -88,7 +104,7 @@ TipsDomainSnapshot snapshot(
           tipCategory: CloudRecommendationTipCategory.upgrade,
         ),
       ],
-  applianceNames: const {appliance: 'Saved appliance'},
+  applianceNames: names,
   operatingEstimates: const [],
   usageFactsByAppliance: const {},
   factsIncomplete: false,
@@ -186,6 +202,36 @@ void main() {
         'tips': const TipsPageRenderer().script(
           const DesignPageTicket(home, 'tips_efficiency', 3),
           snapshot(TipsPage.efficiency, recommendations),
+          applianceFuels: const {appliance: 'natural_gas'},
+        ),
+        'fuel': const TipsPageRenderer().script(
+          const DesignPageTicket(home, 'tips_efficiency', 3),
+          snapshot(
+            TipsPage.efficiency,
+            [
+              candidate('confirm_model', appliance),
+              candidate('add_gas_rate', applianceB),
+              candidate('add_gas_rate', applianceC),
+              candidate('hours_per_week', applianceD),
+              reviewedRecommendation('120'),
+            ],
+            null,
+            const {
+              appliance: 'Saved appliance',
+              applianceB: 'Range',
+              applianceC: 'Heater',
+              applianceD: 'Fan',
+            },
+          ),
+          applianceFuels: const {
+            appliance: 'electricity',
+            applianceB: 'natural_gas',
+            applianceC: 'propane',
+          },
+        ),
+        'empty': const TipsPageRenderer().script(
+          const DesignPageTicket(home, 'tips_care_upgrades', 3),
+          snapshot(TipsPage.careUpgrades, const []),
         ),
         'care': const TipsPageRenderer().script(
           const DesignPageTicket(home, 'tips_care_upgrades', 3),
@@ -252,35 +298,41 @@ void main() {
           now: DateTime.utc(2026, 10, 13, 11, 59, 59),
         ),
       };
-      final result = await Process.run('node', [
-        '-e',
-        r'''
+      final dir = Directory.systemTemp.createTempSync('tips_renderer');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final scriptsFile = File('${dir.path}/scripts.json')
+        ..writeAsStringSync(jsonEncode(scripts));
+      final runner = File('${dir.path}/run.js')
+        ..writeAsStringSync(r'''
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const scripts = JSON.parse(process.argv[1]);
+const scripts = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'));
 class Element {
   constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.events = []; this.textContent = ''; this.className = ''; this.style = {}; }
-  append(node) { node.parent = this; this.children.push(node); }
+  append(...nodes) { for (const node of nodes) { node.parent = this; this.children.push(node); } }
   replaceChildren() { this.children = []; }
   setAttribute(key, value) { this.attributes[key] = value; }
   dispatchEvent(event) { this.events.push(event.type); }
-  remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); this.parent = null; }
+  after(node) { node.parent = null; node.sibling = true; this.siblings.push(node); }
+  remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); this.parent = null; if (this.sibling) this.siblings.splice(this.siblings.indexOf(this), 1); }
   get isConnected() { return !!this.parent; }
 }
 function render(page, script, generation = 3, startMs = Date.UTC(2026, 9, 13, 11, 59, 59)) {
   const mount = new Element('mount');
+  mount.siblings = Element.prototype.siblings = [];
   const packaged = new Element('packaged-example');
   const timers = [];
   let nowMs = startMs;
   const document = {
     getElementById: id => id === ({perks_tips:'el-live-programs', tips_efficiency:'el-live-tips', tips_care_upgrades:'el-live-care'})[page] ? mount : null,
     createElement: tag => new Element(tag),
+    querySelectorAll: () => mount.siblings.filter(node => Object.hasOwn(node.attributes, 'data-el-live-examples')),
   };
   const context = {document, Event: class { constructor(type) { this.type = type; } }, Date: {now: () => nowMs},
     setTimeout: (fn, delay) => timers.push({fn, at: nowMs + delay}),
     window: {__energyLensTextBindingContext: {homeId:'11111111-1111-4111-8111-111111111111', page, generation}}};
   const accepted = vm.runInNewContext(script, context);
-  return {accepted, mount, packaged, advanceTo: target => {
+  return {accepted, mount, packaged, siblings: mount.siblings, advanceTo: target => {
     nowMs = target;
     for (const timer of timers.splice(0).filter(item => item.at <= target)) timer.fn();
   }};
@@ -302,34 +354,70 @@ for (const key of ['boundary', 'after']) {
   assert.deepEqual(rendered.mount.children[1].children.map(row => row.children[0].children[0].textContent), ['Current promotion']);
   assert.equal(rendered.packaged.tag, 'packaged-example');
 }
+const text = node => node.textContent || node.children[0].textContent;
 const tips = render('tips_efficiency', scripts.tips);
-assert.deepEqual(tips.mount.children[1].children.map(row => row.children[0].children[0].textContent || row.children[0].children[0].children[0].textContent), ['First action', 'Supported action', 'Supported action']);
-assert.equal(tips.mount.children[1].children[0].children[0].children[1].textContent, 'Saved appliance');
-assert.equal(tips.mount.children[1].children[0].children[0].children[2].textContent, 'Find usage information.');
-const efficiencyCards = tips.mount.children[1].children;
-assert.equal(efficiencyCards.length, 3);
+assert.equal(tips.mount.children[0].textContent, 'Your devices');
+assert.deepEqual(tips.siblings.map(node => node.textContent), ['Examples']);
+const groups = tips.mount.children.slice(1);
+assert.equal(groups.length, 1);
+assert.ok(Object.hasOwn(groups[0].attributes, 'data-el-tip-group'));
+const header = groups[0].children[0];
+assert.equal(header.children[0].children[1].textContent, 'Saved appliance');
+assert.equal(header.children[1].textContent, 'Save ~$0.42/mo');
+const efficiencyCards = groups[0].children[1].children;
+assert.deepEqual(efficiencyCards.map(card => text(card.children[0].children[0])), ['First action', 'Supported action', 'Supported action']);
 assert.ok(efficiencyCards.every(card => Object.hasOwn(card.attributes, 'data-el-tip-item')));
+assert.equal(efficiencyCards[0].children[0].children[1].textContent, 'Find usage information.');
 assert.deepEqual(tips.mount.events, ['energylens:tips-changed']);
-assert.equal(efficiencyCards[1].children[0].tag, 'div');
 assert.equal(efficiencyCards[1].children[0].children[0].children[0].href, 'https://manufacturer.example/eco-guide');
-assert.equal(efficiencyCards[1].children[0].children[0].children[0].textContent, 'Supported action');
-assert.equal(efficiencyCards[0].children[0].children[0].children.length, 0);
 assert.equal(efficiencyCards[0].children[0].children.some(child => child.textContent.startsWith('Save ~')), false);
-assert.equal(efficiencyCards[1].children[0].children[3].textContent, 'Save ~$0.42/mo');
-assert.match(efficiencyCards[1].children[0].children[3].className, /bg-secondary-container/);
+assert.equal(efficiencyCards[1].children[0].children[2].textContent, 'Save ~$0.42/mo');
+assert.match(efficiencyCards[1].children[0].children[2].className, /bg-secondary-container/);
 assert.equal(efficiencyCards[2].children[0].children.some(child => child.textContent.startsWith('Save ~')), false);
+tips.mount.replaceChildren();
+const rerender = render('tips_efficiency', scripts.tips);
+assert.equal(rerender.siblings.length, 1);
+const fuel = render('tips_efficiency', scripts.fuel);
+const fuelGroups = fuel.mount.children.slice(1);
+assert.deepEqual(fuelGroups.map(group => group.children[0].children[0].children[1].textContent), ['Saved appliance', 'Range', 'Heater', 'Fan']);
+assert.deepEqual(fuelGroups.map(group => group.children[0].children[1] && group.children[0].children[1].textContent), ['Save ~$10/mo', 'Gas', 'Propane', undefined]);
+const detail = group => group.children[1].children[0].children[0].children[1].textContent;
+assert.equal(detail(fuelGroups[0]), 'Add the model number to get advice for this Saved appliance.');
+assert.equal(detail(fuelGroups[1]), 'Add your gas rate in Settings to see costs.');
+assert.equal(detail(fuelGroups[3]), 'Generic explanation.');
+const electric = render('tips_efficiency', scripts.fuel.replace('"Save ~$10/mo"', 'null'));
+assert.equal(electric.mount.children[1].children[0].children[1].textContent, 'Electric');
 const care = render('tips_care_upgrades', scripts.care);
-assert.deepEqual(care.mount.children[1].children.map(row => row.children[0].children[0].textContent || row.children[0].children[0].children[0].textContent), ['Supported action', 'Supported action']);
-assert.equal(care.mount.children[1].children[0].children[0].children[3].textContent, 'Save ~$0.42/mo');
-assert.equal(care.mount.children[1].children.length, 2);
-assert.ok(care.mount.children[1].children.every(card => Object.hasOwn(card.attributes, 'data-el-tip-item')));
+const careGroup = care.mount.children[1];
+assert.equal(care.mount.children[0].textContent, 'Your devices');
+assert.deepEqual(careGroup.children[1].children.map(card => text(card.children[0].children[0])), ['Supported action', 'Supported action']);
+assert.equal(careGroup.children[1].children[0].children[0].children[2].textContent, 'Save ~$0.42/mo');
+assert.ok(careGroup.children[1].children.every(card => Object.hasOwn(card.attributes, 'data-el-tip-item')));
 assert.deepEqual(care.mount.events, ['energylens:tips-changed']);
+const empty = render('tips_care_upgrades', scripts.empty);
+assert.equal(empty.mount.children.length, 0);
+assert.equal(empty.siblings.length, 0);
+assert.deepEqual(empty.mount.events, ['energylens:tips-changed']);
 assert.equal(render('perks_tips', scripts.programs, 4).accepted, false);
 assert.equal(render('tips_efficiency', scripts.programs).accepted, false);
-''',
-        jsonEncode(scripts),
-      ]);
+''');
+      final result = await Process.run('node', [runner.path, scriptsFile.path]);
       expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     },
   );
+
+  test('packaged Tips pages mount live groups before the demo groups', () {
+    for (final entry in {
+      'tips_care_upgrades': 'el-live-care',
+      'tips_efficiency': 'el-live-tips',
+    }.entries) {
+      final html = File('assets/design_pages/${entry.key}/app.html')
+          .readAsStringSync();
+      final mount = html.indexOf('id="${entry.value}"');
+      final firstDemo = html.indexOf('<div data-el-tip-group');
+      expect(mount, greaterThan(0), reason: entry.key);
+      expect(mount, lessThan(firstDemo), reason: entry.key);
+      expect('id="${entry.value}"'.allMatches(html), hasLength(1));
+    }
+  });
 }
