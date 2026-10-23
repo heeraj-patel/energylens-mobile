@@ -319,14 +319,85 @@ class CloudProgramCoverage {
   }
 }
 
+/// A Datawiz-collected government program offer: official name, issuer and
+/// program page only; its terms are unverified, so no benefit text is kept.
+class CloudProgramOffer {
+  const CloudProgramOffer({
+    required this.id,
+    required this.title,
+    required this.administratorName,
+    required this.sourceUrl,
+    required this.expiresAt,
+  });
+  final String id;
+  final String title;
+  final String administratorName;
+  final Uri sourceUrl;
+  final DateTime? expiresAt;
+
+  bool isCurrentAt(DateTime now) =>
+      expiresAt == null || now.toUtc().isBefore(expiresAt!.toUtc());
+
+  /// Returns null for any row that is not a usable, available offer.
+  static CloudProgramOffer? tryParse(Object? row) {
+    try {
+      if (row is! Map || row['field'] != 'government_offer') return null;
+      final value = row['value'];
+      final source = row['source'];
+      if (value is! Map || source is! Map) return null;
+      final title = value['program_name'];
+      final issuer = value['issuer'];
+      final url = source['url'];
+      if (title is! String ||
+          title.trim().isEmpty ||
+          issuer is! String ||
+          issuer.trim().isEmpty ||
+          url is! String ||
+          value['availability_status'] == 'not_available') {
+        return null;
+      }
+      final uri = Uri.tryParse(url);
+      if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+        return null;
+      }
+      final rawExpiry = value['expires_at'];
+      DateTime? expiry;
+      if (rawExpiry != null) {
+        expiry = rawExpiry is String ? DateTime.tryParse(rawExpiry) : null;
+        if (expiry == null) return null;
+      }
+      final key = row['record_key'];
+      return CloudProgramOffer(
+        id: 'research:${key is String && key.isNotEmpty ? key : uri}',
+        title: title,
+        administratorName: issuer,
+        sourceUrl: uri,
+        expiresAt: expiry,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String urlKey(Uri uri) {
+    final path = uri.path.endsWith('/') && uri.path.length > 1
+        ? uri.path.substring(0, uri.path.length - 1)
+        : uri.path;
+    return '${uri.scheme}://${uri.host.toLowerCase()}$path'
+        '${uri.hasQuery ? '?${uri.query}' : ''}';
+  }
+}
+
 class CloudProgramPage {
   const CloudProgramPage({
     required this.programs,
     required this.asOf,
     required this.locationRequired,
     required this.coverage,
+    this.offers = const [],
   });
   final List<CloudProgram> programs;
+  final List<CloudProgramOffer> offers;
   final DateTime asOf;
   final bool locationRequired;
   final CloudProgramCoverage? coverage;
@@ -367,8 +438,21 @@ class CloudProgramPage {
         programs.length) {
       throw const FormatException('Duplicate reviewed program');
     }
+    final seen = {
+      for (final program in programs)
+        CloudProgramOffer.urlKey(program.sourceUrl),
+    };
+    final offers = <CloudProgramOffer>[];
+    for (final fact in (json['research_facts'] as List?) ?? const []) {
+      final offer = CloudProgramOffer.tryParse(fact);
+      if (offer != null &&
+          seen.add(CloudProgramOffer.urlKey(offer.sourceUrl))) {
+        offers.add(offer);
+      }
+    }
     return CloudProgramPage(
       programs: programs,
+      offers: offers,
       asOf: asOf,
       locationRequired: reason == 'location_required',
       coverage: json['coverage'] == null

@@ -455,4 +455,95 @@ assert.equal(render('tips_efficiency', scripts.programs).accepted, false);
       expect('id="${entry.value}"'.allMatches(html), hasLength(1));
     }
   });
+
+  group('Datawiz program offers', () {
+    List<dynamic> payloadPrograms(CloudProgramPage page, DateTime now) {
+      final script = const TipsPageRenderer().script(
+        const DesignPageTicket(home, 'perks_tips', 3),
+        TipsDomainSnapshot(
+          homeId: home,
+          page: TipsPage.perksTips,
+          programs: page,
+          recommendations: const [],
+          applianceNames: const {},
+          operatingEstimates: const [],
+        ),
+        now: now,
+      );
+      final line = script
+          .split('\n')
+          .firstWhere((l) => l.startsWith('  const payload = '));
+      final json = line.substring('  const payload = '.length, line.length - 1);
+      return (jsonDecode(json) as Map)['programs'] as List;
+    }
+
+    CloudProgramOffer offer(String id, String name, String url) =>
+        CloudProgramOffer(
+          id: 'research:program:$id',
+          title: name,
+          administratorName: 'Austin Energy',
+          sourceUrl: Uri.parse(url),
+          expiresAt: null,
+        );
+
+    CloudProgramPage page(List<CloudProgramOffer> offers) => CloudProgramPage(
+      programs: [program('one', 'First offer')],
+      offers: offers,
+      asOf: DateTime.utc(2026, 10),
+      locationRequired: false,
+      coverage: null,
+    );
+
+    test('offers become cards with empty benefit after reviewed programs', () {
+      final rows = payloadPrograms(
+        page([
+          offer(
+            'saver',
+            'Power Saver',
+            'https://austinenergy.com/energy-efficiency/rebates-incentives/residential/ps-volunteer',
+          ),
+          offer(
+            'pp',
+            'Power Partner Thermostat',
+            'https://austinenergy.com/PowerPartner',
+          ),
+        ]),
+        DateTime.utc(2026, 10),
+      );
+      expect(rows.map((r) => r['title']), [
+        'First offer',
+        'Power Saver',
+        'Power Partner Thermostat',
+      ]);
+      expect(rows[0]['benefit'], 'Up to \$40');
+      expect(rows[1]['benefit'], '');
+      expect(rows[1]['administrator'], 'Austin Energy');
+      expect(rows[2]['url'], 'https://austinenergy.com/PowerPartner');
+      expect(
+        rows[2]['expiresAt'],
+        greaterThan(DateTime.utc(2100).millisecondsSinceEpoch),
+      );
+    });
+
+    test('a fact with its own past expiry is omitted', () {
+      final expired = CloudProgramOffer(
+        id: 'research:x',
+        title: 'Old',
+        administratorName: 'Austin Energy',
+        sourceUrl: Uri.parse('https://austinenergy.com/old'),
+        expiresAt: DateTime.utc(2026, 9),
+      );
+      expect(
+        payloadPrograms(page([expired]), DateTime.utc(2026, 10)),
+        hasLength(1),
+      );
+    });
+
+    test('no offers leaves the payload unchanged', () {
+      expect(
+        payloadPrograms(page(const []), DateTime.utc(2026, 10)),
+        hasLength(1),
+      );
+    });
+  });
 }

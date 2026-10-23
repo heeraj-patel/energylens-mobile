@@ -436,4 +436,118 @@ void main() {
     );
     expect(seen, hasLength(2));
   });
+
+  group('Datawiz government offers', () {
+    Map<String, dynamic> fact(
+      String id,
+      String name,
+      String url, {
+      String field = 'government_offer',
+      Map<String, dynamic> extra = const {},
+    }) => {
+      'id': 'f-$id',
+      'route': 'zip',
+      'subject_key': 'zip:78701',
+      'field': field,
+      'record_key': 'program:$id',
+      'value': {
+        'type': field,
+        'program_id': id,
+        'program_name': name,
+        'issuer': 'Austin Energy',
+        'terms_excerpt': 'Frequently asked questions',
+        'availability_status': 'unknown',
+        'expires_at': null,
+        ...extra,
+      },
+      'source': {'adapter': 'official_program_page', 'url': url},
+      'collected_at': '2026-10-01T00:00:00Z',
+    };
+
+    final saver = fact(
+      'austin-energy-power-saver',
+      'Power Saver',
+      'https://austinenergy.com/energy-efficiency/rebates-incentives/residential/ps-volunteer',
+    );
+    final thermostat = fact(
+      'austin-energy-power-partner-thermostat',
+      'Power Partner Thermostat',
+      'https://austinenergy.com/PowerPartner',
+    );
+
+    test('maps both Austin offers with official name, issuer and url', () {
+      final parsed = CloudProgramPage.fromJson({
+        ...page(),
+        'research_facts': [saver, thermostat],
+      });
+      expect(parsed.offers.map((o) => o.title), [
+        'Power Saver',
+        'Power Partner Thermostat',
+      ]);
+      expect(
+        parsed.offers.every((o) => o.administratorName == 'Austin Energy'),
+        isTrue,
+      );
+      expect(
+        parsed.offers[1].sourceUrl.toString(),
+        'https://austinenergy.com/PowerPartner',
+      );
+      expect(parsed.offers.first.expiresAt, isNull);
+    });
+
+    test('drops a duplicate of a reviewed program url', () {
+      final dup = fact(
+        'x',
+        'Appliance program',
+        'https://utility.example/program/',
+      );
+      final parsed = CloudProgramPage.fromJson({
+        ...page(),
+        'research_facts': [dup, saver],
+      });
+      expect(parsed.offers.map((o) => o.title), ['Power Saver']);
+    });
+
+    test('skips malformed, unavailable, non-https and other-field rows', () {
+      final parsed = CloudProgramPage.fromJson({
+        ...page(),
+        'research_facts': [
+          'junk',
+          {'field': 'government_offer', 'value': 5},
+          fact('a', '', 'https://austinenergy.com/a'),
+          fact('b', 'Power Saver', 'http://austinenergy.com/b'),
+          fact(
+            'c',
+            'Power Saver',
+            'https://austinenergy.com/c',
+            extra: {'availability_status': 'not_available'},
+          ),
+          fact(
+            'd',
+            'Power Saver',
+            'https://austinenergy.com/d',
+            extra: {'expires_at': 'not a date'},
+          ),
+          fact(
+            'e',
+            'Maker offer',
+            'https://maker.example/e',
+            field: 'manufacturer_offer',
+          ),
+          fact(
+            'f',
+            'Lead',
+            'https://austinenergy.com/f',
+            field: 'program_lead',
+          ),
+          thermostat,
+        ],
+      });
+      expect(parsed.offers.map((o) => o.title), ['Power Partner Thermostat']);
+    });
+
+    test('no research facts leaves no offers', () {
+      expect(CloudProgramPage.fromJson(page()).offers, isEmpty);
+    });
+  });
 }

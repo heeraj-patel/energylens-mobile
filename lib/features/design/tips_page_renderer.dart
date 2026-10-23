@@ -152,6 +152,9 @@ class TipsPageRenderer {
     };
   }
 
+  // Datawiz offers carry no expiry: current until Cloud stops returning them.
+  static final int _noExpiryMs = DateTime.utc(9999).millisecondsSinceEpoch;
+
   String script(
     DesignPageTicket ticket,
     TipsDomainSnapshot snapshot, {
@@ -175,6 +178,18 @@ class TipsPageRenderer {
               'expiresAt': program.displayExpiresAt
                   .toUtc()
                   .millisecondsSinceEpoch,
+            },
+        for (final offer in snapshot.programs?.offers ?? const [])
+          if (offer.isCurrentAt(asOf))
+            {
+              'id': offer.id,
+              'title': offer.title,
+              'administrator': offer.administratorName,
+              'benefit': '',
+              'url': offer.sourceUrl.toString(),
+              'expiresAt':
+                  offer.expiresAt?.toUtc().millisecondsSinceEpoch ??
+                  _noExpiryMs,
             },
       ],
       'weather': ticket.page == 'tips_efficiency'
@@ -509,7 +524,7 @@ class TipsPageRenderer {
       savings.textContent = row.monthlySavings;
       body.append(savings);
     }
-    if (payload.page === 'perks_tips') {
+    if (payload.page === 'perks_tips' && row.benefit) {
       const benefit = document.createElement('p');
       benefit.className = 'font-body-md text-body-md text-primary font-semibold text-[13px] mt-space-xs';
       benefit.textContent = row.benefit;
