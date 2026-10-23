@@ -698,5 +698,36 @@ void main() {
       );
       expect(result.gasLine, isNull);
     });
+
+    test('is hidden when the electric cost gates fail', () {
+      void gas(Map<String, dynamic> json) => withGas(json, '1.00');
+      final cases = <String, void Function(Map<String, dynamic>)>{
+        'dashboard unavailable': (json) {
+          gas(json);
+          json['availability'] = 'unavailable';
+        },
+        'unsupported evidence': (json) {
+          gas(json);
+          json['evidence_basis'] = 'synthetic';
+        },
+        'mixed mode': (json) {
+          gas(json);
+          json['data_mode'] = 'mixed';
+          json['fixture_revision'] = 'sample-v1';
+          json['evidence_basis'] = 'mixed';
+        },
+      };
+      for (final entry in cases.entries) {
+        final result = prepareDesignNumericBindings(
+          _dashboardRead(
+            useful: '6.96',
+            waste: '0.02',
+            alterDashboard: entry.value,
+            alterTrends: entry.value,
+          ),
+        );
+        expect(result.gasLine, isNull, reason: entry.key);
+      }
+    });
   });
 }

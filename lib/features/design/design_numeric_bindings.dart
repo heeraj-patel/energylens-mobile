@@ -285,9 +285,13 @@ DesignNumericBindings prepareDesignNumericBindings(DesignContextRead read) {
   return DesignNumericBindings(
     List.unmodifiable(bindings),
     Set.unmodifiable(unknown),
-    gasLine: dashboard.totals.availability == 'unavailable'
-        ? null
-        : dashboardGasLine(dashboard.totals),
+    gasLine:
+        supportedEvidence &&
+            !seededMixed &&
+            dashboard.availability != 'unavailable' &&
+            dashboard.totals.availability != 'unavailable'
+        ? dashboardGasLine(dashboard.totals)
+        : null,
   );
 }
 
