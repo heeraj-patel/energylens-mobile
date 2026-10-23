@@ -141,6 +141,8 @@ String buildDesignNavigationScript(String page) {
         }
         const label = textOf(button);
         let route = button.dataset.elRoute;
+        if (page === 'dashboard' && route === 'settings_manage_devices' &&
+            label === 'Add device') route = 'discover_devices';
         if (button.id === 'email-btn') route = 'report_preview';
         else if (route !== 'change_home' && page.startsWith('efficiency')) {
           if (label === 'Night') route = 'efficiency';

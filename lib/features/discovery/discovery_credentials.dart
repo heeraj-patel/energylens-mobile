@@ -77,7 +77,7 @@ class DiscoveryCredentials {
         'hub_id': hubId,
         'client_id': clientId,
         'token': token,
-        if (ownershipEpoch != null) 'ownership_epoch': ownershipEpoch,
+        'ownership_epoch': ?ownershipEpoch,
       }),
     );
     await storage.delete('energylens.hub.address');
@@ -130,8 +130,9 @@ class DiscoveryCredentials {
       final value = jsonDecode(raw) as Map<String, dynamic>;
       if (value['scope'] != scope.identity ||
           value['hub_id'] != ownership.localHubId ||
-          value['ownership_epoch'] != ownership.ownershipEpoch)
+          value['ownership_epoch'] != ownership.ownershipEpoch) {
         return null;
+      }
       final credential = StoredPairingCredential(
         address: value['address'] as String,
         hubId: value['hub_id'] as String,
@@ -141,8 +142,9 @@ class DiscoveryCredentials {
       );
       if (HubEndpoint.parse(credential.address).pin == null ||
           credential.token.isEmpty ||
-          credential.clientId.isEmpty)
+          credential.clientId.isEmpty) {
         return null;
+      }
       return credential;
     } catch (_) {
       await storage.delete(scope.keyFor(ownership));
@@ -159,8 +161,9 @@ class DiscoveryCredentials {
     if (pairing == null ||
         ownership.homeId != scope.homeId ||
         pairing.hubId != ownership.localHubId ||
-        pairing.ownershipEpoch != ownership.ownershipEpoch)
+        pairing.ownershipEpoch != ownership.ownershipEpoch) {
       return false;
+    }
     await storeOwnedPairing(scope, ownership, pairing);
     await storage.delete(_pairingStorageKey);
     return true;
@@ -209,6 +212,13 @@ class DiscoveryCredentials {
     await storage.delete('$key.client_id');
     final legacy = await readPairing();
     if (legacy?.hubId == ownership.localHubId) {
+      await storage.delete(_pairingStorageKey);
+    }
+  }
+
+  /// Remove the temporary local claim after its owned replacement is durable.
+  Future<void> clearBootstrapPairing(String hubId) async {
+    if ((await readPairing())?.hubId == hubId) {
       await storage.delete(_pairingStorageKey);
     }
   }

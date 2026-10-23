@@ -302,6 +302,27 @@ void main() {
     expect(discoveryOpens, 1);
   });
 
+  testWidgets('Dashboard Add device opens discovery directly', (tester) async {
+    final platform = _WebPlatform();
+    WebViewPlatform.instance = platform;
+    var addOpens = 0;
+    var settingsOpens = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DesignShell(
+          localPilot: true,
+          onAddDevice: () async => addOpens++,
+          onDiscoverDevices: () async => settingsOpens++,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    platform.controller.route('discover_devices');
+    await tester.pumpAndSettle();
+    expect(addOpens, 1);
+    expect(settingsOpens, 0);
+  });
+
   testWidgets(
     'Cloud discovery return refreshes inventory and first-device status',
     (tester) async {
@@ -352,16 +373,16 @@ void main() {
               headers: {'etag': '"1"'},
             );
           }
-        if (request.url.path == '/v1/homes/$_homeId/hubs') {
-          return http.Response('{"hubs":[]}', 200);
-        }
-        if (request.url.path == '/v1/energy-categories') {
-          return http.Response(
-            '{"version":1,"groups":[]}',
-            200,
-            headers: {'etag': '"1"'},
-          );
-        }
+          if (request.url.path == '/v1/homes/$_homeId/hubs') {
+            return http.Response('{"hubs":[]}', 200);
+          }
+          if (request.url.path == '/v1/energy-categories') {
+            return http.Response(
+              '{"version":1,"groups":[]}',
+              200,
+              headers: {'etag': '"1"'},
+            );
+          }
           return http.Response('{}', 500);
         }),
       );

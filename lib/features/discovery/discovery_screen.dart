@@ -117,6 +117,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   bool _cloudHubOwned = false;
   bool _hubRefusedAccess = false;
   bool _onboardingFinished = false;
+  String? _bootstrapScopeIdentity;
 
   HubOwnership? get _deletableHub {
     final ownership = _cloudOwnership;
@@ -231,10 +232,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       (_cloudOwnership != null &&
           _pairedOwnershipEpoch == _cloudOwnership!.ownershipEpoch);
 
-  OwnedPairingScope? get _pairingScope {
-    final cloud = widget.cloudApi;
-    final home = widget.cloudHome;
-    final account = widget.accountId;
+  OwnedPairingScope? _scopeFor(DiscoveryScreen screen) {
+    final cloud = screen.cloudApi;
+    final home = screen.cloudHome;
+    final account = screen.accountId;
     if (cloud == null || home == null || account == null) return null;
     return OwnedPairingScope(
       origin: cloud.session.config.apiUrl,
@@ -243,6 +244,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       homeId: home.id,
     );
   }
+
+  OwnedPairingScope? get _pairingScope => _scopeFor(widget);
 
   DiscoveryApi get _hubApi {
     final cloud = widget.cloudApi;
@@ -288,7 +291,19 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   Future<bool> _claimHub({bool autoScanAfterClaim = true}) async {
     final home = widget.cloudHome;
     final cloud = widget.cloudApi;
-    if (home == null || cloud == null || _claimBusy) return false;
+    final scope = _pairingScope;
+    final api = widget.api;
+    final credentials = widget.credentials;
+    if (home == null || cloud == null || scope == null || _claimBusy) {
+      return false;
+    }
+    final sessionGeneration = cloud.session.generation;
+    bool current() =>
+        mounted &&
+        _pairingScope?.identity == scope.identity &&
+        cloud.session.generation == sessionGeneration &&
+        identical(widget.api, api) &&
+        identical(widget.credentials, credentials);
     setState(() {
       _claimBusy = true;
       _claimFailed = false;
@@ -297,27 +312,32 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     try {
       final flow = _claimFlow ??= CloudHubClaimFlow(
         cloud: cloud,
-        hub: widget.api,
-        credentials: widget.credentials,
-        scope: _pairingScope,
+        hub: api,
+        credentials: credentials,
+        scope: scope,
       );
       final ownership = await flow.claim(home);
-      _cloudOwnership = ownership;
-      _ownershipScopeIdentity = _pairingScope?.identity;
-      if (mounted) {
-        setState(() {
-          _claimedThisSession = true;
-          _claimMessage = _notSyncedMessage(ownership);
-        });
+      if (!current() || ownership.homeId != scope.homeId) return false;
+      setState(() {
+        _claimedThisSession = true;
+        _claimMessage = _notSyncedMessage(ownership);
+        // A newly claimed epoch revokes the pre-claim pairing token.
+        if (_pairedOwnershipEpoch != ownership.ownershipEpoch) {
+          _pairedOwnershipEpoch = null;
+          _paired = false;
+          _hubConnected = false;
+        }
+      });
+      await _restore(autoScan: autoScanAfterClaim);
+      if (!current() ||
+          !_paired ||
+          !_hubConnected ||
+          _pairedOwnershipEpoch != ownership.ownershipEpoch ||
+          await credentials.readOwnedPairing(scope, ownership) == null) {
+        throw StateError('Owned Hub pairing was not stored');
       }
-      // A newly claimed epoch revokes the pre-claim pairing token.
-      if (_pairedOwnershipEpoch != ownership.ownershipEpoch) {
-        _pairedOwnershipEpoch = null;
-        _paired = false;
-        _hubConnected = false;
-      }
-      if (mounted) await _restore(autoScan: autoScanAfterClaim);
-      return true;
+      await credentials.clearBootstrapPairing(ownership.localHubId);
+      return current();
     } on CloudApiException catch (error) {
       if (mounted) {
         setState(() {
@@ -500,6 +520,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       _hubDataEpoch++;
       _nearbySaved = const [];
       _cloudAttached.clear();
+      _busy = false;
       _hubConnected = false;
       _estimates.clear();
       _candidates = const [];
@@ -522,8 +543,39 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     _restore();
   }
 
+  @override
+  void didUpdateWidget(covariant DiscoveryScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_scopeFor(oldWidget)?.identity == _pairingScope?.identity &&
+        identical(oldWidget.cloudApi, widget.cloudApi) &&
+        identical(oldWidget.api, widget.api) &&
+        identical(oldWidget.credentials, widget.credentials) &&
+        oldWidget.autoScan == widget.autoScan) {
+      return;
+    }
+    _restoreEpoch++;
+    _invalidateHubData();
+    _paired = false;
+    _pairedHubId = null;
+    _pairedOwnershipEpoch = null;
+    _claimedThisSession = false;
+    _claimFlow = null;
+    _hub.text = '';
+    _token.text = '';
+    _restore();
+  }
+
   Future<void> _restore({bool autoScan = true, bool showError = false}) async {
     final restoreEpoch = ++_restoreEpoch;
+    final initialScope = _pairingScope?.identity;
+    final initialCloud = widget.cloudApi;
+    final initialGeneration = initialCloud?.session.generation;
+    bool restoreCurrent() =>
+        mounted &&
+        restoreEpoch == _restoreEpoch &&
+        _pairingScope?.identity == initialScope &&
+        identical(widget.cloudApi, initialCloud) &&
+        initialCloud?.session.generation == initialGeneration;
     if (mounted) {
       setState(() {
         _error = null;
@@ -641,7 +693,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           }
           if (!current()) return;
           final automaticallyPaired = pairing == null;
-          if (pairing == null) pairing = await automaticallyPair(ownership);
+          pairing ??= await automaticallyPair(ownership);
           if (!current()) return;
           if (pairing == null) continue;
           final restoredPairing = pairing;
@@ -672,12 +724,16 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           if (current() && _hubConnected && widget.autoScan && autoScan) {
             await _search();
           }
-          if (current() && _hubConnected) _notifyCloudHubLinked();
+          if (current() && _hubConnected && !_claimBusy) {
+            _notifyCloudHubLinked();
+          }
           return;
         }
         if (ownerships.isEmpty) {
           // A first claim needs the bootstrap pairing, but it cannot read
           // household inventory before Cloud ownership is established.
+          _bootstrapScopeIdentity ??= scope.identity;
+          if (_bootstrapScopeIdentity != scope.identity) return;
           final pairing = await widget.credentials.readPairing();
           if (!current() || pairing == null) return;
           _hubConnectionAttempted = true;
@@ -698,9 +754,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         return;
       }
       await widget.credentials.importDebugPairingFile();
+      if (!restoreCurrent()) return;
       final pairing = await widget.credentials.readPairing();
+      if (!restoreCurrent()) return;
       if (pairing != null) {
-        if (!mounted) return;
         setState(() {
           _paired = true;
           _pairedHubId = pairing.hubId;
@@ -711,29 +768,34 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         await _hubApi.verifyStoredPairing(
           StoredHubIdentity(address: pairing.address, hubId: pairing.hubId),
         );
+        if (!restoreCurrent()) return;
         _verifiedPairingHubId = pairing.hubId;
         _verifiedPairingAddress = pairing.address;
         try {
-          if (await _ownedHub() != null && mounted) {
+          if (await _ownedHub() != null && restoreCurrent()) {
             setState(() => _claimedThisSession = true);
           }
         } catch (_) {
           // Local discovery remains available if Cloud is offline.
         }
         await _loadSaved(showError: showError);
-        if (_hubConnected && widget.autoScan && autoScan) await _search();
+        if (restoreCurrent() && _hubConnected && widget.autoScan && autoScan) {
+          await _search();
+        }
         return;
       }
       final (address, token) = await widget.credentials.read();
-      if (!mounted) return;
+      if (!restoreCurrent()) return;
       if (address != null) _hub.text = address;
       if (token != null) _token.text = token;
       if (address != null && token != null) {
         await _loadSaved(showError: showError);
-        if (_hubConnected && widget.autoScan && autoScan) await _search();
+        if (restoreCurrent() && _hubConnected && widget.autoScan && autoScan) {
+          await _search();
+        }
       }
     } catch (error) {
-      if (mounted) {
+      if (restoreCurrent()) {
         setState(() {
           _hubConnected = false;
           if (showError ||
@@ -745,7 +807,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         });
       }
     } finally {
-      if (mounted) setState(() => _restoreDone = true);
+      if (restoreCurrent()) {
+        setState(() => _restoreDone = true);
+      }
     }
   }
 
@@ -772,16 +836,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         ),
       );
       if (result == true && mounted) {
-        final scope = _pairingScope;
-        final cloud = widget.cloudApi;
-        if (scope != null && cloud != null) {
-          final owned = await cloud.hubs(scope.homeId);
-          for (final ownership in owned) {
-            if (await widget.credentials.saveOwnedPairing(scope, ownership)) {
-              break;
-            }
-          }
+        if (initialScope != _pairingScope?.identity ||
+            initialGeneration != widget.cloudApi?.session.generation) {
+          return false;
         }
+        _bootstrapScopeIdentity = initialScope;
         _invalidateHubData();
         await _restore();
         final pairing = await widget.credentials.readPairing();
@@ -1586,21 +1645,34 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   Future<void> _search({bool manual = false}) async {
     if (_busy || !_canUseHubCustomerApi) return;
-    int? nearbyEpoch;
+    final hub = _hub.text.trim();
+    final token = _token.text.trim();
+    final scope = _pairingScope?.identity;
+    final cloud = widget.cloudApi;
+    final generation = cloud?.session.generation;
+    final hubDataEpoch = _hubDataEpoch;
+    final api = _hubApi;
+    var expectedScanEpoch = _scanEpoch;
+    var startedNearby = false;
+    bool current() =>
+        mounted &&
+        hubDataEpoch == _hubDataEpoch &&
+        expectedScanEpoch == _scanEpoch &&
+        hub == _hub.text.trim() &&
+        token == _token.text.trim() &&
+        scope == _pairingScope?.identity &&
+        generation == cloud?.session.generation &&
+        _canUseHubCustomerApi;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      if (_token.text.trim().isEmpty) {
+      if (token.isEmpty) {
         throw const FormatException('Enter the hub discovery token.');
       }
-      if (!manual &&
-          await _hubApi.supportsNearbyDiscovery(
-            _hub.text.trim(),
-            _token.text.trim(),
-          )) {
-        if (!mounted) return;
+      if (!manual && await api.supportsNearbyDiscovery(hub, token)) {
+        if (!current()) return;
         setState(() {
           _nearbyAvailable = true;
           _nearbyState = 'queued';
@@ -1608,12 +1680,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           _searched = true;
         });
         final epoch = ++_scanEpoch;
-        nearbyEpoch = epoch;
-        final scanHub = _hub.text.trim();
-        final scanToken = _token.text.trim();
+        expectedScanEpoch = epoch;
+        startedNearby = true;
+        final scanHub = hub;
+        final scanToken = token;
         final collected = <String, NearbyDeviceCandidate>{};
-        var scan = await _hubApi.startNearbyScan(scanHub, scanToken);
-        if (!mounted || epoch != _scanEpoch) {
+        var scan = await api.startNearbyScan(scanHub, scanToken);
+        if (!current()) {
           unawaited(_cancelScan(scanHub, scanToken, scan.id));
           return;
         }
@@ -1621,7 +1694,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         _nearbyScanHub = scanHub;
         _nearbyScanToken = scanToken;
         for (var attempt = 0; attempt < 15; attempt++) {
-          if (!mounted || epoch != _scanEpoch) return;
+          if (!current()) return;
           setState(() {
             _nearbyState = scan.state;
             for (final candidate in scan.candidates) {
@@ -1635,7 +1708,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             _hubConnected = true;
           });
           if (scan.nextCursor != null) {
-            scan = await _hubApi.nearbyScan(
+            scan = await api.nearbyScan(
               scanHub,
               scanToken,
               scan.id,
@@ -1645,22 +1718,23 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           }
           if (scan.isTerminal) break;
           await Future<void>.delayed(const Duration(seconds: 1));
-          if (!mounted || epoch != _scanEpoch) return;
-          scan = await _hubApi.nearbyScan(scanHub, scanToken, scan.id);
+          if (!current()) return;
+          scan = await api.nearbyScan(scanHub, scanToken, scan.id);
         }
-        if (mounted && epoch == _scanEpoch && !scan.isTerminal) {
+        if (current() && !scan.isTerminal) {
           setState(() => _nearbyState = 'failed');
           _cancelActiveNearbyScan();
         }
-        if (epoch == _scanEpoch && scan.isTerminal) _clearActiveNearbyScan();
+        if (current() && scan.isTerminal) _clearActiveNearbyScan();
         return;
       }
-      if (!manual && mounted) setState(() => _nearbyAvailable = false);
+      if (!current()) return;
+      if (!manual) setState(() => _nearbyAvailable = false);
       final results = manual
           ? [
-              await _hubApi.probe(
-                _hub.text.trim(),
-                _token.text.trim(),
+              await api.probe(
+                hub,
+                token,
                 _ip.text.trim(),
                 protocol:
                     const {
@@ -1672,8 +1746,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     : _manualProtocol,
               ),
             ]
-          : await _hubApi.scan(_hub.text.trim(), _token.text.trim());
-      if (!mounted) return;
+          : await api.scan(hub, token);
+      if (!current()) return;
       setState(() {
         final byId = <String, DiscoveredPlug>{
           for (final candidate in _candidates)
@@ -1691,9 +1765,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       });
       await _syncAdoptedPlugSensors(_saved);
     } catch (error) {
-      if (!mounted) return;
-      if (nearbyEpoch != null && nearbyEpoch != _scanEpoch) return;
-      if (nearbyEpoch != null) _cancelActiveNearbyScan();
+      if (!current()) return;
+      if (startedNearby) _cancelActiveNearbyScan();
       setState(() {
         if (_nearbyAvailable) {
           _nearbyState = 'failed';
@@ -1702,7 +1775,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         _error = _hubFailureMessage(error);
       });
     } finally {
-      if (mounted && (nearbyEpoch == null || nearbyEpoch == _scanEpoch)) {
+      if (current()) {
         setState(() => _busy = false);
       }
     }
@@ -1999,8 +2072,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           selected.displayName,
         );
       } on HubRequestException catch (error) {
-        if (error.code != 'candidate_expired' && error.code != 'scan_expired')
+        if (error.code != 'candidate_expired' && error.code != 'scan_expired') {
           rethrow;
+        }
         if (refreshed) throw StateError('Search stopped. Try again.');
         selected = await _refreshNearbyCandidate(candidate);
         refreshed = true;
@@ -2183,8 +2257,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (!mounted ||
           epoch != _scanEpoch ||
           hub != _hub.text.trim() ||
-          token != _token.text.trim())
+          token != _token.text.trim()) {
         return;
+      }
       if (linked != null && cloud != null && home != null) {
         await Navigator.push<void>(
           context,
@@ -2342,7 +2417,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             ],
             if (widget.cloudHome != null &&
                 widget.cloudApi != null &&
-                (!_paired || (!_claimedThisSession && !_cloudHubOwned))) ...[
+                (!_paired || (!_claimedThisSession && !_cloudHubOwned)) &&
+                !_cloudHubOwned) ...[
               const SizedBox(height: 16),
               Text(
                 'Cloud home: ${widget.cloudHome!.name}',
@@ -2379,7 +2455,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 ),
               ],
             ],
-            if (!_paired || _developerMode) ...[
+            if (!_cloudHubOwned && (!_paired || _developerMode)) ...[
               if (!_paired)
                 Text(
                   'Connect to your local hub',

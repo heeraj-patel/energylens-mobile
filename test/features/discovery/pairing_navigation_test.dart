@@ -45,12 +45,20 @@ class _Auth implements CloudAuthenticator {
   ) async => const CloudTokens(accessToken: 'token');
 }
 
-class _Credentials extends DiscoveryCredentials {
-  StoredPairingCredential? pairing;
-  int localClaims = 0;
+class _Store implements SecureKeyValueStore {
+  final values = <String, String>{};
+  @override
+  Future<String?> read(String key) async => values[key];
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
 
   @override
-  Future<StoredPairingCredential?> readPairing() async => pairing;
+  Future<void> delete(String key) async => values.remove(key);
+}
+
+class _Credentials extends DiscoveryCredentials {
+  _Credentials(_Store store) : super(storage: store);
+  int localClaims = 0;
 
   @override
   Future<PairingClaim> claimAndStore(
@@ -59,7 +67,7 @@ class _Credentials extends DiscoveryCredentials {
     DiscoveryApi api = const DiscoveryApi(),
   }) async {
     localClaims++;
-    pairing = StoredPairingCredential(
+    await savePairing(
       address: details.address,
       hubId: details.hubId,
       clientId: clientId,
@@ -71,32 +79,33 @@ class _Credentials extends DiscoveryCredentials {
       token: 'issued-token',
     );
   }
-
-  @override
-  Future<StoredPairingCredential?> readOwnedPairing(
-    OwnedPairingScope scope,
-    HubOwnership ownership,
-  ) async {
-    final current = pairing;
-    if (current == null) return null;
-    return StoredPairingCredential(
-      address: current.address,
-      hubId: current.hubId,
-      clientId: current.clientId,
-      token: current.token,
-      ownershipEpoch: ownership.ownershipEpoch,
-    );
-  }
 }
 
 class _Api extends DiscoveryApi {
   int scans = 0;
+  int ownerClaims = 0;
+  Completer<void>? scanGate;
 
   @override
   DiscoveryApi authorizedFor(HubOwnerAuthorization owner) => this;
 
   @override
   Future<void> verifyStoredPairing(StoredHubIdentity pairing) async {}
+
+  @override
+  Future<PairingClaim> claimOwnedPairing(
+    HubOwnership ownership, {
+    required String clientId,
+    required HubOwnerAuthorization owner,
+  }) async {
+    ownerClaims++;
+    return PairingClaim(
+      hubId: ownership.localHubId,
+      clientId: clientId,
+      token: 'owned-token',
+      ownershipEpoch: ownership.ownershipEpoch,
+    );
+  }
 
   @override
   Future<List<SavedPlug>> saved(String baseUrl, String token) async => const [];
@@ -108,6 +117,7 @@ class _Api extends DiscoveryApi {
   @override
   Future<List<DiscoveredPlug>> scan(String baseUrl, String token) async {
     scans++;
+    await scanGate?.future;
     return const [];
   }
 
@@ -128,6 +138,7 @@ class _Api extends DiscoveryApi {
 class _CloudHarness {
   _CloudHarness({this.finishResponse});
   final Completer<http.Response>? finishResponse;
+  final String homeId = _homeId;
   bool owned = false;
   int resolutions = 0;
   late final cloud = CloudApiClient(
@@ -143,7 +154,7 @@ class _CloudHarness {
       authenticator: _Auth(),
     ),
     client: MockClient((request) async {
-      if (request.url.path == '/v1/homes/$_homeId/hubs') {
+      if (request.url.path == '/v1/homes/$homeId/hubs') {
         return http.Response(
           jsonEncode({
             'hubs': owned
@@ -151,9 +162,17 @@ class _CloudHarness {
                     {
                       'hub_id': _hubId,
                       'local_hub_id': _localHubId,
-                      'home_id': _homeId,
+                      'home_id': homeId,
                       'ownership_epoch': 2,
                       'version': 1,
+                      'connection': {
+                        'https_origin': 'https://192.168.1.20:8787',
+                        'certificate_sha256': 'a' * 64,
+                        'expires_at': DateTime.now()
+                            .toUtc()
+                            .add(const Duration(minutes: 5))
+                            .toIso8601String(),
+                      },
                     },
                   ]
                 : [],
@@ -161,7 +180,7 @@ class _CloudHarness {
           200,
         );
       }
-      if (request.url.path == '/v1/homes/$_homeId/hub-pairings/resolve') {
+      if (request.url.path == '/v1/homes/$homeId/hub-pairings/resolve') {
         resolutions++;
         return http.Response(
           jsonEncode({
@@ -178,7 +197,7 @@ class _CloudHarness {
           200,
         );
       }
-      if (request.url.path == '/v1/homes/$_homeId/hub-claims') {
+      if (request.url.path == '/v1/homes/$homeId/hub-claims') {
         return http.Response(
           jsonEncode({
             'claim_id': '44444444-4444-4444-8444-444444444444',
@@ -199,15 +218,28 @@ class _CloudHarness {
                 jsonEncode({
                   'hub_id': _hubId,
                   'local_hub_id': _localHubId,
-                  'home_id': _homeId,
+                  'home_id': homeId,
                   'ownership_epoch': 2,
                   'version': 1,
+                  'connection': {
+                    'https_origin': 'https://192.168.1.20:8787',
+                    'certificate_sha256': 'a' * 64,
+                    'expires_at': DateTime.now()
+                        .toUtc()
+                        .add(const Duration(minutes: 5))
+                        .toIso8601String(),
+                  },
                 }),
                 200,
               )
             : await finishResponse!.future;
         if (response.statusCode == 200) owned = true;
         return response;
+      }
+      if (request.method == 'DELETE' &&
+          request.url.path == '/v1/homes/$homeId/hubs/$_hubId') {
+        owned = false;
+        return http.Response('', 204);
       }
       return http.Response('{}', 404);
     }),
@@ -224,6 +256,98 @@ Future<void> _pair(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('an automatic paired scan cannot start twice while active', (
+    tester,
+  ) async {
+    final harness = _CloudHarness()..owned = true;
+    final api = _Api()..scanGate = Completer<void>();
+    addTearDown(harness.cloud.close);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(
+          api: api,
+          credentials: _Credentials(_Store()),
+          autoScan: true,
+          cloudHome: _home,
+          cloudApi: harness.cloud,
+          accountId: 'account-a',
+        ),
+      ),
+    );
+    for (var attempt = 0; attempt < 20 && api.scans == 0; attempt++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(api.scans, 1);
+    await tester.scrollUntilVisible(
+      find.text('Scan for plugs'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    final scanButton = find.ancestor(
+      of: find.text('Scan for plugs'),
+      matching: find.byType(FilledButton),
+    );
+    expect(tester.widget<FilledButton>(scanButton).onPressed, isNull);
+    await tester.pump();
+    expect(api.scans, 1);
+    api.scanGate!.complete();
+    await tester.pumpAndSettle();
+    expect(api.scans, 1);
+  });
+
+  test(
+    'owned credential remains scoped to account and home and delete clears it',
+    () async {
+      final store = _Store();
+      final credentials = _Credentials(store);
+      final ownership = HubOwnership(
+        hubId: _hubId,
+        localHubId: _localHubId,
+        homeId: _homeId,
+        ownershipEpoch: 2,
+        version: 1,
+      );
+      OwnedPairingScope scope(String account, String home) => OwnedPairingScope(
+        origin: 'https://api.example',
+        profile: 'email_password',
+        accountId: account,
+        homeId: home,
+      );
+      final selected = scope('account-a', _homeId);
+      await credentials.storeOwnedPairing(
+        selected,
+        ownership,
+        StoredPairingCredential(
+          address: 'https://192.168.1.20:8787#sha256=${'a' * 64}',
+          hubId: _localHubId,
+          clientId: 'client',
+          token: 'owned-token',
+          ownershipEpoch: 2,
+        ),
+      );
+      expect(
+        await credentials.readOwnedPairing(selected, ownership),
+        isNotNull,
+      );
+      expect(
+        await credentials.readOwnedPairing(
+          scope('account-b', _homeId),
+          ownership,
+        ),
+        isNull,
+      );
+      expect(
+        await credentials.readOwnedPairing(
+          scope('account-a', 'other-home'),
+          ownership,
+        ),
+        isNull,
+      );
+      await credentials.clearHubPairing(selected, ownership);
+      expect(await credentials.readOwnedPairing(selected, ownership), isNull);
+    },
+  );
+
   testWidgets(
     'successful pairing routes by entry context and failures stay put',
     (tester) async {
@@ -231,7 +355,8 @@ void main() {
 
       final ordinary = _CloudHarness();
       final ordinaryApi = _Api();
-      final ordinaryCredentials = _Credentials();
+      final ordinaryStore = _Store();
+      final ordinaryCredentials = _Credentials(ordinaryStore);
       addTearDown(ordinary.cloud.close);
       await tester.pumpWidget(
         MaterialApp(
@@ -249,6 +374,12 @@ void main() {
       expect(ordinaryCredentials.localClaims, 1);
       expect(ordinary.owned, isTrue);
       expect(ordinaryApi.scans, 1);
+      expect(ordinaryApi.ownerClaims, 1);
+      expect(await ordinaryCredentials.readPairing(), isNull);
+      expect(
+        ordinaryStore.values.keys.any((key) => key.contains('pairing.v2')),
+        isTrue,
+      );
       expect(find.byKey(const Key('pairingCode')), findsNothing);
       expect(find.text('Find a smart plug'), findsOneWidget);
 
@@ -256,16 +387,35 @@ void main() {
       await tester.pumpAndSettle();
       final onboarding = _CloudHarness();
       final onboardingApi = _Api();
+      final onboardingStore = _Store();
       addTearDown(onboarding.cloud.close);
       var linked = false;
       await tester.pumpWidget(
         StatefulBuilder(
           builder: (context, setState) => MaterialApp(
             home: linked
-                ? const Scaffold(body: Text('Dashboard'))
+                ? Builder(
+                    builder: (dashboardContext) => Scaffold(
+                      body: TextButton(
+                        onPressed: () => Navigator.of(dashboardContext).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => DiscoveryScreen(
+                              api: onboardingApi,
+                              credentials: _Credentials(onboardingStore),
+                              autoScan: true,
+                              cloudHome: _home,
+                              cloudApi: onboarding.cloud,
+                              accountId: 'account-a',
+                            ),
+                          ),
+                        ),
+                        child: const Text('Add device'),
+                      ),
+                    ),
+                  )
                 : DiscoveryScreen(
                     api: onboardingApi,
-                    credentials: _Credentials(),
+                    credentials: _Credentials(onboardingStore),
                     cloudHome: _home,
                     cloudApi: onboarding.cloud,
                     accountId: 'account-a',
@@ -280,7 +430,54 @@ void main() {
       expect(linked, isTrue);
       expect(onboarding.owned, isTrue);
       expect(onboardingApi.scans, 0);
-      expect(find.text('Dashboard'), findsOneWidget);
+      expect(find.text('Add device'), findsOneWidget);
+      await tester.tap(find.text('Add device'));
+      await tester.pumpAndSettle();
+      expect(find.text('Pair with hub'), findsNothing);
+      expect(find.text('Scan for plugs'), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.ancestor(
+                of: find.text('Scan for plugs'),
+                matching: find.byType(FilledButton),
+              ),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      expect(onboardingApi.scans, 1);
+      expect(onboardingApi.ownerClaims, 1);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(
+            api: onboardingApi,
+            credentials: _Credentials(onboardingStore),
+            autoScan: true,
+            cloudHome: _home,
+            cloudApi: onboarding.cloud,
+            accountId: 'account-a',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Scan for plugs'), findsOneWidget);
+      expect(find.text('Pair with hub'), findsNothing);
+      expect(onboardingApi.scans, 2);
+      expect(onboardingApi.ownerClaims, 1);
+
+      await tester.tap(find.byKey(const Key('deleteHubButton')));
+      await tester.pumpAndSettle();
+      expect(onboarding.owned, isFalse);
+      expect(find.text('Scan for plugs'), findsNothing);
+      expect(find.text('Pair with hub'), findsOneWidget);
+      expect(
+        onboardingStore.values.keys.any((key) => key.contains('pairing.v2')),
+        isFalse,
+      );
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
@@ -296,7 +493,7 @@ void main() {
                   MaterialPageRoute<void>(
                     builder: (_) => DiscoveryScreen(
                       api: settingsApi,
-                      credentials: _Credentials(),
+                      credentials: _Credentials(_Store()),
                       cloudHome: _home,
                       cloudApi: settings.cloud,
                       accountId: 'account-a',
@@ -329,7 +526,7 @@ void main() {
         MaterialApp(
           home: DiscoveryScreen(
             api: failedApi,
-            credentials: _Credentials(),
+            credentials: _Credentials(_Store()),
             cloudHome: _home,
             cloudApi: failed.cloud,
             accountId: 'account-a',

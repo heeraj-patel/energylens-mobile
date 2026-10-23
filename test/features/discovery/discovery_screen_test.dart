@@ -954,9 +954,10 @@ void main() {
           ),
         );
       }
-      if (switchSession)
+      if (switchSession) {
         api.beforeClaimResponse = () =>
             session.selectCredentialMethod('username_password');
+      }
       await tester.pumpWidget(
         MaterialApp(
           home: DiscoveryScreen(
@@ -2275,6 +2276,7 @@ void main() {
         ),
       ),
     );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Scan for plugs'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
@@ -2312,6 +2314,7 @@ void main() {
         home: DiscoveryScreen(api: api, credentials: credentials),
       ),
     );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Scan for plugs'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
