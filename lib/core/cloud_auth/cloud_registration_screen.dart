@@ -96,7 +96,9 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
           _remoteAttempted = false;
         }
         setState(
-          () => _error = isInputRejectionStatus(error.statusCode)
+          () => _error = error.statusCode == 409
+              ? 'User Id exists, please login'
+              : isInputRejectionStatus(error.statusCode)
               ? 'Could not submit the request. Try again.'
               : internalErrorMessage,
         );

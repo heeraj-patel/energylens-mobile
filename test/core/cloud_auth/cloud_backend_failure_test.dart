@@ -476,17 +476,30 @@ void main() {
       });
     }
 
-    testWidgets('registration keeps the validation message for 422', (
+    for (final status in [400, 422]) {
+      testWidgets('registration keeps the validation message for $status', (
+        tester,
+      ) async {
+        await register(
+          tester,
+          _Registration()..error = CloudLocalAuthException(status),
+        );
+        expect(
+          find.text('Could not submit the request. Try again.'),
+          findsOneWidget,
+        );
+        expect(find.text(internalErrorMessage), findsNothing);
+      });
+    }
+
+    testWidgets('registration shows duplicate-user message for 409', (
       tester,
     ) async {
       await register(
         tester,
-        _Registration()..error = const CloudLocalAuthException(422),
+        _Registration()..error = const CloudLocalAuthException(409),
       );
-      expect(
-        find.text('Could not submit the request. Try again.'),
-        findsOneWidget,
-      );
+      expect(find.text('User Id exists, please login'), findsOneWidget);
       expect(find.text(internalErrorMessage), findsNothing);
     });
 
