@@ -21,9 +21,9 @@ CloudFaqAnswer _parse(Map<String, dynamic> json) =>
     CloudFaqAnswer.fromJson({..._base, ...json}, 'weather_tips');
 
 void main() {
-  test('weather_tips is accepted but not a listed question', () {
+  test('weather_tips is a listed question', () {
     expect(isFaqIntent('weather_tips'), isTrue);
-    expect(faqIntents.containsKey('weather_tips'), isFalse);
+    expect(faqIntents['weather_tips'], 'Which weather tips apply now?');
     expect(isFaqIntent('other'), isFalse);
   });
 

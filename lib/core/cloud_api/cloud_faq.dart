@@ -18,14 +18,12 @@ const faqIntents = <String, String>{
   'device_operating_cost': 'What does a device cost to run?',
   'reduce_cost': 'How could I reduce cost?',
   'programs_for_device': 'Are there programs for a device?',
+  'weather_tips': 'Which weather tips apply now?',
 };
 
-/// Accepted in answers but not listed as a question until its label is approved.
-const faqParseOnlyIntents = {'weather_tips'};
 const faqWeatherNoTipsAnswer = 'No weather tips apply right now.';
 
-bool isFaqIntent(String intent) =>
-    faqIntents.containsKey(intent) || faqParseOnlyIntents.contains(intent);
+bool isFaqIntent(String intent) => faqIntents.containsKey(intent);
 
 class CloudFaqEvidence {
   const CloudFaqEvidence(this.id, this.kind, this.revision);

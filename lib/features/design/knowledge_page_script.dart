@@ -129,10 +129,14 @@ String buildKnowledgeAnswerScript({
   required String answer,
   required String homeId,
   required int generation,
+  List<Map<String, String?>>? rows,
+  String? attribution,
 }) {
   final payload = jsonEncode({
     'id': questionId,
     'answer': answer,
+    'rows': rows,
+    'attribution': attribution,
     'homeId': homeId,
     'generation': generation,
   });
@@ -147,6 +151,29 @@ String buildKnowledgeAnswerScript({
       const panel = trigger && document.getElementById(trigger.getAttribute('aria-controls'));
       const target = panel?.querySelector('[data-faq-answer]');
       if (!target) return false;
+      if (payload.rows) {
+        target.replaceChildren();
+        for (const row of payload.rows) {
+          const line = document.createElement('p');
+          line.textContent = row.url ? row.text + ' ' : row.text;
+          if (row.url) {
+            const link = document.createElement('a');
+            link.href = row.url;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = 'Source';
+            line.append(link);
+          }
+          target.append(line);
+        }
+        if (payload.attribution) {
+          const credit = document.createElement('p');
+          credit.className = 'text-[11px]';
+          credit.textContent = payload.attribution;
+          target.append(credit);
+        }
+        return true;
+      }
       target.textContent = payload.answer;
       target.style.whiteSpace = 'pre-line';
       return true;

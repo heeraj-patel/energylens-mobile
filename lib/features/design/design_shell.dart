@@ -1189,6 +1189,10 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
           answer: answer,
           homeId: context.homeId,
           generation: ticket.generation,
+          rows: value is KnowledgeAnswerAvailable ? value.sourceRows : null,
+          attribution: value is KnowledgeAnswerAvailable
+              ? value.attribution
+              : null,
         ),
       );
     } catch (error) {

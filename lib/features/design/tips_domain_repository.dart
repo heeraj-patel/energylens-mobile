@@ -45,6 +45,7 @@ class TipsDomainSnapshot {
     this.applianceNames = const {},
     this.applianceFuels = const {},
     required this.operatingEstimates,
+    this.weather,
   });
 
   final String homeId;
@@ -62,6 +63,9 @@ class TipsDomainSnapshot {
 
   /// These are operating estimates, never proposed savings.
   final List<CloudEstimate> operatingEstimates;
+
+  /// Weather block of the recommendations read; null when absent.
+  final CloudWeather? weather;
 
   String? get promotion => null;
   String? get savingsAmount => null;
@@ -136,6 +140,7 @@ class TipsDomainRepository {
             appliance.id.toLowerCase(): appliance.fuel,
         }),
         operatingEstimates: List.unmodifiable(estimates),
+        weather: batch.weather,
       );
     } catch (_) {
       if (stale()) return null;

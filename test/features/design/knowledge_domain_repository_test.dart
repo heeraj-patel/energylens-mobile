@@ -24,6 +24,14 @@ class _Source implements KnowledgeDomainSource {
   final calls = <({String homeId, String questionId, String? applianceId})>[];
   Future<CloudFaqAnswer> Function(String, String, {String? applianceId})?
   onAnswer;
+  String? provider;
+  var providerCalls = 0;
+
+  @override
+  Future<String?> weatherProvider(String homeId) async {
+    providerCalls++;
+    return provider;
+  }
 
   @override
   Future<CloudFaqAnswer> faqAnswer(
@@ -45,7 +53,7 @@ void main() {
   test('bundled catalog stages all approved labels while exposing answerable entries', () {
     final repository = KnowledgeDomainRepository(_Source());
 
-    expect(repository.catalog.entries, hasLength(34));
+    expect(repository.catalog.entries, hasLength(35));
     expect(
       repository.catalog.entries.where(
         (entry) => entry.availability == KnowledgeCatalogAvailability.draft,
@@ -178,6 +186,71 @@ void main() {
     );
     expect(source.calls.single.questionId, 'high_bill_possible_contributors');
   });
+
+  test(
+    'weather answer carries source rows and ECCC attribution only for eccc',
+    () async {
+      const ref = {
+        'id': '33333333-3333-4333-8333-333333333333',
+        'kind': 'weather_day',
+        'revision': 1,
+      };
+      final source = _Source()
+        ..provider = 'eccc'
+        ..onAnswer = (_, id, {applianceId}) async => CloudFaqAnswer.fromJson({
+          'question_id': id,
+          'status': 'supported',
+          'answer': 'Weather tips apply.',
+          'findings': [
+            {
+              'label': 'hypothesis',
+              'text': 'Close blinds.',
+              'evidence_refs': [ref],
+              'source_url': 'https://www.pge.com/x',
+            },
+          ],
+          'evidence_refs': [ref],
+          'as_of': '2026-10-23T12:00:00Z',
+          'weather_status': 'available',
+        }, id);
+      final repository = KnowledgeDomainRepository(source);
+      final eccc = await repository.answer(
+        _homeId,
+        'weather_tips',
+      ) as KnowledgeAnswerAvailable;
+      expect(
+        eccc.attribution,
+        'Data Source: Environment and Climate Change Canada',
+      );
+      expect(eccc.sourceRows, [
+        {'text': 'Weather tips apply.', 'url': null},
+        {'text': 'Close blinds.', 'url': 'https://www.pge.com/x'},
+      ]);
+      source.provider = 'nws';
+      final nws = await repository.answer(
+        _homeId,
+        'weather_tips',
+      ) as KnowledgeAnswerAvailable;
+      expect(nws.attribution, isNull);
+    },
+  );
+
+  test(
+    'weather label is listed and non-weather answers skip the provider read',
+    () async {
+      expect(
+        KnowledgeDomainRepository.questions.map((q) => q.label),
+        contains('Which weather tips apply now?'),
+      );
+      final source = _Source();
+      final result = await KnowledgeDomainRepository(
+        source,
+      ).answer(_homeId, 'reduce_cost') as KnowledgeAnswerAvailable;
+      expect(source.providerCalls, 0);
+      expect(result.sourceRows, isNull);
+      expect(result.attribution, isNull);
+    },
+  );
 
   test('operating cost forwards the selected appliance ID', () async {
     final source = _Source();

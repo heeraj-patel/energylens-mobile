@@ -43,6 +43,91 @@ class TipsPageRenderer {
     return 'Save ~\$$monthlyDollars/mo';
   }
 
+  static const _weatherChips = {
+    'heat_alert': 'Heat alert',
+    'cold_alert': 'Cold alert',
+    'hot_run': 'Hot spell',
+    'cold_run': 'Cold spell',
+  };
+  static const eccAttribution =
+      'Data Source: Environment and Climate Change Canada';
+  static const _months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
+  static String? weatherChip(CloudWeatherContext? context) =>
+      context == null ? null : _weatherChips[context.trigger];
+
+  static String _clock12(String hhmm) {
+    final hour = int.parse(hhmm.substring(0, 2));
+    final minute = hhmm.substring(3);
+    final h = hour % 12 == 0 ? 12 : hour % 12;
+    return '$h${minute == '00' ? '' : ':$minute'} ${hour < 12 ? 'AM' : 'PM'}';
+  }
+
+  /// Per-kWh time-of-use line; null unless Cloud sent the whole cost group.
+  static String? weatherCostLine(CloudWeatherContext? context) {
+    final amount = context?.touSavingPerKwh;
+    final start = context?.peakStartLocal;
+    final end = context?.peakEndLocal;
+    if (amount == null || start == null || end == null) return null;
+    final parts = amount.split('.');
+    final fraction =
+        (parts.length == 1 ? '' : parts[1].replaceFirst(RegExp(r'0+$'), ''))
+            .padRight(2, '0');
+    return 'On your plan, each kWh moved out of '
+        '${_clock12(start)}-${_clock12(end)} saves \$${parts.first}.$fraction.';
+  }
+
+  /// Event is provider text; only its first letter is capitalised.
+  static String weatherAlertLine(CloudWeatherAlert alert) {
+    final event = alert.event.trim();
+    final name = event[0].toUpperCase() + event.substring(1);
+    final end = alert.endsAt.toLocal();
+    final hour = end.hour % 12 == 0 ? 12 : end.hour % 12;
+    final minute = end.minute.toString().padLeft(2, '0');
+    final when =
+        '${_months[end.month - 1]} ${end.day}, $hour:$minute '
+        '${end.hour < 12 ? 'AM' : 'PM'}';
+    return '$name until $when';
+  }
+
+  /// Card data for the Efficiency page; null shows no weather UI. Alert lines
+  /// only appear next to home tips, so they are dropped without them.
+  static Map<String, Object?>? _weatherPayload(CloudWeather? weather) {
+    if (weather == null || !weather.available || weather.homeTips.isEmpty) {
+      return null;
+    }
+    return {
+      'tips': [
+        for (final row in weather.homeTips)
+          {
+            'text': row.tip.sourceText,
+            'url': row.tip.sourceUrl.toString(),
+            'host': row.tip.sourceUrl.host,
+          },
+      ],
+      'alerts': [
+        for (final alert in weather.alerts)
+          {'line': weatherAlertLine(alert), 'url': alert.sourceUrl.toString()},
+      ],
+      'attribution': weather.provider == 'eccc' && weather.alerts.isNotEmpty
+          ? eccAttribution
+          : null,
+    };
+  }
+
   String script(
     DesignPageTicket ticket,
     TipsDomainSnapshot snapshot, {
@@ -68,6 +153,9 @@ class TipsPageRenderer {
                   .millisecondsSinceEpoch,
             },
       ],
+      'weather': ticket.page == 'tips_efficiency'
+          ? _weatherPayload(snapshot.weather)
+          : null,
       'recommendations': [
         for (final action in snapshot.recommendations)
           {
@@ -87,6 +175,9 @@ class TipsPageRenderer {
             'researchText': action.researchTip?.sourceText,
             'researchUrl': action.researchTip?.sourceUrl.toString(),
             'researchHost': action.researchTip?.sourceUrl.host,
+            'isWeather': action.weatherContext != null,
+            'weatherChip': weatherChip(action.weatherContext),
+            'weatherCost': weatherCostLine(action.weatherContext),
           },
       ],
     });
@@ -111,11 +202,79 @@ class TipsPageRenderer {
       mount.dispatchEvent(new Event('energylens:tips-changed', {bubbles: true}));
     }
   };
+  const headingClass = 'text-xs font-bold uppercase tracking-wider text-slate-500 font-label-md';
+  const detailClass = 'font-body-md text-body-md text-on-surface-variant text-[13px] mt-space-xs';
+  const researchRow = (text, host, url) => {
+    const research = document.createElement('p');
+    research.className = detailClass;
+    research.setAttribute('data-el-research-source', '');
+    research.textContent = '"' + text + '" (' + host + ') ';
+    const sourceLink = document.createElement('a');
+    sourceLink.href = url;
+    sourceLink.target = '_blank';
+    sourceLink.rel = 'noopener noreferrer';
+    sourceLink.textContent = 'Source';
+    research.append(sourceLink);
+    return research;
+  };
+  if (payload.page === 'tips_efficiency' && payload.weather) {
+    const group = document.createElement('div');
+    group.setAttribute('data-el-tip-group', '');
+    group.setAttribute('data-el-weather-card', '');
+    group.className = 'flex flex-col gap-space-xs p-space-sm rounded-xl bg-surface-container-low border border-surface-container-high/80 shadow-sm';
+    const header = document.createElement('div');
+    header.className = 'flex items-center justify-between pb-1 border-b border-surface-container-high/60';
+    const label = document.createElement('div');
+    label.className = 'flex items-center gap-1.5';
+    const icon = document.createElement('span');
+    icon.className = 'material-symbols-outlined text-primary text-[18px]';
+    icon.textContent = 'home';
+    const homeTitle = document.createElement('h3');
+    homeTitle.className = 'font-bold tracking-tight text-slate-900 text-[14px]';
+    homeTitle.textContent = 'Your home';
+    label.append(icon, homeTitle);
+    header.append(label);
+    group.append(header);
+    for (const alert of payload.weather.alerts) {
+      const line = document.createElement('p');
+      line.className = detailClass;
+      line.setAttribute('data-el-weather-alert', '');
+      line.textContent = alert.line + ' ';
+      const alertLink = document.createElement('a');
+      alertLink.href = alert.url;
+      alertLink.target = '_blank';
+      alertLink.rel = 'noopener noreferrer';
+      alertLink.textContent = 'Source';
+      line.append(alertLink);
+      group.append(line);
+    }
+    if (payload.weather.attribution) {
+      const credit = document.createElement('p');
+      credit.className = 'font-body-md text-body-md text-on-surface-variant text-[11px]';
+      credit.setAttribute('data-el-weather-attribution', '');
+      credit.textContent = payload.weather.attribution;
+      group.append(credit);
+    }
+    const tipList = document.createElement('div');
+    tipList.className = 'flex flex-col gap-1.5';
+    payload.weather.tips.forEach((tip, index) => {
+      const card = document.createElement('article');
+      card.className = 'p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high/80 shadow-sm';
+      card.setAttribute('data-el-tip-item', '');
+      card.setAttribute('data-el-source-id', 'weather/home/' + index);
+      const body = document.createElement('div');
+      body.className = 'block';
+      body.append(researchRow(tip.text, tip.host, tip.url));
+      card.append(body);
+      tipList.append(card);
+    });
+    group.append(tipList);
+    mount.append(group);
+  }
   if (!rows.length) {
     notifyTipsChanged();
     return true;
   }
-  const headingClass = 'text-xs font-bold uppercase tracking-wider text-slate-500 font-label-md';
   if (payload.page !== 'perks_tips') {
     const fuelLabels = {natural_gas: 'Gas', propane: 'Propane', electricity: 'Electric'};
     const hints = {
@@ -186,18 +345,22 @@ class TipsPageRenderer {
         const hint = row.state === 'candidate' && hints[row.nextQuestion];
         detail.textContent = hint ? hint(row.applianceName) : row.explanation;
         body.append(detail);
-        if (payload.page === 'tips_care_upgrades' && row.researchText && row.researchUrl) {
-          const research = document.createElement('p');
-          research.className = 'font-body-md text-body-md text-on-surface-variant text-[13px] mt-space-xs';
-          research.setAttribute('data-el-research-source', '');
-          research.textContent = '"' + row.researchText + '" (' + row.researchHost + ') ';
-          const sourceLink = document.createElement('a');
-          sourceLink.href = row.researchUrl;
-          sourceLink.target = '_blank';
-          sourceLink.rel = 'noopener noreferrer';
-          sourceLink.textContent = 'Source';
-          research.append(sourceLink);
-          body.append(research);
+        if (row.weatherChip) {
+          const trigger = document.createElement('span');
+          trigger.className = 'px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-semibold text-[11px]';
+          trigger.setAttribute('data-el-weather-trigger', '');
+          trigger.textContent = row.weatherChip;
+          body.append(trigger);
+        }
+        if (row.weatherCost) {
+          const cost = document.createElement('p');
+          cost.className = detailClass;
+          cost.setAttribute('data-el-weather-cost', '');
+          cost.textContent = row.weatherCost;
+          body.append(cost);
+        }
+        if ((payload.page === 'tips_care_upgrades' || row.isWeather) && row.researchText && row.researchUrl) {
+          body.append(researchRow(row.researchText, row.researchHost, row.researchUrl));
         }
         if (row.monthlySavings) {
           const savings = document.createElement('span');

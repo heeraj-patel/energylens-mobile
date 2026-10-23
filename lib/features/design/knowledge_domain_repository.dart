@@ -16,6 +16,9 @@ abstract interface class KnowledgeDomainSource {
     String questionId, {
     String? applianceId,
   });
+
+  /// Weather provider of the home, or null when unknown or unavailable.
+  Future<String?> weatherProvider(String homeId);
 }
 
 class CloudKnowledgeDomainSource implements KnowledgeDomainSource {
@@ -29,6 +32,10 @@ class CloudKnowledgeDomainSource implements KnowledgeDomainSource {
     String questionId, {
     String? applianceId,
   }) => api.faqAnswer(homeId, questionId, applianceId: applianceId);
+
+  @override
+  Future<String?> weatherProvider(String homeId) async =>
+      (await api.recommendations(homeId, const {})).weather?.provider;
 }
 
 sealed class KnowledgeAnswerResult {
@@ -36,10 +43,32 @@ sealed class KnowledgeAnswerResult {
 }
 
 class KnowledgeAnswerAvailable extends KnowledgeAnswerResult {
-  const KnowledgeAnswerAvailable(this.answer);
+  const KnowledgeAnswerAvailable(this.answer, {this.weatherProvider});
 
   final CloudFaqAnswer answer;
+  final String? weatherProvider;
+
+  /// Weather answer lines with an optional source link; null for other answers.
+  List<Map<String, String?>>? get sourceRows =>
+      answer.intent != 'weather_tips' ||
+          answer.status == 'insufficient_information'
+      ? null
+      : [
+          {'text': answer.text, 'url': null},
+          for (final finding in answer.findings)
+            {'text': finding.text, 'url': finding.sourceUrl?.toString()},
+        ];
+
+  String? get attribution =>
+      answer.intent == 'weather_tips' &&
+          answer.weatherStatus == 'available' &&
+          weatherProvider == 'eccc'
+      ? knowledgeWeatherAttribution
+      : null;
 }
+
+const knowledgeWeatherAttribution =
+    'Data Source: Environment and Climate Change Canada';
 
 class KnowledgePreparedAnswerAvailable extends KnowledgeAnswerResult {
   const KnowledgePreparedAnswerAvailable(this.questionId, this.text);
@@ -123,7 +152,16 @@ class KnowledgeDomainRepository {
         applianceId: applianceId,
       );
       if (stale()) return null;
-      return KnowledgeAnswerAvailable(answer);
+      String? provider;
+      if (questionId == 'weather_tips' && answer.weatherStatus == 'available') {
+        try {
+          provider = await source.weatherProvider(homeId);
+        } catch (_) {
+          provider = null;
+        }
+        if (stale()) return null;
+      }
+      return KnowledgeAnswerAvailable(answer, weatherProvider: provider);
     } catch (_) {
       if (stale()) return null;
       rethrow;
@@ -200,6 +238,7 @@ KnowledgeQuestionCatalog _defaultCatalog() => KnowledgeQuestionCatalog([
     'top_waste_opportunities',
   ),
   _cloudEntry('reduce_cost', 'How could I reduce cost?', 'reduce_cost'),
+  _cloudEntry('weather_tips', 'Which weather tips apply now?', 'weather_tips'),
   _draft('week_change', 'What changed in my energy use this week?', [
     'weekly energy change',
     'usage trend',

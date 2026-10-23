@@ -9,7 +9,7 @@ void main() {
     'production renders all approved labels with fallback for missing evidence',
     () {
       final script = buildKnowledgePageScript();
-      expect(RegExp('"id":').allMatches(script), hasLength(34));
+      expect(RegExp('"id":').allMatches(script), hasLength(35));
       expect(script, contains('Power is how quickly electricity is used'));
       expect(script, contains('What is a kilowatt-hour?'));
       expect(script, contains('a program shown for my device?'));
@@ -87,7 +87,7 @@ const document = {querySelector: () => input, getElementById: id => nodes[id]};
 const routes = [], answers = [];
 const window = {EnergyLensNavigation:{postMessage: value => routes.push(value)}, EnergyLensKnowledge:{postMessage: value => answers.push(value)}};
 assert.equal(vm.runInNewContext(script, {document, window, EnergyLensKnowledge:window.EnergyLensKnowledge}), true);
-assert.equal(list.cards.length, 34);
+assert.equal(list.cards.length, 35);
 function click(id) {
   const trigger = list.cards.map(card => card.trigger).find(node => node.getAttribute('data-el-knowledge-id') === id);
   assert.ok(trigger, id);
