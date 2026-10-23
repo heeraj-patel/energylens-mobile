@@ -93,6 +93,20 @@ class DurableHomeCreateDrafts {
     return _commit(record, generation);
   }
 
+  /// An authoritative owned-home read supersedes a pending first-home create.
+  /// Clear only this account's record so a later restart cannot POST it again.
+  Future<void> discardPendingForExistingHome() {
+    final generation = _generation;
+    return _ordered(() async {
+      if (generation != _generation) return;
+      final raw = await storage.read();
+      final record = _HomeCreateRecord.tryParse(raw);
+      if (raw != null && (record == null || _matches(record))) {
+        await storage.clear();
+      }
+    });
+  }
+
   Future<CloudHome?> stageAndCommit(CloudHomeCreate input, String key) async {
     final generation = _generation;
     if (_origin == null || _profile == null || _accountId == null) {

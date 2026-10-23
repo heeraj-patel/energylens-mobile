@@ -86,8 +86,10 @@ Future<http.Response> _homesOk(http.Request _) async =>
 
 class _Registration implements CloudRegistrationService {
   Object? error;
+  int calls = 0;
   @override
   Future<void> requestRegistration(String email, String password) async {
+    calls++;
     if (error != null) throw error!;
   }
 
@@ -415,11 +417,13 @@ void main() {
   group('account screens', () {
     Future<void> register(WidgetTester tester, _Registration service) async {
       await tester.pumpWidget(
-        MaterialApp(home: CloudRegistrationScreen(service: service)),
+        MaterialApp(
+          home: CloudRegistrationScreen(service: service, usernameMode: true),
+        ),
       );
       await tester.enterText(
         find.byKey(const Key('registrationEmail')),
-        'person@example.com',
+        'person',
       );
       await tester.enterText(
         find.byKey(const Key('registrationPassword')),
@@ -429,9 +433,34 @@ void main() {
         find.byKey(const Key('registrationConfirm')),
         'correct long password',
       );
-      await tester.ensureVisible(find.text('Request account'));
-      await tester.tap(find.text('Request account'));
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('registrationEmail')))
+            .controller!
+            .text,
+        'person',
+      );
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('registrationPassword')))
+            .controller!
+            .text,
+        'correct long password',
+      );
+      final submit = find.widgetWithText(FilledButton, 'Create account');
+      await tester.ensureVisible(submit);
+      await tester.tap(submit);
       await tester.pumpAndSettle();
+      expect(service.calls, 1);
+      expect(
+        find.byKey(const Key('registrationError')),
+        findsOneWidget,
+        reason: tester
+            .widgetList<Text>(find.byType(Text, skipOffstage: false))
+            .map((text) => text.data)
+            .toList()
+            .toString(),
+      );
     }
 
     for (final error in <Object>[

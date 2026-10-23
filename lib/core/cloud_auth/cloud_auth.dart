@@ -232,6 +232,11 @@ abstract interface class CloudRegistrationService {
   Future<void> verifyEmail(String token);
 }
 
+/// Email signup returns a session only when a new account was created.
+abstract interface class AuthenticatedCloudRegistrationService {
+  Future<CloudTokens> registerSession(String email, String password);
+}
+
 abstract interface class LocalCloudAuthService
     implements CloudRegistrationService {
   Future<CloudTokens> login(String email, String password);
@@ -473,6 +478,28 @@ class CloudSession {
     }
     await _saveIfCurrent(tokens, generation);
     if (generation != _generation) throw StateError('Sign-in scope changed');
+    _accepting = true;
+  }
+
+  Future<void> registerLocal(
+    AuthenticatedCloudRegistrationService registration,
+    String email,
+    String password,
+  ) async {
+    if (!config.isLocalAuthConfigured || credentialMethod != 'email_password') {
+      throw StateError('Email registration is not configured');
+    }
+    final generation = _advanceGeneration();
+    _accepting = false;
+    await _clearIfCurrent(generation);
+    final tokens = await registration.registerSession(email, password);
+    if (tokens.provider != 'local' || tokens.refreshToken == null) {
+      throw const FormatException('Invalid registration session');
+    }
+    await _saveIfCurrent(tokens, generation);
+    if (generation != _generation) {
+      throw StateError('Registration scope changed');
+    }
     _accepting = true;
   }
 

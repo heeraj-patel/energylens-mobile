@@ -43,6 +43,8 @@ import 'design_page_read_dispatcher.dart';
 import 'design_page_bridge.dart';
 import 'design_page_state_script.dart';
 import 'design_page_state_snapshot.dart';
+import 'first_device_guide_script.dart';
+import 'first_device_guide_state.dart';
 import 'devices_domain_repository.dart';
 import 'efficiency_away_domain_adapter.dart';
 import 'efficiency_habits_domain_adapter.dart';
@@ -164,6 +166,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
   final DesignPageRequestGate _bindingGate = DesignPageRequestGate();
   final DesignPageStateSnapshotStore _pageStates =
       DesignPageStateSnapshotStore();
+  final FirstDeviceGuideState _firstDeviceGuide = FirstDeviceGuideState();
   late final DesignTextBindingRenderer _bindingRenderer =
       DesignTextBindingRenderer(_bindingGate);
   late final DashboardChartRenderer _chartRenderer = DashboardChartRenderer(
@@ -338,6 +341,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     _tourTimer?.cancel();
     _invalidatePageLoad();
     _pageReads.dispose();
+    _firstDeviceGuide.clear();
     super.dispose();
   }
 
@@ -486,9 +490,54 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     final page = _page;
     final generation = _pageLoadGeneration;
     unawaited(_readPage(page, generation));
+    if (page == 'dashboard') unawaited(_refreshFirstDeviceStatus());
     // app.html is a self-contained copy of the approved HTML. The source
     // code.html and screen.png remain byte-for-byte references alongside it.
     await _controller.loadFlutterAsset('assets/design_pages/$page/app.html');
+  }
+
+  String? _firstDeviceScope() {
+    if (widget.designTour || widget.localPilot) return null;
+    final context = widget.designContextCoordinator?.context;
+    final api = widget.settingsApi;
+    if (context == null ||
+        context.mode != DesignContextMode.household ||
+        api == null) {
+      return null;
+    }
+    return '${identityHashCode(api)}|${api.session.generation}|${context.accountId}|${context.homeId}';
+  }
+
+  Future<void> _refreshFirstDeviceStatus() async {
+    final scope = _firstDeviceScope();
+    final context = widget.designContextCoordinator?.context;
+    final api = widget.settingsApi;
+    if (scope == null || context == null || api == null) return;
+    try {
+      final response = await api.home(context.homeId);
+      if (!mounted ||
+          scope != _firstDeviceScope() ||
+          response.value.id != context.homeId) {
+        return;
+      }
+      _firstDeviceGuide.accept(scope, response.value);
+      if (_page == 'dashboard') {
+        await _applyFirstDeviceGuide(_pageLoadGeneration);
+      }
+    } catch (_) {
+      // An unavailable read leaves the last known state for this exact scope.
+    }
+  }
+
+  Future<void> _applyFirstDeviceGuide(int generation) async {
+    if (!_pageReady || !_isCurrentPageLoad('dashboard', generation)) return;
+    final scope = _firstDeviceScope();
+    final visible = scope != null && _firstDeviceGuide.shouldShow(scope);
+    try {
+      await _controller.runJavaScript(buildFirstDeviceGuideScript(visible));
+    } catch (_) {
+      // The packaged guide is hidden by default.
+    }
   }
 
   Future<void> _finishAndRestorePage(String url) async {
@@ -940,6 +989,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
       return;
     }
     if (page == 'dashboard') {
+      await _applyFirstDeviceGuide(generation);
       await _applyDashboardBindings(generation);
       await _applyDashboardChart(generation);
       await _applyDashboardTopSavings(generation);
@@ -1548,6 +1598,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
           saved.homeId == context.homeId &&
           lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
         await _refreshSavedAppliances(_page, _pageLoadGeneration);
+        await _refreshFirstDeviceStatus();
       }
     } finally {
       _reviewOpen = false;

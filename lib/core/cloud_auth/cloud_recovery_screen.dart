@@ -13,17 +13,23 @@ class CloudRecoveryScreen extends StatefulWidget {
     super.key,
     required this.service,
     this.linkOrigin = '',
+    this.initialEmail = '',
+    this.onEmailChanged,
+    this.onResetSuccess,
   });
 
   final LocalCloudAuthService service;
   final String linkOrigin;
+  final String initialEmail;
+  final ValueChanged<String>? onEmailChanged;
+  final Future<void> Function(String email, String password)? onResetSuccess;
 
   @override
   State<CloudRecoveryScreen> createState() => _CloudRecoveryScreenState();
 }
 
 class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
-  final _email = TextEditingController();
+  late final TextEditingController _email;
   final _password = TextEditingController();
   final _confirm = TextEditingController();
   String? _capturedToken;
@@ -34,7 +40,15 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    _email = TextEditingController(text: widget.initialEmail);
+  }
+
+  @override
   void dispose() {
+    _password.clear();
+    _confirm.clear();
     _email.dispose();
     _password.dispose();
     _confirm.dispose();
@@ -109,10 +123,11 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
   Future<void> _reset() async {
     if (_busy) return;
     final token = _capturedToken;
-    _capturedToken = null;
     final password = _password.text;
     if (token == null) {
       setState(() => _error = 'Paste the reset link from your email.');
+      _password.clear();
+      _confirm.clear();
       return;
     }
     if (password.runes.length < 12 ||
@@ -123,20 +138,32 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
         () =>
             _error = 'Enter a matching new password of at least 12 characters.',
       );
+      _capturedToken = null;
+      _password.clear();
+      _confirm.clear();
       return;
     }
+    _capturedToken = null;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       await widget.service.resetPassword(token, password);
-      if (mounted) setState(() => _completed = true);
+      if (!mounted) return;
+      if (widget.onResetSuccess != null) {
+        await widget.onResetSuccess!(
+          _email.text.trim().toLowerCase(),
+          password,
+        );
+      } else {
+        setState(() => _completed = true);
+      }
     } on CloudLocalAuthException catch (error) {
       if (mounted) {
         setState(
           () => _error = error.statusCode == 401
-              ? 'This link is invalid, expired, or already used. Request a new one.'
+              ? 'This reset link has expired or was already used. Request a new link.'
               : isInputRejectionStatus(error.statusCode)
               ? 'Could not reset the password. Try again later.'
               : internalErrorMessage,
@@ -171,10 +198,11 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
                 TextField(
                   key: const Key('recoveryEmail'),
                   controller: _email,
+                  onChanged: widget.onEmailChanged,
                   enabled: !_busy,
                   keyboardType: TextInputType.emailAddress,
                   autofillHints: const [AutofillHints.email],
-                  decoration: const InputDecoration(labelText: 'Email'),
+                  decoration: const InputDecoration(labelText: 'Email ID'),
                 ),
                 const SizedBox(height: 12),
                 FilledButton(
@@ -225,7 +253,7 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
                   const SizedBox(height: 12),
                   FilledButton(
                     key: const Key('submitPasswordReset'),
-                    onPressed: _busy ? null : _reset,
+                    onPressed: _busy || _capturedToken == null ? null : _reset,
                     child: const Text('Reset password'),
                   ),
                 ],
@@ -236,7 +264,10 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
                 ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
-                Text(_error!, key: const Key('recoveryError')),
+                Semantics(
+                  liveRegion: true,
+                  child: Text(_error!, key: const Key('recoveryError')),
+                ),
               ],
             ],
           ),

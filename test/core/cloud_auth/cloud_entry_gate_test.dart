@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
@@ -115,7 +116,117 @@ const acceptedPreferences =
 String ownedHomes([String second = secondHomeId]) =>
     '{"homes":[{"id":"$firstHomeId","name":"First home","timezone":"America/Chicago","location":{"country_code":"US","postal_code":"60601"}},{"id":"$second","name":"Second home","timezone":"America/Chicago","location":{"country_code":"US","postal_code":"60601"}}]}';
 
+String pendingFirstHomeDraft() => jsonEncode({
+  'kind': 'home_create',
+  'origin': 'https://api.example',
+  'profile': 'oidc',
+  'account_id': verifiedAccountId,
+  'operation_key': '33333333-3333-4333-8333-333333333333',
+  'input': {
+    'name': 'Pending home',
+    'timezone': 'America/Chicago',
+    'location': {
+      'country_code': 'US',
+      'postal_code': '60601',
+      'city': null,
+      'county': null,
+      'precision': 'postal_code',
+      'source': 'user_entered',
+    },
+  },
+});
+
 void main() {
+  testWidgets('contradictory signup capabilities keep email sign-in usable', (
+    tester,
+  ) async {
+    const localConfig = CloudAuthConfig(
+      issuer: '',
+      audience: '',
+      clientId: '',
+      redirectUrl: '',
+      apiUrl: 'https://api.example',
+      localAuthEnabled: true,
+    );
+    var logins = 0;
+    final local = CloudLocalAuthClient(
+      baseUrl: localConfig.apiUrl,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/local/login') {
+          logins++;
+          final expiry = DateTime.now().toUtc().add(
+            const Duration(minutes: 15),
+          );
+          return http.Response(
+            '{"token_type":"Bearer","access_token":"signed-in","refresh_token":"refresh",'
+            '"access_expires_at":"${expiry.toIso8601String()}",'
+            '"refresh_expires_at":"${expiry.add(const Duration(days: 30)).toIso8601String()}"}',
+            200,
+          );
+        }
+        return http.Response('', 404);
+      }),
+    );
+    final store = Store()..tokens = null;
+    final session = CloudSession(
+      config: localConfig,
+      store: store,
+      authenticator: Auth(),
+      localAuth: local,
+    );
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config') {
+          return http.Response(
+            '{"schema_version":1,"methods":["email_password"],'
+            '"registration_enabled":true,"email_verification_required":true,'
+            '"password_recovery_enabled":true,"session_logout_revokes_access":true}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/me') {
+          return http.Response(
+            '{"id":"$verifiedAccountId","email":"person@example.com",'
+            '"email_verified":false,"auth_method":"email_password",'
+            '"display_name":"Alex"}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/homes') {
+          return http.Response('{"homes":[]}', 200);
+        }
+        return http.Response('', 404);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
+          session: session,
+          api: api,
+          homeBuilder: (_, _, _, _) => const Text('Private Home'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Email ID'), findsOneWidget);
+    expect(find.text('Create account'), findsNothing);
+    expect(find.text('Forgot password?'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).first, 'person@example.com');
+    await tester.enterText(
+      find.byType(TextField).last,
+      'correct long password',
+    );
+    await tester.tap(find.text('Submit'));
+    await tester.pumpAndSettle();
+    expect(logins, 1);
+    expect(find.text('Set up your home'), findsOneWidget);
+    api.close();
+    local.close();
+  });
+
   testWidgets('local Submit recovers saved session without password login', (
     tester,
   ) async {
@@ -231,8 +342,9 @@ void main() {
       final api = CloudApiClient(
         session: session,
         client: MockClient((request) async {
-          if (request.url.path == '/v1/auth/config')
+          if (request.url.path == '/v1/auth/config') {
             return http.Response('', 404);
+          }
           if (request.url.path == '/v1/me') {
             return http.Response(
               '{"id":"$verifiedAccountId","email":null,"email_verified":true}',
@@ -289,8 +401,9 @@ void main() {
     final api = CloudApiClient(
       session: session,
       client: MockClient((request) async {
-        if (request.url.path == '/v1/auth/config')
+        if (request.url.path == '/v1/auth/config') {
           return http.Response('', 404);
+        }
         if (request.url.path == '/v1/me') {
           return http.Response(
             '{"id":"$verifiedAccountId","email":null,"email_verified":true}',
@@ -341,7 +454,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('Username'), findsOneWidget);
+    expect(find.text('Email ID'), findsOneWidget);
     expect(find.text('Password'), findsOneWidget);
     expect(find.text('Submit'), findsOneWidget);
     await tester.tap(find.text('Submit'));
@@ -374,7 +487,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('Username'), findsOneWidget);
+    expect(find.text('Email ID'), findsOneWidget);
     await tester.tap(find.text('Submit'));
     await tester.pumpAndSettle();
     expect(find.text('Internal Error, Try again later'), findsOneWidget);
@@ -413,7 +526,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Username'), findsOneWidget);
+      expect(find.text('Email ID'), findsOneWidget);
       expect(find.text('Password'), findsOneWidget);
       expect(find.text('Submit'), findsOneWidget);
       expect(find.text('Internal Error, Try again later'), findsNothing);
@@ -425,74 +538,75 @@ void main() {
     },
   );
 
-  testWidgets('capability outage shows the internal error and retries on Submit', (
-    tester,
-  ) async {
-    const localConfig = CloudAuthConfig(
-      issuer: '',
-      audience: '',
-      clientId: '',
-      redirectUrl: '',
-      apiUrl: 'https://api.example',
-      localAuthEnabled: true,
-    );
-    final local = CloudLocalAuthClient(
-      baseUrl: localConfig.apiUrl,
-      client: MockClient((_) async => http.Response('', 401)),
-    );
-    final session = CloudSession(
-      config: localConfig,
-      store: Store()..tokens = null,
-      authenticator: Auth(),
-      localAuth: local,
-    );
-    var capabilities = 0;
-    final api = CloudApiClient(
-      session: session,
-      client: MockClient((request) async {
-        if (request.url.path == '/v1/auth/config') {
-          capabilities++;
-          throw const SocketException('offline');
-        }
-        return http.Response('', 500);
-      }),
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        home: CloudEntryGate(
-          session: session,
-          api: api,
-          homeBuilder: (_, _, _, _) => const Text('Private Home'),
+  testWidgets(
+    'capability outage shows the internal error and retries on Submit',
+    (tester) async {
+      const localConfig = CloudAuthConfig(
+        issuer: '',
+        audience: '',
+        clientId: '',
+        redirectUrl: '',
+        apiUrl: 'https://api.example',
+        localAuthEnabled: true,
+      );
+      final local = CloudLocalAuthClient(
+        baseUrl: localConfig.apiUrl,
+        client: MockClient((_) async => http.Response('', 401)),
+      );
+      final session = CloudSession(
+        config: localConfig,
+        store: Store()..tokens = null,
+        authenticator: Auth(),
+        localAuth: local,
+      );
+      var capabilities = 0;
+      final api = CloudApiClient(
+        session: session,
+        client: MockClient((request) async {
+          if (request.url.path == '/v1/auth/config') {
+            capabilities++;
+            throw const SocketException('offline');
+          }
+          return http.Response('', 500);
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CloudEntryGate(
+            session: session,
+            api: api,
+            homeBuilder: (_, _, _, _) => const Text('Private Home'),
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(capabilities, 1);
-    expect(find.text('Username'), findsOneWidget);
-    expect(find.text('Internal Error, Try again later'), findsOneWidget);
-    await tester.tap(find.text('Submit'));
-    await tester.pumpAndSettle();
-    expect(capabilities, 2);
-    final error = tester.widget<Text>(
-      find.text('Internal Error, Try again later'),
-    );
-    expect(
-      error.style?.color,
-      Theme.of(tester.element(find.text('Submit'))).colorScheme.error,
-    );
-    expect(
-      error.style?.fontSize,
-      Theme.of(tester.element(find.text('Submit')))
-          .textTheme
-          .bodySmall
-          ?.fontSize,
-    );
-    await tester.enterText(find.byKey(const Key('localSignInEmail')), 'nik');
-    await tester.pump();
-    expect(find.text('Internal Error, Try again later'), findsNothing);
-    api.close();
-    local.close();
-  });
+      );
+      await tester.pumpAndSettle();
+      expect(capabilities, 1);
+      expect(find.text('Email ID'), findsOneWidget);
+      expect(find.text('Internal Error, Try again later'), findsOneWidget);
+      await tester.tap(find.text('Submit'));
+      await tester.pumpAndSettle();
+      expect(capabilities, 2);
+      final error = tester.widget<Text>(
+        find.text('Internal Error, Try again later'),
+      );
+      expect(
+        error.style?.color,
+        Theme.of(tester.element(find.text('Submit'))).colorScheme.error,
+      );
+      expect(
+        error.style?.fontSize,
+        Theme.of(tester.element(find.text('Submit')))
+            .textTheme
+            .bodySmall
+            ?.fontSize,
+      );
+      await tester.enterText(find.byKey(const Key('localSignInEmail')), 'nik');
+      await tester.pump();
+      expect(find.text('Internal Error, Try again later'), findsNothing);
+      api.close();
+      local.close();
+    },
+  );
 
   testWidgets('recovered username capability keeps the entered identity', (
     tester,
@@ -781,8 +895,229 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Your homes'), findsOneWidget);
+    expect(find.text('Set up your home'), findsOneWidget);
     expect(homesRequests, 1);
+    api.close();
+  });
+
+  testWidgets('restart with owned home discards pending first-home draft', (
+    tester,
+  ) async {
+    final drafts = MemoryDraftStorage()..value = pendingFirstHomeDraft();
+    final session = CloudSession(
+      config: config,
+      store: Store(),
+      authenticator: Auth(),
+    );
+    var homeCreates = 0;
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config') {
+          return http.Response('', 404);
+        }
+        if (request.url.path == '/v1/me') {
+          return http.Response(
+            '{"id":"$verifiedAccountId","email":null,"email_verified":true,"display_name":"Alex"}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/homes' && request.method == 'GET') {
+          return http.Response(ownedHomes(), 200);
+        }
+        if (request.url.path == '/v1/homes' && request.method == 'POST') {
+          homeCreates++;
+          return http.Response('', 500);
+        }
+        return http.Response('', 404);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          homeCreateStorage: drafts,
+          activeHomeStorage: MemoryDraftStorage(),
+          session: session,
+          api: api,
+          homeBuilder: (_, _, _, _) => const Text('Private Home'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(homeCreates, 0);
+    expect(drafts.value, isNull);
+    expect(find.text('First home'), findsOneWidget);
+    api.close();
+  });
+
+  testWidgets('restart with no owned home retries pending first-home draft', (
+    tester,
+  ) async {
+    final drafts = MemoryDraftStorage()..value = pendingFirstHomeDraft();
+    final session = CloudSession(
+      config: config,
+      store: Store(),
+      authenticator: Auth(),
+    );
+    const pendingHome =
+        '{"id":"$firstHomeId","name":"Pending home","timezone":"America/Chicago","location":{"country_code":"US","postal_code":"60601"}}';
+    var homeCreates = 0;
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config') {
+          return http.Response('', 404);
+        }
+        if (request.url.path == '/v1/me') {
+          return http.Response(
+            '{"id":"$verifiedAccountId","email":null,"email_verified":true,"display_name":"Alex"}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/homes' && request.method == 'GET') {
+          return http.Response(
+            '{"homes":${homeCreates == 0 ? '[]' : '[$pendingHome]'}}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/homes' && request.method == 'POST') {
+          homeCreates++;
+          expect(
+            request.headers['idempotency-key'],
+            '33333333-3333-4333-8333-333333333333',
+          );
+          return http.Response(pendingHome, 201);
+        }
+        return http.Response('', 404);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          homeCreateStorage: drafts,
+          activeHomeStorage: MemoryDraftStorage(),
+          session: session,
+          api: api,
+          homeBuilder: (_, _, _, _) => const Text('Private Home'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(homeCreates, 1);
+    expect(drafts.value, isNull);
+    expect(find.text('Pending home'), findsOneWidget);
+    api.close();
+  });
+
+  testWidgets('first-home route commits versioned profile before home', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final session = CloudSession(
+      config: config,
+      store: Store(),
+      authenticator: Auth(),
+    );
+    var profileAttempts = 0;
+    var homeCreates = 0;
+    var homesReads = 0;
+    var ownerSaved = false;
+    String profileBody() =>
+        '{"id":"$verifiedAccountId","email":null,'
+        '"email_verified":true,"display_name":${ownerSaved ? '"Alex"' : 'null'}}';
+    final homeBody =
+        '{"id":"$firstHomeId","name":"New home",'
+        '"timezone":"America/Chicago",'
+        '"location":{"country_code":"US","postal_code":"60601"}}';
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config') {
+          return http.Response('', 404);
+        }
+        if (request.url.path == '/v1/me' && request.method == 'GET') {
+          return http.Response(profileBody(), 200, headers: {'etag': '"1"'});
+        }
+        if (request.url.path == '/v1/me/profile') {
+          expect(request.headers['if-match'], '"1"');
+          expect(request.headers['idempotency-key'], isNotEmpty);
+          profileAttempts++;
+          if (profileAttempts == 1) return http.Response('', 503);
+          ownerSaved = true;
+          return http.Response(profileBody(), 200, headers: {'etag': '"2"'});
+        }
+        if (request.url.path == '/v1/homes' && request.method == 'GET') {
+          homesReads++;
+          return http.Response(
+            '{"homes":${homeCreates == 0 ? '[]' : '[$homeBody]'}}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/homes' && request.method == 'POST') {
+          expect(ownerSaved, isTrue);
+          homeCreates++;
+          return http.Response(homeBody, 201);
+        }
+        return http.Response('', 404);
+      }),
+    );
+    final auxiliary = CloudAuxiliaryDomainLifecycle(
+      drafts: DurableOnboardingDrafts(
+        MemoryDraftStorage(),
+        OnboardingPersistenceRepository(CloudOnboardingPersistenceSource(api)),
+      ),
+      reports: ReportPreviewDomainRepository(
+        CloudReportPreviewDomainSource(api),
+      ),
+      deliveries: ReportDeliveryDomainAdapter(
+        CloudReportDeliveryDomainSource(api),
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
+          auxiliaryDomainLifecycle: auxiliary,
+          session: session,
+          api: api,
+          homeBuilder: (home, _, _, _) => Text('Verified ${home?.name}'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('setupOwnerName')), 'Alex');
+    await tester.enterText(find.byKey(const Key('setupHomeName')), 'New home');
+    await tester.enterText(find.byKey(const Key('setupPostalCode')), 'bad');
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('setupCountry')), 'US');
+    await tester.enterText(
+      find.byKey(const Key('setupTimeZone')),
+      'America/Chicago',
+    );
+    await tester.enterText(find.byKey(const Key('setupPostalCode')), '60601');
+    await tester.ensureVisible(find.text('Continue'));
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(profileAttempts, 1);
+    expect(homeCreates, 0);
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(profileAttempts, 2);
+    expect(homeCreates, 1);
+    expect(homesReads, greaterThanOrEqualTo(2));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Verified New home'),
+      findsOneWidget,
+      reason:
+          '${tester.widgetList<Text>(find.byType(Text, skipOffstage: false)).map((item) => item.data).toList()} reads=$homesReads',
+    );
     api.close();
   });
 
@@ -983,10 +1318,7 @@ void main() {
     expect(store.tokens, isNull);
     expect(find.text('Main home'), findsNothing);
     expect(find.text('Private Home'), findsNothing);
-    expect(
-      find.text('Your sign-in expired. Sign in again.'),
-      findsOneWidget,
-    );
+    expect(find.text('Your sign-in expired. Sign in again.'), findsOneWidget);
     api.close();
   });
 

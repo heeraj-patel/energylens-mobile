@@ -89,6 +89,17 @@ String _withoutOuterChrome(String html) => html
     .replaceFirst(RegExp(r'<header\b[^>]*>.*?</header>', dotAll: true), '')
     .replaceFirst(RegExp(r'<nav\b[^>]*>.*?</nav>', dotAll: true), '');
 
+String _withoutFirstDeviceGuide(String html, String pageId) =>
+    pageId == 'dashboard'
+    ? html.replaceFirst(
+        RegExp(
+          r'<section id="el-first-device-guide"[^>]*>.*?</section>',
+          dotAll: true,
+        ),
+        '',
+      )
+    : html;
+
 String _withoutApprovedRevealControls(String html) => html.replaceAll(
   RegExp(
     r'<button\b(?=[^>]*(?:id="devices-reveal"|id="efficiency-details-toggle"|aria-controls="program-detail-[^"]+"))[^>]*>.*?</button>',
@@ -492,7 +503,10 @@ void main() {
               _visibleText(
                 _withoutApprovedDeviceSections(
                   _withoutApprovedRevealControls(
-                    _withSourceFallbackValues(packagedHtml, pageId),
+                    _withSourceFallbackValues(
+                      _withoutFirstDeviceGuide(packagedHtml, pageId),
+                      pageId,
+                    ),
                   ),
                   pageId,
                 ),

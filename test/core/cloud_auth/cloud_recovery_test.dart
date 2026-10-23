@@ -136,6 +136,70 @@ void main() {
     },
   );
 
+  testWidgets('successful reset hands credentials to normal sign-in', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final client = CloudLocalAuthClient(
+      baseUrl: 'https://api.example',
+      client: MockClient((request) async {
+        expect(request.url.path, '/v1/auth/local/reset-password');
+        return http.Response('', 204);
+      }),
+    );
+    String? signedInEmail;
+    String? signedInPassword;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudRecoveryScreen(
+          service: client,
+          initialEmail: 'person@example.com',
+          onResetSuccess: (email, password) async {
+            signedInEmail = email;
+            signedInPassword = password;
+          },
+        ),
+      ),
+    );
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('recoveryEmail')))
+          .controller!
+          .text,
+      'person@example.com',
+    );
+    await tester.tap(find.text('I have a reset link'));
+    await tester.pumpAndSettle();
+    await Clipboard.setData(const ClipboardData(text: _token));
+    await tester.tap(find.byKey(const Key('pasteResetLink')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('resetPassword')),
+      'replacement password 123',
+    );
+    await tester.enterText(
+      find.byKey(const Key('resetConfirm')),
+      'replacement password 123',
+    );
+    await tester.ensureVisible(find.byKey(const Key('submitPasswordReset')));
+    await tester.tap(find.byKey(const Key('submitPasswordReset')));
+    await tester.pumpAndSettle();
+    expect(signedInEmail, 'person@example.com');
+    expect(signedInPassword, 'replacement password 123');
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('resetPassword')))
+          .controller!
+          .text,
+      isEmpty,
+    );
+    expect(find.byKey(const Key('recoveryCompleted')), findsNothing);
+    client.close();
+  });
+
   testWidgets('used reset link reports expiry without exposing backend text', (
     tester,
   ) async {
@@ -173,7 +237,9 @@ void main() {
     await tester.tap(find.byKey(const Key('submitPasswordReset')));
     await tester.pumpAndSettle();
     expect(
-      find.textContaining('invalid, expired, or already used'),
+      find.text(
+        'This reset link has expired or was already used. Request a new link.',
+      ),
       findsOneWidget,
     );
     expect(find.textContaining('secret'), findsNothing);

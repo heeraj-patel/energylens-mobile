@@ -37,6 +37,31 @@ class Auth implements CloudAuthenticator {
 }
 
 void main() {
+  test('home milestone distinguishes missing, incomplete, and completed', () {
+    final base = <String, dynamic>{
+      'id': 'home-1',
+      'name': 'Main',
+      'timezone': 'America/Chicago',
+      'location': {'country_code': 'US', 'postal_code': '60601'},
+    };
+    expect(CloudHome.fromJson(base).hasFirstDeviceStatus, isFalse);
+    final incomplete = CloudHome.fromJson({
+      ...base,
+      'first_device_added_at': null,
+    });
+    expect(incomplete.hasFirstDeviceStatus, isTrue);
+    expect(incomplete.firstDeviceAddedAt, isNull);
+    final completed = CloudHome.fromJson({
+      ...base,
+      'first_device_added_at': '2026-10-22T15:00:00Z',
+    });
+    expect(completed.firstDeviceAddedAt, DateTime.utc(2026, 10, 22, 15));
+    expect(
+      () => CloudHome.fromJson({...base, 'first_device_added_at': 'bad'}),
+      throwsFormatException,
+    );
+  });
+
   test('home fields normalize and validate before cloud submission', () {
     final input = CloudHomeCreate.validate(
       name: ' My home ',

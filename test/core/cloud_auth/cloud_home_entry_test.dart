@@ -7,6 +7,83 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets(
+    'first-home setup saves owner before home and retries profile only',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var profileAttempts = 0;
+      var homeCreates = 0;
+      CloudHome? selected;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CloudHomeEntry(
+            homes: const [],
+            initialOwnerName: 'Saved owner',
+            onSaveOwner: (name) async {
+              expect(name, 'Saved owner');
+              profileAttempts++;
+              if (profileAttempts == 1) throw const SocketException('offline');
+            },
+            onRefresh: () async {},
+            onCreate: (input, _) async {
+              homeCreates++;
+              return CloudHome(
+                id: 'home-1',
+                name: input.name,
+                timezone: input.timezone,
+                countryCode: input.countryCode,
+                postalCode: input.postalCode,
+              );
+            },
+            onSelect: (home) => selected = home,
+            onSignOut: () {},
+          ),
+        ),
+      );
+      expect(find.text('Set up your home'), findsOneWidget);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('setupOwnerName')))
+            .controller!
+            .text,
+        'Saved owner',
+      );
+      await tester.enterText(
+        find.byKey(const Key('setupHomeName')),
+        'New home',
+      );
+      await tester.enterText(
+        find.byKey(const Key('setupPostalCode')),
+        'bad code',
+      );
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(profileAttempts, 0);
+      expect(homeCreates, 0);
+      expect(find.byKey(const Key('setupCountry')), findsOneWidget);
+      expect(find.byKey(const Key('setupTimeZone')), findsOneWidget);
+      await tester.enterText(find.byKey(const Key('setupCountry')), 'US');
+      await tester.enterText(
+        find.byKey(const Key('setupTimeZone')),
+        'America/Chicago',
+      );
+      await tester.enterText(find.byKey(const Key('setupPostalCode')), '60601');
+      await tester.ensureVisible(find.text('Continue'));
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(profileAttempts, 1);
+      expect(homeCreates, 0);
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(profileAttempts, 2);
+      expect(homeCreates, 1);
+      expect(selected?.name, 'New home');
+    },
+  );
+
+  testWidgets(
     'offline create keeps the same idempotency key for unchanged retry',
     (tester) async {
       tester.view.physicalSize = const Size(800, 1400);
@@ -55,6 +132,13 @@ void main() {
       await tester.tap(find.text('Create home'));
       await tester.pumpAndSettle();
       expect(find.text('Internal Error, Try again later'), findsOneWidget);
+      expect(find.text('Refresh homes'), findsOneWidget);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('setupHomeName')))
+            .enabled,
+        isFalse,
+      );
       await tester.tap(find.text('Create home'));
       await tester.pumpAndSettle();
       expect(keys.length, 2);

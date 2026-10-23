@@ -14,6 +14,7 @@ class CloudAuthCapabilities {
   const CloudAuthCapabilities({
     required this.method,
     required this.registrationEnabled,
+    required this.registrationConfigurationError,
     required this.emailVerificationRequired,
     required this.passwordRecoveryEnabled,
     required this.sessionLogoutRevokesAccess,
@@ -21,6 +22,7 @@ class CloudAuthCapabilities {
 
   final String method;
   final bool registrationEnabled;
+  final bool registrationConfigurationError;
   final bool emailVerificationRequired;
   final bool passwordRecoveryEnabled;
   final bool sessionLogoutRevokesAccess;
@@ -46,24 +48,34 @@ class CloudAuthCapabilities {
       throw const FormatException('Invalid Cloud auth capabilities');
     }
     final chosen =
-        methods.contains('username_password') && build.isLocalAuthConfigured
-        ? 'username_password'
-        : methods.contains('email_password') && build.isLocalAuthConfigured
+        methods.contains('email_password') && build.isLocalAuthConfigured
         ? 'email_password'
+        : methods.contains('username_password') && build.isLocalAuthConfigured
+        ? 'username_password'
         : methods.contains('oidc') && build.isConfigured
         ? 'oidc'
         : null;
-    if (chosen == null)
+    if (chosen == null) {
       throw const FormatException('Unsupported Cloud auth capabilities');
+    }
     if (chosen == 'username_password' &&
         (data['email_verification_required'] != false ||
             data['password_recovery_enabled'] != false ||
             data['session_logout_revokes_access'] != true)) {
       throw const FormatException('Invalid username auth capabilities');
     }
+    // A contradictory signup configuration must not take down sign-in.
+    // Suppress registration while retaining the supported login method.
+    final registrationConfigurationError =
+        chosen == 'email_password' &&
+        data['registration_enabled'] == true &&
+        data['email_verification_required'] == true;
+    final registrationEnabled =
+        data['registration_enabled'] == true && !registrationConfigurationError;
     return CloudAuthCapabilities(
       method: chosen,
-      registrationEnabled: data['registration_enabled'] as bool,
+      registrationEnabled: registrationEnabled,
+      registrationConfigurationError: registrationConfigurationError,
       emailVerificationRequired: data['email_verification_required'] as bool,
       passwordRecoveryEnabled: data['password_recovery_enabled'] as bool,
       sessionLogoutRevokesAccess: data['session_logout_revokes_access'] as bool,
@@ -72,7 +84,8 @@ class CloudAuthCapabilities {
 }
 
 /// Public first-party auth routes. The server returns 404 while its gate is off.
-class CloudLocalAuthClient implements LocalCloudAuthService {
+class CloudLocalAuthClient
+    implements LocalCloudAuthService, AuthenticatedCloudRegistrationService {
   CloudLocalAuthClient({
     required this.baseUrl,
     http.Client? client,
@@ -109,11 +122,13 @@ class CloudLocalAuthClient implements LocalCloudAuthService {
         )
         .timeout(const Duration(seconds: 15));
     if (response.statusCode == 404) return null;
-    if (response.statusCode != 200)
+    if (response.statusCode != 200) {
       throw CloudLocalAuthException(response.statusCode);
+    }
     final body = jsonDecode(response.body);
-    if (body is! Map<String, dynamic>)
+    if (body is! Map<String, dynamic>) {
       throw const FormatException('Invalid Cloud auth capabilities');
+    }
     return CloudAuthCapabilities.fromJson(body, build);
   }
 
@@ -142,10 +157,23 @@ class CloudLocalAuthClient implements LocalCloudAuthService {
 
   @override
   Future<void> requestRegistration(String email, String password) async {
+    if (credentialMethod != 'username_password') {
+      throw StateError('Email registration requires a session');
+    }
     await _post('registration', {
       credentialMethod == 'username_password' ? 'username' : 'email': email,
       'password': password,
-    }, credentialMethod == 'username_password' ? 201 : 202);
+    }, 201);
+  }
+
+  @override
+  Future<CloudTokens> registerSession(String email, String password) async {
+    if (credentialMethod != 'email_password') {
+      throw StateError('Authenticated registration requires email auth');
+    }
+    return _tokens(
+      await _post('registration', {'email': email, 'password': password}, 201),
+    );
   }
 
   @override

@@ -29,6 +29,8 @@ class CloudHome {
     required this.countryCode,
     required this.postalCode,
     this.timezoneResolution,
+    this.firstDeviceAddedAt,
+    this.hasFirstDeviceStatus = false,
     this.version,
     this.etag,
   });
@@ -39,6 +41,10 @@ class CloudHome {
   final String countryCode;
   final String postalCode;
   final String? timezoneResolution;
+
+  /// Server-owned milestone. A missing field means the read is not authoritative.
+  final DateTime? firstDeviceAddedAt;
+  final bool hasFirstDeviceStatus;
   final int? version;
   final String? etag;
 
@@ -59,6 +65,11 @@ class CloudHome {
         location['postal_code'] is! String) {
       throw const FormatException('Invalid cloud home');
     }
+    final milestone = json['first_device_added_at'];
+    if (milestone != null &&
+        (milestone is! String || DateTime.tryParse(milestone) == null)) {
+      throw const FormatException('Invalid cloud home milestone');
+    }
     return CloudHome(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -66,6 +77,10 @@ class CloudHome {
       countryCode: location['country_code'] as String,
       postalCode: location['postal_code'] as String,
       timezoneResolution: json['timezone_resolution'] as String?,
+      firstDeviceAddedAt: milestone == null
+          ? null
+          : DateTime.parse(milestone as String),
+      hasFirstDeviceStatus: json.containsKey('first_device_added_at'),
       version: json['version'] as int?,
     );
   }
@@ -189,4 +204,11 @@ String deviceIanaTimeZone() {
   };
   final candidate = zones[name] ?? (name.contains('/') ? name : 'UTC');
   return _validTimeZone(candidate) ? candidate : 'UTC';
+}
+
+/// Only a platform-provided IANA zone is safe as a silent setup default.
+/// Abbreviations such as CST identify several different regions.
+String? resolvedDeviceIanaTimeZone() {
+  final name = DateTime.now().timeZoneName;
+  return name.contains('/') && _validTimeZone(name) ? name : null;
 }

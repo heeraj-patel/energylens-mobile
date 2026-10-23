@@ -38,6 +38,86 @@ const _config = CloudAuthConfig(
 );
 
 void main() {
+  test('auth capability selection prefers email and suppresses contradictory signup', () {
+    const config = CloudAuthConfig(
+      issuer: '',
+      audience: '',
+      clientId: '',
+      redirectUrl: '',
+      apiUrl: 'https://api.example',
+      localAuthEnabled: true,
+    );
+    final data = <String, dynamic>{
+      'schema_version': 1,
+      'methods': ['username_password', 'email_password'],
+      'registration_enabled': true,
+      'email_verification_required': false,
+      'password_recovery_enabled': true,
+      'session_logout_revokes_access': true,
+    };
+    expect(
+      CloudAuthCapabilities.fromJson(data, config).method,
+      'email_password',
+    );
+    final contradictory = CloudAuthCapabilities.fromJson({
+      ...data,
+      'email_verification_required': true,
+    }, config);
+    expect(contradictory.method, 'email_password');
+    expect(contradictory.registrationEnabled, isFalse);
+    expect(contradictory.registrationConfigurationError, isTrue);
+    expect(contradictory.passwordRecoveryEnabled, isTrue);
+    expect(
+      CloudAuthCapabilities.fromJson(
+        {
+          ...data,
+          'methods': ['username_password'],
+          'password_recovery_enabled': false,
+        },
+        const CloudAuthConfig(
+          issuer: '',
+          audience: '',
+          clientId: '',
+          redirectUrl: '',
+          apiUrl: 'https://api.example',
+          devAuthEnabled: true,
+          appEnvironment: 'dev',
+        ),
+      ).method,
+      'username_password',
+    );
+  });
+
+  test('generic or malformed signup response never stores a session', () async {
+    for (final response in [
+      http.Response('{"status":"accepted"}', 202),
+      http.Response('{"token_type":"Bearer"}', 201),
+    ]) {
+      final client = CloudLocalAuthClient(
+        baseUrl: _config.apiUrl,
+        client: MockClient((_) async => response),
+      );
+      final store = _Store();
+      final session = CloudSession(
+        config: _config,
+        store: store,
+        authenticator: _Oidc(),
+        localAuth: client,
+      );
+      await expectLater(
+        session.registerLocal(
+          client,
+          'person@example.com',
+          'long password 123',
+        ),
+        throwsA(anything),
+      );
+      expect(store.tokens, isNull);
+      expect(await session.accessToken(), isNull);
+      client.close();
+    }
+  });
+
   test(
     'transient refresh failures retain the session for a later retry',
     () async {
@@ -204,11 +284,6 @@ void main() {
               'email': 'person@example.com',
               'password': 'long password 123',
             });
-            return http.Response('{"accepted":true}', 202);
-          }
-          if (path.endsWith('/verify-email')) {
-            expect(body, {'token': 'opaque-token'});
-            return http.Response('', 204);
           }
           if (path.endsWith('/login')) {
             expect(body, {
@@ -239,15 +314,10 @@ void main() {
                   .add(const Duration(days: 30))
                   .toIso8601String(),
             }),
-            200,
+            path.endsWith('/registration') ? 201 : 200,
           );
         }),
       );
-      await client.requestRegistration(
-        'person@example.com',
-        'long password 123',
-      );
-      await client.verifyEmail('opaque-token');
       final store = _Store();
       final session = CloudSession(
         config: _config,
@@ -255,6 +325,12 @@ void main() {
         authenticator: _Oidc(),
         localAuth: client,
       );
+      await session.registerLocal(
+        client,
+        'person@example.com',
+        'long password 123',
+      );
+      expect(store.tokens?.accessToken, 'rotated-access');
       await session.signInLocal('person@example.com', 'long password 123');
       expect(await session.accessToken(), 'first-access');
       expect(store.tokens?.provider, 'local');
@@ -264,7 +340,6 @@ void main() {
       expect(store.tokens, isNull);
       expect(calls, [
         '/v1/auth/local/registration',
-        '/v1/auth/local/verify-email',
         '/v1/auth/local/login',
         '/v1/auth/local/refresh',
         '/v1/auth/local/logout',
@@ -366,7 +441,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Submit'), findsOneWidget);
-    expect(find.text('Create account'), findsOneWidget);
+    expect(find.text('Create account'), findsNothing);
     await tester.enterText(
       find.byKey(const Key('localSignInEmail')),
       'person@example.com',

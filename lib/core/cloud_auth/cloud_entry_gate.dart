@@ -119,6 +119,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   bool _invalidCredentials = false;
   bool _allowSavedSessionRetry = true;
   String? _verifiedAccountId;
+  String? _verifiedDisplayName;
   int _lifecycleEpoch = 0;
 
   bool get _clientConfigUsable => _isClientConfigUsable(_session.config);
@@ -127,6 +128,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     _lifecycleEpoch++;
     _busy = false;
     _verifiedAccountId = null;
+    _verifiedDisplayName = null;
     _selectedHome = null;
     _homes = const [];
     _homeListLoaded = false;
@@ -194,6 +196,9 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     _invalidateDesignContext();
     if (widget.api == null) _api.close();
     _ownedLocalAuth?.close();
+    _localEmail.removeListener(_clearSubmitErrorOnEdit);
+    _localPassword.removeListener(_clearSubmitErrorOnEdit);
+    _localPassword.clear();
     _localEmail.dispose();
     _localPassword.dispose();
     super.dispose();
@@ -227,6 +232,11 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   Future<void> _loadCapabilities(int epoch) async {
     final capabilities = await _api.authCapabilities();
     if (!mounted || epoch != _lifecycleEpoch) return;
+    if (capabilities?.registrationConfigurationError == true) {
+      debugPrint(
+        'Cloud auth configuration error: registration requires email verification. Signup disabled.',
+      );
+    }
     final method =
         capabilities?.method ??
         (_session.config.isLocalAuthConfigured ? 'email_password' : 'oidc');
@@ -272,6 +282,10 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
           ? account.authMethod == 'username_password' &&
                 account.username != null &&
                 account.username!.isNotEmpty
+          : _session.credentialMethod == 'email_password'
+          ? account.email != null &&
+                account.email!.isNotEmpty &&
+                account.authMethod == 'email_password'
           : account.emailVerified &&
                 (account.authMethod == null ||
                     account.authMethod == _session.credentialMethod);
@@ -282,6 +296,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
               ? (account.authMethod != 'username_password'
                     ? 'auth_method is not username_password'
                     : 'username is missing or empty')
+              : _session.credentialMethod == 'email_password'
+              ? 'email account identity does not match the credential method'
               : (!account.emailVerified
                     ? 'email is not verified'
                     : 'auth_method does not match the credential method');
@@ -297,7 +313,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         if (mounted) {
           setState(() {
             _authenticated = false;
-            if (_submitAttempted) {
+            if (_submitAttempted ||
+                _session.credentialMethod == 'email_password') {
               _submitError = true;
               _message = null;
             } else {
@@ -311,6 +328,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       }
       if (!mounted || epoch != _lifecycleEpoch) return;
       _verifiedAccountId = account.id;
+      _verifiedDisplayName = account.displayName;
       _allowSavedSessionRetry = true;
       _allowRememberedRestore = true;
       final origin = Uri.parse(_session.config.apiUrl).origin;
@@ -372,7 +390,13 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     try {
       final homes = await _api.homes();
       if (!mounted || epoch != _lifecycleEpoch) return;
-      final resumed = await _homeCreateDrafts.restoreAndCommit();
+      if (homes.isNotEmpty) {
+        await _homeCreateDrafts.discardPendingForExistingHome();
+      }
+      final resumed =
+          homes.isEmpty && _verifiedDisplayName?.trim().isNotEmpty == true
+          ? await _homeCreateDrafts.restoreAndCommit()
+          : null;
       if (!mounted || epoch != _lifecycleEpoch) return;
       final ownedHomes =
           resumed == null || homes.any((home) => home.id == resumed.id)
@@ -445,6 +469,81 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
           epoch == _lifecycleEpoch &&
           isSessionRejectionStatus(error.statusCode)) {
         _signOutRejectedSession();
+      }
+      if (error.statusCode >= 500) {
+        final reconciled = await _reconcileUncertainHome(input, epoch);
+        if (reconciled != null) return reconciled;
+      }
+      rethrow;
+    } catch (_) {
+      final reconciled = await _reconcileUncertainHome(input, epoch);
+      if (reconciled != null) return reconciled;
+      rethrow;
+    }
+  }
+
+  Future<CloudHome?> _reconcileUncertainHome(
+    CloudHomeCreate input,
+    int epoch,
+  ) async {
+    if (!mounted || epoch != _lifecycleEpoch || _homes.isNotEmpty) return null;
+    try {
+      final owned = await _api.homes();
+      if (!mounted || epoch != _lifecycleEpoch) return null;
+      final matches = owned
+          .where(
+            (home) =>
+                home.name == input.name &&
+                home.timezone == input.timezone &&
+                home.countryCode == input.countryCode &&
+                home.postalCode == input.postalCode,
+          )
+          .toList();
+      if (matches.length != 1) return null;
+      _homes = owned;
+      return matches.single;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _saveOwnerName(String name) async {
+    final epoch = _lifecycleEpoch;
+    final accountId = _verifiedAccountId;
+    if (accountId == null) throw StateError('Verified account required');
+    final current = await _api.accountProfile();
+    if (!mounted || epoch != _lifecycleEpoch || current.value.id != accountId) {
+      throw StateError('Account changed during setup');
+    }
+    if (current.value.displayName == name) {
+      _verifiedDisplayName = name;
+      return;
+    }
+    try {
+      final updated = await _api.updateAccountOwner(
+        name,
+        ifMatch: current.etag,
+        idempotencyKey: newCloudIdempotencyKey(),
+      );
+      if (!mounted ||
+          epoch != _lifecycleEpoch ||
+          updated.value.id != accountId) {
+        throw StateError('Account changed during setup');
+      }
+      if (updated.value.displayName != name) {
+        throw const FormatException('Owner profile was not saved');
+      }
+      _verifiedDisplayName = name;
+    } catch (_) {
+      // A response may be lost after the profile committed. Read the owner
+      // record before allowing a retry or any home write.
+      final reconciled = await _api.accountProfile();
+      if (mounted &&
+          epoch == _lifecycleEpoch &&
+          reconciled.value.id == accountId &&
+          reconciled.value.displayName == name) {
+        _verifiedDisplayName = name;
+        return;
       }
       rethrow;
     }
@@ -650,6 +749,45 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     if (!_authenticated) throw StateError('Account validation failed');
   }
 
+  Future<void> _registerEmailAndValidate(String email, String password) async {
+    final service = widget.registrationService ?? _session.localAuth;
+    if (service is! AuthenticatedCloudRegistrationService) {
+      throw StateError('Authenticated email registration is unavailable');
+    }
+    _localEmail.text = email;
+    final epoch = _lifecycleEpoch;
+    final registration = _session.registerLocal(
+      service as AuthenticatedCloudRegistrationService,
+      email,
+      password,
+    );
+    final sessionGeneration = _session.generation;
+    await registration;
+    if (!mounted ||
+        epoch != _lifecycleEpoch ||
+        sessionGeneration != _session.generation) {
+      throw StateError('Registration scope changed');
+    }
+    await _validate();
+    if (!_authenticated) throw StateError('Account validation failed');
+  }
+
+  Future<void> _signInAfterRecovery(String email, String password) async {
+    _localEmail.text = email;
+    _localPassword.clear();
+    try {
+      final login = _session.signInLocal(email, password);
+      final sessionGeneration = _session.generation;
+      await login;
+      if (!mounted || sessionGeneration != _session.generation) return;
+      await _validate();
+    } catch (_) {
+      if (mounted) setState(() => _submitError = true);
+    } finally {
+      if (mounted) Navigator.of(context).pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_authenticated) {
@@ -693,6 +831,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
         listError: _homeListError,
         onRefresh: _loadHomes,
         onCreate: _createHome,
+        initialOwnerName: _verifiedDisplayName ?? '',
+        onSaveOwner: _saveOwnerName,
         onSelect: _selectHome,
         onSignOut: () {
           _signOut();
@@ -727,10 +867,16 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                               _session.credentialMethod == 'email_password'
                               ? TextInputType.emailAddress
                               : TextInputType.text,
-                          autofillHints: const [AutofillHints.username],
+                          autofillHints:
+                              _session.credentialMethod == 'email_password'
+                              ? const [AutofillHints.email]
+                              : const [AutofillHints.username],
                           textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            labelText: 'Username',
+                          decoration: InputDecoration(
+                            labelText:
+                                _session.credentialMethod == 'email_password'
+                                ? 'Email ID'
+                                : 'Username',
                           ),
                         ),
                         TextField(
@@ -773,32 +919,48 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                             _session.config.isLocalAuthConfigured &&
                             _session.localAuth != null &&
                             _session.credentialMethod != 'oidc') ...[
-                          if (!_session.config.isDevAuthConfigured &&
-                              _session.credentialMethod == 'email_password' &&
-                              (_capabilities?.passwordRecoveryEnabled ?? true))
+                          if (_session.credentialMethod == 'email_password' &&
+                              _capabilities?.passwordRecoveryEnabled == true)
                             TextButton(
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => CloudRecoveryScreen(
-                                    service: _session.localAuth!,
-                                    linkOrigin:
-                                        _session.config.localAuthLinkOrigin,
+                              onPressed: () {
+                                _localPassword.clear();
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => CloudRecoveryScreen(
+                                      service: _session.localAuth!,
+                                      linkOrigin:
+                                          _session.config.localAuthLinkOrigin,
+                                      initialEmail: _localEmail.text,
+                                      onEmailChanged: (email) =>
+                                          _localEmail.text = email,
+                                      onResetSuccess: _signInAfterRecovery,
+                                    ),
                                   ),
-                                ),
-                              ),
+                                );
+                              },
                               child: const Text('Forgot password?'),
                             ),
                         ],
                         if (!_busy &&
                             _capabilitiesReady &&
-                            (_capabilities?.registrationEnabled ?? true) &&
-                            (widget.registrationService != null ||
-                                (!_session.config.isDevAuthConfigured &&
-                                    _session.config.isLocalAuthConfigured &&
-                                    _session.localAuth != null))) ...[
+                            _capabilities?.registrationEnabled == true &&
+                            (_session.credentialMethod == 'username_password' ||
+                                (_session.credentialMethod ==
+                                        'email_password' &&
+                                    _capabilities?.emailVerificationRequired ==
+                                        false)) &&
+                            ((_session.credentialMethod == 'email_password' &&
+                                    (widget.registrationService ??
+                                            _session.localAuth)
+                                        is AuthenticatedCloudRegistrationService) ||
+                                (_session.credentialMethod ==
+                                        'username_password' &&
+                                    (widget.registrationService != null ||
+                                        _session.localAuth != null)))) ...[
                           const SizedBox(height: 8),
                           TextButton(
                             onPressed: () {
+                              _localPassword.clear();
                               final epoch = _lifecycleEpoch;
                               final sessionGeneration = _session.generation;
                               Navigator.of(context).push(
@@ -813,6 +975,14 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                                         _session.credentialMethod ==
                                         'username_password',
                                     onUsernameRegistered: _registerAndSignIn,
+                                    onEmailRegister: _registerEmailAndValidate,
+                                    initialEmail:
+                                        _session.credentialMethod ==
+                                            'email_password'
+                                        ? _localEmail.text
+                                        : '',
+                                    onEmailChanged: (email) =>
+                                        _localEmail.text = email,
                                     isCurrent: () =>
                                         mounted &&
                                         epoch == _lifecycleEpoch &&
