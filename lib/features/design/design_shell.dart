@@ -2100,6 +2100,11 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
           identical(widget.designContextCoordinator?.context, context) &&
           lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
         await _refreshSavedAppliances('settings_manage_devices', generation);
+        if (_isCurrentPageLoad('settings_manage_devices', generation) &&
+            identical(widget.designContextCoordinator?.context, context) &&
+            lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
+          await _refreshFirstDeviceStatus();
+        }
       }
       return;
     }

@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_appliance.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_preferences.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
+import 'package:energylens_mobile/core/cloud_auth/cloud_auxiliary_domain_lifecycle.dart';
 import 'package:energylens_mobile/features/design/demo_report_preview_screen.dart';
 import 'package:energylens_mobile/features/design/design_context_coordinator.dart';
 import 'package:energylens_mobile/features/design/design_shell.dart';
@@ -17,6 +19,28 @@ import 'package:http/testing.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
 const _homeId = '11111111-1111-4111-8111-111111111111';
+const _accountId = '22222222-2222-4222-8222-222222222222';
+
+class _VerifiedInventory implements CloudAuxiliaryDomainLifecycle {
+  int refreshes = 0;
+
+  @override
+  bool isVerifiedScope(String accountId, String homeId) =>
+      accountId == _accountId && homeId == _homeId;
+
+  @override
+  Future<List<CloudAppliance>?> refreshSavedAppliances(
+    String accountId,
+    String homeId,
+  ) async {
+    if (!isVerifiedScope(accountId, homeId)) return null;
+    refreshes++;
+    return const [];
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 class _Store implements CloudTokenStore {
   @override
@@ -277,6 +301,101 @@ void main() {
     await tester.pumpAndSettle();
     expect(discoveryOpens, 1);
   });
+
+  testWidgets(
+    'Cloud discovery return refreshes inventory and first-device status',
+    (tester) async {
+      final platform = _WebPlatform();
+      WebViewPlatform.instance = platform;
+      const home = CloudHome(
+        id: _homeId,
+        name: 'Selected Home',
+        timezone: 'America/Chicago',
+        countryCode: 'US',
+        postalCode: '60601',
+      );
+      final coordinator = DesignContextCoordinator(_Adapters(home));
+      coordinator.useVerifiedContext(
+        VerifiedDesignContext(
+          accountId: _accountId,
+          homeId: _homeId,
+          mode: DesignContextMode.household,
+        ),
+      );
+      final inventory = _VerifiedInventory();
+      var homeReads = 0;
+      var saved = false;
+      final api = CloudApiClient(
+        session: CloudSession(
+          config: const CloudAuthConfig(
+            issuer: 'https://issuer.example',
+            audience: 'energylens-cloud',
+            clientId: 'client',
+            redirectUrl: 'io.energylens.app://login-callback',
+            apiUrl: 'https://api.example',
+          ),
+          store: _Store(),
+          authenticator: _Auth(),
+        ),
+        client: MockClient((request) async {
+          if (request.url.path == '/v1/homes/$_homeId') {
+            homeReads++;
+            return http.Response(
+              jsonEncode({
+                'id': _homeId,
+                'name': 'Selected Home',
+                'timezone': 'America/Chicago',
+                'location': {'country_code': 'US', 'postal_code': '60601'},
+                'first_device_added_at': saved ? '2026-10-22T15:00:00Z' : null,
+              }),
+              200,
+              headers: {'etag': '"1"'},
+            );
+          }
+        if (request.url.path == '/v1/homes/$_homeId/hubs') {
+          return http.Response('{"hubs":[]}', 200);
+        }
+        if (request.url.path == '/v1/energy-categories') {
+          return http.Response(
+            '{"version":1,"groups":[]}',
+            200,
+            headers: {'etag': '"1"'},
+          );
+        }
+          return http.Response('{}', 500);
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DesignShell(
+            settingsApi: api,
+            designContextCoordinator: coordinator,
+            onboardingLifecycle: inventory,
+            onDiscoverDevices: () async => saved = true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(homeReads, greaterThanOrEqualTo(1));
+      platform.controller.route('settings_manage_devices');
+      await tester.pumpAndSettle();
+      final inventoryBefore = inventory.refreshes;
+      final homeBefore = homeReads;
+      platform.controller.route('discover_devices');
+      await tester.pumpAndSettle();
+      expect(inventory.refreshes, greaterThan(inventoryBefore));
+      expect(homeReads, greaterThan(homeBefore));
+      platform.controller.route('dashboard');
+      await tester.pumpAndSettle();
+      expect(
+        platform.controller.scripts.any(
+          (script) => script.contains('guide.hidden = true'),
+        ),
+        isTrue,
+      );
+      api.close();
+    },
+  );
 
   testWidgets('Settings routes to local preview without delivery controls', (
     tester,
