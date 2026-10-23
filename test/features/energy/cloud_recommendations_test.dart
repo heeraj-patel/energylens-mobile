@@ -399,7 +399,7 @@ void main() {
     );
   });
 
-  test('recommendations request sends the weather tips capability', () async {
+  test('recommendations request sends the peak demand capability', () async {
     Uri? requested;
     final api = apiFor(
       MockClient((request) async {
@@ -413,7 +413,7 @@ void main() {
     );
     await api.recommendations(home.id, {appliance});
     expect(requested?.path, endsWith('/recommendations'));
-    expect(requested?.queryParameters['capability'], 'weather_tips_v1');
+    expect(requested?.queryParameters['capability'], 'peak_demand_v1');
   });
 
   test('invalid envelope still rejects the batch', () {
@@ -575,6 +575,124 @@ void main() {
       final batch = parse(withContext({'trigger': 'hot_run'}));
       expect(batch.actions, hasLength(1));
       expect(batch.actions.single.weatherContext, isNull);
+    });
+  });
+
+  group('peak demand v1', () {
+    const source =
+        'https://austinenergy.com/energy-efficiency/rebates-incentives/residential/ps-volunteer';
+    Map<String, dynamic> fact(String text) => {
+      'id': '44444444-4444-4444-8444-444444444444',
+      'route': 'efficiency',
+      'subject_key': 'efficiency:peak_demand_day',
+      'field': 'efficiency_tip',
+      'record_key': 'official:peak_demand_day:1',
+      'value': {
+        'context': 'peak_demand_day',
+        'applicable_categories': ['dryer', 'dishwasher'],
+        'applicable_provider_ids': ['1015'],
+        'action_source_text': text,
+      },
+      'source': {'url': source},
+      'collected_at': '2026-10-20T00:00:00Z',
+    };
+    final block = <String, dynamic>{
+      'status': 'available',
+      'window_local': '13:00-19:00',
+      'source_url': source,
+      'home_tips': [
+        {'fact': fact('Delay the dryer.')},
+      ],
+    };
+
+    CloudRecommendationBatch parse(Map<String, dynamic> extra) =>
+        CloudRecommendationBatch.fromJson(
+          {
+            'actions': [action()],
+            'as_of': '2026-10-23T16:00:00Z',
+            ...extra,
+          },
+          {appliance},
+        );
+
+    test('absent block and context are null', () {
+      final batch = parse({});
+      expect(batch.peakDemand, isNull);
+      expect(batch.actions.single.peakDemandContext, isNull);
+    });
+
+    test('parses the block next to weather', () {
+      final batch = parse({
+        'peak_demand': block,
+        'weather': {'status': 'unavailable', 'reason': 'provider_unavailable'},
+      });
+      final peak = batch.peakDemand!;
+      expect(peak.windowLocal, '13:00-19:00');
+      expect(peak.sourceUrl.toString(), source);
+      expect(peak.homeTips.single.sourceText, 'Delay the dryer.');
+      expect(peak.homeTips.single.sourceUrl.toString(), source);
+      expect(batch.weather!.available, isFalse);
+    });
+
+    test('empty home tips still parse', () {
+      expect(
+        parse({
+          'peak_demand': {...block, 'home_tips': []},
+        }).peakDemand!.homeTips,
+        isEmpty,
+      );
+    });
+
+    test('malformed blocks are null and never throw', () {
+      for (final bad in <Object?>[
+        'x',
+        <String, dynamic>{},
+        {...block, 'status': 'unavailable'},
+        {...block, 'window_local': '1-7pm'},
+        {...block, 'window_local': '13:00-24:00'},
+        {...block, 'source_url': 'http://austinenergy.com/x'},
+        {...block, 'source_url': 5},
+        {...block, 'home_tips': 'x'},
+        {...block}..remove('home_tips'),
+      ]) {
+        final batch = parse({'peak_demand': bad});
+        expect(batch.peakDemand, isNull, reason: '$bad');
+        expect(batch.actions, hasLength(1));
+      }
+    });
+
+    test('skips bad tips and caps at three', () {
+      final tips = <Object?>[
+        'x',
+        {'fact': 'x'},
+        {'fact': fact('')},
+        for (var i = 0; i < 5; i++) {'fact': fact('Tip $i')},
+      ];
+      final peak = parse({
+        'peak_demand': {...block, 'home_tips': tips},
+      }).peakDemand!;
+      expect(peak.homeTips.map((t) => t.sourceText), [
+        'Tip 0',
+        'Tip 1',
+        'Tip 2',
+      ]);
+    });
+
+    test('peak_demand_context only accepts peak_demand_day', () {
+      CloudRecommendation one(Object? value) =>
+          CloudRecommendationBatch.fromJson(
+            {
+              'actions': [
+                {...action(), 'peak_demand_context': value},
+              ],
+              'as_of': '2026-10-23T16:00:00Z',
+            },
+            {appliance},
+          ).actions.single;
+      expect(one('peak_demand_day').peakDemandContext, 'peak_demand_day');
+      for (final bad in <Object?>['weather_hot', '', null, true]) {
+        expect(one(bad).peakDemandContext, isNull);
+      }
     });
   });
 }

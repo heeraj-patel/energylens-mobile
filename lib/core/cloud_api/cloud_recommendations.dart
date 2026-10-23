@@ -227,6 +227,56 @@ class CloudWeather {
   }
 }
 
+/// Page peak demand block; sent only with capability `peak_demand_v1`.
+class CloudPeakDemand {
+  const CloudPeakDemand({
+    required this.windowLocal,
+    required this.sourceUrl,
+    required this.homeTips,
+  });
+  final String windowLocal;
+  final Uri sourceUrl;
+  final List<CloudResearchTip> homeTips;
+
+  /// Returns null when the block is absent or malformed.
+  static CloudPeakDemand? tryParse(Object? json) {
+    if (json is! Map<String, dynamic> || json['status'] != 'available') {
+      return null;
+    }
+    final window = json['window_local'];
+    final url = json['source_url'];
+    final tips = json['home_tips'];
+    if (window is! String ||
+        !RegExp(
+          r'^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$',
+        ).hasMatch(window) ||
+        url is! String ||
+        tips is! List) {
+      return null;
+    }
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty) {
+      return null;
+    }
+    final parsed = tips
+        .map(
+          (tip) => tip is Map<String, dynamic>
+              ? CloudResearchTip.tryParse(tip['fact'])
+              : null,
+        )
+        .nonNulls
+        .take(3);
+    return CloudPeakDemand(
+      windowLocal: window,
+      sourceUrl: uri,
+      homeTips: List.unmodifiable(parsed),
+    );
+  }
+}
+
 /// Weather trigger on a device tip, with the optional time-of-use cost line.
 class CloudWeatherContext {
   const CloudWeatherContext({
@@ -292,6 +342,7 @@ class CloudRecommendation {
     this.researchTip,
     this.tipCategory = CloudRecommendationTipCategory.general,
     this.weatherContext,
+    this.peakDemandContext,
   });
   final String ruleId;
   final String applianceId;
@@ -309,6 +360,9 @@ class CloudRecommendation {
   final CloudResearchTip? researchTip;
   final CloudRecommendationTipCategory tipCategory;
   final CloudWeatherContext? weatherContext;
+
+  /// `peak_demand_day` on device tips from the peak demand context, else null.
+  final String? peakDemandContext;
 
   factory CloudRecommendation.fromJson(
     Map<String, dynamic> json,
@@ -434,15 +488,24 @@ class CloudRecommendation {
       researchTip: researchTip,
       tipCategory: tipCategory,
       weatherContext: CloudWeatherContext.tryParse(json['weather_context']),
+      peakDemandContext: json['peak_demand_context'] == 'peak_demand_day'
+          ? 'peak_demand_day'
+          : null,
     );
   }
 }
 
 class CloudRecommendationBatch {
-  const CloudRecommendationBatch(this.actions, this.asOf, {this.weather});
+  const CloudRecommendationBatch(
+    this.actions,
+    this.asOf, {
+    this.weather,
+    this.peakDemand,
+  });
   final List<CloudRecommendation> actions;
   final DateTime asOf;
   final CloudWeather? weather;
+  final CloudPeakDemand? peakDemand;
 
   factory CloudRecommendationBatch.fromJson(
     Map<String, dynamic> json,
@@ -474,6 +537,7 @@ class CloudRecommendationBatch {
       actions,
       asOf,
       weather: CloudWeather.tryParse(json['weather']),
+      peakDemand: CloudPeakDemand.tryParse(json['peak_demand']),
     );
   }
 }

@@ -1113,7 +1113,7 @@ class CloudApiClient {
     Set<String> applianceIds,
   ) async {
     final response = await get(
-      '/v1/homes/${Uri.encodeComponent(homeId)}/recommendations?capability=weather_tips_v1',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/recommendations?capability=peak_demand_v1',
     );
     return _parseResponse(
       response,
