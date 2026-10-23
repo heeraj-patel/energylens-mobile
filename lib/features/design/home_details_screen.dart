@@ -36,6 +36,7 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
   bool _saving = false;
   bool _conflict = false;
   bool _backendFailed = false;
+  bool _gasRateFailed = false;
   bool _timezoneUnresolved = false;
 
   @override
@@ -73,12 +74,14 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
       _saving = true;
       _conflict = false;
       _backendFailed = false;
+      _gasRateFailed = false;
       _timezoneUnresolved = false;
     });
     try {
       final locationChanged =
           valid.countryCode != before.home.countryCode ||
           valid.postalCode != before.home.postalCode;
+      var homeSaved = false;
       if (valid.name != before.home.name || locationChanged) {
         final after = await _settings.updateHome(
           CloudHomePatch(
@@ -89,9 +92,19 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
           idempotencyKey: newCloudIdempotencyKey(),
         );
         if (!mounted || !widget.isCurrentHome() || after == null) return;
+        homeSaved = true;
       }
       if (!_hasPropane && _gasRate.text.trim().isNotEmpty) {
-        await _saveGasRate();
+        try {
+          await _saveGasRate();
+        } catch (_) {
+          if (!homeSaved) rethrow;
+          // The home PATCH already committed; report only the tariff failure.
+          if (mounted && widget.isCurrentHome()) {
+            setState(() => _gasRateFailed = true);
+          }
+          return;
+        }
         if (!mounted || !widget.isCurrentHome()) return;
         _gasRate.clear();
         _gasRateKey = newCloudIdempotencyKey();
@@ -231,6 +244,10 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
           if (_conflict)
             const Text('Home details changed elsewhere. Reload and try again.'),
           if (_backendFailed) const Text(internalErrorMessage),
+          if (_gasRateFailed)
+            const Text(
+              "Home details saved. Your gas rate didn't save. Try again.",
+            ),
           if (_timezoneUnresolved)
             const Text(
               'ZIP code saved. We couldn’t determine its time zone, so your home time zone stayed the same.',

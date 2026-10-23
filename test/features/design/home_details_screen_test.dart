@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:energylens_mobile/core/backend_error.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:energylens_mobile/features/design/home_details_screen.dart';
@@ -46,12 +47,15 @@ CloudApiClient _api(MockClient client) => CloudApiClient(
   client: client,
 );
 
-Map<String, Object?> _homeJson() => {
+Map<String, Object?> _homeJson([
+  String name = 'Original Home',
+  int version = 1,
+]) => {
   'id': _homeId,
-  'name': 'Original Home',
+  'name': name,
   'timezone': 'America/Chicago',
   'location': {'country_code': 'US', 'postal_code': '60601'},
-  'version': 1,
+  'version': version,
 };
 
 Future<void> _openHome(
@@ -65,6 +69,8 @@ Future<void> _openHome(
   tester.view.physicalSize = const Size(800, 2400);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
+  var name = 'Original Home';
+  var version = 1;
   final client = MockClient((request) async {
     onRequest?.call(request);
     final path = request.url.path;
@@ -118,10 +124,14 @@ Future<void> _openHome(
       });
     }
     if (path == '/v1/homes/$_homeId' && request.method == 'GET') {
-      return ok(_homeJson(), {'etag': '"1"'});
+      return ok(_homeJson(name, version), {'etag': '"$version"'});
     }
     if (path == '/v1/homes/$_homeId' && request.method == 'PATCH') {
-      return onPatch?.call(request) ?? ok(_homeJson(), {'etag': '"2"'});
+      final failure = onPatch?.call(request);
+      if (failure != null) return failure;
+      name = (jsonDecode(request.body) as Map)['name'] as String? ?? name;
+      version++;
+      return ok(_homeJson(name, version), {'etag': '"$version"'});
     }
     if (path == '/v1/homes/$_homeId/tariffs' && request.method == 'POST') {
       return onTariff?.call(request) ?? http.Response(jsonEncode({}), 500);
@@ -434,6 +444,53 @@ void main() {
       await _openHome(tester, fuel: 'propane');
       expect(gasField, findsNothing);
       expect(saveEnabled(tester), isTrue);
+    });
+  });
+  group('partial save', () {
+    const gasText = "Home details saved. Your gas rate didn't save. Try again.";
+    const conflictText =
+        'Home details changed elsewhere. Reload and try again.';
+
+    for (final status in [500, 409, 412]) {
+      testWidgets('tariff $status after home PATCH shows the gas-rate error', (
+        tester,
+      ) async {
+        bool? result;
+        await _openHome(
+          tester,
+          onTariff: (_) => http.Response(jsonEncode({}), status),
+          onResult: (value) => result = value,
+        );
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Home name'),
+          'Renamed',
+        );
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Gas rate (\$/therm)'),
+          '1.25',
+        );
+        await tester.pump();
+        await tester.tap(find.text('Save changes'));
+        await tester.pumpAndSettle();
+        expect(find.text(gasText), findsOneWidget);
+        expect(find.text(conflictText), findsNothing);
+        expect(find.text(internalErrorMessage), findsNothing);
+        expect(find.byType(HomeDetailsScreen), findsOneWidget);
+        expect(result, isNull);
+      });
+    }
+
+    testWidgets('home PATCH 409 keeps the home-conflict text', (tester) async {
+      await _openHome(tester, onPatch: (_) => http.Response('{}', 409));
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Home name'),
+        'Renamed',
+      );
+      await tester.pump();
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+      expect(find.text(conflictText), findsOneWidget);
+      expect(find.text(gasText), findsNothing);
     });
   });
 }
