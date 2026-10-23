@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_entry_gate.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_local_auth.dart';
@@ -1058,6 +1059,8 @@ void main() {
                   ),
                 );
               },
+          newHomeBuilder: (_, _, _, _) =>
+              const Text('Unexpected new-home onboarding'),
         ),
       ),
     );
@@ -1065,12 +1068,14 @@ void main() {
     await tester.tap(find.text('First home'));
     await tester.pumpAndSettle();
     expect(seenHomes, contains((firstHomeId, 'First home')));
+    expect(find.text('Unexpected new-home onboarding'), findsNothing);
     await tester.tap(find.text('Change selected home'));
     expect(coordinator.context, isNull);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Second home'));
     await tester.pumpAndSettle();
     expect(seenHomes, contains((secondHomeId, 'Second home')));
+    expect(find.text('Unexpected new-home onboarding'), findsNothing);
     await tester.tap(find.text('Sign out selected home'));
     expect(coordinator.context, isNull);
     await tester.pumpAndSettle();
@@ -1369,6 +1374,7 @@ void main() {
         CloudReportDeliveryDomainSource(api),
       ),
     );
+    VoidCallback? finishNewHome;
     await tester.pumpWidget(
       MaterialApp(
         home: CloudEntryGate(
@@ -1378,6 +1384,16 @@ void main() {
           session: session,
           api: api,
           homeBuilder: (home, _, _, _) => Text('Verified ${home?.name}'),
+          newHomeBuilder: (home, receivedApi, lifecycle, onLinked) {
+            expect(home.id, firstHomeId);
+            expect(identical(receivedApi, api), isTrue);
+            expect(
+              lifecycle.isVerifiedScope(verifiedAccountId, home.id),
+              isTrue,
+            );
+            finishNewHome = onLinked;
+            return const Text('Hub discovery');
+          },
         ),
       ),
     );
@@ -1401,12 +1417,11 @@ void main() {
     expect(homesReads, greaterThanOrEqualTo(2));
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pumpAndSettle();
-    expect(
-      find.text('Verified New home'),
-      findsOneWidget,
-      reason:
-          '${tester.widgetList<Text>(find.byType(Text, skipOffstage: false)).map((item) => item.data).toList()} reads=$homesReads',
-    );
+    expect(find.text('Hub discovery'), findsOneWidget);
+    expect(find.text('Verified New home'), findsNothing);
+    finishNewHome!();
+    await tester.pumpAndSettle();
+    expect(find.text('Verified New home'), findsOneWidget);
     api.close();
   });
 
@@ -1500,6 +1515,87 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.tokens, isNull);
     expect(find.text('Submit'), findsOneWidget);
+    api.close();
+  });
+
+  testWidgets('remembered home opens dashboard without new-home onboarding', (
+    tester,
+  ) async {
+    final active = MemoryDraftStorage();
+    final preference = ActiveHomePreference(active);
+    await preference.selectScope(
+      Uri.parse(config.apiUrl).origin,
+      verifiedAccountId,
+    );
+    await preference.remember(
+      const CloudHome(
+        id: firstHomeId,
+        name: 'First home',
+        timezone: 'America/Chicago',
+        countryCode: 'US',
+        postalCode: '60601',
+      ),
+    );
+    final session = CloudSession(
+      config: config,
+      store: Store(),
+      authenticator: Auth(),
+    );
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config') {
+          return http.Response('', 404);
+        }
+        if (request.url.path == '/v1/me') {
+          return http.Response(
+            '{"id":"$verifiedAccountId","email":null,"email_verified":true}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/homes') {
+          return http.Response(ownedHomes(), 200);
+        }
+        return http.Response('', 404);
+      }),
+    );
+    final auxiliary = CloudAuxiliaryDomainLifecycle(
+      drafts: DurableOnboardingDrafts(
+        MemoryDraftStorage(),
+        OnboardingPersistenceRepository(CloudOnboardingPersistenceSource(api)),
+      ),
+      reports: ReportPreviewDomainRepository(
+        CloudReportPreviewDomainSource(api),
+      ),
+      deliveries: ReportDeliveryDomainAdapter(
+        CloudReportDeliveryDomainSource(api),
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: active,
+          session: session,
+          api: api,
+          auxiliaryDomainLifecycle: auxiliary,
+          homeBuilder: (home, _, _, _) => Text('Dashboard ${home?.name}'),
+          newHomeBuilder: (_, _, _, _) =>
+              const Text('Unexpected new-home onboarding'),
+        ),
+      ),
+    );
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (find.text('Dashboard First home').evaluate().isNotEmpty) break;
+    }
+    expect(
+      find.text('Dashboard First home'),
+      findsOneWidget,
+      reason:
+          '${active.value} ${tester.widgetList<Text>(find.byType(Text, skipOffstage: false)).map((text) => text.data).toList()}',
+    );
+    expect(find.text('Unexpected new-home onboarding'), findsNothing);
     api.close();
   });
 

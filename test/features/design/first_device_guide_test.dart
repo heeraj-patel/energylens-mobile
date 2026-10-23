@@ -82,11 +82,15 @@ void main() {
     () async {
       final html = await File('assets/design_pages/dashboard/app.html')
           .readAsString();
-      final cost = html.indexOf('<!-- Cost Card -->');
+      final content = html.indexOf('<main ');
       final guide = html.indexOf('id="el-first-device-guide"');
+      final homeMessage = html.indexOf('<!-- Home energy message -->');
+      final cost = html.indexOf('<!-- Cost Card -->');
       final trends = html.indexOf('<!-- Energy Trends Section -->', guide);
-      expect(cost, lessThan(guide));
-      expect(guide, lessThan(trends));
+      expect(content, lessThan(guide));
+      expect(guide, lessThan(homeMessage));
+      expect(homeMessage, lessThan(cost));
+      expect(cost, lessThan(trends));
       expect(
         html,
         contains('id="el-first-device-guide" hidden style="display:none"'),

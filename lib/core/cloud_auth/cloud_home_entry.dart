@@ -17,6 +17,7 @@ class CloudHomeEntry extends StatefulWidget {
     this.onSaveOwner,
     this.initialOwnerName = '',
     required this.onSelect,
+    this.onSelectCreated,
     required this.onSignOut,
     this.listError,
   });
@@ -30,6 +31,7 @@ class CloudHomeEntry extends StatefulWidget {
   final Future<void> Function(String)? onSaveOwner;
   final String initialOwnerName;
   final ValueChanged<CloudHome> onSelect;
+  final ValueChanged<CloudHome>? onSelectCreated;
   final VoidCallback onSignOut;
 
   @override
@@ -138,7 +140,7 @@ class _CloudHomeEntryState extends State<CloudHomeEntry> {
       await widget.onSaveOwner?.call(owner);
       homeStarted = true;
       final home = await widget.onCreate(input, _idempotencyKey);
-      if (mounted) widget.onSelect(home);
+      if (mounted) (widget.onSelectCreated ?? widget.onSelect)(home);
     } on CloudApiException catch (error) {
       if (!mounted) return;
       setState(() {

@@ -119,6 +119,8 @@ CloudApiClient _cloud(http.Client client) => CloudApiClient(
 );
 
 class _HubTransport implements PairingTransport {
+  _HubTransport({this.proofStatus = 200});
+  final int proofStatus;
   final requests = <(String, String?, Map<String, dynamic>?)>[];
   @override
   Future<PairingHttpResponse> send(
@@ -136,7 +138,7 @@ class _HubTransport implements PairingTransport {
       );
     }
     return PairingHttpResponse(
-      statusCode: 200,
+      statusCode: proofStatus,
       body: jsonEncode({
         'claim_id': body!['claim_id'],
         'local_hub_id': hubId,
@@ -148,6 +150,86 @@ class _HubTransport implements PairingTransport {
 }
 
 void main() {
+  for (final stage in [
+    'ownership_lookup',
+    'begin_claim',
+    'hub_proof',
+    'finish_claim',
+  ]) {
+    test(
+      'claim diagnostics identify $stage without leaking credentials',
+      () async {
+        final credentials = DiscoveryCredentials(storage: _Store());
+        await credentials.savePairing(
+          address: address,
+          hubId: hubId,
+          clientId: 'phone',
+          token: 'paired-token',
+        );
+        final events = <String>[];
+        final cloud = _cloud(
+          MockClient((request) async {
+            if (request.url.path.endsWith('/hubs')) {
+              return stage == 'ownership_lookup'
+                  ? http.Response('{"code":"private-server-detail"}', 404)
+                  : http.Response('{"hubs":[]}', 200);
+            }
+            if (request.url.path.endsWith('/hub-claims')) {
+              return stage == 'begin_claim'
+                  ? http.Response('{"code":"private-server-detail"}', 404)
+                  : http.Response(jsonEncode(_challenge()), 201);
+            }
+            return http.Response('{"code":"private-server-detail"}', 503);
+          }),
+        );
+        final flow = CloudHubClaimFlow(
+          cloud: cloud,
+          hub: DiscoveryApi(
+            pairingTransport: _HubTransport(
+              proofStatus: stage == 'hub_proof' ? 401 : 200,
+            ),
+          ),
+          credentials: credentials,
+          scope: _scope(),
+          pendingStorage: _PendingStore(),
+          diagnosticSink: events.add,
+        );
+        await expectLater(
+          flow.claim(home),
+          throwsA(anyOf(isA<CloudApiException>(), isA<PairingException>())),
+        );
+        expect(
+          events.last,
+          startsWith('[hub.claim] stage=$stage outcome=failed'),
+        );
+        expect(
+          events.last,
+          contains(
+            'status=${switch (stage) {
+              'hub_proof' => 401,
+              'finish_claim' => 503,
+              _ => 404,
+            }}',
+          ),
+        );
+        final log = events.join('\n');
+        for (final secret in [
+          address,
+          hubId,
+          home.id,
+          'paired-token',
+          'owner-token',
+          'signed-by-hub',
+          'private-server-detail',
+          _challenge()['nonce'],
+        ]) {
+          expect(log, isNot(contains(secret)));
+        }
+        cloud.close();
+      },
+    );
+  }
+
   test('paired proof links selected owner home and uncertain finish retries unchanged', () async {
     final store = _Store();
     final credentials = DiscoveryCredentials(storage: store);

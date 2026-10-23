@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import '../../features/discovery/discovery_api.dart';
 import '../../features/discovery/discovery_credentials.dart';
 import '../../features/identify/onboarding_draft_store.dart';
@@ -34,6 +36,7 @@ class CloudHubClaimFlow {
     required this.hub,
     required this.credentials,
     this.scope,
+    this.diagnosticSink,
     this.pendingStorage = const SecureOnboardingDraftStorage.hubClaim(),
   });
 
@@ -41,6 +44,7 @@ class CloudHubClaimFlow {
   final DiscoveryApi hub;
   final DiscoveryCredentials credentials;
   final OwnedPairingScope? scope;
+  final void Function(String)? diagnosticSink;
   final OnboardingDraftStorage pendingStorage;
   HubClaimProof? _pendingProof;
   String? _pendingKey;
@@ -51,6 +55,45 @@ class CloudHubClaimFlow {
   bool get hasPendingFinish => _pendingProof != null;
 
   Future<HubOwnership> claim(CloudHome home) async {
+    var stage = 'restore';
+    void record(String event) {
+      // Release diagnostics contain only fixed stage names, types and status
+      // numbers. Never include identities, payloads, proofs or exception text.
+      try {
+        (diagnosticSink ?? debugPrint)('[hub.claim] $event');
+      } catch (_) {
+        // A diagnostic sink must not affect a claim or its retry state.
+      }
+    }
+
+    void advance(String next) {
+      stage = next;
+      record('stage=$stage');
+    }
+
+    advance(stage);
+    try {
+      final ownership = await _claim(home, advance);
+      record('stage=complete');
+      return ownership;
+    } catch (error) {
+      final status = switch (error) {
+        CloudApiException() => error.statusCode,
+        PairingException() => error.statusCode,
+        _ => null,
+      };
+      record(
+        'stage=$stage outcome=failed type=${error.runtimeType}'
+        '${status == null ? '' : ' status=$status'}',
+      );
+      rethrow;
+    }
+  }
+
+  Future<HubOwnership> _claim(
+    CloudHome home,
+    void Function(String) advance,
+  ) async {
     final generation = _globalGeneration;
     final sessionGeneration = cloud.session.generation;
     bool current() =>
@@ -124,6 +167,7 @@ class CloudHubClaimFlow {
       );
     }
     if (claimScope != null) {
+      advance('ownership_lookup');
       final owned = (await cloud.hubs(home.id))
           .where((value) => value.localHubId == hubId)
           .toList();
@@ -163,6 +207,7 @@ class CloudHubClaimFlow {
           'Pair this phone with the hub before linking it to a cloud home.',
         );
       }
+      advance('begin_claim');
       final challenge = await cloud.beginHubClaim(home.id, hubId);
       if (!current()) throw StateError('Claim scope changed');
       if (challenge.localHubId != hubId) {
@@ -171,6 +216,7 @@ class CloudHubClaimFlow {
       if (!challenge.expiresAt.isAfter(DateTime.now().toUtc())) {
         throw const PairingException(internalErrorMessage);
       }
+      advance('hub_proof');
       final proof = await hub.claimProof(
         challenge,
         address: pairing.address,
@@ -183,6 +229,7 @@ class CloudHubClaimFlow {
       _pendingHomeId = home.id;
       _pendingExpiry = challenge.expiresAt;
       if (claimScope != null) {
+        advance('persist_finish');
         await _ordered(
           () => current()
               ? pendingStorage.write(
@@ -214,11 +261,13 @@ class CloudHubClaimFlow {
       }
       throw StateError('Hub claim challenge expired');
     }
+    advance('finish_claim');
     final ownership = await cloud.finishHubClaim(
       _pendingProof!,
       idempotencyKey: _pendingKey!,
     );
     if (!current()) throw StateError('Claim scope changed');
+    advance('validate_ownership');
     if (ownership.homeId != home.id || ownership.localHubId != hubId) {
       throw const FormatException(
         'Cloud returned ownership for a different home or hub.',
