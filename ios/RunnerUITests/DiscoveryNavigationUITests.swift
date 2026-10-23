@@ -5,6 +5,27 @@ final class DiscoveryNavigationUITests: XCTestCase {
     ProcessInfo.processInfo.environment["ENERGYLENS_TEST_EXPECTED_HOME"] ?? "niksim"
   }
 
+  func testCloudAuthScreensForOwnerReview() throws {
+    continueAfterFailure = false
+    let app = XCUIApplication(bundleIdentifier: "io.energylens.energylensMobile")
+    app.launchArguments = ["--energylens-reset-sign-in"]
+    app.launch()
+
+    let createAccount = app.buttons["Create account"]
+    XCTAssertTrue(createAccount.waitForExistence(timeout: 90))
+    let login = XCTAttachment(screenshot: app.screenshot())
+    login.name = "GeekHome login with Create account"
+    login.lifetime = .keepAlways
+    add(login)
+
+    createAccount.tap()
+    XCTAssertTrue(app.textFields["User ID"].waitForExistence(timeout: 30))
+    let signup = XCTAttachment(screenshot: app.screenshot())
+    signup.name = "GeekHome Create account"
+    signup.lifetime = .keepAlways
+    add(signup)
+  }
+
   func testCloudAccountPairsHubAndShowsSavedPlug() throws {
     continueAfterFailure = false
     guard
