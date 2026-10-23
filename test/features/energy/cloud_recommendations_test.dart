@@ -399,7 +399,7 @@ void main() {
     );
   });
 
-  test('recommendations request sends the gas appliance capability', () async {
+  test('recommendations request sends the weather tips capability', () async {
     Uri? requested;
     final api = apiFor(
       MockClient((request) async {
@@ -413,10 +413,7 @@ void main() {
     );
     await api.recommendations(home.id, {appliance});
     expect(requested?.path, endsWith('/recommendations'));
-    expect(
-      requested?.queryParameters['capability'],
-      'gas_appliance_recommendations_v1',
-    );
+    expect(requested?.queryParameters['capability'], 'weather_tips_v1');
   });
 
   test('invalid envelope still rejects the batch', () {
@@ -430,5 +427,154 @@ void main() {
         throwsFormatException,
       );
     }
+  });
+
+  group('weather tips v1', () {
+    const ref = {
+      'id': '33333333-3333-4333-8333-333333333333',
+      'kind': 'weather_day',
+      'revision': 2,
+    };
+    final fact = {
+      'id': '44444444-4444-4444-8444-444444444444',
+      'route': 'efficiency',
+      'subject_key': 'efficiency:weather_hot',
+      'field': 'efficiency_tip',
+      'record_key': 'official:weather_hot:5',
+      'value': {
+        'context': 'weather_hot',
+        'applicable_categories': ['home'],
+        'action_source_text': 'Close blinds during the day.',
+      },
+      'source': {'url': 'https://www.pge.com/x'},
+      'collected_at': '2026-10-20T00:00:00Z',
+    };
+    final alert = {
+      'event': 'Heat Advisory',
+      'headline': 'Heat Advisory until 8 PM CDT',
+      'starts_at': '2026-10-23T15:00:00Z',
+      'ends_at': '2026-10-24T01:00:00Z',
+      'source_url': 'https://api.weather.gov/alerts/urn:oid:1',
+      'evidence_ref': {...ref, 'kind': 'weather_alert', 'revision': 1},
+    };
+    final available = <String, dynamic>{
+      'status': 'available',
+      'provider': 'nws',
+      'alerts': [alert],
+      'runs': [
+        {'kind': 'hot', 'days': 11, 'last_day': '2026-10-22'},
+      ],
+      'home_tips': [
+        {'fact': fact, 'trigger': 'heat_alert'},
+      ],
+    };
+
+    CloudRecommendationBatch parse(Map<String, dynamic> extra) =>
+        CloudRecommendationBatch.fromJson(
+          {
+            'actions': [action()],
+            'as_of': '2026-10-23T16:00:00Z',
+            ...extra,
+          },
+          {appliance},
+        );
+
+    Map<String, dynamic> withContext(Map<String, dynamic> context) => {
+      'actions': [
+        {...action(), 'weather_context': context},
+      ],
+    };
+
+    test('absent weather and weather_context are null', () {
+      final batch = parse({});
+      expect(batch.weather, isNull);
+      expect(batch.actions.single.weatherContext, isNull);
+    });
+
+    test('parses the available block', () {
+      final weather = parse({'weather': available}).weather!;
+      expect(weather.available, isTrue);
+      expect(weather.provider, 'nws');
+      expect(weather.attribution, isNull);
+      expect(weather.alerts.single.event, 'Heat Advisory');
+      expect(weather.alerts.single.evidence.kind, 'weather_alert');
+      expect(weather.runs.single.days, 11);
+      expect(weather.homeTips.single.trigger, 'heat_alert');
+      expect(
+        weather.homeTips.single.tip.sourceText,
+        'Close blinds during the day.',
+      );
+    });
+
+    test('parses Canada attribution and unavailable reasons', () {
+      const text = 'Data Source: Environment and Climate Change Canada';
+      final canada = parse({
+        'weather': {...available, 'provider': 'eccc', 'attribution': text},
+      }).weather!;
+      expect(canada.attribution, text);
+      final down = parse({
+        'weather': {'status': 'unavailable', 'reason': 'provider_unavailable'},
+      }).weather!;
+      expect(down.available, isFalse);
+      expect(down.reason, 'provider_unavailable');
+      expect(down.alerts, isEmpty);
+      expect(down.homeTips, isEmpty);
+    });
+
+    test('tolerates unknown status, bad rows and extra keys', () {
+      expect(
+        parse({
+          'weather': {'status': 'later'},
+        }).weather,
+        isNull,
+      );
+      expect(parse({'weather': 'x'}).weather, isNull);
+      final weather = parse({
+        'weather': {
+          ...available,
+          'future_key': 1,
+          'alerts': [
+            alert,
+            {'event': 'No url'},
+            {...alert, 'source_url': 'http://api.weather.gov/x'},
+          ],
+          'home_tips': [
+            {'fact': fact, 'trigger': 'storm_alert'},
+            {'fact': 'bad', 'trigger': 'hot_run'},
+          ],
+        },
+      }).weather!;
+      expect(weather.alerts, hasLength(1));
+      expect(weather.homeTips.single.trigger, 'storm_alert');
+    });
+
+    test('parses weather_context with and without the cost line', () {
+      final plain = parse(
+        withContext({'trigger': 'hot_run', 'measured_use': false}),
+      ).actions.single.weatherContext!;
+      expect(plain.trigger, 'hot_run');
+      expect(plain.measuredUse, isFalse);
+      expect(plain.touSavingPerKwh, isNull);
+      final tou = parse(
+        withContext({
+          'trigger': 'heat_alert',
+          'measured_use': true,
+          'tou_saving_per_kwh': '0.12',
+          'currency': 'USD',
+          'peak_start_local': '16:00',
+          'peak_end_local': '21:00',
+        }),
+      ).actions.single.weatherContext!;
+      expect(tou.touSavingPerKwh, '0.12');
+      expect(tou.currency, 'USD');
+      expect(tou.peakStartLocal, '16:00');
+      expect(tou.peakEndLocal, '21:00');
+    });
+
+    test('malformed weather_context keeps the action', () {
+      final batch = parse(withContext({'trigger': 'hot_run'}));
+      expect(batch.actions, hasLength(1));
+      expect(batch.actions.single.weatherContext, isNull);
+    });
   });
 }

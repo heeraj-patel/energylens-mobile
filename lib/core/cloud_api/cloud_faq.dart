@@ -20,6 +20,13 @@ const faqIntents = <String, String>{
   'programs_for_device': 'Are there programs for a device?',
 };
 
+/// Accepted in answers but not listed as a question until its label is approved.
+const faqParseOnlyIntents = {'weather_tips'};
+const faqWeatherNoTipsAnswer = 'No weather tips apply right now.';
+
+bool isFaqIntent(String intent) =>
+    faqIntents.containsKey(intent) || faqParseOnlyIntents.contains(intent);
+
 class CloudFaqEvidence {
   const CloudFaqEvidence(this.id, this.kind, this.revision);
   final String id;
@@ -46,10 +53,11 @@ class CloudFaqEvidence {
 }
 
 class CloudFaqFinding {
-  const CloudFaqFinding(this.label, this.text, this.refs);
+  const CloudFaqFinding(this.label, this.text, this.refs, {this.sourceUrl});
   final String label;
   final String text;
   final List<CloudFaqEvidence> refs;
+  final Uri? sourceUrl;
 
   factory CloudFaqFinding.fromJson(Map<String, dynamic> json, String intent) {
     final label = json['label'];
@@ -72,7 +80,19 @@ class CloudFaqFinding {
       }
       return CloudFaqEvidence.fromJson(raw);
     }).toList();
-    return CloudFaqFinding(label as String, text, refs);
+    final url = json['source_url'];
+    final uri = url is String ? Uri.tryParse(url) : null;
+    final validUrl =
+        uri != null &&
+        uri.scheme == 'https' &&
+        uri.host.isNotEmpty &&
+        uri.userInfo.isEmpty;
+    return CloudFaqFinding(
+      label as String,
+      text,
+      refs,
+      sourceUrl: validUrl ? uri : null,
+    );
   }
 }
 
@@ -84,6 +104,8 @@ class CloudFaqAnswer {
     required this.findings,
     required this.asOf,
     required this.adaptiveQuestions,
+    this.weatherStatus,
+    this.weatherReason,
   });
   final String intent;
   final String status;
@@ -91,6 +113,8 @@ class CloudFaqAnswer {
   final List<CloudFaqFinding> findings;
   final DateTime asOf;
   final bool adaptiveQuestions;
+  final String? weatherStatus;
+  final String? weatherReason;
 
   factory CloudFaqAnswer.fromJson(
     Map<String, dynamic> json,
@@ -104,7 +128,7 @@ class CloudFaqAnswer {
     final asOf = json['as_of'] is String
         ? DateTime.tryParse(json['as_of'] as String)
         : null;
-    if (!faqIntents.containsKey(intent) ||
+    if (!isFaqIntent(intent) ||
         json['question_id'] != intent ||
         !const {
           'insufficient_information',
@@ -132,13 +156,21 @@ class CloudFaqAnswer {
       return CloudFaqEvidence.fromJson(raw);
     }).toList();
     final expectedRefs = findings.expand((finding) => finding.refs).toList();
-    if (refs.length != expectedRefs.length ||
-        Iterable.generate(refs.length).any(
-          (index) =>
-              refs[index].id != expectedRefs[index].id ||
-              refs[index].kind != expectedRefs[index].kind ||
-              refs[index].revision != expectedRefs[index].revision,
-        )) {
+    final weather = intent == 'weather_tips';
+    bool inFindings(CloudFaqEvidence ref) => expectedRefs.any(
+      (e) => e.id == ref.id && e.kind == ref.kind && e.revision == ref.revision,
+    );
+    // Weather answers may list a shared reference once.
+    final refsMatch = weather
+        ? refs.every(inFindings) && (findings.isEmpty || refs.isNotEmpty)
+        : refs.length == expectedRefs.length &&
+              Iterable.generate(refs.length).every(
+                (index) =>
+                    refs[index].id == expectedRefs[index].id &&
+                    refs[index].kind == expectedRefs[index].kind &&
+                    refs[index].revision == expectedRefs[index].revision,
+              );
+    if (!refsMatch) {
       throw const FormatException('FAQ evidence does not match findings');
     }
     final action = json['next_action'];
@@ -158,6 +190,33 @@ class CloudFaqAnswer {
         findings: findings,
         asOf: asOf,
         adaptiveQuestions: true,
+        weatherStatus: json['weather_status'] is String
+            ? json['weather_status'] as String
+            : null,
+        weatherReason: json['weather_reason'] is String
+            ? json['weather_reason'] as String
+            : null,
+      );
+    }
+    if (weather) {
+      final none = findings.isEmpty;
+      final ws = json['weather_status'];
+      final wr = json['weather_reason'];
+      if (action != null ||
+          (none && (status != 'supported' || text != faqWeatherNoTipsAnswer)) ||
+          text.trim().isEmpty ||
+          (!none && refs.isEmpty)) {
+        throw const FormatException('Unsupported FAQ finding');
+      }
+      return CloudFaqAnswer(
+        intent: intent,
+        status: status as String,
+        text: text,
+        findings: findings,
+        asOf: asOf,
+        adaptiveQuestions: false,
+        weatherStatus: ws is String ? ws : null,
+        weatherReason: wr is String ? wr : null,
       );
     }
     if (findings.isEmpty ||

@@ -1091,7 +1091,7 @@ class CloudApiClient {
     String intent, {
     String? applianceId,
   }) async {
-    if (!faqIntents.containsKey(intent) ||
+    if (!isFaqIntent(intent) ||
         (intent == 'device_operating_cost') != (applianceId != null)) {
       throw ArgumentError('Invalid FAQ intent or appliance');
     }
@@ -1113,7 +1113,7 @@ class CloudApiClient {
     Set<String> applianceIds,
   ) async {
     final response = await get(
-      '/v1/homes/${Uri.encodeComponent(homeId)}/recommendations?capability=gas_appliance_recommendations_v1',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/recommendations?capability=weather_tips_v1',
     );
     return _parseResponse(
       response,

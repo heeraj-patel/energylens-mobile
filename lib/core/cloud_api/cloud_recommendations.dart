@@ -1,3 +1,5 @@
+import 'cloud_faq.dart';
+
 const _ruleIds = {
   'computer.sleep_settings',
   'television.quick_start',
@@ -76,6 +78,202 @@ class CloudResearchTip {
   }
 }
 
+/// Official weather alert; event and headline are provider text.
+class CloudWeatherAlert {
+  const CloudWeatherAlert({
+    required this.event,
+    required this.headline,
+    required this.startsAt,
+    required this.endsAt,
+    required this.sourceUrl,
+    required this.evidence,
+  });
+  final String event;
+  final String? headline;
+  final DateTime startsAt;
+  final DateTime endsAt;
+  final Uri sourceUrl;
+  final CloudFaqEvidence evidence;
+
+  /// Returns null for any malformed alert.
+  static CloudWeatherAlert? tryParse(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final event = json['event'];
+    final headline = json['headline'];
+    final starts = json['starts_at'];
+    final ends = json['ends_at'];
+    final url = json['source_url'];
+    final ref = json['evidence_ref'];
+    final uri = url is String ? Uri.tryParse(url) : null;
+    final startsAt = starts is String ? DateTime.tryParse(starts) : null;
+    final endsAt = ends is String ? DateTime.tryParse(ends) : null;
+    if (event is! String ||
+        event.trim().isEmpty ||
+        (headline != null && headline is! String) ||
+        startsAt == null ||
+        endsAt == null ||
+        uri == null ||
+        uri.scheme != 'https' ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty ||
+        ref is! Map<String, dynamic>) {
+      return null;
+    }
+    try {
+      return CloudWeatherAlert(
+        event: event,
+        headline: headline as String?,
+        startsAt: startsAt,
+        endsAt: endsAt,
+        sourceUrl: uri,
+        evidence: CloudFaqEvidence.fromJson(ref),
+      );
+    } on FormatException {
+      return null;
+    }
+  }
+}
+
+/// Consecutive completed observed hot or cold days.
+class CloudWeatherRun {
+  const CloudWeatherRun({
+    required this.kind,
+    required this.days,
+    required this.lastDay,
+  });
+  final String kind;
+  final int days;
+  final String lastDay;
+
+  static CloudWeatherRun? tryParse(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final kind = json['kind'];
+    final days = json['days'];
+    final lastDay = json['last_day'];
+    if (kind is! String ||
+        kind.isEmpty ||
+        days is! int ||
+        days < 1 ||
+        lastDay is! String ||
+        !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(lastDay)) {
+      return null;
+    }
+    return CloudWeatherRun(kind: kind, days: days, lastDay: lastDay);
+  }
+}
+
+/// Home-level weather tip with the trigger that activated it.
+class CloudWeatherHomeTip {
+  const CloudWeatherHomeTip({required this.tip, required this.trigger});
+  final CloudResearchTip tip;
+  final String trigger;
+
+  static CloudWeatherHomeTip? tryParse(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final trigger = json['trigger'];
+    final tip = CloudResearchTip.tryParse(json['fact']);
+    if (tip == null || trigger is! String || trigger.isEmpty) return null;
+    return CloudWeatherHomeTip(tip: tip, trigger: trigger);
+  }
+}
+
+/// Page weather block; sent only with capability `weather_tips_v1`.
+class CloudWeather {
+  const CloudWeather({
+    required this.available,
+    required this.reason,
+    required this.provider,
+    required this.attribution,
+    required this.alerts,
+    required this.runs,
+    required this.homeTips,
+  });
+  final bool available;
+  final String? reason;
+  final String? provider;
+  final String? attribution;
+  final List<CloudWeatherAlert> alerts;
+  final List<CloudWeatherRun> runs;
+  final List<CloudWeatherHomeTip> homeTips;
+
+  /// Returns null when the block is absent or its status is not recognised.
+  static CloudWeather? tryParse(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final status = json['status'];
+    if (status != 'available' && status != 'unavailable') return null;
+    final available = status == 'available';
+    List<T> rows<T extends Object>(
+      String key,
+      T? Function(Object?) parse,
+      int max,
+    ) {
+      final raw = json[key];
+      if (!available || raw is! List) return const [];
+      return List.unmodifiable(raw.map(parse).nonNulls.take(max));
+    }
+
+    final reason = json['reason'];
+    final provider = json['provider'];
+    final attribution = json['attribution'];
+    return CloudWeather(
+      available: available,
+      reason: reason is String ? reason : null,
+      provider: provider is String ? provider : null,
+      attribution: attribution is String ? attribution : null,
+      alerts: rows('alerts', CloudWeatherAlert.tryParse, 100),
+      runs: rows('runs', CloudWeatherRun.tryParse, 2),
+      homeTips: rows('home_tips', CloudWeatherHomeTip.tryParse, 3),
+    );
+  }
+}
+
+/// Weather trigger on a device tip, with the optional time-of-use cost line.
+class CloudWeatherContext {
+  const CloudWeatherContext({
+    required this.trigger,
+    required this.measuredUse,
+    this.touSavingPerKwh,
+    this.currency,
+    this.peakStartLocal,
+    this.peakEndLocal,
+  });
+  final String trigger;
+  final bool measuredUse;
+  final String? touSavingPerKwh;
+  final String? currency;
+  final String? peakStartLocal;
+  final String? peakEndLocal;
+
+  /// Returns null when absent or malformed; the action itself is kept.
+  static CloudWeatherContext? tryParse(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final trigger = json['trigger'];
+    final measured = json['measured_use'];
+    if (trigger is! String || trigger.isEmpty || measured is! bool) return null;
+    final saving = json['tou_saving_per_kwh'];
+    final currency = json['currency'];
+    final start = json['peak_start_local'];
+    final end = json['peak_end_local'];
+    final clock = RegExp(r'^([01][0-9]|2[0-3]):[0-5][0-9]$');
+    final hasCost =
+        saving is String &&
+        _money.hasMatch(saving) &&
+        currency == 'USD' &&
+        start is String &&
+        clock.hasMatch(start) &&
+        end is String &&
+        clock.hasMatch(end);
+    return CloudWeatherContext(
+      trigger: trigger,
+      measuredUse: measured,
+      touSavingPerKwh: hasCost ? saving : null,
+      currency: hasCost ? currency : null,
+      peakStartLocal: hasCost ? start : null,
+      peakEndLocal: hasCost ? end : null,
+    );
+  }
+}
+
 class CloudRecommendation {
   const CloudRecommendation({
     required this.ruleId,
@@ -93,6 +291,7 @@ class CloudRecommendation {
     this.sourceUrl,
     this.researchTip,
     this.tipCategory = CloudRecommendationTipCategory.general,
+    this.weatherContext,
   });
   final String ruleId;
   final String applianceId;
@@ -109,6 +308,7 @@ class CloudRecommendation {
   final Uri? sourceUrl;
   final CloudResearchTip? researchTip;
   final CloudRecommendationTipCategory tipCategory;
+  final CloudWeatherContext? weatherContext;
 
   factory CloudRecommendation.fromJson(
     Map<String, dynamic> json,
@@ -233,14 +433,16 @@ class CloudRecommendation {
       sourceUrl: sourceUrl,
       researchTip: researchTip,
       tipCategory: tipCategory,
+      weatherContext: CloudWeatherContext.tryParse(json['weather_context']),
     );
   }
 }
 
 class CloudRecommendationBatch {
-  const CloudRecommendationBatch(this.actions, this.asOf);
+  const CloudRecommendationBatch(this.actions, this.asOf, {this.weather});
   final List<CloudRecommendation> actions;
   final DateTime asOf;
+  final CloudWeather? weather;
 
   factory CloudRecommendationBatch.fromJson(
     Map<String, dynamic> json,
@@ -268,6 +470,10 @@ class CloudRecommendationBatch {
     if (keys.length != actions.length) {
       throw const FormatException('Duplicate cloud recommendation');
     }
-    return CloudRecommendationBatch(actions, asOf);
+    return CloudRecommendationBatch(
+      actions,
+      asOf,
+      weather: CloudWeather.tryParse(json['weather']),
+    );
   }
 }
