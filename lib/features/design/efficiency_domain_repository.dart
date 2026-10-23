@@ -60,6 +60,7 @@ class EfficiencyDomainSnapshot {
     required this.operatingEstimates,
     required this.recommendations,
     this.trailing30Days,
+    this.applianceNames = const {},
   });
 
   final EfficiencyPage page;
@@ -73,6 +74,9 @@ class EfficiencyDomainSnapshot {
   final List<CloudEstimate> operatingEstimates;
   final List<CloudRecommendation> recommendations;
   final CloudHouseholdEnergyTrends? trailing30Days;
+
+  /// Lower-case appliance id to display name, for measured Efficiency copy.
+  final Map<String, String> applianceNames;
 
   String get homeId => energy.homeId;
   CloudEnergyAllocation get totals => energy.totals;
@@ -157,6 +161,9 @@ class EfficiencyDomainRepository {
         operatingEstimates: List.unmodifiable(estimates),
         recommendations: List.unmodifiable(recommendations),
         trailing30Days: results[2] as CloudHouseholdEnergyTrends?,
+        applianceNames: {
+          for (final a in appliances) a.id.toLowerCase(): a.name,
+        },
       );
     } catch (_) {
       if (stale()) return null;

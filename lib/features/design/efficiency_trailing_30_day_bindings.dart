@@ -69,7 +69,8 @@ List<DesignTextBinding>? prepareEfficiencyTrailing30DaysBindings(
   }
   final formatted = formatDashboardUsd(total);
   if (formatted == null) return null;
-  if (trailing30Days.dataMode == 'household') return null;
+  final measured = summary.evidenceBasis == 'measured';
+  if (trailing30Days.dataMode == 'household' && !measured) return null;
   final opportunity = formatDashboardUsd(summary.identifiedOpportunity);
   final optimalBase = formatDashboardUsd(summary.optimalBase);
   final night = formatDashboardUsd(summary.nightTotalOpportunity);
@@ -78,20 +79,18 @@ List<DesignTextBinding>? prepareEfficiencyTrailing30DaysBindings(
   final habits = formatDashboardUsd(summary.habitsOpportunity);
   if (opportunity == null ||
       optimalBase == null ||
-      night == null ||
-      away == null ||
-      peak == null ||
-      habits == null) {
+      (!measured &&
+          (night == null || away == null || peak == null || habits == null))) {
     return null;
   }
   return [
     DesignTextBinding('efficiency_text_006', opportunity),
     DesignTextBinding('efficiency_text_009', formatted),
     DesignTextBinding('efficiency_text_011', optimalBase),
-    DesignTextBinding('efficiency_text_015', night),
-    DesignTextBinding('efficiency_text_017', away),
-    DesignTextBinding('efficiency_text_019', peak),
-    DesignTextBinding('efficiency_text_021', habits),
+    if (night != null) DesignTextBinding('efficiency_text_015', night),
+    if (away != null) DesignTextBinding('efficiency_text_017', away),
+    if (peak != null) DesignTextBinding('efficiency_text_019', peak),
+    if (habits != null) DesignTextBinding('efficiency_text_021', habits),
   ];
 }
 
@@ -129,7 +128,7 @@ String buildEfficiencyTrailing30DaysChartScript(
   const labels = ['Night', 'Away', 'Peak', 'Habits'];
   for (let i = 0; i < 4; i++) {
     bar.children[i].style.width = payload.widths[i] + '%';
-    bar.children[i].title = labels[i] + ': ' + payload.amounts[i];
+    bar.children[i].title = payload.amounts[i] == null ? '' : labels[i] + ': ' + payload.amounts[i];
   }
   return true;
 })()

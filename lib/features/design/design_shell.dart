@@ -29,6 +29,7 @@ import '../discovery/discovery_api.dart'
     show HubRequestException, PairingException;
 import 'device_review_sheet.dart';
 import 'efficiency_domain_repository.dart';
+import 'efficiency_measured_copy.dart';
 import 'efficiency_trailing_30_day_bindings.dart';
 import 'dashboard_chart_projection.dart';
 import 'dashboard_chart_renderer.dart';
@@ -190,6 +191,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
   List<DesignTextBinding>? _efficiencyBindings;
   DashboardTopSavingsBindings? _topSavingsBindings;
   CloudEfficiencyTrailing30Days? _efficiencyChartSummary;
+  Map<String, List<String>>? _efficiencyCopy;
   int? _peerTabScrollY;
   DesignPageTicket? _pageTicket;
   Timer? _tourTimer;
@@ -666,6 +668,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     _efficiencyBindings = null;
     _topSavingsBindings = null;
     _efficiencyChartSummary = null;
+    _efficiencyCopy = null;
     _pageTicket = null;
     _bindingGate.clear();
   }
@@ -699,6 +702,12 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
       }
       _efficiencyBindings = bindings;
       _efficiencyChartSummary = source.trailing30Days?.efficiencyTrailing30Days;
+      _efficiencyCopy = _efficiencyChartSummary == null
+          ? null
+          : efficiencyMeasuredCopy(
+              _efficiencyChartSummary!,
+              source.applianceNames,
+            );
       await _applyEfficiencyBindings(page, generation);
       return;
     }
@@ -1411,6 +1420,12 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
         await _controller.runJavaScriptReturningResult(
           buildEfficiencyTrailing30DaysChartScript(ticket, chart),
         );
+        final copy = _efficiencyCopy;
+        if (copy != null && _isCurrentPageLoad(page, generation)) {
+          await _controller.runJavaScriptReturningResult(
+            buildEfficiencyMeasuredCopyScript(ticket, chart, copy),
+          );
+        }
       }
     } catch (_) {
       // Keep the packaged spend value when coverage is unavailable.

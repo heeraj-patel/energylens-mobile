@@ -562,162 +562,373 @@ List<CloudDeviceEnergyAllocation> _deviceAllocations(Object? raw) {
   return List.unmodifiable(rows);
 }
 
-/// Final month-to-date Efficiency amounts calculated by Cloud for a demo home.
-/// Mobile keeps these amounts as typed API values and performs no savings math.
-class CloudEfficiencyMonthToDate {
-  const CloudEfficiencyMonthToDate({
-    required this.monthToDateCost,
-    required this.identifiedOpportunity,
-    required this.optimalBase,
-    required this.wasteOpportunity,
-    required this.awayOpportunity,
-    required this.peakRatesOpportunity,
-    required this.habitsOpportunity,
-    required this.nightTotalOpportunity,
-    required this.awayTotalOpportunity,
-    required this.chartSegmentWidthPercent,
+const _efficiencyBasisValues = {
+  'measured',
+  'estimated',
+  'not_configured',
+  'flat_tariff',
+  'insufficient_data',
+  'unmetered',
+  'fuel_not_applicable',
+};
+
+String _efficiencyBasis(Object? value) =>
+    _enumValue(value, _efficiencyBasisValues, 'efficiency basis');
+
+/// Why each measured efficiency amount is set or null.
+class CloudEfficiencyBases {
+  const CloudEfficiencyBases({
+    required this.night,
+    required this.away,
+    required this.peakRates,
+    required this.habits,
+    required this.waste,
   });
 
-  final CloudEnergyMoney monthToDateCost;
-  final CloudEnergyMoney identifiedOpportunity;
-  final CloudEnergyMoney optimalBase;
-  final CloudEnergyMoney wasteOpportunity;
-  final CloudEnergyMoney awayOpportunity;
-  final CloudEnergyMoney peakRatesOpportunity;
-  final CloudEnergyMoney habitsOpportunity;
-  final CloudEnergyMoney nightTotalOpportunity;
-  final CloudEnergyMoney awayTotalOpportunity;
-  final CloudEfficiencyChartSegmentWidthPercent chartSegmentWidthPercent;
+  final String night;
+  final String away;
+  final String peakRates;
+  final String habits;
+  final String waste;
+}
 
-  factory CloudEfficiencyMonthToDate.fromJson(Object? value) {
-    final json = _object(value, 'efficiency month-to-date');
-    _keys(json, const {
-      'month_to_date_cost',
-      'identified_opportunity',
-      'optimal_base',
-      'waste_opportunity',
-      'away_opportunity',
-      'peak_rates_opportunity',
-      'habits_opportunity',
-      'night_total_opportunity',
-      'away_total_opportunity',
-      'chart_segment_width_percent',
-      'waste_timing_basis',
-      'evidence_basis',
-    });
-    if (json['evidence_basis'] != 'synthetic' ||
-        json['waste_timing_basis'] != 'unknown_75_25_demo_fallback') {
-      throw const FormatException('Invalid Efficiency evidence basis');
+class CloudEfficiencyNightWindow {
+  const CloudEfficiencyNightWindow({
+    required this.startLocal,
+    required this.endLocal,
+    required this.timezone,
+  });
+
+  final String startLocal;
+  final String endLocal;
+  final String timezone;
+
+  factory CloudEfficiencyNightWindow.fromJson(Object? value) {
+    final json = _object(value, 'efficiency night window');
+    _keys(json, const {'start_local', 'end_local', 'timezone'});
+    String time(String key) {
+      final v = json[key];
+      if (v is String &&
+          RegExp(r'^([01][0-9]|2[0-3]):[0-5][0-9]$').hasMatch(v)) {
+        return v;
+      }
+      throw const FormatException('Invalid Efficiency night window');
     }
-    final values = [
-      CloudEnergyMoney.fromJson(json['month_to_date_cost']),
-      CloudEnergyMoney.fromJson(json['identified_opportunity']),
-      CloudEnergyMoney.fromJson(json['optimal_base']),
-      CloudEnergyMoney.fromJson(json['waste_opportunity']),
-      CloudEnergyMoney.fromJson(json['away_opportunity']),
-      CloudEnergyMoney.fromJson(json['peak_rates_opportunity']),
-      CloudEnergyMoney.fromJson(json['habits_opportunity']),
-      CloudEnergyMoney.fromJson(json['night_total_opportunity']),
-      CloudEnergyMoney.fromJson(json['away_total_opportunity']),
-    ];
-    if (values.any((value) => value.currency != 'USD')) {
-      throw const FormatException('Invalid Efficiency currency');
-    }
-    return CloudEfficiencyMonthToDate(
-      monthToDateCost: values[0],
-      identifiedOpportunity: values[1],
-      optimalBase: values[2],
-      wasteOpportunity: values[3],
-      awayOpportunity: values[4],
-      peakRatesOpportunity: values[5],
-      habitsOpportunity: values[6],
-      nightTotalOpportunity: values[7],
-      awayTotalOpportunity: values[8],
-      chartSegmentWidthPercent:
-          CloudEfficiencyChartSegmentWidthPercent.fromJson(
-            json['chart_segment_width_percent'],
-          ),
+
+    return CloudEfficiencyNightWindow(
+      startLocal: time('start_local'),
+      endLocal: time('end_local'),
+      timezone: _nonempty(json['timezone'], 'night window timezone'),
     );
   }
 }
 
-/// Final trailing 30-day Efficiency amounts calculated by Cloud for a demo home.
-/// Mobile keeps these amounts as typed API values and performs no savings math.
-class CloudEfficiencyTrailing30Days {
-  const CloudEfficiencyTrailing30Days({
-    required this.periodCost,
-    required this.identifiedOpportunity,
-    required this.optimalBase,
-    required this.wasteOpportunity,
-    required this.awayOpportunity,
-    required this.peakRatesOpportunity,
-    required this.habitsOpportunity,
-    required this.nightTotalOpportunity,
-    required this.awayTotalOpportunity,
-    required this.chartSegmentWidthPercent,
+class CloudEfficiencyDevice {
+  const CloudEfficiencyDevice({
+    required this.applianceId,
+    required this.night,
+    required this.away,
+    required this.peak,
+    required this.habits,
+    required this.nightBasis,
+    required this.awayBasis,
+    required this.peakBasis,
+    required this.habitsBasis,
   });
+
+  final String applianceId;
+  final CloudEnergyMoney? night;
+  final CloudEnergyMoney? away;
+  final CloudEnergyMoney? peak;
+  final CloudEnergyMoney? habits;
+  final String nightBasis;
+  final String awayBasis;
+  final String peakBasis;
+  final String habitsBasis;
+
+  factory CloudEfficiencyDevice.fromJson(Object? value) {
+    final json = _object(value, 'efficiency device');
+    _keys(json, const {
+      'appliance_id',
+      'night',
+      'away',
+      'peak',
+      'habits',
+      'basis',
+    });
+    final id = json['appliance_id'];
+    if (id is! String || id.isEmpty) {
+      throw const FormatException('Invalid Efficiency device');
+    }
+    final basis = _object(json['basis'], 'efficiency device basis');
+    _keys(basis, const {'night', 'away', 'peak', 'habits'});
+    return CloudEfficiencyDevice(
+      applianceId: id,
+      night: _nullable(json['night'], CloudEnergyMoney.fromJson),
+      away: _nullable(json['away'], CloudEnergyMoney.fromJson),
+      peak: _nullable(json['peak'], CloudEnergyMoney.fromJson),
+      habits: _nullable(json['habits'], CloudEnergyMoney.fromJson),
+      nightBasis: _efficiencyBasis(basis['night']),
+      awayBasis: _efficiencyBasis(basis['away']),
+      peakBasis: _efficiencyBasis(basis['peak']),
+      habitsBasis: _efficiencyBasis(basis['habits']),
+    );
+  }
+}
+
+/// Parsed efficiency summary shared by the month-to-date and trailing-30-day
+/// objects. Synthetic keeps every amount; measured amounts may be null.
+class _EfficiencyParts {
+  const _EfficiencyParts({
+    required this.cost,
+    required this.identified,
+    required this.optimalBase,
+    required this.waste,
+    required this.away,
+    required this.peak,
+    required this.habits,
+    required this.night,
+    required this.awayTotal,
+    required this.widths,
+    required this.evidenceBasis,
+    required this.bases,
+    required this.nightWindow,
+    required this.awaySource,
+    required this.devices,
+  });
+
+  final CloudEnergyMoney cost;
+  final CloudEnergyMoney identified;
+  final CloudEnergyMoney optimalBase;
+  final CloudEnergyMoney? waste;
+  final CloudEnergyMoney? away;
+  final CloudEnergyMoney? peak;
+  final CloudEnergyMoney? habits;
+  final CloudEnergyMoney? night;
+  final CloudEnergyMoney? awayTotal;
+  final CloudEfficiencyChartSegmentWidthPercent widths;
+  final String evidenceBasis;
+  final CloudEfficiencyBases? bases;
+  final CloudEfficiencyNightWindow? nightWindow;
+  final String? awaySource;
+  final List<CloudEfficiencyDevice> devices;
+}
+
+const _efficiencyCommonKeys = {
+  'identified_opportunity',
+  'optimal_base',
+  'waste_opportunity',
+  'away_opportunity',
+  'peak_rates_opportunity',
+  'habits_opportunity',
+  'night_total_opportunity',
+  'away_total_opportunity',
+  'chart_segment_width_percent',
+  'waste_timing_basis',
+  'evidence_basis',
+};
+
+const _efficiencyMeasuredKeys = {
+  'night_basis',
+  'away_basis',
+  'peak_rates_basis',
+  'habits_basis',
+  'waste_basis',
+  'night_window',
+  'away_source',
+  'devices',
+};
+
+_EfficiencyParts _parseEfficiency(Map<String, dynamic> json, String costKey) {
+  final measured = json['evidence_basis'] == 'measured';
+  _keys(
+    json,
+    {
+      costKey,
+      ..._efficiencyCommonKeys,
+      if (measured) ..._efficiencyMeasuredKeys,
+    },
+    optional: const {'devices'},
+  );
+  if (json['evidence_basis'] != 'synthetic' && !measured) {
+    throw const FormatException('Invalid Efficiency evidence basis');
+  }
+  if (json['waste_timing_basis'] !=
+      (measured ? 'measured_local_time' : 'unknown_75_25_demo_fallback')) {
+    throw const FormatException('Invalid Efficiency evidence basis');
+  }
+  CloudEnergyMoney money(String key) => CloudEnergyMoney.fromJson(json[key]);
+  CloudEnergyMoney? amount(String key) =>
+      measured ? _nullable(json[key], CloudEnergyMoney.fromJson) : money(key);
+  final cost = money(costKey);
+  final identified = money('identified_opportunity');
+  final optimalBase = money('optimal_base');
+  final waste = amount('waste_opportunity');
+  final away = amount('away_opportunity');
+  final peak = amount('peak_rates_opportunity');
+  final habits = amount('habits_opportunity');
+  final night = amount('night_total_opportunity');
+  final awayTotal = amount('away_total_opportunity');
+  final all = [
+    cost,
+    identified,
+    optimalBase,
+    waste,
+    away,
+    peak,
+    habits,
+    night,
+    awayTotal,
+  ];
+  if (all.any((value) => value != null && value.currency != 'USD')) {
+    throw const FormatException('Invalid Efficiency currency');
+  }
+  final widths = CloudEfficiencyChartSegmentWidthPercent.fromJson(
+    json['chart_segment_width_percent'],
+  );
+  if (!measured) {
+    return _EfficiencyParts(
+      cost: cost,
+      identified: identified,
+      optimalBase: optimalBase,
+      waste: waste,
+      away: away,
+      peak: peak,
+      habits: habits,
+      night: night,
+      awayTotal: awayTotal,
+      widths: widths,
+      evidenceBasis: 'synthetic',
+      bases: null,
+      nightWindow: null,
+      awaySource: null,
+      devices: const [],
+    );
+  }
+  final devices = json['devices'];
+  if (devices != null && devices is! List) {
+    throw const FormatException('Invalid Efficiency devices');
+  }
+  return _EfficiencyParts(
+    cost: cost,
+    identified: identified,
+    optimalBase: optimalBase,
+    waste: waste,
+    away: away,
+    peak: peak,
+    habits: habits,
+    night: night,
+    awayTotal: awayTotal,
+    widths: widths,
+    evidenceBasis: 'measured',
+    bases: CloudEfficiencyBases(
+      night: _efficiencyBasis(json['night_basis']),
+      away: _efficiencyBasis(json['away_basis']),
+      peakRates: _efficiencyBasis(json['peak_rates_basis']),
+      habits: _efficiencyBasis(json['habits_basis']),
+      waste: _efficiencyBasis(json['waste_basis']),
+    ),
+    nightWindow: CloudEfficiencyNightWindow.fromJson(json['night_window']),
+    awaySource: _enumValue(json['away_source'], const {
+      'user_schedule',
+      'baseline_inferred',
+      'default_schedule',
+      'none',
+    }, 'away source'),
+    devices: List.unmodifiable(
+      ((devices as List?) ?? const []).map(CloudEfficiencyDevice.fromJson),
+    ),
+  );
+}
+
+/// Efficiency amounts calculated by Cloud, month to date. Mobile keeps them as
+/// typed API values and performs no savings math. Measured amounts may be null.
+class CloudEfficiencyMonthToDate {
+  CloudEfficiencyMonthToDate._(_EfficiencyParts p)
+    : monthToDateCost = p.cost,
+      identifiedOpportunity = p.identified,
+      optimalBase = p.optimalBase,
+      wasteOpportunity = p.waste,
+      awayOpportunity = p.away,
+      peakRatesOpportunity = p.peak,
+      habitsOpportunity = p.habits,
+      nightTotalOpportunity = p.night,
+      awayTotalOpportunity = p.awayTotal,
+      chartSegmentWidthPercent = p.widths,
+      evidenceBasis = p.evidenceBasis,
+      bases = p.bases,
+      nightWindow = p.nightWindow,
+      awaySource = p.awaySource,
+      devices = p.devices;
+
+  final CloudEnergyMoney monthToDateCost;
+  final CloudEnergyMoney identifiedOpportunity;
+  final CloudEnergyMoney optimalBase;
+  final CloudEnergyMoney? wasteOpportunity;
+  final CloudEnergyMoney? awayOpportunity;
+  final CloudEnergyMoney? peakRatesOpportunity;
+  final CloudEnergyMoney? habitsOpportunity;
+  final CloudEnergyMoney? nightTotalOpportunity;
+  final CloudEnergyMoney? awayTotalOpportunity;
+  final CloudEfficiencyChartSegmentWidthPercent chartSegmentWidthPercent;
+  final String evidenceBasis;
+  final CloudEfficiencyBases? bases;
+  final CloudEfficiencyNightWindow? nightWindow;
+  final String? awaySource;
+  final List<CloudEfficiencyDevice> devices;
+
+  factory CloudEfficiencyMonthToDate.fromJson(Object? value) =>
+      CloudEfficiencyMonthToDate._(
+        _parseEfficiency(
+          _object(value, 'efficiency month-to-date'),
+          'month_to_date_cost',
+        ),
+      );
+}
+
+/// Efficiency amounts calculated by Cloud for the trailing 30 days. Mobile
+/// keeps them as typed API values and performs no savings math.
+class CloudEfficiencyTrailing30Days {
+  CloudEfficiencyTrailing30Days._(_EfficiencyParts p)
+    : periodCost = p.cost,
+      identifiedOpportunity = p.identified,
+      optimalBase = p.optimalBase,
+      wasteOpportunity = p.waste,
+      awayOpportunity = p.away,
+      peakRatesOpportunity = p.peak,
+      habitsOpportunity = p.habits,
+      nightTotalOpportunity = p.night,
+      awayTotalOpportunity = p.awayTotal,
+      chartSegmentWidthPercent = p.widths,
+      evidenceBasis = p.evidenceBasis,
+      bases = p.bases,
+      nightWindow = p.nightWindow,
+      awaySource = p.awaySource,
+      devices = p.devices;
 
   final CloudEnergyMoney periodCost;
   final CloudEnergyMoney identifiedOpportunity;
   final CloudEnergyMoney optimalBase;
-  final CloudEnergyMoney wasteOpportunity;
-  final CloudEnergyMoney awayOpportunity;
-  final CloudEnergyMoney peakRatesOpportunity;
-  final CloudEnergyMoney habitsOpportunity;
-  final CloudEnergyMoney nightTotalOpportunity;
-  final CloudEnergyMoney awayTotalOpportunity;
+  final CloudEnergyMoney? wasteOpportunity;
+  final CloudEnergyMoney? awayOpportunity;
+  final CloudEnergyMoney? peakRatesOpportunity;
+  final CloudEnergyMoney? habitsOpportunity;
+  final CloudEnergyMoney? nightTotalOpportunity;
+  final CloudEnergyMoney? awayTotalOpportunity;
   final CloudEfficiencyChartSegmentWidthPercent chartSegmentWidthPercent;
+  final String evidenceBasis;
+  final CloudEfficiencyBases? bases;
+  final CloudEfficiencyNightWindow? nightWindow;
+  final String? awaySource;
+  final List<CloudEfficiencyDevice> devices;
 
-  factory CloudEfficiencyTrailing30Days.fromJson(Object? value) {
-    final json = _object(value, 'efficiency trailing 30 days');
-    _keys(json, const {
-      'period_cost',
-      'identified_opportunity',
-      'optimal_base',
-      'waste_opportunity',
-      'away_opportunity',
-      'peak_rates_opportunity',
-      'habits_opportunity',
-      'night_total_opportunity',
-      'away_total_opportunity',
-      'chart_segment_width_percent',
-      'waste_timing_basis',
-      'evidence_basis',
-    });
-    if (json['evidence_basis'] != 'synthetic' ||
-        json['waste_timing_basis'] != 'unknown_75_25_demo_fallback') {
-      throw const FormatException('Invalid Efficiency evidence basis');
-    }
-    final values = [
-      CloudEnergyMoney.fromJson(json['period_cost']),
-      CloudEnergyMoney.fromJson(json['identified_opportunity']),
-      CloudEnergyMoney.fromJson(json['optimal_base']),
-      CloudEnergyMoney.fromJson(json['waste_opportunity']),
-      CloudEnergyMoney.fromJson(json['away_opportunity']),
-      CloudEnergyMoney.fromJson(json['peak_rates_opportunity']),
-      CloudEnergyMoney.fromJson(json['habits_opportunity']),
-      CloudEnergyMoney.fromJson(json['night_total_opportunity']),
-      CloudEnergyMoney.fromJson(json['away_total_opportunity']),
-    ];
-    if (values.any((value) => value.currency != 'USD')) {
-      throw const FormatException('Invalid Efficiency currency');
-    }
-    return CloudEfficiencyTrailing30Days(
-      periodCost: values[0],
-      identifiedOpportunity: values[1],
-      optimalBase: values[2],
-      wasteOpportunity: values[3],
-      awayOpportunity: values[4],
-      peakRatesOpportunity: values[5],
-      habitsOpportunity: values[6],
-      nightTotalOpportunity: values[7],
-      awayTotalOpportunity: values[8],
-      chartSegmentWidthPercent:
-          CloudEfficiencyChartSegmentWidthPercent.fromJson(
-            json['chart_segment_width_percent'],
-          ),
-    );
-  }
+  factory CloudEfficiencyTrailing30Days.fromJson(Object? value) =>
+      CloudEfficiencyTrailing30Days._(
+        _parseEfficiency(
+          _object(value, 'efficiency trailing 30 days'),
+          'period_cost',
+        ),
+      );
 }
 
 class CloudEfficiencyChartSegmentWidthPercent {
