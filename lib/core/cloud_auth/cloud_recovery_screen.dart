@@ -34,6 +34,7 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
   late final TextEditingController _email;
   final _password = TextEditingController();
   final _confirm = TextEditingController();
+  final _errorVisibilityKey = GlobalKey();
   String? _capturedToken;
   bool _busy = false;
   bool _requested = false;
@@ -57,6 +58,21 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
     _confirm.dispose();
     _capturedToken = null;
     super.dispose();
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _error = message);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final errorContext = _errorVisibilityKey.currentContext;
+      if (!mounted || errorContext == null) return;
+      Scrollable.ensureVisible(
+        errorContext,
+        duration: const Duration(milliseconds: 200),
+        alignment: 0.6,
+      );
+    });
   }
 
   Future<void> _request() async {
@@ -130,13 +146,13 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
     final identity = _email.text.trim().toLowerCase();
     if (widget.usernameMode &&
         !RegExp(r'^[a-z0-9][a-z0-9._-]{2,63}$').hasMatch(identity)) {
-      setState(() => _error = 'Could not reset the password. Try again later.');
+      _showError('Could not reset the password. Try again later.');
       _password.clear();
       _confirm.clear();
       return;
     }
     if (!widget.usernameMode && token == null) {
-      setState(() => _error = 'Paste the reset link from your email.');
+      _showError('Paste the reset link from your email.');
       _password.clear();
       _confirm.clear();
       return;
@@ -147,16 +163,14 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
         utf8.encode(password).length > 1024 ||
         password.codeUnits.contains(0) ||
         password != _confirm.text) {
-      setState(
-        () =>
-            _error = 'Enter a matching new password of at least 12 characters.',
-      );
+      _showError('Enter a matching new password of at least 12 characters.');
       _capturedToken = null;
       _password.clear();
       _confirm.clear();
       return;
     }
     _capturedToken = null;
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _busy = true;
       _error = null;
@@ -174,19 +188,15 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
         setState(() => _completed = true);
       }
     } on CloudLocalAuthException catch (error) {
-      if (mounted) {
-        setState(
-          () => _error = !widget.usernameMode && error.statusCode == 401
-              ? 'This reset link has expired or was already used. Request a new link.'
-              : isInputRejectionStatus(error.statusCode)
-              ? 'Could not reset the password. Try again later.'
-              : internalErrorMessage,
-        );
-      }
+      _showError(
+        !widget.usernameMode && error.statusCode == 401
+            ? 'This reset link has expired or was already used. Request a new link.'
+            : isInputRejectionStatus(error.statusCode)
+            ? 'Could not reset the password. Try again later.'
+            : internalErrorMessage,
+      );
     } catch (_) {
-      if (mounted) {
-        setState(() => _error = internalErrorMessage);
-      }
+      _showError(internalErrorMessage);
     } finally {
       _password.clear();
       _confirm.clear();
@@ -274,11 +284,26 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
                     controller: _confirm,
                     enabled: !_busy,
                     obscureText: true,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) {
+                      if (!_busy &&
+                          (widget.usernameMode || _capturedToken != null)) {
+                        _reset();
+                      }
+                    },
                     decoration: const InputDecoration(
                       labelText: 'Confirm new password',
                     ),
                   ),
                   const SizedBox(height: 12),
+                  if (_error != null) ...[
+                    Semantics(
+                      key: _errorVisibilityKey,
+                      liveRegion: true,
+                      child: Text(_error!, key: const Key('recoveryError')),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   FilledButton(
                     key: const Key('submitPasswordReset'),
                     onPressed:
@@ -286,7 +311,23 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
                             (!widget.usernameMode && _capturedToken == null)
                         ? null
                         : _reset,
-                    child: const Text('Reset password'),
+                    child: _busy
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Text('Reset password'),
+                            ],
+                          )
+                        : const Text('Reset password'),
                   ),
                 ],
               ] else
@@ -294,9 +335,10 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
                   'Password updated. Return to sign in with your new password.',
                   key: Key('recoveryCompleted'),
                 ),
-              if (_error != null) ...[
+              if (_error != null && (!_showReset || _completed)) ...[
                 const SizedBox(height: 12),
                 Semantics(
+                  key: _errorVisibilityKey,
                   liveRegion: true,
                   child: Text(_error!, key: const Key('recoveryError')),
                 ),

@@ -693,6 +693,118 @@ void main() {
     api.close();
     local.close();
   });
+
+  testWidgets('User ID reset 204 signs in and leaves recovery route', (
+    tester,
+  ) async {
+    const localConfig = CloudAuthConfig(
+      issuer: '',
+      audience: '',
+      clientId: '',
+      redirectUrl: '',
+      apiUrl: 'https://api.example',
+      localAuthEnabled: true,
+    );
+    var resets = 0;
+    var logins = 0;
+    final local = CloudLocalAuthClient(
+      baseUrl: localConfig.apiUrl,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/local/reset-password') {
+          resets++;
+          expect(jsonDecode(request.body), {
+            'username': 'alice',
+            'password': 'replacement password 123',
+          });
+          return http.Response('', 204);
+        }
+        if (request.url.path == '/v1/auth/local/login') {
+          logins++;
+          expect(jsonDecode(request.body), {
+            'username': 'alice',
+            'password': 'replacement password 123',
+          });
+          final expiry = DateTime.now().toUtc().add(
+            const Duration(minutes: 15),
+          );
+          return http.Response(
+            '{"token_type":"Bearer","access_token":"reset-access",'
+            '"refresh_token":"reset-refresh",'
+            '"access_expires_at":"${expiry.toIso8601String()}",'
+            '"refresh_expires_at":"${expiry.add(const Duration(days: 30)).toIso8601String()}"}',
+            200,
+          );
+        }
+        return http.Response('', 404);
+      }),
+    );
+    final store = Store()..tokens = null;
+    final session = CloudSession(
+      config: localConfig,
+      store: store,
+      authenticator: Auth(),
+      localAuth: local,
+    );
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config') {
+          return http.Response(
+            '{"schema_version":1,"methods":["username_password"],'
+            '"registration_enabled":false,"email_verification_required":false,'
+            '"password_recovery_enabled":true,"session_logout_revokes_access":true}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/me') {
+          expect(request.headers['Authorization'], 'Bearer reset-access');
+          return http.Response(
+            '{"id":"$verifiedAccountId","username":"alice",'
+            '"email_verified":true,"auth_method":"username_password",'
+            '"display_name":"Alice"}',
+            200,
+          );
+        }
+        if (request.url.path == '/v1/homes') {
+          return http.Response('{"homes":[]}', 200);
+        }
+        return http.Response('', 404);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          session: session,
+          api: api,
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
+          homeBuilder: (_, _, _, _) => const Text('Private Home'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Forgot password?'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('recoveryUserId')), ' ALICE ');
+    await tester.enterText(
+      find.byKey(const Key('resetPassword')),
+      'replacement password 123',
+    );
+    await tester.enterText(
+      find.byKey(const Key('resetConfirm')),
+      'replacement password 123',
+    );
+    await tester.ensureVisible(find.byKey(const Key('submitPasswordReset')));
+    await tester.tap(find.byKey(const Key('submitPasswordReset')));
+    await tester.pumpAndSettle();
+    expect(resets, 1);
+    expect(logins, 1);
+    expect(store.tokens?.accessToken, 'reset-access');
+    expect(find.byKey(const Key('recoveryUserId')), findsNothing);
+    expect(find.text('Set up your home'), findsOneWidget);
+    api.close();
+    local.close();
+  });
   testWidgets('native design builder receives gate-owned verified lifecycle', (
     tester,
   ) async {
