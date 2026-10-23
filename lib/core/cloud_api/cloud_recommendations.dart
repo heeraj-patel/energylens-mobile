@@ -14,6 +14,13 @@ const _ruleIds = {
   'refrigerator.maintenance',
   'air_conditioner.schedule',
   'space_heater.schedule',
+  'furnace.gas_efficiency_check',
+  'furnace.gas_standby',
+  'boiler.gas_efficiency_check',
+  'boiler.gas_standby',
+  'water_heater.gas_cost',
+  'water_heater.gas_efficiency_check',
+  'space_heater.gas_schedule',
   'general.gather_information',
 };
 const _nextQuestions = {
@@ -23,6 +30,7 @@ const _nextQuestions = {
   'cycles_per_week',
   'add_electricity_rate',
   'add_gas_rate',
+  'household_size',
 };
 const _recommendationStates = {
   'active',

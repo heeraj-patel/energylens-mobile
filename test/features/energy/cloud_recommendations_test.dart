@@ -3,6 +3,7 @@ import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_recommendations.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 const appliance = '22222222-2222-4222-8222-222222222222';
@@ -323,6 +324,72 @@ void main() {
       'computer.sleep_settings',
       'fan.speed_setting',
     ]);
+  });
+
+  test('accepts the seven gas appliance rule IDs', () {
+    const ruleIds = [
+      'furnace.gas_efficiency_check',
+      'furnace.gas_standby',
+      'boiler.gas_efficiency_check',
+      'boiler.gas_standby',
+      'water_heater.gas_cost',
+      'water_heater.gas_efficiency_check',
+      'space_heater.gas_schedule',
+    ];
+    final parsed = CloudRecommendationBatch.fromJson(
+      {
+        'actions': [
+          for (final ruleId in ruleIds) {...action(), 'rule_id': ruleId},
+        ],
+        'as_of': '2026-10-01T12:00:00Z',
+      },
+      {appliance},
+    );
+    expect(parsed.actions.map((item) => item.ruleId), ruleIds);
+  });
+
+  test('accepts household_size as a next question', () {
+    final parsed = CloudRecommendation.fromJson(
+      {
+        ...action(),
+        'rule_id': 'water_heater.gas_cost',
+        'next_question': 'household_size',
+      },
+      {appliance},
+    );
+    expect(parsed.nextQuestion, 'household_size');
+    expect(
+      CloudRecommendationBatch.fromJson(
+        {
+          'actions': [
+            {...action(), 'next_question': 'unknown_question'},
+          ],
+          'as_of': '2026-10-01T12:00:00Z',
+        },
+        {appliance},
+      ).actions,
+      isEmpty,
+    );
+  });
+
+  test('recommendations request sends the gas appliance capability', () async {
+    Uri? requested;
+    final api = apiFor(
+      MockClient((request) async {
+        requested = request.url;
+        return http.Response(
+          '{"actions":[],"as_of":"2026-10-01T12:00:00Z"}',
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    await api.recommendations(home.id, {appliance});
+    expect(requested?.path, endsWith('/recommendations'));
+    expect(
+      requested?.queryParameters['capability'],
+      'gas_appliance_recommendations_v1',
+    );
   });
 
   test('invalid envelope still rejects the batch', () {

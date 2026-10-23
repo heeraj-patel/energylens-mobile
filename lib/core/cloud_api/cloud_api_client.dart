@@ -1113,7 +1113,7 @@ class CloudApiClient {
     Set<String> applianceIds,
   ) async {
     final response = await get(
-      '/v1/homes/${Uri.encodeComponent(homeId)}/recommendations?capability=gas_dryer_recommendations_v1',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/recommendations?capability=gas_appliance_recommendations_v1',
     );
     return _parseResponse(
       response,
