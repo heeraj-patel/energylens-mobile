@@ -1114,7 +1114,11 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     }
     try {
       await _controller.runJavaScriptReturningResult(
-        _tipsRenderer.script(ticket, snapshot),
+        _tipsRenderer.script(
+          ticket,
+          snapshot,
+          applianceFuels: snapshot.applianceFuels,
+        ),
       );
     } catch (_) {
       // The packaged cards remain visible if the source projection fails.
