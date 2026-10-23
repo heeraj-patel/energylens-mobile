@@ -3,6 +3,37 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  final passwordBoundaries = <(String, String, bool)>[
+    ('1024 ASCII bytes', 'a' * 1024, true),
+    ('1025 ASCII bytes', 'a' * 1025, false),
+    ('1024 multibyte bytes', '${'é' * 511}aa', true),
+    ('1025 multibyte bytes', '${'é' * 511}aaa', false),
+    ('NUL character', 'valid\u0000password', false),
+  ];
+  for (final (label, password, accepted) in passwordBoundaries) {
+    testWidgets('profile password $label', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AccountProfileScreen.localPilotPassword(
+            isCurrentAccount: () => true,
+          ),
+        ),
+      );
+      await tester.enterText(find.byType(TextField).at(0), 'current');
+      await tester.enterText(find.byType(TextField).at(1), password);
+      await tester.enterText(find.byType(TextField).at(2), password);
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Couldn’t save changes. Check the fields and try again.'),
+        accepted ? findsNothing : findsOneWidget,
+      );
+      expect(
+        find.text('Change password'),
+        accepted ? findsNothing : findsOneWidget,
+      );
+    });
+  }
   for (final password in [
     '1234567',
     '12345678',

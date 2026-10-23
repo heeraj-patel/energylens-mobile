@@ -55,6 +55,58 @@ CloudApiClient _api(MockClient client) => CloudApiClient(
 );
 
 void main() {
+  for (final status in [400, 500]) {
+    testWidgets('password change keeps server $status error handling', (
+      tester,
+    ) async {
+      var changes = 0;
+      final api = _api(
+        MockClient((request) async {
+          if (request.url.path == '/v1/me') {
+            return http.Response(
+              jsonEncode({
+                'id': 'owner',
+                'email': 'owner@example.com',
+                'email_verified': true,
+                'display_name': 'Owner',
+                'profile_version': 1,
+              }),
+              200,
+              headers: {'etag': '"1"'},
+            );
+          }
+          expect(request.url.path, '/v1/auth/local/change-password');
+          changes++;
+          return http.Response('', status);
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AccountProfileScreen(
+            api: api,
+            field: AccountProfileField.password,
+            isCurrentAccount: () => true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(0), 'current');
+      await tester.enterText(find.byType(TextField).at(1), 'valid-password');
+      await tester.enterText(find.byType(TextField).at(2), 'valid-password');
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+      expect(changes, 1);
+      expect(
+        find.text(
+          status == 400
+              ? 'Couldn’t save changes. Check the fields and try again.'
+              : 'Internal Error, Try again later',
+        ),
+        findsOneWidget,
+      );
+      api.close();
+    });
+  }
   test(
     'email and password mutations use the local credential routes',
     () async {
