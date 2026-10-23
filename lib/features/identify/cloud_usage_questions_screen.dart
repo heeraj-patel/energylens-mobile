@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/backend_error.dart';
 import '../../core/cloud_api/cloud_api_client.dart';
+import '../../core/cloud_api/cloud_appliance_facts.dart';
 import '../../core/cloud_api/cloud_home.dart' show newCloudIdempotencyKey;
 import 'device_programs_section.dart';
 import 'usage_questions_panel.dart';
@@ -42,13 +43,39 @@ class CloudUsageQuestionsScreen extends StatefulWidget {
 
 class _CloudUsageQuestionsScreenState extends State<CloudUsageQuestionsScreen> {
   final _panel = GlobalKey<UsageQuestionsPanelState>();
-  final _programs = GlobalKey<DeviceProgramsSectionState>();
+  CloudApplianceFacts? _facts;
+  bool _factsFailed = false;
+  int _factsGeneration = 0;
   Timer? _cooldown;
   String? _message;
   bool _messageIsError = false;
   bool _refreshing = false;
   bool _coolingDown = false;
   bool _noQuestions = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.ownedApplianceIds != null) _loadFacts();
+  }
+
+  Future<void> _loadFacts() async {
+    final generation = ++_factsGeneration;
+    try {
+      final facts = await widget.api.applianceFacts(
+        widget.homeId,
+        widget.applianceId,
+      );
+      if (!mounted || generation != _factsGeneration) return;
+      setState(() {
+        _facts = facts;
+        _factsFailed = false;
+      });
+    } catch (_) {
+      if (!mounted || generation != _factsGeneration) return;
+      setState(() => _factsFailed = true);
+    }
+  }
 
   Future<void> _refresh() async {
     if (_refreshing || _coolingDown) return;
@@ -140,8 +167,7 @@ class _CloudUsageQuestionsScreenState extends State<CloudUsageQuestionsScreen> {
             onRefresh: () async {
               await Future.wait([
                 if (_panel.currentState != null) _panel.currentState!.reload(),
-                if (_programs.currentState != null)
-                  _programs.currentState!.reload(),
+                if (widget.ownedApplianceIds != null) _loadFacts(),
               ]);
             },
             child: ListView(
@@ -176,11 +202,8 @@ class _CloudUsageQuestionsScreenState extends State<CloudUsageQuestionsScreen> {
                 if (!_noQuestions) const SizedBox(height: 16),
                 if (widget.ownedApplianceIds != null) ...[
                   DeviceProgramsSection(
-                    key: _programs,
-                    api: widget.api,
-                    homeId: widget.homeId,
-                    applianceId: widget.applianceId,
-                    ownedApplianceIds: widget.ownedApplianceIds!,
+                    programs: _facts?.programs,
+                    failed: _factsFailed,
                     now: widget.programsNow,
                     openUrl: widget.openProgramUrl,
                   ),

@@ -69,23 +69,46 @@ Map<String, dynamic> _program(
   'review_expires_at': expires,
 };
 
+Map<String, dynamic> _facts({
+  required String programsStatus,
+  List<Map<String, dynamic>> rows = const [],
+}) => {
+  'appliance_id': _appliance,
+  'appliance_version': 1,
+  'generated_at': '2026-10-22T12:00:00Z',
+  for (final key in [
+    'identity',
+    'catalog_facts',
+    'estimate',
+    'efficiency',
+    'tips',
+    'care',
+    'usage_answers',
+  ])
+    key: {'status': 'unavailable'},
+  'programs': programsStatus == 'ok' || programsStatus == 'empty'
+      ? {'status': programsStatus, 'items': rows, 'total': rows.length}
+      : {'status': programsStatus},
+};
+
 http.Response _page(List<Map<String, dynamic>> rows) => http.Response(
-  jsonEncode({
-    'programs': rows,
-    'as_of': '2026-10-22T12:00:00Z',
-    'coverage': null,
-  }),
+  jsonEncode(_facts(programsStatus: rows.isEmpty ? 'empty' : 'ok', rows: rows)),
   200,
+  headers: {'etag': '"v${rows.length}"'},
 );
+
+final requests = <String>[];
 
 Future<List<Uri>> _open(
   WidgetTester tester,
   http.Response Function() programs,
 ) async {
+  requests.clear();
   final opened = <Uri>[];
   final api = _api(
     MockClient((request) async {
-      if (request.url.path.endsWith('/programs')) return programs();
+      requests.add(request.url.path);
+      if (request.url.path.endsWith('/facts')) return programs();
       if (request.url.path.endsWith('/questions/answers')) {
         return http.Response(jsonEncode({'answers': []}), 200);
       }
@@ -177,4 +200,33 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Program 2'), findsOneWidget);
   });
+
+  testWidgets('opening makes one facts call and no programs call', (
+    tester,
+  ) async {
+    await _open(tester, () => _page([_program(1)]));
+    expect(requests.where((p) => p.endsWith('/facts')), hasLength(1));
+    expect(requests.where((p) => p.endsWith('/programs')), isEmpty);
+    expect(requests.any((p) => p.endsWith('/questions')), isTrue);
+  });
+
+  for (final status in ['error', 'unavailable']) {
+    testWidgets('programs section $status shows the error copy', (
+      tester,
+    ) async {
+      await _open(
+        tester,
+        () => http.Response(
+          jsonEncode(_facts(programsStatus: status)),
+          200,
+          headers: {'etag': '"x"'},
+        ),
+      );
+      expect(
+        find.text("Couldn't load programs. Pull down to try again."),
+        findsOneWidget,
+      );
+      expect(find.text('Refresh estimate'), findsOneWidget);
+    });
+  }
 }

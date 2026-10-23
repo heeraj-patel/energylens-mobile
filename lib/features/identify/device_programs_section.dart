@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/cloud_api/cloud_api_client.dart';
+import '../../core/cloud_api/cloud_appliance_facts.dart';
 import '../../core/cloud_api/cloud_programs.dart';
 import 'usage_questions_panel.dart';
 
@@ -31,23 +31,20 @@ const _months = [
 Future<void> _launchExternal(Uri url) =>
     launchUrl(url, mode: LaunchMode.externalApplication);
 
-/// Device detail: current programs and rebates for one appliance. Loads on
-/// its own so a failure here never affects the usage questions.
+/// Device detail: current programs and rebates for one appliance, shown from
+/// the facts read. A failure here never affects the usage questions.
 class DeviceProgramsSection extends StatefulWidget {
   const DeviceProgramsSection({
     super.key,
-    required this.api,
-    required this.homeId,
-    required this.applianceId,
-    required this.ownedApplianceIds,
+    required this.programs,
+    this.failed = false,
     this.now,
     Future<void> Function(Uri url)? openUrl,
   }) : openUrl = openUrl ?? _launchExternal;
 
-  final CloudApiClient api;
-  final String homeId;
-  final String applianceId;
-  final Set<String> ownedApplianceIds;
+  /// Null while the facts read is loading.
+  final CloudFactsSection<CloudFactsPrograms>? programs;
+  final bool failed;
   final DateTime Function()? now;
   final Future<void> Function(Uri url) openUrl;
 
@@ -56,39 +53,7 @@ class DeviceProgramsSection extends StatefulWidget {
 }
 
 class DeviceProgramsSectionState extends State<DeviceProgramsSection> {
-  List<CloudProgram>? _programs;
-  bool _failed = false;
   bool _expanded = false;
-  int _generation = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    reload();
-  }
-
-  Future<void> reload() async {
-    final generation = ++_generation;
-    try {
-      final page = await widget.api.programs(
-        widget.homeId,
-        widget.applianceId,
-        widget.ownedApplianceIds,
-      );
-      if (!mounted || generation != _generation) return;
-      final now = (widget.now ?? DateTime.now)();
-      setState(() {
-        _programs = [
-          for (final program in page.programs)
-            if (program.isCurrentAt(now)) program,
-        ];
-        _failed = false;
-      });
-    } catch (_) {
-      if (!mounted || generation != _generation) return;
-      setState(() => _failed = true);
-    }
-  }
 
   String _date(DateTime value) {
     final local = value.toLocal();
@@ -127,11 +92,19 @@ class DeviceProgramsSectionState extends State<DeviceProgramsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final programs = _programs;
+    final section = widget.programs;
+    final failed = widget.failed || (section?.isFailed ?? false);
+    final now = (widget.now ?? DateTime.now)();
+    final programs = section == null || failed
+        ? null
+        : [
+            for (final program in section.value?.items ?? <CloudProgram>[])
+              if (program.isCurrentAt(now)) program,
+          ];
     final children = <Widget>[
       const Text(programsHeading, style: UsageQuestionStyle.minorHeading),
     ];
-    if (programs != null && !_failed) {
+    if (programs != null) {
       if (programs.isEmpty) {
         children.add(
           const Padding(
@@ -163,7 +136,7 @@ class DeviceProgramsSectionState extends State<DeviceProgramsSection> {
         }
       }
     }
-    if (_failed) {
+    if (failed) {
       children.add(
         const Padding(
           padding: EdgeInsets.only(top: 12),
@@ -178,7 +151,7 @@ class DeviceProgramsSectionState extends State<DeviceProgramsSection> {
           ),
         ),
       );
-    } else if (programs == null) {
+    } else if (section == null) {
       children.add(
         const Padding(
           padding: EdgeInsets.only(top: 12),

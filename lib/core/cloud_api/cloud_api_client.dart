@@ -22,6 +22,7 @@ import 'cloud_kasa_runtime.dart';
 import 'cloud_faq.dart';
 import 'cloud_recommendations.dart';
 import 'cloud_interventions.dart';
+import 'cloud_appliance_facts.dart';
 import 'cloud_programs.dart';
 import 'cloud_report_preview.dart';
 import 'cloud_report_delivery.dart';
@@ -120,6 +121,13 @@ class CloudAccount {
       profileVersion: json['profile_version'] as int?,
     );
   }
+}
+
+class _FactsCacheEntry {
+  const _FactsCacheEntry(this.etag, this.facts, this.generation);
+  final String etag;
+  final CloudApplianceFacts facts;
+  final int generation;
 }
 
 /// Cloud bearer requests never read or send hub pairing credentials.
@@ -1298,6 +1306,52 @@ class CloudApiClient {
       homeId,
       interventionId,
     );
+  }
+
+  final Map<String, _FactsCacheEntry> _factsCache = {};
+
+  /// One owner-scoped facts read; a 304 reuses the cached parsed body.
+  Future<CloudApplianceFacts> applianceFacts(
+    String homeId,
+    String applianceId, {
+    String capability = 'gas_appliance_recommendations_v1',
+  }) async {
+    if (!_programUuid.hasMatch(homeId)) {
+      throw ArgumentError.value(homeId, 'homeId');
+    }
+    if (!_programUuid.hasMatch(applianceId)) {
+      throw ArgumentError.value(applianceId, 'applianceId');
+    }
+    final key = '$homeId/$applianceId/$capability';
+    final generation = session.generation;
+    var cached = _factsCache[key];
+    if (cached != null && cached.generation != generation) {
+      _factsCache.remove(key);
+      cached = null;
+    }
+    final query = Uri(queryParameters: {'capability': capability}).query;
+    final response = await _request(
+      'GET',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/appliances/${Uri.encodeComponent(applianceId)}/facts?$query',
+      ifNoneMatch: cached?.etag,
+    );
+    if (response.statusCode == 304) {
+      if (cached == null) throw const FormatException('Unexpected 304');
+      return cached.facts;
+    }
+    final etag = response.headers['etag'];
+    final facts = _parseResponse(
+      response,
+      () => CloudApplianceFacts.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      ),
+    );
+    if (etag != null && RegExp(r'^"[^"]+"$').hasMatch(etag)) {
+      _factsCache[key] = _FactsCacheEntry(etag, facts, generation);
+    } else {
+      _factsCache.remove(key);
+    }
+    return facts;
   }
 
   Future<CloudProgramPage> programs(
