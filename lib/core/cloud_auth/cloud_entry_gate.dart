@@ -749,29 +749,6 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     if (!_authenticated) throw StateError('Account validation failed');
   }
 
-  Future<void> _registerEmailAndValidate(String email, String password) async {
-    final service = widget.registrationService ?? _session.localAuth;
-    if (service is! AuthenticatedCloudRegistrationService) {
-      throw StateError('Authenticated email registration is unavailable');
-    }
-    _localEmail.text = email;
-    final epoch = _lifecycleEpoch;
-    final registration = _session.registerLocal(
-      service as AuthenticatedCloudRegistrationService,
-      email,
-      password,
-    );
-    final sessionGeneration = _session.generation;
-    await registration;
-    if (!mounted ||
-        epoch != _lifecycleEpoch ||
-        sessionGeneration != _session.generation) {
-      throw StateError('Registration scope changed');
-    }
-    await _validate();
-    if (!_authenticated) throw StateError('Account validation failed');
-  }
-
   Future<void> _signInAfterRecovery(String email, String password) async {
     _localEmail.text = email;
     _localPassword.clear();
@@ -876,7 +853,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                             labelText:
                                 _session.credentialMethod == 'email_password'
                                 ? 'Email ID'
-                                : 'Username',
+                                : 'User ID',
                           ),
                         ),
                         TextField(
@@ -919,8 +896,10 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                             _session.config.isLocalAuthConfigured &&
                             _session.localAuth != null &&
                             _session.credentialMethod != 'oidc') ...[
-                          if (_session.credentialMethod == 'email_password' &&
-                              _capabilities?.passwordRecoveryEnabled == true)
+                          if (_capabilities?.passwordRecoveryEnabled == true &&
+                              (_session.credentialMethod == 'email_password' ||
+                                  _session.credentialMethod ==
+                                      'username_password'))
                             TextButton(
                               onPressed: () {
                                 _localPassword.clear();
@@ -928,6 +907,9 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                                   MaterialPageRoute<void>(
                                     builder: (_) => CloudRecoveryScreen(
                                       service: _session.localAuth!,
+                                      usernameMode:
+                                          _session.credentialMethod ==
+                                          'username_password',
                                       linkOrigin:
                                           _session.config.localAuthLinkOrigin,
                                       initialEmail: _localEmail.text,
@@ -944,19 +926,9 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                         if (!_busy &&
                             _capabilitiesReady &&
                             _capabilities?.registrationEnabled == true &&
-                            (_session.credentialMethod == 'username_password' ||
-                                (_session.credentialMethod ==
-                                        'email_password' &&
-                                    _capabilities?.emailVerificationRequired ==
-                                        false)) &&
-                            ((_session.credentialMethod == 'email_password' &&
-                                    (widget.registrationService ??
-                                            _session.localAuth)
-                                        is AuthenticatedCloudRegistrationService) ||
-                                (_session.credentialMethod ==
-                                        'username_password' &&
-                                    (widget.registrationService != null ||
-                                        _session.localAuth != null)))) ...[
+                            _session.credentialMethod == 'username_password' &&
+                            (widget.registrationService != null ||
+                                _session.localAuth != null)) ...[
                           const SizedBox(height: 8),
                           TextButton(
                             onPressed: () {
@@ -969,20 +941,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                                     service:
                                         widget.registrationService ??
                                         _session.localAuth!,
-                                    linkOrigin:
-                                        _session.config.localAuthLinkOrigin,
-                                    usernameMode:
-                                        _session.credentialMethod ==
-                                        'username_password',
                                     onUsernameRegistered: _registerAndSignIn,
-                                    onEmailRegister: _registerEmailAndValidate,
-                                    initialEmail:
-                                        _session.credentialMethod ==
-                                            'email_password'
-                                        ? _localEmail.text
-                                        : '',
-                                    onEmailChanged: (email) =>
-                                        _localEmail.text = email,
                                     isCurrent: () =>
                                         mounted &&
                                         epoch == _lifecycleEpoch &&

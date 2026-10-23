@@ -417,12 +417,10 @@ void main() {
   group('account screens', () {
     Future<void> register(WidgetTester tester, _Registration service) async {
       await tester.pumpWidget(
-        MaterialApp(
-          home: CloudRegistrationScreen(service: service, usernameMode: true),
-        ),
+        MaterialApp(home: CloudRegistrationScreen(service: service)),
       );
       await tester.enterText(
-        find.byKey(const Key('registrationEmail')),
+        find.byKey(const Key('registrationUserId')),
         'person',
       );
       await tester.enterText(
@@ -435,7 +433,7 @@ void main() {
       );
       expect(
         tester
-            .widget<TextField>(find.byKey(const Key('registrationEmail')))
+            .widget<TextField>(find.byKey(const Key('registrationUserId')))
             .controller!
             .text,
         'person',

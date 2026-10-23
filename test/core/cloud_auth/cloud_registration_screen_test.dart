@@ -20,46 +20,32 @@ const _config = CloudAuthConfig(
   apiUrl: 'https://api.example',
 );
 
-class _Registration
-    implements CloudRegistrationService, AuthenticatedCloudRegistrationService {
-  int requests = 0;
-  int verifications = 0;
-  bool fail = false;
-
-  @override
-  Future<void> requestRegistration(String email, String password) async {
-    requests++;
-    expect(email, 'person@example.com');
-    expect(password, 'correct long password');
-    if (fail) throw StateError('private backend detail');
-  }
-
-  @override
-  Future<void> verifyEmail(String token) async {
-    verifications++;
-    expect(token, 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
-  }
-
-  @override
-  Future<CloudTokens> registerSession(String email, String password) async {
-    await requestRegistration(email, password);
-    return CloudTokens(
-      accessToken: 'new-access',
-      refreshToken: 'new-refresh',
-      expiresAt: DateTime.now().add(const Duration(minutes: 15)),
-      refreshExpiresAt: DateTime.now().add(const Duration(days: 30)),
-      provider: 'local',
-    );
-  }
-}
-
 class _DeferredRegistration implements CloudRegistrationService {
   final started = Completer<void>();
   final finish = Completer<void>();
+  int requests = 0;
   @override
   Future<void> requestRegistration(String username, String password) async {
+    requests++;
     started.complete();
     await finish.future;
+  }
+
+  @override
+  Future<void> verifyEmail(String token) async {}
+}
+
+class _UsernameRegistration implements CloudRegistrationService {
+  int requests = 0;
+  String? lastUserId;
+  Object? error;
+
+  @override
+  Future<void> requestRegistration(String username, String password) async {
+    requests++;
+    lastUserId = username;
+    expect(password, 'correct long password');
+    if (error != null) throw error!;
   }
 
   @override
@@ -147,142 +133,209 @@ void main() {
     api.close();
   });
 
-  testWidgets('email signup stores a session and validates account', (
+  testWidgets('email auth keeps login and recovery but exposes no signup', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final registration = _Registration();
-    final store = _Store();
-    final localAuth = CloudLocalAuthClient(
-      baseUrl: 'https://api.example',
+    const config = CloudAuthConfig(
+      issuer: '',
+      audience: '',
+      clientId: '',
+      redirectUrl: '',
+      apiUrl: 'https://api.example',
+      localAuthEnabled: true,
+    );
+    final local = CloudLocalAuthClient(
+      baseUrl: config.apiUrl,
       client: MockClient((_) async => http.Response('', 404)),
     );
     final session = CloudSession(
-      config: const CloudAuthConfig(
-        issuer: '',
-        audience: '',
-        clientId: '',
-        redirectUrl: '',
-        apiUrl: 'https://api.example',
-        localAuthEnabled: true,
-      ),
-      store: store,
+      config: config,
+      store: _Store(),
       authenticator: _Auth(),
-      localAuth: localAuth,
+      localAuth: local,
     );
     final api = CloudApiClient(
       session: session,
-      client: MockClient((request) async {
-        if (request.url.path == '/v1/auth/config') {
-          return http.Response(
-            '{"schema_version":1,"methods":["email_password"],'
-            '"registration_enabled":true,"email_verification_required":false,'
-            '"password_recovery_enabled":false,"session_logout_revokes_access":true}',
-            200,
-          );
-        }
-        if (request.url.path == '/v1/me') {
-          expect(request.headers['Authorization'], 'Bearer new-access');
-          return http.Response(
-            '{"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",'
-            '"email":"person@example.com","email_verified":false,'
-            '"auth_method":"email_password","display_name":null}',
-            200,
-          );
-        }
-        if (request.url.path == '/v1/homes') {
-          return http.Response('{"homes":[]}', 200);
-        }
-        return http.Response('', 404);
-      }),
+      client: MockClient(
+        (request) async => request.url.path == '/v1/auth/config'
+            ? http.Response(
+                '{"schema_version":1,"methods":["email_password"],'
+                '"registration_enabled":true,"email_verification_required":false,'
+                '"password_recovery_enabled":true,"session_logout_revokes_access":true}',
+                200,
+              )
+            : http.Response('', 404),
+      ),
     );
     await tester.pumpWidget(
       MaterialApp(
         home: CloudEntryGate(
           session: session,
           api: api,
-          registrationService: registration,
-          homeCreateStorage: _DraftStorage(),
-          activeHomeStorage: _DraftStorage(),
+          registrationService: _UsernameRegistration(),
           homeBuilder: (_, _, _, _) => const Text('Private Home'),
         ),
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Create account'));
-    await tester.pumpAndSettle();
-    expect(find.widgetWithText(FilledButton, 'Create account'), findsOneWidget);
-    expect(
-      tester
-          .widget<TextField>(find.byKey(const Key('registrationPassword')))
-          .obscureText,
-      isTrue,
-    );
-    await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
-    await tester.pumpAndSettle();
-    expect(registration.requests, 0);
-    await tester.enterText(
-      find.byKey(const Key('registrationEmail')),
-      'person@example.com',
-    );
-    await tester.enterText(
-      find.byKey(const Key('registrationPassword')),
-      'short',
-    );
-    await tester.enterText(
-      find.byKey(const Key('registrationConfirm')),
-      'short',
-    );
-    await tester.ensureVisible(
-      find.widgetWithText(FilledButton, 'Create account'),
-    );
-    await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
-    await tester.pumpAndSettle();
-    expect(registration.requests, 0);
-    await tester.enterText(
-      find.byKey(const Key('registrationPassword')),
-      'correct long password',
-    );
-    await tester.enterText(
-      find.byKey(const Key('registrationConfirm')),
-      'correct long password',
-    );
-    await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
-    await tester.pumpAndSettle();
-    expect(registration.requests, 1);
-    expect(store.saves, 1);
-    expect(store.tokens?.accessToken, 'new-access');
-    expect(
-      find.text('Set up your home'),
-      findsOneWidget,
-      reason: tester
-          .widgetList<Text>(find.byType(Text))
-          .map((item) => item.data)
-          .toList()
-          .toString(),
-    );
-    expect(find.text('Verify email'), findsNothing);
+    expect(find.text('Email ID'), findsOneWidget);
+    expect(find.text('Forgot password?'), findsOneWidget);
+    expect(find.text('Create account'), findsNothing);
     api.close();
-    localAuth.close();
+    local.close();
   });
 
-  testWidgets('registration failure reveals no backend detail', (tester) async {
-    final registration = _Registration()..fail = true;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: CloudRegistrationScreen(
-          service: registration,
-          onEmailRegister: (email, password) =>
-              registration.registerSession(email, password).then((_) {}),
+  testWidgets(
+    'User ID signup signs in only after registration and validates account',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final registration = _UsernameRegistration();
+      final store = _Store();
+      final localAuth = CloudLocalAuthClient(
+        baseUrl: 'https://api.example',
+        client: MockClient((request) async {
+          if (request.url.path != '/v1/auth/local/login') {
+            return http.Response('', 404);
+          }
+          expect(request.body, contains('"username":"person"'));
+          final expiry = DateTime.now().toUtc().add(
+            const Duration(minutes: 15),
+          );
+          return http.Response(
+            '{"token_type":"Bearer","access_token":"new-access",'
+            '"refresh_token":"new-refresh",'
+            '"access_expires_at":"${expiry.toIso8601String()}",'
+            '"refresh_expires_at":"${expiry.add(const Duration(days: 30)).toIso8601String()}"}',
+            200,
+          );
+        }),
+      );
+      final session = CloudSession(
+        config: const CloudAuthConfig(
+          issuer: '',
+          audience: '',
+          clientId: '',
+          redirectUrl: '',
+          apiUrl: 'https://api.example',
+          localAuthEnabled: true,
         ),
-      ),
+        store: store,
+        authenticator: _Auth(),
+        localAuth: localAuth,
+      );
+      final api = CloudApiClient(
+        session: session,
+        client: MockClient((request) async {
+          if (request.url.path == '/v1/auth/config') {
+            return http.Response(
+              '{"schema_version":1,"methods":["username_password"],'
+              '"registration_enabled":true,"email_verification_required":false,'
+              '"password_recovery_enabled":false,"session_logout_revokes_access":true}',
+              200,
+            );
+          }
+          if (request.url.path == '/v1/me') {
+            expect(request.headers['Authorization'], 'Bearer new-access');
+            return http.Response(
+              '{"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",'
+              '"username":"person","email_verified":true,'
+              '"auth_method":"username_password","display_name":null}',
+              200,
+            );
+          }
+          if (request.url.path == '/v1/homes') {
+            return http.Response('{"homes":[]}', 200);
+          }
+          return http.Response('', 404);
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CloudEntryGate(
+            session: session,
+            api: api,
+            registrationService: registration,
+            homeCreateStorage: _DraftStorage(),
+            activeHomeStorage: _DraftStorage(),
+            homeBuilder: (_, _, _, _) => const Text('Private Home'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create account'));
+      await tester.pumpAndSettle();
+      expect(
+        find.widgetWithText(FilledButton, 'Create account'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('registrationPassword')))
+            .obscureText,
+        isTrue,
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+      await tester.pumpAndSettle();
+      expect(registration.requests, 0);
+      await tester.enterText(
+        find.byKey(const Key('registrationUserId')),
+        ' Person ',
+      );
+      await tester.enterText(
+        find.byKey(const Key('registrationPassword')),
+        'short',
+      );
+      await tester.enterText(
+        find.byKey(const Key('registrationConfirm')),
+        'short',
+      );
+      await tester.ensureVisible(
+        find.widgetWithText(FilledButton, 'Create account'),
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+      await tester.pumpAndSettle();
+      expect(registration.requests, 0);
+      await tester.enterText(
+        find.byKey(const Key('registrationPassword')),
+        'correct long password',
+      );
+      await tester.enterText(
+        find.byKey(const Key('registrationConfirm')),
+        'correct long password',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+      await tester.pumpAndSettle();
+      expect(registration.requests, 1);
+      expect(registration.lastUserId, 'person');
+      expect(store.saves, 1);
+      expect(store.tokens?.accessToken, 'new-access');
+      expect(
+        find.text('Set up your home'),
+        findsOneWidget,
+        reason: tester
+            .widgetList<Text>(find.byType(Text))
+            .map((item) => item.data)
+            .toList()
+            .toString(),
+      );
+      expect(find.text('Verify email'), findsNothing);
+      api.close();
+      localAuth.close();
+    },
+  );
+
+  testWidgets('registration failure reveals no backend detail', (tester) async {
+    final registration = _UsernameRegistration()
+      ..error = StateError('private backend detail');
+    await tester.pumpWidget(
+      MaterialApp(home: CloudRegistrationScreen(service: registration)),
     );
     await tester.enterText(
-      find.byKey(const Key('registrationEmail')),
-      'person@example.com',
+      find.byKey(const Key('registrationUserId')),
+      'person',
     );
     await tester.enterText(
       find.byKey(const Key('registrationPassword')),
@@ -299,7 +352,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Internal Error, Try again later'), findsOneWidget);
     expect(find.textContaining('private backend detail'), findsNothing);
-    expect(find.byKey(const Key('registrationEmail')), findsOneWidget);
+    expect(find.byKey(const Key('registrationUserId')), findsOneWidget);
     expect(
       tester
           .widget<TextField>(find.byKey(const Key('registrationPassword')))
@@ -309,24 +362,17 @@ void main() {
     );
   });
 
-  testWidgets('generic accepted response cannot retry account creation', (
+  testWidgets('ambiguous signup response cannot retry account creation', (
     tester,
   ) async {
-    var attempts = 0;
+    final registration = _UsernameRegistration()
+      ..error = const CloudLocalAuthException(202);
     await tester.pumpWidget(
-      MaterialApp(
-        home: CloudRegistrationScreen(
-          service: _Registration(),
-          onEmailRegister: (_, _) async {
-            attempts++;
-            throw const CloudLocalAuthException(202);
-          },
-        ),
-      ),
+      MaterialApp(home: CloudRegistrationScreen(service: registration)),
     );
     await tester.enterText(
-      find.byKey(const Key('registrationEmail')),
-      'person@example.com',
+      find.byKey(const Key('registrationUserId')),
+      'person',
     );
     await tester.enterText(
       find.byKey(const Key('registrationPassword')),
@@ -338,13 +384,13 @@ void main() {
     );
     await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
     await tester.pumpAndSettle();
-    expect(attempts, 1);
+    expect(registration.requests, 1);
     expect(
       tester
-          .widget<TextField>(find.byKey(const Key('registrationEmail')))
+          .widget<TextField>(find.byKey(const Key('registrationUserId')))
           .controller!
           .text,
-      'person@example.com',
+      'person',
     );
     expect(
       tester
@@ -364,6 +410,96 @@ void main() {
     expect(find.text('Verify email'), findsNothing);
   });
 
+  testWidgets('duplicate after restart never signs in or retries', (
+    tester,
+  ) async {
+    final service = _UsernameRegistration()
+      ..error = const CloudLocalAuthException(202);
+    var signIns = 0;
+    Future<void> fillAndSubmit() async {
+      await tester.enterText(
+        find.byKey(const Key('registrationUserId')),
+        'Alice',
+      );
+      await tester.enterText(
+        find.byKey(const Key('registrationPassword')),
+        'correct long password',
+      );
+      await tester.enterText(
+        find.byKey(const Key('registrationConfirm')),
+        'correct long password',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+      await tester.pumpAndSettle();
+    }
+
+    Widget screen(Key key) => MaterialApp(
+      key: key,
+      home: CloudRegistrationScreen(
+        service: service,
+        onUsernameRegistered: (_, _) async {
+          signIns++;
+        },
+      ),
+    );
+    await tester.pumpWidget(screen(const ValueKey('first')));
+    await fillAndSubmit();
+    expect(service.requests, 1);
+    expect(signIns, 0);
+    service.error = const CloudLocalAuthException(409);
+    await tester.pumpWidget(screen(const ValueKey('restart')));
+    await fillAndSubmit();
+    expect(service.requests, 2);
+    expect(signIns, 0);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Create account'),
+          )
+          .onPressed,
+      isNull,
+    );
+  });
+
+  testWidgets('double submit sends one registration and one login handoff', (
+    tester,
+  ) async {
+    final service = _DeferredRegistration();
+    var signIns = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudRegistrationScreen(
+          service: service,
+          onUsernameRegistered: (_, _) async {
+            signIns++;
+          },
+        ),
+      ),
+    );
+    await tester.enterText(
+      find.byKey(const Key('registrationUserId')),
+      'alice',
+    );
+    await tester.enterText(
+      find.byKey(const Key('registrationPassword')),
+      'correct long password',
+    );
+    await tester.enterText(
+      find.byKey(const Key('registrationConfirm')),
+      'correct long password',
+    );
+    final button = find.widgetWithText(FilledButton, 'Create account');
+    await tester.tap(button);
+    await tester.pump();
+    await service.started.future;
+    expect(tester.widget<FilledButton>(button).onPressed, isNull);
+    await tester.tap(button);
+    expect(service.requests, 1);
+    service.finish.complete();
+    await tester.pumpAndSettle();
+    expect(signIns, 1);
+  });
+
   testWidgets('canceled username signup never calls sign-in callback', (
     tester,
   ) async {
@@ -378,7 +514,6 @@ void main() {
                 MaterialPageRoute<void>(
                   builder: (_) => CloudRegistrationScreen(
                     service: service,
-                    usernameMode: true,
                     onUsernameRegistered: (_, _) async {
                       signIns++;
                     },
@@ -393,7 +528,10 @@ void main() {
     );
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('registrationEmail')), 'alice');
+    await tester.enterText(
+      find.byKey(const Key('registrationUserId')),
+      'alice',
+    );
     await tester.enterText(
       find.byKey(const Key('registrationPassword')),
       'correct long password',

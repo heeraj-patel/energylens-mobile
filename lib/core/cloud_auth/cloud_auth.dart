@@ -244,6 +244,7 @@ abstract interface class LocalCloudAuthService
   Future<void> logout(String refreshToken);
   Future<void> requestRecovery(String email);
   Future<void> resetPassword(String token, String password);
+  Future<void> resetUsernamePassword(String username, String password);
 }
 
 /// The refresh endpoint has definitively rejected the stored credential.

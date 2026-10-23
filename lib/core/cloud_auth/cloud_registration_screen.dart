@@ -11,23 +11,13 @@ class CloudRegistrationScreen extends StatefulWidget {
   const CloudRegistrationScreen({
     super.key,
     required this.service,
-    this.linkOrigin = '',
-    this.usernameMode = false,
     this.onUsernameRegistered,
-    this.onEmailRegister,
-    this.initialEmail = '',
-    this.onEmailChanged,
     this.isCurrent,
   });
 
   final CloudRegistrationService service;
-  final String linkOrigin;
-  final bool usernameMode;
   final Future<void> Function(String username, String password)?
   onUsernameRegistered;
-  final Future<void> Function(String email, String password)? onEmailRegister;
-  final String initialEmail;
-  final ValueChanged<String>? onEmailChanged;
   final bool Function()? isCurrent;
 
   @override
@@ -36,7 +26,7 @@ class CloudRegistrationScreen extends StatefulWidget {
 }
 
 class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
-  late final TextEditingController _email;
+  final _userId = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
   bool _busy = false;
@@ -46,43 +36,28 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
   String? _error;
 
   @override
-  void initState() {
-    super.initState();
-    _email = TextEditingController(text: widget.initialEmail);
-  }
-
-  @override
   void dispose() {
     _password.clear();
     _confirm.clear();
-    _email.dispose();
+    _userId.dispose();
     _password.dispose();
     _confirm.dispose();
     super.dispose();
   }
 
   Future<void> _register() async {
-    if (_busy || (_remoteAttempted && !widget.usernameMode)) return;
-    final email = widget.usernameMode
-        ? _email.text.replaceAll(RegExp(r'^ +| +$'), '').toLowerCase()
-        : _email.text.trim().toLowerCase();
+    if (_busy || _remoteAttempted) return;
+    final userId = _userId.text.trim().toLowerCase();
     final password = _password.text;
     final passwordBytes = utf8.encode(password);
-    final validIdentifier = widget.usernameMode
-        ? RegExp(r'^[a-z0-9][a-z0-9._-]{2,63}$').hasMatch(email)
-        : email.length <= 254 &&
-              RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email);
+    final validIdentifier = RegExp(r'^[a-z0-9][a-z0-9._-]{2,63}$')
+        .hasMatch(userId);
     if (!validIdentifier ||
-        (widget.usernameMode
-            ? passwordBytes.length < 12
-            : password.runes.length < 12) ||
+        passwordBytes.length < 12 ||
         passwordBytes.length > 1024 ||
         password.codeUnits.contains(0) ||
         password != _confirm.text) {
-      setState(
-        () =>
-            _error = widget.usernameMode ? 'Check your username and password.' : 'Enter a valid email and matching password of at least 12 characters.',
-      );
+      setState(() => _error = 'Check your username and password.');
       _password.clear();
       _confirm.clear();
       return;
@@ -92,23 +67,16 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
       _error = null;
     });
     try {
-      if (widget.usernameMode) {
-        await widget.service.requestRegistration(email, password);
-      } else {
-        _remoteAttempted = true;
-        final register = widget.onEmailRegister;
-        if (register == null) throw StateError('Missing registration handoff');
-        await register(email, password);
-      }
-      if (!mounted ||
-          (widget.usernameMode && widget.isCurrent?.call() == false)) {
+      _remoteAttempted = true;
+      await widget.service.requestRegistration(userId, password);
+      if (!mounted || widget.isCurrent?.call() == false) {
         return;
       }
       _password.clear();
       _confirm.clear();
-      if (widget.usernameMode && widget.onUsernameRegistered != null) {
+      if (widget.onUsernameRegistered != null) {
         try {
-          await widget.onUsernameRegistered!(email, password);
+          await widget.onUsernameRegistered!(userId, password);
           if (mounted) Navigator.of(context).pop();
           return;
         } catch (_) {
@@ -124,8 +92,7 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
       if (mounted) Navigator.of(context).pop();
     } on CloudLocalAuthException catch (error) {
       if (mounted) {
-        if (!widget.usernameMode &&
-            (error.statusCode == 400 || error.statusCode == 422)) {
+        if (error.statusCode == 400 || error.statusCode == 422) {
           _remoteAttempted = false;
         }
         setState(
@@ -162,21 +129,12 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
                   child: Column(
                     children: [
                       TextField(
-                        key: const Key('registrationEmail'),
-                        controller: _email,
-                        onChanged: widget.onEmailChanged,
+                        key: const Key('registrationUserId'),
+                        controller: _userId,
                         enabled: !_busy,
-                        autofillHints: widget.usernameMode
-                            ? const [AutofillHints.username]
-                            : const [AutofillHints.email],
-                        keyboardType: widget.usernameMode
-                            ? TextInputType.text
-                            : TextInputType.emailAddress,
-                        decoration: InputDecoration(
-                          labelText: widget.usernameMode
-                              ? 'Username'
-                              : 'Email ID',
-                        ),
+                        autofillHints: const [AutofillHints.username],
+                        keyboardType: TextInputType.text,
+                        decoration: const InputDecoration(labelText: 'User ID'),
                         textInputAction: TextInputAction.next,
                       ),
                       const SizedBox(height: 12),
@@ -233,9 +191,7 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
                 ),
                 const SizedBox(height: 16),
                 FilledButton(
-                  onPressed: _busy || (_remoteAttempted && !widget.usernameMode)
-                      ? null
-                      : _register,
+                  onPressed: _busy || _remoteAttempted ? null : _register,
                   child: const Text('Create account'),
                 ),
               ],

@@ -71,6 +71,97 @@ void main() {
     );
   });
 
+  testWidgets('User ID reset uses no email challenge and hands off to login', (
+    tester,
+  ) async {
+    var requests = 0;
+    final client = CloudLocalAuthClient(
+      baseUrl: 'https://api.example',
+      client: MockClient((request) async {
+        requests++;
+        expect(request.url.path, '/v1/auth/local/reset-password');
+        expect(jsonDecode(request.body), {
+          'username': 'alice',
+          'password': 'replacement password 123',
+        });
+        return http.Response('', 204);
+      }),
+    )..credentialMethod = 'username_password';
+    String? loginUserId;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudRecoveryScreen(
+          service: client,
+          usernameMode: true,
+          onResetSuccess: (identity, _) async {
+            loginUserId = identity;
+          },
+        ),
+      ),
+    );
+    expect(find.text('User ID'), findsOneWidget);
+    expect(find.byKey(const Key('recoveryEmail')), findsNothing);
+    expect(find.text('Request reset link'), findsNothing);
+    expect(find.byKey(const Key('pasteResetLink')), findsNothing);
+    await tester.enterText(find.byKey(const Key('recoveryUserId')), ' ALICE ');
+    await tester.enterText(
+      find.byKey(const Key('resetPassword')),
+      'replacement password 123',
+    );
+    await tester.enterText(
+      find.byKey(const Key('resetConfirm')),
+      'replacement password 123',
+    );
+    await tester.ensureVisible(find.byKey(const Key('submitPasswordReset')));
+    await tester.tap(find.byKey(const Key('submitPasswordReset')));
+    await tester.pumpAndSettle();
+    expect(requests, 1);
+    expect(loginUserId, 'alice');
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('resetPassword')))
+          .controller!
+          .text,
+      isEmpty,
+    );
+    client.close();
+  });
+
+  testWidgets('User ID reset hides unknown and rate-limited account details', (
+    tester,
+  ) async {
+    for (final status in [404, 429]) {
+      final client = CloudLocalAuthClient(
+        baseUrl: 'https://api.example',
+        client: MockClient(
+          (_) async => http.Response('{"secret":"private"}', status),
+        ),
+      )..credentialMethod = 'username_password';
+      await tester.pumpWidget(
+        MaterialApp(
+          key: ValueKey(status),
+          home: CloudRecoveryScreen(service: client, usernameMode: true),
+        ),
+      );
+      await tester.enterText(find.byKey(const Key('recoveryUserId')), 'alice');
+      await tester.enterText(
+        find.byKey(const Key('resetPassword')),
+        'replacement password 123',
+      );
+      await tester.enterText(
+        find.byKey(const Key('resetConfirm')),
+        'replacement password 123',
+      );
+      await tester.ensureVisible(find.byKey(const Key('submitPasswordReset')));
+      await tester.tap(find.byKey(const Key('submitPasswordReset')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('private'), findsNothing);
+      expect(find.byKey(const Key('recoveryCompleted')), findsNothing);
+      expect(find.byKey(const Key('recoveryError')), findsOneWidget);
+      client.close();
+    }
+  });
+
   testWidgets(
     'recovery accepts generically and clears copied link after reset',
     (tester) async {

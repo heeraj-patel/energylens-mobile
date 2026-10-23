@@ -12,6 +12,7 @@ class CloudRecoveryScreen extends StatefulWidget {
   const CloudRecoveryScreen({
     super.key,
     required this.service,
+    this.usernameMode = false,
     this.linkOrigin = '',
     this.initialEmail = '',
     this.onEmailChanged,
@@ -19,6 +20,7 @@ class CloudRecoveryScreen extends StatefulWidget {
   });
 
   final LocalCloudAuthService service;
+  final bool usernameMode;
   final String linkOrigin;
   final String initialEmail;
   final ValueChanged<String>? onEmailChanged;
@@ -43,6 +45,7 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
   void initState() {
     super.initState();
     _email = TextEditingController(text: widget.initialEmail);
+    _showReset = widget.usernameMode;
   }
 
   @override
@@ -124,13 +127,23 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
     if (_busy) return;
     final token = _capturedToken;
     final password = _password.text;
-    if (token == null) {
+    final identity = _email.text.trim().toLowerCase();
+    if (widget.usernameMode &&
+        !RegExp(r'^[a-z0-9][a-z0-9._-]{2,63}$').hasMatch(identity)) {
+      setState(() => _error = 'Could not reset the password. Try again later.');
+      _password.clear();
+      _confirm.clear();
+      return;
+    }
+    if (!widget.usernameMode && token == null) {
       setState(() => _error = 'Paste the reset link from your email.');
       _password.clear();
       _confirm.clear();
       return;
     }
-    if (password.runes.length < 12 ||
+    if ((widget.usernameMode
+            ? utf8.encode(password).length < 12
+            : password.runes.length < 12) ||
         utf8.encode(password).length > 1024 ||
         password.codeUnits.contains(0) ||
         password != _confirm.text) {
@@ -149,20 +162,21 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
       _error = null;
     });
     try {
-      await widget.service.resetPassword(token, password);
+      if (widget.usernameMode) {
+        await widget.service.resetUsernamePassword(identity, password);
+      } else {
+        await widget.service.resetPassword(token!, password);
+      }
       if (!mounted) return;
       if (widget.onResetSuccess != null) {
-        await widget.onResetSuccess!(
-          _email.text.trim().toLowerCase(),
-          password,
-        );
+        await widget.onResetSuccess!(identity, password);
       } else {
         setState(() => _completed = true);
       }
     } on CloudLocalAuthException catch (error) {
       if (mounted) {
         setState(
-          () => _error = error.statusCode == 401
+          () => _error = !widget.usernameMode && error.statusCode == 401
               ? 'This reset link has expired or was already used. Request a new link.'
               : isInputRejectionStatus(error.statusCode)
               ? 'Could not reset the password. Try again later.'
@@ -191,46 +205,60 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
             padding: const EdgeInsets.all(24),
             children: [
               if (!_completed) ...[
-                const Text(
-                  'Enter your email to request a one-hour reset link.',
-                ),
-                const SizedBox(height: 12),
+                if (!widget.usernameMode) ...[
+                  const Text(
+                    'Enter your email to request a one-hour reset link.',
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 TextField(
-                  key: const Key('recoveryEmail'),
+                  key: Key(
+                    widget.usernameMode ? 'recoveryUserId' : 'recoveryEmail',
+                  ),
                   controller: _email,
                   onChanged: widget.onEmailChanged,
                   enabled: !_busy,
-                  keyboardType: TextInputType.emailAddress,
-                  autofillHints: const [AutofillHints.email],
-                  decoration: const InputDecoration(labelText: 'Email ID'),
-                ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: _busy ? null : _request,
-                  child: const Text('Request reset link'),
-                ),
-                if (_requested)
-                  const Text(
-                    'If this email can receive a reset link, it will arrive there. This does not sign you in.',
-                    key: Key('recoveryAccepted'),
+                  keyboardType: widget.usernameMode
+                      ? TextInputType.text
+                      : TextInputType.emailAddress,
+                  autofillHints: widget.usernameMode
+                      ? const [AutofillHints.username]
+                      : const [AutofillHints.email],
+                  decoration: InputDecoration(
+                    labelText: widget.usernameMode ? 'User ID' : 'Email ID',
                   ),
-                TextButton(
-                  onPressed: _busy
-                      ? null
-                      : () => setState(() => _showReset = true),
-                  child: const Text('I have a reset link'),
                 ),
+                if (!widget.usernameMode) ...[
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: _busy ? null : _request,
+                    child: const Text('Request reset link'),
+                  ),
+                  if (_requested)
+                    const Text(
+                      'If this email can receive a reset link, it will arrive there. This does not sign you in.',
+                      key: Key('recoveryAccepted'),
+                    ),
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () => setState(() => _showReset = true),
+                    child: const Text('I have a reset link'),
+                  ),
+                ],
                 if (_showReset) ...[
                   const Divider(),
-                  const Text(
-                    'Copy the reset link from your email, then paste it here. The link expires after one hour and can be used once.',
-                  ),
-                  OutlinedButton(
-                    key: const Key('pasteResetLink'),
-                    onPressed: _busy ? null : _captureToken,
-                    child: const Text('Paste reset link or token'),
-                  ),
-                  if (_capturedToken != null) const Text('Reset link ready.'),
+                  if (!widget.usernameMode) ...[
+                    const Text(
+                      'Copy the reset link from your email, then paste it here. The link expires after one hour and can be used once.',
+                    ),
+                    OutlinedButton(
+                      key: const Key('pasteResetLink'),
+                      onPressed: _busy ? null : _captureToken,
+                      child: const Text('Paste reset link or token'),
+                    ),
+                    if (_capturedToken != null) const Text('Reset link ready.'),
+                  ],
                   TextField(
                     key: const Key('resetPassword'),
                     controller: _password,
@@ -253,7 +281,11 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
                   const SizedBox(height: 12),
                   FilledButton(
                     key: const Key('submitPasswordReset'),
-                    onPressed: _busy || _capturedToken == null ? null : _reset,
+                    onPressed:
+                        _busy ||
+                            (!widget.usernameMode && _capturedToken == null)
+                        ? null
+                        : _reset,
                     child: const Text('Reset password'),
                   ),
                 ],

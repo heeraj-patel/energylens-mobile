@@ -60,7 +60,6 @@ class CloudAuthCapabilities {
     }
     if (chosen == 'username_password' &&
         (data['email_verification_required'] != false ||
-            data['password_recovery_enabled'] != false ||
             data['session_logout_revokes_access'] != true)) {
       throw const FormatException('Invalid username auth capabilities');
     }
@@ -216,6 +215,17 @@ class CloudLocalAuthClient
   @override
   Future<void> resetPassword(String token, String password) async {
     await _post('reset-password', {'token': token, 'password': password}, 204);
+  }
+
+  @override
+  Future<void> resetUsernamePassword(String username, String password) async {
+    if (credentialMethod != 'username_password') {
+      throw StateError('Username reset requires username auth');
+    }
+    await _post('reset-password', {
+      'username': username,
+      'password': password,
+    }, 204);
   }
 
   CloudTokens _tokens(http.Response response) {

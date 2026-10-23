@@ -38,6 +38,40 @@ const _config = CloudAuthConfig(
 );
 
 void main() {
+  test(
+    'username registration sends canonical ID and accepts only 201',
+    () async {
+      for (final status in [201, 202, 409]) {
+        final client = CloudLocalAuthClient(
+          baseUrl: _config.apiUrl,
+          client: MockClient((request) async {
+            expect(request.url.path, '/v1/auth/local/registration');
+            expect(jsonDecode(request.body), {
+              'username': 'alice',
+              'password': 'long password 123',
+            });
+            return http.Response('', status);
+          }),
+        )..credentialMethod = 'username_password';
+        if (status == 201) {
+          await client.requestRegistration('alice', 'long password 123');
+        } else {
+          await expectLater(
+            client.requestRegistration('alice', 'long password 123'),
+            throwsA(
+              isA<CloudLocalAuthException>().having(
+                (error) => error.statusCode,
+                'statusCode',
+                status,
+              ),
+            ),
+          );
+        }
+        client.close();
+      }
+    },
+  );
+
   test('auth capability selection prefers email and suppresses contradictory signup', () {
     const config = CloudAuthConfig(
       issuer: '',
@@ -85,6 +119,13 @@ void main() {
         ),
       ).method,
       'username_password',
+    );
+    expect(
+      CloudAuthCapabilities.fromJson({
+        ...data,
+        'methods': ['username_password'],
+      }, config).passwordRecoveryEnabled,
+      isTrue,
     );
   });
 

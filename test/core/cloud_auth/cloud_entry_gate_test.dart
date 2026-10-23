@@ -642,7 +642,7 @@ void main() {
           return capabilities == 1
               ? http.Response('', 500)
               : http.Response(
-                  '{"schema_version":1,"methods":["username_password"],"registration_enabled":false,"email_verification_required":false,"password_recovery_enabled":false,"session_logout_revokes_access":true}',
+                  '{"schema_version":1,"methods":["username_password"],"registration_enabled":false,"email_verification_required":false,"password_recovery_enabled":true,"session_logout_revokes_access":true}',
                   200,
                 );
         }
@@ -668,11 +668,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(capabilities, 2);
     expect(session.credentialMethod, 'username_password');
+    expect(find.text('Forgot password?'), findsOneWidget);
     expect(login?.body, contains('"username":"nik"'));
     expect(find.text('Invalid username or password.'), findsOneWidget);
     expect(
       tester
           .widget<TextField>(find.byKey(const Key('localSignInEmail')))
+          .controller
+          ?.text,
+      'nik',
+    );
+    await tester.tap(find.text('Forgot password?'));
+    await tester.pumpAndSettle();
+    expect(find.text('User ID'), findsOneWidget);
+    expect(find.text('Request reset link'), findsNothing);
+    expect(find.byKey(const Key('recoveryUserId')), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('recoveryUserId')))
           .controller
           ?.text,
       'nik',
@@ -1144,7 +1157,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Private Home'), findsNothing);
-    expect(find.text('Username'), findsOneWidget);
+    expect(find.text('User ID'), findsOneWidget);
     expect(find.text('Password'), findsOneWidget);
     expect(find.text('Submit'), findsOneWidget);
     expect(find.text('Internal Error, Try again later'), findsOneWidget);
