@@ -161,3 +161,56 @@ class HubConnection {
     );
   }
 }
+
+/// A one-use local pairing capability returned by the authenticated Cloud API.
+class HubPairingResolution {
+  const HubPairingResolution({
+    required this.hubId,
+    required this.localHubId,
+    required this.httpsOrigin,
+    required this.certificateSha256,
+    required this.enrollmentSecret,
+    required this.expiresAt,
+  });
+
+  final String hubId;
+  final String localHubId;
+  final String httpsOrigin;
+  final String certificateSha256;
+  final String enrollmentSecret;
+  final DateTime expiresAt;
+
+  factory HubPairingResolution.fromJson(Map<String, dynamic> json) {
+    final hubId = json['hub_id'];
+    final localHubId = json['local_hub_id'];
+    final origin = json['https_origin'];
+    final pin = json['certificate_sha256'];
+    final secret = json['enrollment_secret'];
+    final expiry = json['expires_at'];
+    final parsedExpiry = expiry is String ? DateTime.tryParse(expiry) : null;
+    final connection = HubConnection.tryParse({
+      'https_origin': origin,
+      'certificate_sha256': pin,
+      'expires_at': expiry,
+    });
+    if (hubId is! String ||
+        !RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(hubId) ||
+        localHubId is! String ||
+        !RegExp(r'^elhub_[A-Za-z0-9_-]+$').hasMatch(localHubId) ||
+        secret is! String ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(secret) ||
+        parsedExpiry == null ||
+        connection == null ||
+        !connection.isFresh) {
+      throw const FormatException('Invalid hub pairing resolution');
+    }
+    return HubPairingResolution(
+      hubId: hubId,
+      localHubId: localHubId,
+      httpsOrigin: connection.httpsOrigin,
+      certificateSha256: connection.certificateSha256,
+      enrollmentSecret: secret,
+      expiresAt: parsedExpiry,
+    );
+  }
+}

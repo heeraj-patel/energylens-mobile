@@ -100,7 +100,7 @@ void main() {
       expect(html, contains('data-el-route="settings_manage_devices"'));
       expect(html, contains('>Add device</button>'));
       final navigation = buildDesignNavigationScript('dashboard');
-      expect(navigation, contains('let route = button.dataset.elRoute'));
+      expect(navigation, contains("route = 'discover_devices'"));
       expect(
         buildFirstDeviceGuideScript(true),
         contains('guide.hidden = false'),
@@ -132,7 +132,7 @@ click({
   stopImmediatePropagation: () => {},
 });
 assert.equal(prevented, true);
-assert.deepEqual(routes, ['settings_manage_devices']);
+assert.deepEqual(routes, ['discover_devices']);
 ''',
         navigation,
       ]);

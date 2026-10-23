@@ -78,6 +78,7 @@ class DesignShell extends StatefulWidget {
     this.onReportPreview,
     this.settingsApi,
     this.onDiscoverDevices,
+    this.onAddDevice,
     this.onboardingLifecycle,
     this.photoCapture = const PhotoCaptureService(),
     this.recoverLostPhotoOnStart,
@@ -94,6 +95,7 @@ class DesignShell extends StatefulWidget {
   final VoidCallback? onReportPreview;
   final CloudApiClient? settingsApi;
   final Future<void> Function()? onDiscoverDevices;
+  final Future<void> Function()? onAddDevice;
   final CloudAuxiliaryDomainLifecycle? onboardingLifecycle;
   final PhotoCaptureService photoCapture;
   final bool? recoverLostPhotoOnStart;
@@ -2074,6 +2076,22 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
       return;
     }
     if (route == 'discover_devices') {
+      if (_page == 'dashboard') {
+        final addDevice = widget.onAddDevice;
+        if (addDevice == null) return;
+        if (!widget.localPilot) {
+          final scope = widget.designContextCoordinator?.context;
+          final lifecycle = widget.onboardingLifecycle;
+          if (scope == null ||
+              scope.mode != DesignContextMode.household ||
+              lifecycle == null ||
+              !lifecycle.isVerifiedScope(scope.accountId, scope.homeId)) {
+            return;
+          }
+        }
+        await addDevice();
+        return;
+      }
       if (widget.localPilot && !widget.designTour) {
         if (_page != 'settings_manage_devices' ||
             widget.onDiscoverDevices == null) {

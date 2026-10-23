@@ -155,6 +155,13 @@ class _FailedRestorePairingApi extends _FirstClaimApi {
   }
 }
 
+class _FailedScanApi extends _FirstClaimApi {
+  @override
+  Future<List<DiscoveredPlug>> scan(String baseUrl, String token) async {
+    throw StateError('Hub unavailable');
+  }
+}
+
 class _ClaimDiscoveryApi extends SavingApi {
   @override
   DiscoveryApi authorizedFor(HubOwnerAuthorization owner) => this;
@@ -947,9 +954,10 @@ void main() {
           ),
         );
       }
-      if (switchSession)
+      if (switchSession) {
         api.beforeClaimResponse = () =>
             session.selectCredentialMethod('username_password');
+      }
       await tester.pumpWidget(
         MaterialApp(
           home: DiscoveryScreen(
@@ -985,17 +993,13 @@ void main() {
         expect(api.scans, 1);
         expect(find.text('Hub connected'), findsOneWidget);
         if (_testDeveloperMode) {
-          await tester.tap(find.text('Connection details'));
-          await tester.pumpAndSettle();
           expect(find.text('Pair with a different hub'), findsOneWidget);
-          expect(find.textContaining('Paired hub:'), findsOneWidget);
-          expect(find.text('Paired hub address'), findsOneWidget);
         } else {
-          expect(find.text('Connection details'), findsNothing);
           expect(find.text('Pair with a different hub'), findsNothing);
-          expect(find.textContaining('Paired hub:'), findsNothing);
-          expect(find.text('Paired hub address'), findsNothing);
         }
+        expect(find.text('Connection details'), findsNothing);
+        expect(find.textContaining('Paired hub:'), findsNothing);
+        expect(find.text('Paired hub address'), findsNothing);
         expect(find.text('Link paired hub to home'), findsNothing);
         expect(find.textContaining('Link this paired hub'), findsNothing);
         expect(
@@ -1086,7 +1090,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         find.text('Internal Error, Try again later', skipOffstage: false),
-        findsOneWidget,
+        scenario == 'forbidden' ? findsOneWidget : findsNothing,
       );
       cloud.close();
     });
@@ -1428,7 +1432,7 @@ void main() {
 
       await tester.pumpWidget(screen());
       await tester.pumpAndSettle();
-      expect(find.text('Link paired hub to home'), findsOneWidget);
+      expect(find.text('Pair with hub'), findsOneWidget);
       expect(api.identityChecks, 1);
       expect(api.customerReads, 0);
       expect(find.text('Hub connected'), findsNothing);
@@ -1520,6 +1524,23 @@ void main() {
         if (request.url.path == '/v1/homes/$_cloudHomeId/hub-claims') {
           return http.Response('{}', 409);
         }
+        if (request.url.path ==
+            '/v1/homes/$_cloudHomeId/hub-pairings/resolve') {
+          return http.Response(
+            jsonEncode({
+              'hub_id': _cloudHubId,
+              'local_hub_id': _localHubId,
+              'https_origin': 'https://192.168.1.20:8787',
+              'certificate_sha256': 'a' * 64,
+              'enrollment_secret': 'b' * 64,
+              'expires_at': DateTime.now()
+                  .toUtc()
+                  .add(const Duration(minutes: 5))
+                  .toIso8601String(),
+            }),
+            200,
+          );
+        }
         return http.Response('{}', 404);
       }),
     );
@@ -1547,26 +1568,17 @@ void main() {
     expect(find.text('Link paired hub to home'), findsNothing);
     await tester.tap(find.text('Pair with hub'));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('operatorPairingJson')), findsOneWidget);
-    expect(find.byKey(const Key('pairingAddress')), findsOneWidget);
-    expect(find.byKey(const Key('pairingHubId')), findsOneWidget);
-    expect(find.byKey(const Key('pairingSecret')), findsOneWidget);
+    expect(find.byKey(const Key('pairingCode')), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
     expect(find.text('Internal Error, Try again later'), findsNothing);
-    await tester.enterText(
-      find.byKey(const Key('operatorPairingJson')),
-      jsonEncode({
-        'address': 'https://192.168.1.20:8787#sha256=${'a' * 64}',
-        'hub_id': _localHubId,
-        'enrollment_secret': 'new-secret',
-      }),
-    );
+    await tester.enterText(find.byKey(const Key('pairingCode')), 'PQR234');
     await tester.ensureVisible(find.text('Verify and pair'));
     await tester.tap(find.text('Verify and pair'));
     await tester.pumpAndSettle();
     expect(credentials.pairingClaims, 1);
-    expect(find.byKey(const Key('operatorPairingJson')), findsNothing);
+    expect(find.byKey(const Key('pairingCode')), findsNothing);
     expect(find.text('Set up later'), findsOneWidget);
-    expect(find.text('Link paired hub to home'), findsOneWidget);
+    expect(find.text('Pair with hub'), findsOneWidget);
     expect(linkedCalls, 0);
     await tester.tap(find.text('Set up later'));
     await tester.tap(find.text('Set up later'));
@@ -1574,70 +1586,60 @@ void main() {
     cloud.close();
   });
 
-  testWidgets(
-    'unlinked paired hub keeps retry disabled before and during claim',
-    (tester) async {
-      FlutterSecureStorage.setMockInitialValues({});
-      await const FlutterSecureStorage().delete(key: 'hub_claim_pending_v1');
-      final credentials = _FirstClaimCredentials();
-      final claimResponse = Completer<http.Response>();
-      final cloud = CloudApiClient(
-        session: CloudSession(
-          config: _cloudConfig,
-          store: _TestTokenStore(),
-          authenticator: _TestAuthenticator(),
-        ),
-        client: MockClient((request) async {
-          if (request.url.path == '/v1/homes/$_cloudHomeId/hubs') {
-            return http.Response('{"hubs":[]}', 200);
-          }
-          if (request.url.path == '/v1/homes/$_cloudHomeId/hub-claims') {
-            return claimResponse.future;
-          }
-          return http.Response('{}', 404);
-        }),
-      );
-      await tester.pumpWidget(
-        MaterialApp(
-          home: DiscoveryScreen(
-            api: _FirstClaimApi(),
-            credentials: credentials,
-            cloudHome: const CloudHome(
-              id: _cloudHomeId,
-              name: 'Selected home',
-              timezone: 'America/Chicago',
-              countryCode: 'US',
-              postalCode: '60601',
-            ),
-            cloudApi: cloud,
-            accountId: 'account-a',
-            newHomeOnboarding: true,
+  testWidgets('unlinked paired hub opens pairing while retry stays disabled', (
+    tester,
+  ) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    await const FlutterSecureStorage().delete(key: 'hub_claim_pending_v1');
+    final credentials = _FirstClaimCredentials();
+    final claimResponse = Completer<http.Response>();
+    final cloud = CloudApiClient(
+      session: CloudSession(
+        config: _cloudConfig,
+        store: _TestTokenStore(),
+        authenticator: _TestAuthenticator(),
+      ),
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/homes/$_cloudHomeId/hubs') {
+          return http.Response('{"hubs":[]}', 200);
+        }
+        if (request.url.path == '/v1/homes/$_cloudHomeId/hub-claims') {
+          return claimResponse.future;
+        }
+        return http.Response('{}', 404);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(
+          api: _FirstClaimApi(),
+          credentials: credentials,
+          cloudHome: const CloudHome(
+            id: _cloudHomeId,
+            name: 'Selected home',
+            timezone: 'America/Chicago',
+            countryCode: 'US',
+            postalCode: '60601',
           ),
+          cloudApi: cloud,
+          accountId: 'account-a',
+          newHomeOnboarding: true,
         ),
-      );
-      await tester.pumpAndSettle();
-      final retry = find.widgetWithText(OutlinedButton, 'Retry hub connection');
-      expect(retry, findsOneWidget);
-      expect(tester.widget<OutlinedButton>(retry).onPressed, isNull);
-      await tester.tap(find.text('Link paired hub to home'));
-      await tester.pumpAndSettle();
-      expect(find.text('Linking hub…'), findsOneWidget);
-      expect(tester.widget<OutlinedButton>(retry).onPressed, isNull);
-      claimResponse.complete(http.Response('{"code":"claim_conflict"}', 409));
-      await tester.pumpAndSettle();
-      expect(credentials.pairingClaims, 0);
-      expect(find.byKey(const Key('operatorPairingJson')), findsNothing);
-      expect(tester.widget<OutlinedButton>(retry).onPressed, isNull);
-      expect(
-        find.text(
-          'Cloud could not link this hub. It may already belong to a home. Check ownership before trying again.',
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('Internal Error, Try again later'), findsNothing);
-      cloud.close();
-    },
-  );
+      ),
+    );
+    await tester.pumpAndSettle();
+    final retry = find.widgetWithText(OutlinedButton, 'Retry hub connection');
+    expect(retry, findsOneWidget);
+    expect(tester.widget<OutlinedButton>(retry).onPressed, isNull);
+    expect(find.text('Pair with hub'), findsOneWidget);
+    await tester.tap(find.text('Pair with hub'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('pairingCode')), findsOneWidget);
+    expect(credentials.pairingClaims, 0);
+    expect(claimResponse.isCompleted, isFalse);
+    expect(find.text('Internal Error, Try again later'), findsNothing);
+    cloud.close();
+  });
 
   testWidgets('signup does not claim a pairing that fails restore', (
     tester,
@@ -1657,6 +1659,23 @@ void main() {
       client: MockClient((request) async {
         if (request.url.path == '/v1/homes/$_cloudHomeId/hubs') {
           return http.Response('{"hubs":[]}', 200);
+        }
+        if (request.url.path ==
+            '/v1/homes/$_cloudHomeId/hub-pairings/resolve') {
+          return http.Response(
+            jsonEncode({
+              'hub_id': _cloudHubId,
+              'local_hub_id': _localHubId,
+              'https_origin': 'https://192.168.1.20:8787',
+              'certificate_sha256': 'a' * 64,
+              'enrollment_secret': 'b' * 64,
+              'expires_at': DateTime.now()
+                  .toUtc()
+                  .add(const Duration(minutes: 5))
+                  .toIso8601String(),
+            }),
+            200,
+          );
         }
         claimRequests++;
         return http.Response('{}', 409);
@@ -1683,14 +1702,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Pair with hub'));
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const Key('operatorPairingJson')),
-      jsonEncode({
-        'address': 'https://192.168.1.20:8787#sha256=${'a' * 64}',
-        'hub_id': _localHubId,
-        'enrollment_secret': 'new-secret',
-      }),
-    );
+    await tester.enterText(find.byKey(const Key('pairingCode')), 'PQR234');
     await tester.ensureVisible(find.text('Verify and pair'));
     await tester.tap(find.text('Verify and pair'));
     await tester.pumpAndSettle();
@@ -2253,14 +2265,18 @@ void main() {
   testWidgets('shows a discovered HS103 separately from its unknown load', (
     tester,
   ) async {
+    final credentials = FakeCredentials()
+      ..address = 'https://192.168.1.20:8787'
+      ..token = 'test-token';
     await tester.pumpWidget(
-      const MaterialApp(home: DiscoveryScreen(api: FakeDiscoveryApi())),
+      MaterialApp(
+        home: DiscoveryScreen(
+          api: const FakeDiscoveryApi(),
+          credentials: credentials,
+        ),
+      ),
     );
-    await tester.enterText(
-      find.byType(TextField).at(0),
-      'https://192.168.1.20:8787',
-    );
-    await tester.enterText(find.byType(TextField).at(1), 'test-token');
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Scan for plugs'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
@@ -2290,17 +2306,15 @@ void main() {
     tester,
   ) async {
     final api = SavingApi();
-    final credentials = FakeCredentials();
+    final credentials = FakeCredentials()
+      ..address = 'https://192.168.1.20:8787'
+      ..token = 'test-token';
     await tester.pumpWidget(
       MaterialApp(
         home: DiscoveryScreen(api: api, credentials: credentials),
       ),
     );
-    await tester.enterText(
-      find.byType(TextField).at(0),
-      'https://192.168.1.20:8787',
-    );
-    await tester.enterText(find.byType(TextField).at(1), 'test-token');
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Scan for plugs'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
@@ -3160,28 +3174,97 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(
-      find.text('Paired hub: hub-1'),
-      _testDeveloperMode ? findsOneWidget : findsNothing,
-    );
+    expect(find.text('Paired hub: hub-1'), findsNothing);
     expect(
       find.text('Pair with a different hub'),
       _testDeveloperMode ? findsOneWidget : findsNothing,
     );
-    expect(
-      find.text('Paired hub address'),
-      _testDeveloperMode ? findsOneWidget : findsNothing,
-    );
+    expect(find.text('Paired hub address'), findsNothing);
     expect(find.text('Connect to your local hub'), findsNothing);
     expect(find.text('Link paired hub to home'), findsNothing);
     expect(find.textContaining('Link this paired hub'), findsNothing);
     expect(find.textContaining('Pair this phone with the hub'), findsNothing);
-    expect(find.text('Hub temporarily unavailable.'), findsOneWidget);
+    expect(find.text('Hub temporarily unavailable.'), findsNothing);
     expect(find.text('Retry hub connection'), findsOneWidget);
     expect(api.checks, 1);
     await tester.tap(find.text('Retry hub connection'));
     await tester.pumpAndSettle();
     expect(api.checks, 2);
+    expect(find.text('Hub temporarily unavailable.'), findsOneWidget);
+  });
+
+  testWidgets(
+    'pre-pair discovery shows no Hub URL or token controls or error',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(
+            api: const FakeDiscoveryApi(),
+            credentials: FakeCredentials(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('hubAddress')), findsNothing);
+      expect(find.text('Hub address'), findsNothing);
+      expect(find.text('Paired hub address'), findsNothing);
+      expect(find.text('Pilot discovery token'), findsNothing);
+      expect(find.byType(TextField), findsNothing);
+      expect(find.text('Pair with hub'), findsOneWidget);
+      expect(find.text('Scan for plugs'), findsNothing);
+      expect(
+        find.text(
+          'Scan results will appear here. Detection does not save a plug yet.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Internal Error, Try again later'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'explicit scan failure remains visible after empty initial state',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DiscoveryScreen(
+            api: _FailedScanApi(),
+            credentials: OfflinePairedCredentials(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Internal Error, Try again later'), findsNothing);
+      await tester.tap(find.text('Scan for plugs'));
+      await tester.pumpAndSettle();
+      expect(find.text('Internal Error, Try again later'), findsOneWidget);
+    },
+  );
+
+  testWidgets('background saved-plug failure keeps detected empty state', (
+    tester,
+  ) async {
+    final api = _FirstClaimApi()..failCustomerReads = true;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(
+          api: api,
+          credentials: OfflinePairedCredentials(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(api.customerReads, greaterThan(0));
+    expect(
+      find.text(
+        'Scan results will appear here. Detection does not save a plug yet.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Internal Error, Try again later'), findsNothing);
+    await tester.tap(find.text('Retry hub connection'));
+    await tester.pumpAndSettle();
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
   });
 
   testWidgets('retry stays disabled until an attempted restore finishes', (
