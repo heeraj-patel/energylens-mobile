@@ -15,6 +15,89 @@ const _origin = 'https://account.example';
 
 void main() {
   var clipboard = '';
+  for (final usernameMode in [true, false]) {
+    testWidgets(
+      '${usernameMode ? 'username' : 'email'} reset accepts 8 and rejects 7 characters',
+      (tester) async {
+        var requests = 0;
+        final client =
+            CloudLocalAuthClient(
+                baseUrl: 'https://api.example',
+                client: MockClient((request) async {
+                  requests++;
+                  expect(jsonDecode(request.body)['password'], '12345678');
+                  return http.Response('', 204);
+                }),
+              )
+              ..credentialMethod = usernameMode
+                  ? 'username_password'
+                  : 'email_password';
+        await tester.pumpWidget(
+          MaterialApp(
+            home: CloudRecoveryScreen(
+              service: client,
+              usernameMode: usernameMode,
+              linkOrigin: _origin,
+            ),
+          ),
+        );
+        if (usernameMode) {
+          await tester.enterText(
+            find.byKey(const Key('recoveryUserId')),
+            'alice',
+          );
+        } else {
+          await tester.tap(find.text('I have a reset link'));
+          await tester.pumpAndSettle();
+          clipboard = '$_origin/reset-password#token=$_token';
+          await tester.ensureVisible(find.byKey(const Key('pasteResetLink')));
+          await tester.tap(find.byKey(const Key('pasteResetLink')));
+          await tester.pumpAndSettle();
+          expect(find.text('Reset link ready.'), findsOneWidget);
+        }
+        expect(
+          find.text('New password (at least 8 characters)'),
+          findsOneWidget,
+        );
+        await tester.enterText(
+          find.byKey(const Key('resetPassword')),
+          '1234567',
+        );
+        await tester.enterText(
+          find.byKey(const Key('resetConfirm')),
+          '1234567',
+        );
+        await tester.ensureVisible(
+          find.byKey(const Key('submitPasswordReset')),
+        );
+        await tester.tap(find.byKey(const Key('submitPasswordReset')));
+        await tester.pumpAndSettle();
+        expect(requests, 0);
+        expect(
+          find.text('Enter a matching new password of at least 8 characters.'),
+          findsOneWidget,
+        );
+        if (!usernameMode) {
+          clipboard = '$_origin/reset-password#token=$_token';
+          await tester.ensureVisible(find.byKey(const Key('pasteResetLink')));
+          await tester.tap(find.byKey(const Key('pasteResetLink')));
+          await tester.pumpAndSettle();
+        }
+        await tester.enterText(
+          find.byKey(const Key('resetPassword')),
+          '12345678',
+        );
+        await tester.enterText(
+          find.byKey(const Key('resetConfirm')),
+          '12345678',
+        );
+        await tester.tap(find.byKey(const Key('submitPasswordReset')));
+        await tester.pumpAndSettle();
+        expect(requests, 1);
+        client.close();
+      },
+    );
+  }
   setUp(() {
     clipboard = '';
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -226,7 +309,7 @@ void main() {
       expect(requests, 0);
       expect(events.last, 'reset_validation_password');
       expect(
-        find.text('Enter a matching new password of at least 12 characters.'),
+        find.text('Enter a matching new password of at least 8 characters.'),
         findsOneWidget,
       );
       expect(tester.getBottomLeft(error).dy, lessThan(390));

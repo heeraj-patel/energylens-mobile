@@ -654,7 +654,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
       if (mounted && epoch == _lifecycleEpoch) {
         setState(() {
           _submitError = true;
-          _invalidCredentials = error.statusCode == 401;
+          _invalidCredentials = error.invalidCredentials;
         });
       }
     } catch (_) {

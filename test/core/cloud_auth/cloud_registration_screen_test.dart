@@ -52,6 +52,17 @@ class _UsernameRegistration implements CloudRegistrationService {
   Future<void> verifyEmail(String token) async {}
 }
 
+class _BoundaryRegistration implements CloudRegistrationService {
+  final passwords = <String>[];
+  @override
+  Future<void> requestRegistration(String username, String password) async {
+    passwords.add(password);
+  }
+
+  @override
+  Future<void> verifyEmail(String token) async {}
+}
+
 class _Store implements CloudTokenStore {
   int saves = 0;
   CloudTokens? tokens;
@@ -102,6 +113,41 @@ void main() {
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, null);
+  });
+
+  testWidgets('username signup accepts 8 bytes and rejects 7 bytes', (
+    tester,
+  ) async {
+    final service = _BoundaryRegistration();
+    await tester.pumpWidget(
+      MaterialApp(home: CloudRegistrationScreen(service: service)),
+    );
+    await tester.enterText(
+      find.byKey(const Key('registrationUserId')),
+      'alice',
+    );
+    await tester.enterText(
+      find.byKey(const Key('registrationPassword')),
+      '1234567',
+    );
+    await tester.enterText(
+      find.byKey(const Key('registrationConfirm')),
+      '1234567',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+    await tester.pumpAndSettle();
+    expect(service.passwords, isEmpty);
+    await tester.enterText(
+      find.byKey(const Key('registrationPassword')),
+      '12345678',
+    );
+    await tester.enterText(
+      find.byKey(const Key('registrationConfirm')),
+      '12345678',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+    await tester.pumpAndSettle();
+    expect(service.passwords, ['12345678']);
   });
 
   testWidgets('registration is hidden without an injected capability', (

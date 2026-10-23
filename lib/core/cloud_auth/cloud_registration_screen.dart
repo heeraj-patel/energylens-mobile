@@ -53,7 +53,7 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
     final validIdentifier = RegExp(r'^[a-z0-9][a-z0-9._-]{2,63}$')
         .hasMatch(userId);
     if (!validIdentifier ||
-        passwordBytes.length < 12 ||
+        passwordBytes.length < 8 ||
         passwordBytes.length > 1024 ||
         password.codeUnits.contains(0) ||
         password != _confirm.text) {

@@ -6,8 +6,13 @@ import 'cloud_auth.dart';
 import 'cloud_dev_tls.dart';
 
 class CloudLocalAuthException implements Exception {
-  const CloudLocalAuthException(this.statusCode);
+  const CloudLocalAuthException(
+    this.statusCode, {
+    this.invalidCredentials400 = false,
+  });
   final int statusCode;
+  final bool invalidCredentials400;
+  bool get invalidCredentials => statusCode == 401 || invalidCredentials400;
 }
 
 class CloudAuthCapabilities {
@@ -149,7 +154,24 @@ class CloudLocalAuthClient
         )
         .timeout(const Duration(seconds: 15));
     if (response.statusCode != status) {
-      throw CloudLocalAuthException(response.statusCode);
+      var invalidCredentials400 = false;
+      if (path == 'login' &&
+          credentialMethod == 'username_password' &&
+          response.statusCode == 400) {
+        try {
+          final body = jsonDecode(response.body);
+          invalidCredentials400 =
+              body is Map<String, dynamic> &&
+              body['code'] == 'invalid_request' &&
+              body['message'] == 'invalid username or password';
+        } on FormatException {
+          // Malformed error responses remain internal failures.
+        }
+      }
+      throw CloudLocalAuthException(
+        response.statusCode,
+        invalidCredentials400: invalidCredentials400,
+      );
     }
     return response;
   }

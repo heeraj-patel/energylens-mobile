@@ -38,6 +38,79 @@ const _config = CloudAuthConfig(
 );
 
 void main() {
+  for (final failure in [
+    (
+      400,
+      '{"code":"invalid_request","message":"invalid username or password"}',
+      true,
+    ),
+    (401, '{"code":"invalid_credential"}', true),
+    (400, '{"code":"invalid_request","message":"invalid JSON"}', false),
+    (400, 'not JSON', false),
+    (500, '{"code":"server_error"}', false),
+  ]) {
+    testWidgets(
+      'username login HTTP ${failure.$1} maps credential response ${failure.$3}',
+      (tester) async {
+        final client = CloudLocalAuthClient(
+          baseUrl: _config.apiUrl,
+          client: MockClient(
+            (_) async => http.Response(failure.$2, failure.$1),
+          ),
+        )..credentialMethod = 'username_password';
+        final session = CloudSession(
+          config: _config,
+          store: _Store(),
+          authenticator: _Oidc(),
+          localAuth: client,
+        );
+        final api = CloudApiClient(
+          session: session,
+          client: MockClient(
+            (request) async => request.url.path == '/v1/auth/config'
+                ? http.Response(
+                    '{"schema_version":1,"methods":["username_password"],'
+                    '"registration_enabled":false,"email_verification_required":false,'
+                    '"password_recovery_enabled":true,"session_logout_revokes_access":true}',
+                    200,
+                  )
+                : http.Response('', 500),
+          ),
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: CloudEntryGate(
+              session: session,
+              api: api,
+              homeBuilder: (_, _, _, _) => const Text('Private Home'),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('localSignInEmail')),
+          'alice',
+        );
+        await tester.enterText(
+          find.byKey(const Key('localSignInPassword')),
+          'wrong',
+        );
+        await tester.tap(find.text('Submit'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text(
+            failure.$3
+                ? 'Invalid username or password.'
+                : 'Internal Error, Try again later',
+          ),
+          findsOneWidget,
+        );
+        expect(find.textContaining('invalid JSON'), findsNothing);
+        api.close();
+        client.close();
+      },
+    );
+  }
   test(
     'username registration sends canonical ID and accepts only 201',
     () async {
