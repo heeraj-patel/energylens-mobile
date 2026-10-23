@@ -1300,6 +1300,11 @@ void main() {
   testWidgets('first-home route commits versioned profile before home', (
     tester,
   ) async {
+    tester.binding.platformDispatcher.localeTestValue = const Locale(
+      'en',
+      'US',
+    );
+    addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
     tester.view.physicalSize = const Size(800, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -1383,10 +1388,6 @@ void main() {
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('setupCountry')), 'US');
-    await tester.enterText(
-      find.byKey(const Key('setupTimeZone')),
-      'America/Chicago',
-    );
     await tester.enterText(find.byKey(const Key('setupPostalCode')), '60601');
     await tester.ensureVisible(find.text('Continue'));
     await tester.tap(find.text('Continue'));

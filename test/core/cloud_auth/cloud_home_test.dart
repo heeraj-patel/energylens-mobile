@@ -37,6 +37,26 @@ class Auth implements CloudAuthenticator {
 }
 
 void main() {
+  test('US dropdown options are valid IANA zone IDs', () {
+    expect(usIanaTimeZones.length, 29);
+    expect(usIanaTimeZones.toSet().length, 29);
+    for (final zone in usIanaTimeZones) {
+      expect(
+        CloudHomeCreate.validate(
+          name: 'Home',
+          timezone: zone,
+          countryCode: 'US',
+          postalCode: '60601',
+        )?.timezone,
+        zone,
+      );
+    }
+    expect(
+      usIanaTimeZones,
+      containsAll(['America/Phoenix', 'Pacific/Honolulu', 'America/Adak']),
+    );
+  });
+
   test('home milestone distinguishes missing, incomplete, and completed', () {
     final base = <String, dynamic>{
       'id': 'home-1',
@@ -90,21 +110,22 @@ void main() {
       ),
       isNull,
     );
+    for (final zone in ['', 'Invalid/Zone', 'EST']) {
+      final fallback = CloudHomeCreate.validate(
+        name: 'Home',
+        timezone: zone,
+        countryCode: 'US',
+        postalCode: '60601',
+      );
+      expect(fallback?.timezone, '');
+      expect(fallback?.toJson()['timezone'], '');
+    }
     expect(
       CloudHomeCreate.validate(
         name: 'Home',
-        timezone: 'Invalid/Zone',
-        countryCode: 'US',
-        postalCode: '60601',
-      ),
-      isNull,
-    );
-    expect(
-      CloudHomeCreate.validate(
-        name: 'Home',
-        timezone: 'EST',
-        countryCode: 'US',
-        postalCode: '60601',
+        timezone: '',
+        countryCode: 'CA',
+        postalCode: 'M5V 3L9',
       ),
       isNull,
     );
