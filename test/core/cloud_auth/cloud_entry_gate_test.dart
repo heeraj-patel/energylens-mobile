@@ -664,6 +664,28 @@ void main() {
       find.byKey(const Key('localSignInPassword')),
       'wrong',
     );
+    final loginPassword = find.byKey(const Key('localSignInPassword'));
+    final loginToggle = find.descendant(
+      of: loginPassword,
+      matching: find.byType(IconButton),
+    );
+    expect(tester.widget<TextField>(loginPassword).obscureText, isTrue);
+    expect(tester.widget<IconButton>(loginToggle).tooltip, 'Show password');
+    expect(tester.getSize(loginToggle).width, greaterThanOrEqualTo(44));
+    final passwordController = tester
+        .widget<TextField>(loginPassword)
+        .controller!;
+    final beforeToggle = passwordController.value;
+    final focusBeforeToggle = FocusManager.instance.primaryFocus;
+    await tester.tap(loginToggle);
+    await tester.pump();
+    expect(tester.widget<TextField>(loginPassword).obscureText, isFalse);
+    expect(tester.widget<IconButton>(loginToggle).tooltip, 'Hide password');
+    expect(passwordController.value, beforeToggle);
+    expect(FocusManager.instance.primaryFocus, focusBeforeToggle);
+    await tester.tap(loginToggle);
+    await tester.pump();
+    expect(tester.widget<TextField>(loginPassword).obscureText, isTrue);
     await tester.tap(find.text('Submit'));
     await tester.pumpAndSettle();
     expect(capabilities, 2);
@@ -707,6 +729,7 @@ void main() {
     );
     var resets = 0;
     var logins = 0;
+    final recoveryEvents = <String>[];
     final local = CloudLocalAuthClient(
       baseUrl: localConfig.apiUrl,
       client: MockClient((request) async {
@@ -778,6 +801,7 @@ void main() {
           api: api,
           homeCreateStorage: MemoryDraftStorage(),
           activeHomeStorage: MemoryDraftStorage(),
+          recoveryDiagnosticSink: recoveryEvents.add,
           homeBuilder: (_, _, _, _) => const Text('Private Home'),
         ),
       ),
@@ -802,6 +826,113 @@ void main() {
     expect(store.tokens?.accessToken, 'reset-access');
     expect(find.byKey(const Key('recoveryUserId')), findsNothing);
     expect(find.text('Set up your home'), findsOneWidget);
+    expect(
+      recoveryEvents,
+      containsAllInOrder([
+        'reset_post_start',
+        'reset_post_204',
+        'reset_handoff_start',
+        'handoff_login_start',
+        'handoff_login_200',
+        'handoff_validation_success',
+        'handoff_route_pop',
+      ]),
+    );
+    api.close();
+    local.close();
+  });
+
+  testWidgets('reset 204 with login 401 records handoff failure and pops', (
+    tester,
+  ) async {
+    const localConfig = CloudAuthConfig(
+      issuer: '',
+      audience: '',
+      clientId: '',
+      redirectUrl: '',
+      apiUrl: 'https://api.example',
+      localAuthEnabled: true,
+    );
+    final events = <String>[];
+    var resets = 0;
+    var logins = 0;
+    final local = CloudLocalAuthClient(
+      baseUrl: localConfig.apiUrl,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/local/reset-password') {
+          resets++;
+          return http.Response('', 204);
+        }
+        if (request.url.path == '/v1/auth/local/login') {
+          logins++;
+          return http.Response('', 401);
+        }
+        return http.Response('', 404);
+      }),
+    );
+    final session = CloudSession(
+      config: localConfig,
+      store: Store()..tokens = null,
+      authenticator: Auth(),
+      localAuth: local,
+    );
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/config') {
+          return http.Response(
+            '{"schema_version":1,"methods":["username_password"],'
+            '"registration_enabled":false,"email_verification_required":false,'
+            '"password_recovery_enabled":true,"session_logout_revokes_access":true}',
+            200,
+          );
+        }
+        return http.Response('', 404);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          session: session,
+          api: api,
+          homeCreateStorage: MemoryDraftStorage(),
+          activeHomeStorage: MemoryDraftStorage(),
+          recoveryDiagnosticSink: events.add,
+          homeBuilder: (_, _, _, _) => const Text('Private Home'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Forgot password?'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('recoveryUserId')), 'alice');
+    await tester.enterText(
+      find.byKey(const Key('resetPassword')),
+      'replacement password 123',
+    );
+    await tester.enterText(
+      find.byKey(const Key('resetConfirm')),
+      'replacement password 123',
+    );
+    await tester.ensureVisible(find.byKey(const Key('submitPasswordReset')));
+    await tester.tap(find.byKey(const Key('submitPasswordReset')));
+    await tester.pumpAndSettle();
+    expect(resets, 1);
+    expect(logins, 1);
+    expect(find.byKey(const Key('recoveryUserId')), findsNothing);
+    expect(find.text('Internal Error, Try again later'), findsOneWidget);
+    expect(
+      events,
+      containsAllInOrder([
+        'reset_post_start',
+        'reset_post_204',
+        'handoff_login_start',
+        'handoff_login_http_401',
+        'handoff_route_pop',
+      ]),
+    );
+    expect(events.join(' '), isNot(contains('alice')));
+    expect(events.join(' '), isNot(contains('replacement')));
     api.close();
     local.close();
   });

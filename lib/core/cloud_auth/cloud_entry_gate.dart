@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
@@ -14,6 +16,7 @@ import 'cloud_auth.dart';
 import 'cloud_registration_screen.dart';
 import 'cloud_local_auth.dart';
 import 'cloud_recovery_screen.dart';
+import 'cloud_recovery_diagnostics.dart';
 import '../../features/identify/onboarding_draft_store.dart';
 
 class _UnavailableCloudTokenStore implements CloudTokenStore {
@@ -49,6 +52,7 @@ class CloudEntryGate extends StatefulWidget {
     this.auxiliaryDomainLifecycle,
     this.homeCreateStorage,
     this.activeHomeStorage,
+    this.recoveryDiagnosticSink,
   });
   final Widget Function(
     CloudHome? selectedHome,
@@ -84,6 +88,7 @@ class CloudEntryGate extends StatefulWidget {
   final CloudRegistrationService? registrationService;
   final OnboardingDraftStorage? homeCreateStorage;
   final OnboardingDraftStorage? activeHomeStorage;
+  final void Function(String event)? recoveryDiagnosticSink;
 
   /// Receives only account and home IDs verified through this gate's Cloud API.
   final DesignContextCoordinator? designContextCoordinator;
@@ -103,6 +108,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
   CloudLocalAuthClient? _ownedLocalAuth;
   final _localEmail = TextEditingController();
   final _localPassword = TextEditingController();
+  bool _showLocalPassword = false;
   bool _busy = true;
   bool _authenticated = false;
   String? _message;
@@ -753,15 +759,51 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     _localEmail.text = email;
     _localPassword.clear();
     try {
+      recordCloudRecoveryEvent(
+        'handoff_login_start',
+        sink: widget.recoveryDiagnosticSink,
+      );
       final login = _session.signInLocal(email, password);
       final sessionGeneration = _session.generation;
       await login;
+      recordCloudRecoveryEvent(
+        'handoff_login_200',
+        sink: widget.recoveryDiagnosticSink,
+      );
       if (!mounted || sessionGeneration != _session.generation) return;
       await _validate();
+      recordCloudRecoveryEvent(
+        _authenticated
+            ? 'handoff_validation_success'
+            : 'handoff_validation_failure',
+        sink: widget.recoveryDiagnosticSink,
+      );
+    } on CloudLocalAuthException catch (error) {
+      recordCloudRecoveryEvent(
+        'handoff_login_http_${error.statusCode}',
+        sink: widget.recoveryDiagnosticSink,
+      );
+      if (mounted) setState(() => _submitError = true);
+    } on TimeoutException {
+      recordCloudRecoveryEvent(
+        'handoff_login_timeout',
+        sink: widget.recoveryDiagnosticSink,
+      );
+      if (mounted) setState(() => _submitError = true);
     } catch (_) {
+      recordCloudRecoveryEvent(
+        'handoff_failure',
+        sink: widget.recoveryDiagnosticSink,
+      );
       if (mounted) setState(() => _submitError = true);
     } finally {
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        recordCloudRecoveryEvent(
+          'handoff_route_pop',
+          sink: widget.recoveryDiagnosticSink,
+        );
+        Navigator.of(context).pop();
+      }
     }
   }
 
@@ -859,12 +901,28 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                         TextField(
                           key: const Key('localSignInPassword'),
                           controller: _localPassword,
-                          obscureText: true,
+                          obscureText: !_showLocalPassword,
                           autofillHints: const [AutofillHints.password],
                           textInputAction: TextInputAction.done,
                           onSubmitted: (_) => _submit(),
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Password',
+                            suffixIcon: IconButton(
+                              tooltip: _showLocalPassword
+                                  ? 'Hide password'
+                                  : 'Show password',
+                              onPressed: _busy
+                                  ? null
+                                  : () => setState(
+                                      () => _showLocalPassword =
+                                          !_showLocalPassword,
+                                    ),
+                              icon: Icon(
+                                _showLocalPassword
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -916,6 +974,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                                       onEmailChanged: (email) =>
                                           _localEmail.text = email,
                                       onResetSuccess: _signInAfterRecovery,
+                                      diagnosticSink:
+                                          widget.recoveryDiagnosticSink,
                                     ),
                                   ),
                                 );

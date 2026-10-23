@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import '../backend_error.dart';
 import 'cloud_auth.dart';
 import 'cloud_auth_link.dart';
 import 'cloud_local_auth.dart';
+import 'cloud_recovery_diagnostics.dart';
 
 class CloudRecoveryScreen extends StatefulWidget {
   const CloudRecoveryScreen({
@@ -17,6 +19,7 @@ class CloudRecoveryScreen extends StatefulWidget {
     this.initialEmail = '',
     this.onEmailChanged,
     this.onResetSuccess,
+    this.diagnosticSink,
   });
 
   final LocalCloudAuthService service;
@@ -25,6 +28,7 @@ class CloudRecoveryScreen extends StatefulWidget {
   final String initialEmail;
   final ValueChanged<String>? onEmailChanged;
   final Future<void> Function(String email, String password)? onResetSuccess;
+  final void Function(String event)? diagnosticSink;
 
   @override
   State<CloudRecoveryScreen> createState() => _CloudRecoveryScreenState();
@@ -40,6 +44,8 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
   bool _requested = false;
   bool _showReset = false;
   bool _completed = false;
+  bool _showPassword = false;
+  bool _showConfirm = false;
   String? _error;
 
   @override
@@ -140,18 +146,32 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
   }
 
   Future<void> _reset() async {
-    if (_busy) return;
+    if (_busy) {
+      recordCloudRecoveryEvent(
+        'reset_duplicate_ignored',
+        sink: widget.diagnosticSink,
+      );
+      return;
+    }
     final token = _capturedToken;
     final password = _password.text;
     final identity = _email.text.trim().toLowerCase();
     if (widget.usernameMode &&
         !RegExp(r'^[a-z0-9][a-z0-9._-]{2,63}$').hasMatch(identity)) {
+      recordCloudRecoveryEvent(
+        'reset_validation_user_id',
+        sink: widget.diagnosticSink,
+      );
       _showError('Could not reset the password. Try again later.');
       _password.clear();
       _confirm.clear();
       return;
     }
     if (!widget.usernameMode && token == null) {
+      recordCloudRecoveryEvent(
+        'reset_validation_token',
+        sink: widget.diagnosticSink,
+      );
       _showError('Paste the reset link from your email.');
       _password.clear();
       _confirm.clear();
@@ -163,6 +183,10 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
         utf8.encode(password).length > 1024 ||
         password.codeUnits.contains(0) ||
         password != _confirm.text) {
+      recordCloudRecoveryEvent(
+        'reset_validation_password',
+        sink: widget.diagnosticSink,
+      );
       _showError('Enter a matching new password of at least 12 characters.');
       _capturedToken = null;
       _password.clear();
@@ -175,19 +199,35 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
       _busy = true;
       _error = null;
     });
+    var postSucceeded = false;
     try {
+      recordCloudRecoveryEvent('reset_post_start', sink: widget.diagnosticSink);
       if (widget.usernameMode) {
         await widget.service.resetUsernamePassword(identity, password);
       } else {
         await widget.service.resetPassword(token!, password);
       }
+      postSucceeded = true;
+      recordCloudRecoveryEvent('reset_post_204', sink: widget.diagnosticSink);
       if (!mounted) return;
       if (widget.onResetSuccess != null) {
+        recordCloudRecoveryEvent(
+          'reset_handoff_start',
+          sink: widget.diagnosticSink,
+        );
         await widget.onResetSuccess!(identity, password);
+        recordCloudRecoveryEvent(
+          'reset_handoff_returned',
+          sink: widget.diagnosticSink,
+        );
       } else {
         setState(() => _completed = true);
       }
     } on CloudLocalAuthException catch (error) {
+      recordCloudRecoveryEvent(
+        '${postSucceeded ? 'reset_handoff' : 'reset_post'}_http_${error.statusCode}',
+        sink: widget.diagnosticSink,
+      );
       _showError(
         !widget.usernameMode && error.statusCode == 401
             ? 'This reset link has expired or was already used. Request a new link.'
@@ -195,7 +235,17 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
             ? 'Could not reset the password. Try again later.'
             : internalErrorMessage,
       );
+    } on TimeoutException {
+      recordCloudRecoveryEvent(
+        postSucceeded ? 'reset_handoff_timeout' : 'reset_post_timeout',
+        sink: widget.diagnosticSink,
+      );
+      _showError(internalErrorMessage);
     } catch (_) {
+      recordCloudRecoveryEvent(
+        postSucceeded ? 'reset_handoff_failure' : 'reset_post_failure',
+        sink: widget.diagnosticSink,
+      );
       _showError(internalErrorMessage);
     } finally {
       _password.clear();
@@ -273,17 +323,32 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
                     key: const Key('resetPassword'),
                     controller: _password,
                     enabled: !_busy,
-                    obscureText: true,
+                    obscureText: !_showPassword,
                     autofillHints: const [AutofillHints.newPassword],
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'New password (at least 12 characters)',
+                      suffixIcon: IconButton(
+                        tooltip: _showPassword
+                            ? 'Hide password'
+                            : 'Show password',
+                        onPressed: _busy
+                            ? null
+                            : () => setState(
+                                () => _showPassword = !_showPassword,
+                              ),
+                        icon: Icon(
+                          _showPassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                        ),
+                      ),
                     ),
                   ),
                   TextField(
                     key: const Key('resetConfirm'),
                     controller: _confirm,
                     enabled: !_busy,
-                    obscureText: true,
+                    obscureText: !_showConfirm,
                     textInputAction: TextInputAction.done,
                     onSubmitted: (_) {
                       if (!_busy &&
@@ -291,8 +356,22 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
                         _reset();
                       }
                     },
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Confirm new password',
+                      suffixIcon: IconButton(
+                        tooltip: _showConfirm
+                            ? 'Hide password'
+                            : 'Show password',
+                        onPressed: _busy
+                            ? null
+                            : () =>
+                                  setState(() => _showConfirm = !_showConfirm),
+                        icon: Icon(
+                          _showConfirm
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),

@@ -32,6 +32,93 @@ void main() {
         .setMockMethodCallHandler(SystemChannels.platform, null);
   });
 
+  testWidgets(
+    'reset visibility controls are independent and preserve editing',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 650);
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+      var resets = 0;
+      final client = CloudLocalAuthClient(
+        baseUrl: 'https://api.example',
+        client: MockClient((request) async {
+          resets++;
+          expect(jsonDecode(request.body), {
+            'username': 'alice',
+            'password': 'replacement password 123',
+          });
+          return http.Response('', 204);
+        }),
+      )..credentialMethod = 'username_password';
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CloudRecoveryScreen(service: client, usernameMode: true),
+        ),
+      );
+      const passwordKey = Key('resetPassword');
+      const confirmKey = Key('resetConfirm');
+      final password = find.byKey(passwordKey);
+      final confirm = find.byKey(confirmKey);
+      final passwordToggle = find.descendant(
+        of: password,
+        matching: find.byType(IconButton),
+      );
+      final confirmToggle = find.descendant(
+        of: confirm,
+        matching: find.byType(IconButton),
+      );
+      expect(tester.widget<TextField>(password).obscureText, isTrue);
+      expect(tester.widget<TextField>(confirm).obscureText, isTrue);
+      expect(
+        tester.widget<IconButton>(passwordToggle).tooltip,
+        'Show password',
+      );
+      expect(tester.widget<IconButton>(confirmToggle).tooltip, 'Show password');
+      final semantics = tester.ensureSemantics();
+      expect(find.byTooltip('Show password'), findsNWidgets(2));
+      semantics.dispose();
+      expect(tester.getSize(passwordToggle).width, greaterThanOrEqualTo(44));
+      expect(tester.getSize(confirmToggle).height, greaterThanOrEqualTo(44));
+      await tester.enterText(password, 'replacement password 123');
+      await tester.tap(password);
+      await tester.pump();
+      final controller = tester.widget<TextField>(password).controller!;
+      final before = controller.value;
+      final focusBefore = FocusManager.instance.primaryFocus;
+      await tester.tap(passwordToggle);
+      await tester.pump();
+      expect(tester.widget<TextField>(password).obscureText, isFalse);
+      expect(tester.widget<TextField>(confirm).obscureText, isTrue);
+      expect(controller.text, before.text);
+      expect(controller.selection, before.selection);
+      expect(FocusManager.instance.primaryFocus, focusBefore);
+      expect(
+        tester.widget<IconButton>(passwordToggle).tooltip,
+        'Hide password',
+      );
+      await tester.enterText(confirm, 'replacement password 123');
+      await tester.tap(confirmToggle);
+      await tester.pump();
+      expect(tester.widget<TextField>(confirm).obscureText, isFalse);
+      expect(tester.widget<TextField>(password).obscureText, isFalse);
+      expect(tester.widget<IconButton>(confirmToggle).tooltip, 'Hide password');
+      await tester.tap(passwordToggle);
+      await tester.pump();
+      expect(tester.widget<TextField>(password).obscureText, isTrue);
+      expect(tester.widget<TextField>(confirm).obscureText, isFalse);
+      await tester.enterText(find.byKey(const Key('recoveryUserId')), 'alice');
+      await tester.ensureVisible(find.byKey(const Key('submitPasswordReset')));
+      await tester.tap(find.byKey(const Key('submitPasswordReset')));
+      await tester.pumpAndSettle();
+      expect(resets, 1);
+      expect(find.byKey(const Key('recoveryCompleted')), findsOneWidget);
+      client.close();
+    },
+  );
+
   testWidgets('blank and invalid User ID errors stay visible with keyboard', (
     tester,
   ) async {
@@ -42,6 +129,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetViewInsets);
     var requests = 0;
+    final events = <String>[];
     final client = CloudLocalAuthClient(
       baseUrl: 'https://api.example',
       client: MockClient((_) async {
@@ -53,7 +141,11 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           key: ValueKey(identity),
-          home: CloudRecoveryScreen(service: client, usernameMode: true),
+          home: CloudRecoveryScreen(
+            service: client,
+            usernameMode: true,
+            diagnosticSink: events.add,
+          ),
         ),
       );
       if (identity.isNotEmpty) {
@@ -75,6 +167,7 @@ void main() {
       final error = find.byKey(const Key('recoveryError'));
       final submit = find.byKey(const Key('submitPasswordReset'));
       expect(requests, 0);
+      expect(events.last, 'reset_validation_user_id');
       expect(
         find.text('Could not reset the password. Try again later.'),
         findsOneWidget,
@@ -101,6 +194,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetViewInsets);
     var requests = 0;
+    final events = <String>[];
     final client = CloudLocalAuthClient(
       baseUrl: 'https://api.example',
       client: MockClient((_) async {
@@ -112,7 +206,11 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           key: ValueKey(password),
-          home: CloudRecoveryScreen(service: client, usernameMode: true),
+          home: CloudRecoveryScreen(
+            service: client,
+            usernameMode: true,
+            diagnosticSink: events.add,
+          ),
         ),
       );
       await tester.enterText(find.byKey(const Key('recoveryUserId')), 'alice');
@@ -126,6 +224,7 @@ void main() {
       await tester.pumpAndSettle();
       final error = find.byKey(const Key('recoveryError'));
       expect(requests, 0);
+      expect(events.last, 'reset_validation_password');
       expect(
         find.text('Enter a matching new password of at least 12 characters.'),
         findsOneWidget,
@@ -143,6 +242,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetViewInsets);
     for (final status in [400, 408]) {
+      final events = <String>[];
       final client = CloudLocalAuthClient(
         baseUrl: 'https://api.example',
         client: MockClient((_) async {
@@ -153,7 +253,11 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           key: ValueKey(status),
-          home: CloudRecoveryScreen(service: client, usernameMode: true),
+          home: CloudRecoveryScreen(
+            service: client,
+            usernameMode: true,
+            diagnosticSink: events.add,
+          ),
         ),
       );
       await tester.enterText(find.byKey(const Key('recoveryUserId')), 'alice');
@@ -178,6 +282,13 @@ void main() {
         findsOneWidget,
       );
       expect(tester.getBottomLeft(error).dy, lessThan(390));
+      expect(
+        events,
+        containsAllInOrder([
+          'reset_post_start',
+          status == 400 ? 'reset_post_http_400' : 'reset_post_timeout',
+        ]),
+      );
       client.close();
     }
   });
