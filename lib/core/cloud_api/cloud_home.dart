@@ -6,6 +6,38 @@ import 'package:timezone/timezone.dart' as tz;
 
 final bool _zonesReady = _initializeZones();
 
+const usIanaTimeZones = <String>[
+  'America/New_York',
+  'America/Detroit',
+  'America/Kentucky/Louisville',
+  'America/Kentucky/Monticello',
+  'America/Indiana/Indianapolis',
+  'America/Indiana/Vincennes',
+  'America/Indiana/Winamac',
+  'America/Indiana/Marengo',
+  'America/Indiana/Petersburg',
+  'America/Indiana/Vevay',
+  'America/Chicago',
+  'America/Indiana/Tell_City',
+  'America/Indiana/Knox',
+  'America/Menominee',
+  'America/North_Dakota/Center',
+  'America/North_Dakota/New_Salem',
+  'America/North_Dakota/Beulah',
+  'America/Denver',
+  'America/Boise',
+  'America/Phoenix',
+  'America/Los_Angeles',
+  'America/Anchorage',
+  'America/Juneau',
+  'America/Sitka',
+  'America/Metlakatla',
+  'America/Yakutat',
+  'America/Nome',
+  'America/Adak',
+  'Pacific/Honolulu',
+];
+
 bool _initializeZones() {
   tz_data.initializeTimeZones();
   return true;
@@ -146,7 +178,7 @@ class CloudHomeCreate {
     if (cleanedName.isEmpty ||
         utf8.encode(cleanedName).length > 120 ||
         RegExp(r'[\x00-\x1f\x7f]').hasMatch(cleanedName) ||
-        !_validTimeZone(cleanedZone) ||
+        (cleanedCountry != 'US' && !_validTimeZone(cleanedZone)) ||
         !RegExp(r'^[A-Z]{2}$').hasMatch(cleanedCountry) ||
         !(cleanedCountry == 'US'
             ? RegExp(r'^\d{5}(?:-\d{4})?$').hasMatch(cleanedPostal)
@@ -155,7 +187,9 @@ class CloudHomeCreate {
     }
     return CloudHomeCreate(
       name: cleanedName,
-      timezone: cleanedZone,
+      timezone: cleanedCountry == 'US' && !_validTimeZone(cleanedZone)
+          ? ''
+          : cleanedZone,
       countryCode: cleanedCountry,
       postalCode: cleanedPostal,
     );

@@ -1,14 +1,127 @@
 import 'dart:io';
 
 import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_home_entry.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('US setup submits an empty zone for ZIP resolution', (
+    tester,
+  ) async {
+    tester.binding.platformDispatcher.localeTestValue = const Locale(
+      'en',
+      'US',
+    );
+    addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    CloudHomeCreate? submitted;
+    CloudHome? selected;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudHomeEntry(
+          homes: const [],
+          initialOwnerName: 'Owner',
+          onSaveOwner: (_) async {},
+          onRefresh: () async {},
+          onCreate: (input, _) async {
+            submitted = input;
+            return const CloudHome(
+              id: 'home-1',
+              name: 'Home',
+              timezone: 'America/Chicago',
+              countryCode: 'US',
+              postalCode: '60601',
+            );
+          },
+          onSelect: (home) => selected = home,
+          onSignOut: () {},
+        ),
+      ),
+    );
+    await tester.enterText(find.byKey(const Key('setupHomeName')), 'Home');
+    await tester.enterText(find.byKey(const Key('setupPostalCode')), '60601');
+    expect(find.byKey(const Key('setupCountry')), findsOneWidget);
+    expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
+    expect(find.byKey(const Key('setupTimeZone')), findsOneWidget);
+    await tester.ensureVisible(find.text('Continue'));
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(submitted?.toJson()['timezone'], '');
+    expect(selected?.timezone, 'America/Chicago');
+  });
+
+  testWidgets('US dropdown sends selected zone; non-US retains text entry', (
+    tester,
+  ) async {
+    tester.binding.platformDispatcher.localeTestValue = const Locale(
+      'en',
+      'US',
+    );
+    addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final inputs = <CloudHomeCreate>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudHomeEntry(
+          homes: const [],
+          onRefresh: () async {},
+          onCreate: (input, _) async {
+            inputs.add(input);
+            throw const CloudApiException(400, 'invalid_request');
+          },
+          onSelect: (_) {},
+          onSignOut: () {},
+        ),
+      ),
+    );
+    await tester.enterText(find.byKey(const Key('setupHomeName')), 'Home');
+    await tester.enterText(find.byKey(const Key('setupPostalCode')), '60601');
+    expect(find.byKey(const Key('setupCountry')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('setupTimeZone')));
+    await tester.tap(find.byType(DropdownButton<String>));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('America/Phoenix'),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(find.text('America/Phoenix').last);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Create home'));
+    await tester.tap(find.text('Create home'));
+    await tester.pumpAndSettle();
+    expect(inputs.single.timezone, 'America/Phoenix');
+
+    await tester.enterText(find.byKey(const Key('setupCountry')), 'CA');
+    await tester.enterText(find.byKey(const Key('setupPostalCode')), 'M5V 3L9');
+    expect(find.byType(DropdownButtonFormField<String>), findsNothing);
+    await tester.enterText(
+      find.byKey(const Key('setupTimeZone')),
+      'America/Toronto',
+    );
+    await tester.ensureVisible(find.text('Create home'));
+    await tester.tap(find.text('Create home'));
+    await tester.pumpAndSettle();
+    expect(inputs.last.timezone, 'America/Toronto');
+    expect(inputs.last.countryCode, 'CA');
+  });
+
   testWidgets(
     'first-home setup saves owner before home and retries profile only',
     (tester) async {
+      tester.binding.platformDispatcher.localeTestValue = const Locale(
+        'en',
+        'US',
+      );
+      addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -65,10 +178,6 @@ void main() {
       expect(find.byKey(const Key('setupCountry')), findsOneWidget);
       expect(find.byKey(const Key('setupTimeZone')), findsOneWidget);
       await tester.enterText(find.byKey(const Key('setupCountry')), 'US');
-      await tester.enterText(
-        find.byKey(const Key('setupTimeZone')),
-        'America/Chicago',
-      );
       await tester.enterText(find.byKey(const Key('setupPostalCode')), '60601');
       await tester.ensureVisible(find.text('Continue'));
       await tester.tap(find.text('Continue'));
@@ -86,6 +195,11 @@ void main() {
   testWidgets(
     'offline create keeps the same idempotency key for unchanged retry',
     (tester) async {
+      tester.binding.platformDispatcher.localeTestValue = const Locale(
+        'en',
+        'US',
+      );
+      addTearDown(tester.binding.platformDispatcher.clearLocaleTestValue);
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -123,11 +237,7 @@ void main() {
         find.widgetWithText(TextField, 'ZIP or postal code'),
         '60601',
       );
-      // Device time zone defaults can vary on CI; enter one known IANA location.
-      await tester.enterText(
-        find.widgetWithText(TextField, 'IANA time zone'),
-        'America/Chicago',
-      );
+      expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
       await tester.ensureVisible(find.text('Create home'));
       await tester.tap(find.text('Create home'));
       await tester.pumpAndSettle();

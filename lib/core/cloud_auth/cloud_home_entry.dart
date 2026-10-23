@@ -47,6 +47,10 @@ class _CloudHomeEntryState extends State<CloudHomeEntry> {
   bool _busy = false;
   bool _uncertain = false;
   bool _showLocationControls = false;
+  String? _selectedUsZone;
+  late bool _wasUs;
+
+  bool get _isUs => _country.text.trim().toUpperCase() == 'US';
 
   @override
   void initState() {
@@ -62,11 +66,22 @@ class _CloudHomeEntryState extends State<CloudHomeEntry> {
           : '',
     );
     _timezone = TextEditingController(text: resolvedDeviceIanaTimeZone() ?? '');
-    _showLocationControls = _country.text.isEmpty || _timezone.text.isEmpty;
+    _wasUs = _isUs;
+    _showLocationControls =
+        _isUs || _country.text.isEmpty || _timezone.text.isEmpty;
     _owner.addListener(_onOwnerEdit);
-    for (final controller in [_name, _zip, _country, _timezone]) {
+    _country.addListener(_onCountryEdit);
+    for (final controller in [_name, _zip, _timezone]) {
       controller.addListener(_onEdit);
     }
+  }
+
+  void _onCountryEdit() {
+    final isUs = _isUs;
+    if (isUs != _wasUs) _selectedUsZone = null;
+    _wasUs = isUs;
+    _onEdit();
+    if (mounted) setState(() {});
   }
 
   void _onOwnerEdit() {
@@ -99,7 +114,7 @@ class _CloudHomeEntryState extends State<CloudHomeEntry> {
     final owner = _owner.text.trim();
     final input = CloudHomeCreate.validate(
       name: _name.text,
-      timezone: _timezone.text,
+      timezone: _isUs ? _selectedUsZone ?? '' : _timezone.text,
       countryCode: _country.text,
       postalCode: _zip.text,
     );
@@ -270,7 +285,29 @@ class _CloudHomeEntryState extends State<CloudHomeEntry> {
                           : 'Country',
                     ),
                   ),
-                if (_showLocationControls)
+                if (_isUs)
+                  DropdownButtonFormField<String>(
+                    key: const Key('setupTimeZone'),
+                    initialValue: _selectedUsZone,
+                    isExpanded: true,
+                    menuMaxHeight: 320,
+                    decoration: InputDecoration(
+                      labelText: widget.onSaveOwner == null
+                          ? 'IANA time zone'
+                          : 'Time zone',
+                    ),
+                    items: [
+                      for (final zone in usIanaTimeZones)
+                        DropdownMenuItem(value: zone, child: Text(zone)),
+                    ],
+                    onChanged: _busy || _uncertain
+                        ? null
+                        : (value) {
+                            setState(() => _selectedUsZone = value);
+                            _onEdit();
+                          },
+                  )
+                else if (_showLocationControls)
                   TextField(
                     key: const Key('setupTimeZone'),
                     controller: _timezone,
