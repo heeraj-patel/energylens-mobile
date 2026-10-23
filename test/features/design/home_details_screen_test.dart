@@ -46,6 +46,113 @@ CloudApiClient _api(MockClient client) => CloudApiClient(
   client: client,
 );
 
+Map<String, Object?> _homeJson() => {
+  'id': _homeId,
+  'name': 'Original Home',
+  'timezone': 'America/Chicago',
+  'location': {'country_code': 'US', 'postal_code': '60601'},
+  'version': 1,
+};
+
+Future<void> _openHome(
+  WidgetTester tester, {
+  String fuel = 'natural_gas',
+  http.Response Function(http.Request)? onTariff,
+  http.Response Function(http.Request)? onPatch,
+  void Function(http.Request)? onRequest,
+  void Function(bool?)? onResult,
+}) async {
+  tester.view.physicalSize = const Size(800, 2400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  final client = MockClient((request) async {
+    onRequest?.call(request);
+    final path = request.url.path;
+    http.Response ok(Object body, [Map<String, String>? headers]) =>
+        http.Response(jsonEncode(body), 200, headers: headers ?? {});
+    if (path == '/v1/me') {
+      return ok({
+        'id': 'owner',
+        'email': 'owner@example.com',
+        'email_verified': true,
+      });
+    }
+    if (path == '/v1/homes' && request.method == 'GET') {
+      return ok({
+        'homes': [_homeJson()],
+      });
+    }
+    if (path == '/v1/me/preferences') {
+      return ok(
+        {'schema_version': 1, 'version': 1, 'email_reports_enabled': false},
+        {'etag': '"1"'},
+      );
+    }
+    if (path == '/v1/homes/$_homeId/preferences') {
+      return ok(
+        {
+          'schema_version': 1,
+          'version': 1,
+          'goal': 'unspecified',
+          'comfort_priority': 'unknown',
+        },
+        {'etag': '"1"'},
+      );
+    }
+    if (path == '/v1/homes/$_homeId/appliances') {
+      return ok({
+        'appliances': [
+          {
+            'id': '22222222-2222-4222-8222-222222222222',
+            'home_id': _homeId,
+            'name': 'Furnace',
+            'category': 'other',
+            'identity': {
+              'brand': 'Acme',
+              'full_model': 'F1',
+              'fuel': fuel,
+              'match_quality': 'confirmed_exact',
+            },
+          },
+        ],
+      });
+    }
+    if (path == '/v1/homes/$_homeId' && request.method == 'GET') {
+      return ok(_homeJson(), {'etag': '"1"'});
+    }
+    if (path == '/v1/homes/$_homeId' && request.method == 'PATCH') {
+      return onPatch?.call(request) ?? ok(_homeJson(), {'etag': '"2"'});
+    }
+    if (path == '/v1/homes/$_homeId/tariffs' && request.method == 'POST') {
+      return onTariff?.call(request) ?? http.Response(jsonEncode({}), 500);
+    }
+    fail('Unexpected ${request.method} $path');
+  });
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Builder(
+        builder: (context) => TextButton(
+          onPressed: () async {
+            final result = await Navigator.of(context).push<bool>(
+              MaterialPageRoute(
+                builder: (_) => HomeDetailsScreen(
+                  api: _api(client),
+                  homeId: _homeId,
+                  isCurrentHome: () => true,
+                ),
+              ),
+            );
+            onResult?.call(result);
+          },
+          child: const Text('Open'),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('Open'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets(
     'home form saves through selected-home versioned API and readback',
@@ -297,5 +404,36 @@ void main() {
     expect(tariffBodies.single['rate_kind'], 'user_tariff');
     expect(tariffBodies.single['is_fallback'], false);
     expect(result, true);
+  });
+
+  group('gas rate range and fuel', () {
+    const rangeText = 'Enter a gas rate between \$0.20 and \$10.00 per therm.';
+    final gasField = find.widgetWithText(TextField, 'Gas rate (\$/therm)');
+    bool saveEnabled(WidgetTester t) =>
+        t.widget<FilledButton>(find.byType(FilledButton)).onPressed != null;
+
+    testWidgets('accepts 0.20 and 10.00, rejects outside with the copy', (
+      tester,
+    ) async {
+      await _openHome(tester);
+      for (final bad in ['0.19', '0', '10.01', '1500']) {
+        await tester.enterText(gasField, bad);
+        await tester.pump();
+        expect(saveEnabled(tester), isFalse, reason: bad);
+        expect(find.text(rangeText), findsOneWidget, reason: bad);
+      }
+      for (final good in ['0.20', '10.00', '1.25']) {
+        await tester.enterText(gasField, good);
+        await tester.pump();
+        expect(saveEnabled(tester), isTrue, reason: good);
+        expect(find.text(rangeText), findsNothing, reason: good);
+      }
+    });
+
+    testWidgets('hides the gas rate input for a propane home', (tester) async {
+      await _openHome(tester, fuel: 'propane');
+      expect(gasField, findsNothing);
+      expect(saveEnabled(tester), isTrue);
+    });
   });
 }

@@ -90,7 +90,7 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
         );
         if (!mounted || !widget.isCurrentHome() || after == null) return;
       }
-      if (_gasRate.text.trim().isNotEmpty) {
+      if (!_hasPropane && _gasRate.text.trim().isNotEmpty) {
         await _saveGasRate();
         if (!mounted || !widget.isCurrentHome()) return;
         _gasRate.clear();
@@ -127,8 +127,22 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
   bool get _gasRateValid {
     final text = _gasRate.text.trim();
     if (text.isEmpty) return true;
-    return _gasRatePattern.hasMatch(text) && double.parse(text) > 0;
+    return _gasRatePattern.hasMatch(text) && _gasRateInRange(text);
   }
+
+  static bool _gasRateInRange(String text) {
+    final rate = double.parse(text);
+    return rate >= 0.20 && rate <= 10.00;
+  }
+
+  bool get _gasRateOutOfRange {
+    final text = _gasRate.text.trim();
+    return _gasRatePattern.hasMatch(text) && !_gasRateInRange(text);
+  }
+
+  /// Propane cost is not supported yet, so a propane home gets no gas rate.
+  bool get _hasPropane =>
+      _settings.snapshot?.appliances?.any((a) => a.fuel == 'propane') ?? false;
 
   /// A user gas tariff effective now, in USD per therm. The timestamp stays
   /// fixed with the idempotency key so a retry sends the identical body.
@@ -196,16 +210,24 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
             enabled: !_loading && !_saving,
             decoration: const InputDecoration(labelText: 'Country'),
           ),
-          TextField(
-            controller: _gasRate,
-            enabled: !_loading && !_saving,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (_) => setState(() {
-              _gasRateKey = newCloudIdempotencyKey();
-              _gasRateAt = null;
-            }),
-            decoration: const InputDecoration(labelText: 'Gas rate (\$/therm)'),
-          ),
+          if (!_hasPropane)
+            TextField(
+              controller: _gasRate,
+              enabled: !_loading && !_saving,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              onChanged: (_) => setState(() {
+                _gasRateKey = newCloudIdempotencyKey();
+                _gasRateAt = null;
+              }),
+              decoration: InputDecoration(
+                labelText: 'Gas rate (\$/therm)',
+                errorText: _gasRateOutOfRange
+                    ? 'Enter a gas rate between \$0.20 and \$10.00 per therm.'
+                    : null,
+              ),
+            ),
           if (_conflict)
             const Text('Home details changed elsewhere. Reload and try again.'),
           if (_backendFailed) const Text(internalErrorMessage),
