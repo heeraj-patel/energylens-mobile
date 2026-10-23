@@ -114,6 +114,7 @@ CloudRecommendation reviewedRecommendation(
   String ruleId = 'refrigerator.maintenance',
   String savingsBasis = 'reviewed_action_scenario',
   Uri? sourceUrl,
+  CloudResearchTip? researchTip,
   CloudRecommendationTipCategory tipCategory =
       CloudRecommendationTipCategory.care,
 }) => CloudRecommendation(
@@ -136,6 +137,7 @@ CloudRecommendation reviewedRecommendation(
   savingsCurrency: 'USD',
   savingsBasis: savingsBasis,
   sourceUrl: sourceUrl,
+  researchTip: researchTip,
   tipCategory: tipCategory,
 );
 
@@ -234,6 +236,31 @@ void main() {
         'care': const TipsPageRenderer().script(
           const DesignPageTicket(home, 'tips_care_upgrades', 3),
           snapshot(TipsPage.careUpgrades, recommendations),
+        ),
+        'research': const TipsPageRenderer().script(
+          const DesignPageTicket(home, 'tips_care_upgrades', 3),
+          snapshot(TipsPage.careUpgrades, [
+            reviewedRecommendation(
+              '5.04',
+              researchTip: CloudResearchTip(
+                sourceText: 'Clean the coils twice a year.',
+                sourceUrl: Uri.parse('https://energy.example/fridge'),
+              ),
+            ),
+            reviewedRecommendation('5.04', ruleId: 'lighting.equivalent_bulb'),
+          ]),
+        ),
+        'researchOtherPage': const TipsPageRenderer().script(
+          const DesignPageTicket(home, 'tips_efficiency', 3),
+          snapshot(TipsPage.efficiency, [
+            reviewedRecommendation(
+              '5.04',
+              researchTip: CloudResearchTip(
+                sourceText: 'Clean the coils twice a year.',
+                sourceUrl: Uri.parse('https://energy.example/fridge'),
+              ),
+            ),
+          ]),
         ),
         'boundary': const TipsPageRenderer().script(
           const DesignPageTicket(home, 'perks_tips', 3),
@@ -392,6 +419,16 @@ assert.deepEqual(careGroup.children[1].children.map(card => text(card.children[0
 assert.equal(careGroup.children[1].children[0].children[0].children[2].textContent, 'Save ~$0.42/mo');
 assert.ok(careGroup.children[1].children.every(card => Object.hasOwn(card.attributes, 'data-el-tip-item')));
 assert.deepEqual(care.mount.events, ['energylens:tips-changed']);
+const research = render('tips_care_upgrades', scripts.research);
+const researchCards = research.mount.children[1].children[1].children;
+const researchLine = researchCards[0].children[0].children.find(child => Object.hasOwn(child.attributes, 'data-el-research-source'));
+assert.equal(researchLine.textContent, '"Clean the coils twice a year." (energy.example) ');
+assert.equal(researchLine.children[0].textContent, 'Source');
+assert.equal(researchLine.children[0].href, 'https://energy.example/fridge');
+assert.equal(researchCards[1].children[0].children.some(child => Object.hasOwn(child.attributes, 'data-el-research-source')), false);
+const researchElsewhere = render('tips_efficiency', scripts.researchOtherPage);
+const hasResearch = node => Object.hasOwn(node.attributes, 'data-el-research-source') || node.children.some(hasResearch);
+assert.equal(researchElsewhere.mount.children.some(hasResearch), false);
 const empty = render('tips_care_upgrades', scripts.empty);
 assert.equal(empty.mount.children.length, 0);
 assert.equal(empty.siblings.length, 0);

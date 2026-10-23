@@ -49,6 +49,33 @@ final _money = RegExp(r'^\d+(?:\.\d{1,6})?$');
 
 enum CloudRecommendationTipCategory { general, care, upgrade }
 
+/// Datawiz `research_evidence` tip text with its https source.
+class CloudResearchTip {
+  const CloudResearchTip({required this.sourceText, required this.sourceUrl});
+  final String sourceText;
+  final Uri sourceUrl;
+
+  /// Returns null for any entry without text and an https source.
+  static CloudResearchTip? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final value = json['value'];
+    final source = json['source'];
+    if (value is! Map || source is! Map) return null;
+    final text = value['action_source_text'];
+    final url = source['url'];
+    final uri = url is String ? Uri.tryParse(url) : null;
+    if (text is! String ||
+        text.trim().isEmpty ||
+        uri == null ||
+        uri.scheme != 'https' ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty) {
+      return null;
+    }
+    return CloudResearchTip(sourceText: text.trim(), sourceUrl: uri);
+  }
+}
+
 class CloudRecommendation {
   const CloudRecommendation({
     required this.ruleId,
@@ -64,6 +91,7 @@ class CloudRecommendation {
     this.savingsCurrency,
     this.savingsBasis,
     this.sourceUrl,
+    this.researchTip,
     this.tipCategory = CloudRecommendationTipCategory.general,
   });
   final String ruleId;
@@ -79,6 +107,7 @@ class CloudRecommendation {
   final String? savingsCurrency;
   final String? savingsBasis;
   final Uri? sourceUrl;
+  final CloudResearchTip? researchTip;
   final CloudRecommendationTipCategory tipCategory;
 
   factory CloudRecommendation.fromJson(
@@ -108,6 +137,10 @@ class CloudRecommendation {
             parsedSourceUrl?.host.isNotEmpty == true &&
             parsedSourceUrl?.userInfo.isEmpty == true
         ? parsedSourceUrl
+        : null;
+    final evidence = json['research_evidence'];
+    final researchTip = evidence is List
+        ? evidence.map(CloudResearchTip.tryParse).nonNulls.firstOrNull
         : null;
     final categoryValue = json['tip_category'];
     final tipCategory = categoryValue == null
@@ -198,6 +231,7 @@ class CloudRecommendation {
       savingsCurrency: savingsCurrency as String?,
       savingsBasis: savingsBasis as String?,
       sourceUrl: sourceUrl,
+      researchTip: researchTip,
       tipCategory: tipCategory,
     );
   }

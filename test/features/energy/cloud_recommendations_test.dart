@@ -112,6 +112,33 @@ void main() {
     );
   });
 
+  test('parses research_evidence tolerantly and keeps https sources only', () {
+    Map<String, dynamic> fact(Object? text, Object? url) => {
+      'value': {'action_source_text': text},
+      'source': {'url': url},
+    };
+    CloudResearchTip? tip(Object? evidence) => CloudRecommendation.fromJson(
+      {...action(), 'research_evidence': evidence},
+      {appliance},
+    ).researchTip;
+    final good = tip([
+      fact('', 'https://a.example/x'),
+      fact('Text', 'http://a.example/x'),
+      'junk',
+      {'value': 1, 'source': 2},
+      fact('Check the seals.', 'https://a.example/x'),
+    ]);
+    expect(good?.sourceText, 'Check the seals.');
+    expect(good?.sourceUrl.host, 'a.example');
+    expect(tip([fact('Text', 'http://a.example/x')]), isNull);
+    expect(tip([fact('Text', 'https://u:p@a.example/x')]), isNull);
+    expect(tip('not a list'), isNull);
+    expect(
+      CloudRecommendation.fromJson(action(), {appliance}).researchTip,
+      isNull,
+    );
+  });
+
   test('binds only reviewed HTTPS scenario source URLs', () {
     final reviewed = {
       ...action(),

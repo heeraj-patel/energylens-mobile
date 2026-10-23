@@ -84,6 +84,9 @@ class TipsPageRenderer {
             'explanation': action.explanation,
             'monthlySavings': savingsChipLabel(action),
             'sourceUrl': action.sourceUrl?.toString(),
+            'researchText': action.researchTip?.sourceText,
+            'researchUrl': action.researchTip?.sourceUrl.toString(),
+            'researchHost': action.researchTip?.sourceUrl.host,
           },
       ],
     });
@@ -183,6 +186,19 @@ class TipsPageRenderer {
         const hint = row.state === 'candidate' && hints[row.nextQuestion];
         detail.textContent = hint ? hint(row.applianceName) : row.explanation;
         body.append(detail);
+        if (payload.page === 'tips_care_upgrades' && row.researchText && row.researchUrl) {
+          const research = document.createElement('p');
+          research.className = 'font-body-md text-body-md text-on-surface-variant text-[13px] mt-space-xs';
+          research.setAttribute('data-el-research-source', '');
+          research.textContent = '"' + row.researchText + '" (' + row.researchHost + ') ';
+          const sourceLink = document.createElement('a');
+          sourceLink.href = row.researchUrl;
+          sourceLink.target = '_blank';
+          sourceLink.rel = 'noopener noreferrer';
+          sourceLink.textContent = 'Source';
+          research.append(sourceLink);
+          body.append(research);
+        }
         if (row.monthlySavings) {
           const savings = document.createElement('span');
           savings.className = 'px-2 py-0.5 rounded-full bg-secondary-container el-useful-ink text-[11px] font-semibold flex-shrink-0';
