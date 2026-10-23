@@ -2032,6 +2032,11 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
             homeId: current.homeId,
             applianceId: id,
             applianceName: name,
+            ownedApplianceIds: {
+              id,
+              for (final row in _savedAppliances ?? const <CloudAppliance>[])
+                row.id,
+            },
           ),
         ),
       );

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/backend_error.dart';
 import '../../core/cloud_api/cloud_api_client.dart';
 import '../../core/cloud_api/cloud_home.dart' show newCloudIdempotencyKey;
+import 'device_programs_section.dart';
 import 'usage_questions_panel.dart';
 
 const refreshEstimateLabel = 'Refresh estimate';
@@ -21,12 +22,18 @@ class CloudUsageQuestionsScreen extends StatefulWidget {
     required this.applianceId,
     required this.applianceName,
     required this.api,
+    this.ownedApplianceIds,
+    this.programsNow,
+    this.openProgramUrl,
   });
 
   final String homeId;
   final String applianceId;
   final String applianceName;
   final CloudApiClient api;
+  final Set<String>? ownedApplianceIds;
+  final DateTime Function()? programsNow;
+  final Future<void> Function(Uri url)? openProgramUrl;
 
   @override
   State<CloudUsageQuestionsScreen> createState() =>
@@ -35,6 +42,7 @@ class CloudUsageQuestionsScreen extends StatefulWidget {
 
 class _CloudUsageQuestionsScreenState extends State<CloudUsageQuestionsScreen> {
   final _panel = GlobalKey<UsageQuestionsPanelState>();
+  final _programs = GlobalKey<DeviceProgramsSectionState>();
   Timer? _cooldown;
   String? _message;
   bool _messageIsError = false;
@@ -130,7 +138,11 @@ class _CloudUsageQuestionsScreenState extends State<CloudUsageQuestionsScreen> {
           child: RefreshIndicator(
             color: UsageQuestionStyle.primary,
             onRefresh: () async {
-              await _panel.currentState?.reload();
+              await Future.wait([
+                if (_panel.currentState != null) _panel.currentState!.reload(),
+                if (_programs.currentState != null)
+                  _programs.currentState!.reload(),
+              ]);
             },
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -162,6 +174,18 @@ class _CloudUsageQuestionsScreenState extends State<CloudUsageQuestionsScreen> {
                   ),
                 ),
                 if (!_noQuestions) const SizedBox(height: 16),
+                if (widget.ownedApplianceIds != null) ...[
+                  DeviceProgramsSection(
+                    key: _programs,
+                    api: widget.api,
+                    homeId: widget.homeId,
+                    applianceId: widget.applianceId,
+                    ownedApplianceIds: widget.ownedApplianceIds!,
+                    now: widget.programsNow,
+                    openUrl: widget.openProgramUrl,
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 SizedBox(
                   height: 48,
                   child: FilledButton.icon(
