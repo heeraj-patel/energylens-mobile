@@ -200,6 +200,19 @@ class DiscoveryCredentials {
     }
   }
 
+  Future<void> clearHubPairing(
+    OwnedPairingScope scope,
+    HubOwnership ownership,
+  ) async {
+    final key = scope.keyFor(ownership);
+    await storage.delete(key);
+    await storage.delete('$key.client_id');
+    final legacy = await readPairing();
+    if (legacy?.hubId == ownership.localHubId) {
+      await storage.delete(_pairingStorageKey);
+    }
+  }
+
   Future<String> ownedClientId(
     OwnedPairingScope scope,
     HubOwnership ownership,

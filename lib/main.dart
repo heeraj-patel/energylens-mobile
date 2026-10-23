@@ -105,6 +105,7 @@ class EnergyLensApp extends StatelessWidget {
                   MaterialPageRoute<void>(
                     builder: (_) => DiscoveryScreen(
                       autoScan: true,
+                      returnToSettingsAfterPairing: true,
                       api: localDiscoveryApi,
                       credentials: localDiscoveryCredentials,
                     ),
@@ -166,6 +167,7 @@ class EnergyLensApp extends StatelessWidget {
                         MaterialPageRoute<void>(
                           builder: (_) => DiscoveryScreen(
                             autoScan: true,
+                            returnToSettingsAfterPairing: true,
                             cloudHome: cloudHome,
                             cloudApi: cloudApi,
                             accountId: accountId,

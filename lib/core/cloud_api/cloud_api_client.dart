@@ -1672,6 +1672,26 @@ class CloudApiClient {
     );
   }
 
+  Future<HubPairingResolution> resolveHubPairingCode(
+    String homeId,
+    String code, {
+    required String clientId,
+    required String idempotencyKey,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/hub-pairings/resolve',
+      jsonBody: jsonEncode({'code': code, 'client_id': clientId}),
+      idempotencyKey: idempotencyKey,
+    );
+    return _parseResponse(
+      response,
+      () => HubPairingResolution.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      ),
+    );
+  }
+
   Future<List<HubOwnership>> hubs(String homeId) async {
     final response = await get('/v1/homes/${Uri.encodeComponent(homeId)}/hubs');
     return _parseResponse(response, () {
@@ -1685,6 +1705,21 @@ class CloudApiClient {
         return hub;
       }).toList();
     });
+  }
+
+  Future<void> deleteHub(
+    String homeId,
+    String hubId, {
+    required int version,
+    required String idempotencyKey,
+  }) async {
+    if (version < 1) throw ArgumentError.value(version, 'version');
+    await _request(
+      'DELETE',
+      '/v1/homes/${Uri.encodeComponent(homeId)}/hubs/${Uri.encodeComponent(hubId)}',
+      ifMatch: '"$version"',
+      idempotencyKey: idempotencyKey,
+    );
   }
 
   Future<HubOwnership> finishHubClaim(
