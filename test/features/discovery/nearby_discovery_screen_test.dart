@@ -7,12 +7,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _Credentials extends DiscoveryCredentials {
+  _Credentials([this.address = 'https://192.168.1.20:8787']);
+
+  final String address;
+
   @override
   Future<StoredPairingCredential?> readPairing() async => null;
 
   @override
-  Future<(String?, String?)> read() async =>
-      ('https://192.168.1.20:8787', 'token');
+  Future<(String?, String?)> read() async => (address, 'token');
 }
 
 class _Api extends DiscoveryApi {
@@ -38,6 +41,7 @@ class _Api extends DiscoveryApi {
   int savedCallsAfterAdoption = 0;
   Completer<NearbyScan>? pendingStart;
   Completer<List<NearbySavedDevice>>? pendingInventory;
+  int inventoryCalls = 0;
   Completer<NearbySavedDevice>? pendingAdoption;
   final cancelledScanIds = <String>[];
   List<NearbySavedDevice> inventory = const [];
@@ -67,6 +71,7 @@ class _Api extends DiscoveryApi {
     String baseUrl,
     String token,
   ) async {
+    inventoryCalls++;
     if (failInventory || (failInventoryAfterAdoption && adoptionCount > 0)) {
       throw StateError('offline');
     }
@@ -1004,9 +1009,15 @@ void main() {
     );
     await tester.pump();
     await tester.pump();
-    await tester.enterText(
-      find.byKey(const Key('hubAddress')),
-      'https://192.168.1.30:8787',
+    expect(api.inventoryCalls, 1);
+    final nextApi = _Api(candidate());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(
+          api: nextApi,
+          credentials: _Credentials('https://192.168.1.30:8787'),
+        ),
+      ),
     );
     api.pendingInventory!.complete(const [
       NearbySavedDevice('old-device', 'Old hub device'),

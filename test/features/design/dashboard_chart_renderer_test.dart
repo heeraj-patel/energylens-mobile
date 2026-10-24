@@ -21,22 +21,24 @@ DashboardChartBar bar(
 );
 
 void main() {
-  test('scale uses useful plus waste and four nice integer-cent intervals', () {
+  test('scale uses useful plus waste and variable nice integer-cent ticks', () {
     final zero = DashboardChartScale([bar(BigInt.zero, BigInt.zero)]);
     expect(zero.upperCents, BigInt.from(100));
-    expect(zero.ticks, [0, 25, 50, 75, 100].map(BigInt.from));
+    expect(zero.ticks, [0, 100].map(BigInt.from));
     final one = DashboardChartScale([bar(BigInt.one, BigInt.zero)]);
-    expect(one.upperCents, BigInt.from(4));
-    expect(one.ratio(BigInt.one), .25);
+    expect(one.upperCents, BigInt.from(2));
+    expect(one.ticks, [0, 1, 2].map(BigInt.from));
+    expect(one.ratio(BigInt.one), .5);
     final normal = DashboardChartScale([bar(BigInt.from(70), BigInt.from(20))]);
-    expect(normal.upperCents, BigInt.from(200));
-    expect(normal.ratio(BigInt.from(90)), .45);
+    expect(normal.upperCents, BigInt.from(100));
+    expect(normal.ticks, [0, 50, 100].map(BigInt.from));
+    expect(normal.ratio(BigInt.from(90)), .9);
     expect(
       DashboardChartScale([
         bar(BigInt.from(1000), BigInt.zero),
         bar(BigInt.zero, BigInt.from(1000)),
       ]).upperCents,
-      BigInt.from(2000),
+      BigInt.from(1500),
     );
     final huge = BigInt.parse('100000000000000000000000000001');
     final large = DashboardChartScale([bar(huge, BigInt.one)]);
@@ -128,8 +130,8 @@ window.__energyLensDashboardRequestedPeriod = 'day';
 assert.equal(eval(scripts[0]), true);
 assert.equal(svg.children.length, 1);
 assert.equal(svg.attrs.viewBox, '0 0 320 200');
-assert.equal(descendants(svg, 'line').length, 5);
-assert.ok(Math.abs(Number(descendants(svg, 'rect').filter(x => x.attrs.class === 'el-useful-graph')[0].attrs.height) - 39.2) < .00001);
+assert.equal(descendants(svg, 'line').length, 3);
+assert.ok(Math.abs(Number(descendants(svg, 'rect').filter(x => x.attrs.class === 'el-useful-graph')[0].attrs.height) - 78.4) < .00001);
 const [group, secondGroup] = descendants(svg, 'g').filter(x => x.attrs.role === 'button');
 const tooltip = descendants(svg, 'g').find(x => x.attrs.class === 'el-chart-tooltip');
 assert.equal(group.attrs['aria-label'], 'Sep 30, 2026. Useful + Waste: $0.90');
@@ -161,6 +163,7 @@ assert.equal(tooltip.attrs.visibility, 'hidden');
 window.__energyLensDashboardRequestedPeriod = 'week';
 assert.equal(eval(scripts[0]), false);
 assert.equal(eval(scripts[1]), true);
+assert.equal(descendants(svg, 'line').length, 2);
 assert.equal(document.listeners.click.size, 1);
 assert.equal(svg.listeners.pointerleave.size, 1);
 assert.equal(summaries.dashboard_text_026.textContent, '$0.70 Useful');
@@ -171,6 +174,7 @@ zero.fire('focus');
 assert.equal(descendants(svg, 'g').find(x => x.attrs.class === 'el-chart-tooltip').attrs.visibility, 'visible');
 window.__energyLensDashboardRequestedPeriod = 'month';
 assert.equal(eval(scripts[2]), true);
+assert.equal(descendants(svg, 'line').length, 3);
 assert.equal(document.listeners.click.size, 1);
 assert.equal(svg.listeners.pointerleave.size, 1);
 assert.equal(buttons[2].state['bg-white'], true);

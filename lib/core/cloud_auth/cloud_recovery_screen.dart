@@ -305,7 +305,7 @@ class _CloudRecoveryScreenState extends State<CloudRecoveryScreen> {
                   ),
                 ],
                 if (_showReset) ...[
-                  const Divider(),
+                  if (!widget.usernameMode) const Divider(),
                   if (!widget.usernameMode) ...[
                     const Text(
                       'Copy the reset link from your email, then paste it here. The link expires after one hour and can be used once.',

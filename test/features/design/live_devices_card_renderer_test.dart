@@ -136,12 +136,7 @@ void main() {
       script,
       contains("clone.setAttribute('data-el-device-state', state)"),
     );
-    expect(
-      script,
-      contains(
-        "status.replaceChildren(dot, document.createTextNode(stateText))",
-      ),
-    );
+    expect(script, contains('status.textContent = stateText'));
     expect(
       script,
       contains(

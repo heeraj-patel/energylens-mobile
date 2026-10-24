@@ -560,6 +560,68 @@ final class DiscoveryNavigationUITests: XCTestCase {
     capture("Cloud approved lamp on Devices energy page")
   }
 
+  func testCloudSessionShowsTipsWithoutMetadataChips() throws {
+    continueAfterFailure = false
+    guard
+      ProcessInfo.processInfo.environment["ENERGYLENS_TEST_REUSE_SESSION"] == "1",
+      let username = ProcessInfo.processInfo.environment["ENERGYLENS_TEST_USERNAME"],
+      !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
+      throw XCTSkip("An existing Cloud session and its account identity were not supplied.")
+    }
+
+    let app = XCUIApplication(bundleIdentifier: "io.energylens.energylensMobile")
+    app.launch()
+    func label(_ value: String) -> XCUIElement {
+      app.descendants(matching: .any)
+        .matching(NSPredicate(format: "label == %@", value)).firstMatch
+    }
+    func tapNavigation(_ element: XCUIElement) {
+      let frame = element.frame
+      app.coordinate(withNormalizedOffset: CGVector(
+        dx: (frame.midX - app.frame.minX) / app.frame.width,
+        dy: (frame.midY - app.frame.minY) / app.frame.height)).tap()
+    }
+    func capture(_ name: String) {
+      let evidence = XCTAttachment(screenshot: app.screenshot())
+      evidence.name = name
+      evidence.lifetime = .keepAlways
+      add(evidence)
+    }
+
+    let settings = app.links
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Settings"))
+      .firstMatch
+    XCTAssertTrue(settings.waitForExistence(timeout: 180), "Authenticated dashboard did not render")
+    tapNavigation(settings)
+    XCTAssertTrue(label(username).waitForExistence(timeout: 90),
+                  "Reused Cloud session did not belong to the approved account")
+
+    let tips = app.links
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Tips"))
+      .firstMatch
+    XCTAssertTrue(tips.waitForExistence(timeout: 60), "Tips navigation was unavailable")
+    tapNavigation(tips)
+    let general = label("General Tips")
+    XCTAssertTrue(general.waitForExistence(timeout: 60), "General Tips tab did not render")
+    general.tap()
+    XCTAssertTrue(label("Power-Off Scheduling").waitForExistence(timeout: 60),
+                  "General Tips content did not render")
+    XCTAssertFalse(label("High Impact").exists)
+    XCTAssertFalse(label("Rate Timing").exists)
+    capture("Cloud General Tips without metadata chips")
+
+    let care = label("Care & Upgrades")
+    XCTAssertTrue(care.waitForExistence(timeout: 60), "Care & Upgrades tab was unavailable")
+    care.tap()
+    XCTAssertTrue(label("Care & Maintenance").waitForExistence(timeout: 60),
+                  "Care & Upgrades content did not render")
+    XCTAssertTrue(label("Filter Replacement").exists)
+    XCTAssertFalse(label("Low / Zero Cost").exists)
+    XCTAssertFalse(label("Long-term Value").exists)
+    capture("Cloud Care and Upgrades without metadata chips")
+  }
+
   func testLocalPilotSettingsToNearbyDevices() {
     let app = XCUIApplication(bundleIdentifier: "io.energylens.energylensMobile")
     app.launch()
@@ -594,5 +656,42 @@ final class DiscoveryNavigationUITests: XCTestCase {
       },
       object: app)
     XCTAssertEqual(XCTWaiter.wait(for: [results], timeout: 30), .completed)
+  }
+
+  func testLocalPilotTipsReturnToGeneralTipsFromCareAndKnowledge() {
+    continueAfterFailure = false
+    let app = XCUIApplication(bundleIdentifier: "io.energylens.energylensMobile")
+    app.launch()
+
+    func label(_ value: String) -> XCUIElement {
+      app.descendants(matching: .any)
+        .matching(NSPredicate(format: "label == %@", value)).firstMatch
+    }
+    func openTab(_ value: String) {
+      let tab = label(value)
+      XCTAssertTrue(tab.waitForExistence(timeout: 60), "\(value) tab did not render")
+      tab.tap()
+    }
+    func assertGeneralTipsRows() {
+      for title in ["Power-Off Scheduling", "Smart Strips & Plugs",
+                    "Off-Peak Hours", "Weather-Aware Usage"] {
+        XCTAssertTrue(label(title).waitForExistence(timeout: 60),
+                      "General Tips row \(title) did not render")
+      }
+    }
+
+    let tips = app.links
+      .matching(NSPredicate(format: "label CONTAINS[c] %@", "Tips"))
+      .firstMatch
+    XCTAssertTrue(tips.waitForExistence(timeout: 90), "Tips navigation did not render")
+    tips.tap()
+    openTab("Care & Upgrades")
+    XCTAssertTrue(label("Filter Replacement").waitForExistence(timeout: 60))
+    openTab("General Tips")
+    assertGeneralTipsRows()
+    openTab("Knowledge")
+    XCTAssertTrue(label("Find Answers").waitForExistence(timeout: 60))
+    openTab("General Tips")
+    assertGeneralTipsRows()
   }
 }

@@ -17,10 +17,10 @@
   --el-waste-ink: #92400e;
   --el-useful-graph: #059669;
   --el-waste-graph: #d97706;
-  --el-waste-segment-night: #fde68a;
-  --el-waste-segment-away: #fbbf24;
+  --el-waste-segment-night: #724e97;
+  --el-waste-segment-away: #0284c7;
   --el-waste-segment-peak: #d97706;
-  --el-waste-segment-habits: #92400e;
+  --el-waste-segment-habits: #059669;
   --el-tab-idle-ink: #3f484e;
   --el-tab-selected-bg: #ffffff;
   --el-tab-selected-ink: #111b2f;
@@ -32,9 +32,24 @@
 
 /* Use the same quiet segmented control on every savings tab. */
 [aria-label="Savings Categories"] {
-  background-color: #e8edf2 !important;
-  border-color: #d6dee5 !important;
+  background-color: #e0e8ff !important;
+  border-color: #d8e2fd !important;
   box-shadow: none !important;
+}
+
+.el-tips-subtitle {
+  white-space: nowrap;
+  font-size: 12px !important;
+  line-height: 18px !important;
+}
+
+.el-tips-section-title {
+  margin: 0;
+  color: #111b2f;
+  font-family: "Manrope", sans-serif;
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 20px;
 }
 
 /* Let each tip item sit directly in the list, like the Programs items. */
@@ -516,9 +531,18 @@ main p.font-body-md, main .font-body-md:not(h1):not(h2):not(h3):not(h4) {
   flex-shrink: 0;
 }
 .el-devices-heading .el-compact-page-title {
-  font-size: 18px !important;
-  line-height: 24px !important;
-  white-space: nowrap;
+  min-width: 0;
+}
+#devices-feed [data-el-bind="devices_text_024"] > span,
+#devices-feed [data-el-bind="devices_text_045"] > span,
+#devices-feed [data-el-bind="devices_text_052"] > span,
+#devices-feed [data-el-bind="devices_text_087"] > span {
+  display: none;
+}
+#devices-list-controls select {
+  min-height: 44px;
+  padding-inline: 6px;
+  font-size: 11px;
 }
 .el-devices-heading .el-overview-chip {
   max-width: none;

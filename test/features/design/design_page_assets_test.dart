@@ -54,11 +54,80 @@ String _withoutTipsPaginationText(String text, String pageId) =>
     : text;
 
 String _withApprovedPolish(String text, String pageId) {
+  if (const {
+    'perks_tips',
+    'tips_care_upgrades',
+    'tips_efficiency',
+    'tips_knowledge',
+  }.contains(pageId)) {
+    text = text
+        .replaceFirst(
+          'Rebates, zero-cost habits, and instant answers tailored to your home.',
+          'Tips and instant answers tailored to your home',
+        )
+        .replaceFirst('eco Efficiency', 'eco General Tips');
+    if (pageId == 'tips_efficiency') {
+      text = text
+          .replaceFirst(
+            'Knowledge electric_bolt Efficient Usage High Impact',
+            'Knowledge Home Devices',
+          )
+          .replaceFirst('schedule Usage Patterns Changes Rate Timing', '');
+      for (final badge in [
+        'Save ~\$12/mo',
+        'Save ~\$8/mo',
+        'Save ~\$18/mo',
+        'Save ~\$14/mo',
+      ]) {
+        text = text.replaceFirst(badge, '');
+      }
+      for (final (icon, title) in [
+        ('bedtime', 'Power-Off Scheduling'),
+        ('power', 'Smart Strips & Plugs'),
+        ('wb_twilight', 'Off-Peak Hours'),
+        ('thermostat', 'Weather-Aware Usage'),
+      ]) {
+        text = text.replaceFirst('$icon $title', title);
+      }
+      text = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    }
+    if (pageId == 'tips_care_upgrades') {
+      for (final badge in [
+        'Low / Zero Cost',
+        'Save ~15% draw',
+        'Save ~\$14/mo',
+        'Save ~\$16/mo',
+        'Long-term Value',
+        'Rebates up to \$800',
+        'Cuts loss ~20%',
+      ]) {
+        text = text.replaceFirst(badge, '');
+      }
+      for (final (icon, title) in [
+        ('air', 'Filter Replacement'),
+        ('cleaning_services', 'Coil & Gasket Cleaning'),
+        ('roofing', 'Weatherization'),
+        ('bolt', 'Appliance Replacement'),
+        ('sensor_window', 'Home Window Upgrade'),
+      ]) {
+        text = text.replaceFirst('$icon $title', title);
+      }
+      text = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    }
+  }
   if (pageId == 'dashboard') {
-    return text.replaceFirst(
-      'savings PIGGYBANK HAPPY Happy afternoon, Alex! Piggybank is looking safe & happy today 🌻',
-      'energy_savings_leaf Energylens provides customized energy savings for your house. Helping you & the Globe!!',
-    );
+    return text
+        .replaceFirst(
+          'savings PIGGYBANK HAPPY Happy afternoon, Alex! Piggybank is looking safe & happy today 🌻',
+          '',
+        )
+        .replaceFirst(
+          'Got questions about your electric bill? Tap below for quick friendly answers! 💡',
+          '',
+        )
+        .replaceFirst('-\$23.00/mo', '\$23.00/mo')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
   if (pageId == 'tips_knowledge')
     return text
@@ -74,7 +143,8 @@ String _withApprovedPolish(String text, String pageId) {
   if (pageId == 'efficiency' || pageId.startsWith('efficiency_')) {
     text = text
         .replaceFirst('touch_app Select category ', '')
-        .replaceFirst('insights Efficiency Insights', 'Efficiency Insights');
+        .replaceFirst('insights Efficiency Insights', 'Efficiency Insights')
+        .replaceAll('+\$', '\$');
     if (pageId == 'efficiency_away')
       text = text.replaceFirst(
         'Detected Away Events 3 events (38 hrs)',
@@ -268,6 +338,123 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('approved design page assets', () {
+    test('Tips pages use the approved subtitle and tab label', () async {
+      for (final pageId in const [
+        'perks_tips',
+        'tips_care_upgrades',
+        'tips_efficiency',
+        'tips_knowledge',
+      ]) {
+        final html = await rootBundle.loadString(
+          'assets/design_pages/$pageId/app.html',
+        );
+        expect(
+          html,
+          contains(
+            'data-el-bind="${pageId}_text_004">Tips and instant answers tailored to your home</p>',
+          ),
+          reason: pageId,
+        );
+        expect(
+          html,
+          contains('data-el-bind="${pageId}_text_006">General Tips</span>'),
+          reason: pageId,
+        );
+      }
+    });
+
+    test('General Tips separates home and device advice', () async {
+      final html = await rootBundle.loadString(
+        'assets/design_pages/tips_efficiency/app.html',
+      );
+      final home = html.indexOf('<h2 class="el-tips-section-title">Home</h2>');
+      final devices = html.indexOf(
+        '<h2 class="el-tips-section-title">Devices</h2>',
+      );
+      final advice = html.indexOf('<!-- Section 1: Efficient Usage -->');
+      expect(home, greaterThanOrEqualTo(0));
+      expect(devices, greaterThan(home));
+      expect(advice, greaterThan(devices));
+    });
+
+    test('every General Tips row contains only its title and detail', () async {
+      final html = await rootBundle.loadString(
+        'assets/design_pages/tips_efficiency/app.html',
+      );
+      final rows = RegExp(
+        r'<div data-el-tip-item\b[^>]*>(.*?)</div>',
+        dotAll: true,
+      ).allMatches(html).map((match) => match.group(1)!).toList();
+      expect(rows, hasLength(4));
+      for (final row in rows) {
+        expect(RegExp(r'<span\b').allMatches(row), hasLength(2));
+        expect(RegExp(r'<(?!/?span\b)[a-z][^>]*>').hasMatch(row), isFalse);
+      }
+    });
+
+    test(
+      'Tips advice retains titles and details without metadata badges',
+      () async {
+        final general = await rootBundle.loadString(
+          'assets/design_pages/tips_efficiency/app.html',
+        );
+        final care = await rootBundle.loadString(
+          'assets/design_pages/tips_care_upgrades/app.html',
+        );
+        for (final removed in [
+          'Efficient Usage',
+          'High Impact',
+          'Usage Patterns Changes',
+          'Rate Timing',
+          'Save ~\$12/mo',
+          'Save ~\$8/mo',
+          'Save ~\$18/mo',
+          'Save ~\$14/mo',
+        ]) {
+          expect(_visibleText(general), isNot(contains(removed)));
+        }
+        for (final retained in [
+          'Power-Off Scheduling',
+          'Schedule power-off during Night or Away hours',
+          'Smart Strips & Plugs',
+          'Off-Peak Hours',
+          'Weather-Aware Usage',
+        ]) {
+          expect(_visibleText(general), contains(retained));
+        }
+        for (final removed in [
+          'Low / Zero Cost',
+          'Save ~15% draw',
+          'Save ~\$14/mo',
+          'Save ~\$16/mo',
+          'Long-term Value',
+          'Rebates up to \$800',
+          'Cuts loss ~20%',
+        ]) {
+          expect(_visibleText(care), isNot(contains(removed)));
+        }
+        for (final retained in [
+          'Care & Maintenance',
+          'Filter Replacement',
+          'Replace HVAC & furnace filters every 90 days',
+          'Useful Upgrades',
+          'Appliance Replacement',
+          'Swap to Heat Pump & Energy Star appliances',
+        ]) {
+          expect(_visibleText(care), contains(retained));
+        }
+        for (final (html, count) in [(general, 4), (care, 5)]) {
+          expect(
+            RegExp(r'<div data-el-tip-item class="el-tip-room[^"]*"><span')
+                .allMatches(html),
+            hasLength(count),
+          );
+        }
+        expect(care, contains('>handyman</span>'));
+        expect(care, contains('>upgrade</span>'));
+      },
+    );
+
     test('Efficiency summary stays above every category tab', () async {
       const pages = [
         'efficiency',
@@ -310,7 +497,7 @@ void main() {
     });
 
     test(
-      'Efficiency opportunity ink is green while waste costs stay amber',
+      'Efficiency saving amounts use green ink without a leading plus',
       () async {
         const pages = [
           'efficiency',
@@ -329,13 +516,18 @@ void main() {
             ),
             reason: pageId,
           );
-          expect(
-            RegExp(
-              r'<span class="[^"]*bg-amber-100 el-waste-ink[^"]*" data-el-bind="[^"]+">\+?\$[^<]+</span>',
-            ).allMatches(html),
-            isNotEmpty,
-            reason: pageId,
-          );
+          final amountSpans = RegExp(
+            r'<span class="([^"]+)" data-el-bind="[^"]+">([^<]*\$[^<]*)</span>',
+          ).allMatches(html).toList();
+          expect(amountSpans, isNotEmpty, reason: pageId);
+          for (final amount in amountSpans) {
+            expect(amount.group(1), contains('el-useful-ink'), reason: pageId);
+            expect(
+              amount.group(2)!.trimLeft(),
+              isNot(startsWith('+')),
+              reason: pageId,
+            );
+          }
           expect(html, isNot(contains('tips_and_updates')), reason: pageId);
         }
       },
@@ -657,9 +849,9 @@ function tap(button) {
     preventDefault: () => {}, stopImmediatePropagation: () => {},
   });
 }
-tap(element('Efficiency', true));
+tap(element('General Tips', true));
 assert.deepEqual(routes, ['tips_efficiency']);
-tap(element('Efficiency', false));
+tap(element('General Tips', false));
 assert.deepEqual(routes, ['tips_efficiency']);
 ''',
         script,

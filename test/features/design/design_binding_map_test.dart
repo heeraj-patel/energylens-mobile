@@ -5,7 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 
 Set<String> _approvedRemovedIds(String page, String category) {
   if (page == 'dashboard' && category == 'bindings') {
-    return {'dashboard_text_017', 'dashboard_text_024', 'dashboard_text_025'};
+    return {
+      'dashboard_text_003',
+      'dashboard_text_017',
+      'dashboard_text_024',
+      'dashboard_text_025',
+      'dashboard_text_037',
+    };
   }
   if (page == 'dashboard' && category == 'actions') {
     return {'dashboard_action_002'};
@@ -73,7 +79,16 @@ Set<String> _approvedRemovedIds(String page, String category) {
   if (page == 'tips_knowledge' && category == 'bindings')
     return {'tips_knowledge_text_010'};
   if (page == 'tips_care_upgrades' && category == 'bindings') {
-    return {'tips_care_upgrades_text_009', 'tips_care_upgrades_text_010'};
+    return {
+      for (final n in [9, 10, 12, 15, 18, 21, 23, 26, 29])
+        'tips_care_upgrades_text_${n.toString().padLeft(3, '0')}',
+    };
+  }
+  if (page == 'tips_efficiency' && category == 'bindings') {
+    return {
+      for (final n in [9, 10, 13, 16, 17, 18, 21, 24])
+        'tips_efficiency_text_${n.toString().padLeft(3, '0')}',
+    };
   }
   if (page == 'settings' && category == 'bindings') {
     return {
@@ -324,8 +339,6 @@ void main() {
       'efficiency_peak_rates': [r'$4.70', r'$3.90'],
       'efficiency_habits': [r'$6.40', r'$135.90'],
       'perks_tips': [r'$1,200 Tax Credit'],
-      'tips_efficiency': [r'~$12', r'~$18'],
-      'tips_care_upgrades': [r'~$14/mo', r'~$16/mo'],
     }.entries) {
       final bindings =
           ((pages[entry.key] as Map<String, dynamic>)['bindings']

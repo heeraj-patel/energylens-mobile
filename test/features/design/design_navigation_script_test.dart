@@ -424,6 +424,7 @@ assert.deepEqual(routes, ['dashboard', 'settings_manage_devices']);
       'scripts': {
         for (final page in [
           'efficiency',
+          'tips_care_upgrades',
           'tips_knowledge',
           'settings',
           'dashboard',
@@ -473,8 +474,12 @@ for (const [page, script] of Object.entries(scripts)) {
   } else if (page === 'tips_knowledge') {
     assert.equal(click('Programs', {tab: true}), true);
     assert.equal(click('Care & Upgrades', {tab: true}), true);
-    assert.deepEqual(routes, ['perks_tips', 'tips_care_upgrades']);
+    assert.equal(click('General Tips', {tab: true}), true);
+    assert.deepEqual(routes, ['perks_tips', 'tips_care_upgrades', 'tips_efficiency']);
     assert.equal(click('Why did my AC power jump this afternoon?'), false);
+  } else if (page === 'tips_care_upgrades') {
+    assert.equal(click('General Tips', {tab: true}), true);
+    assert.deepEqual(routes, ['tips_efficiency']);
   } else if (page === 'settings') {
     assert.equal(click('Manage Devices'), true);
     assert.equal(click('Email Report Now', {id: 'email-btn'}), true);

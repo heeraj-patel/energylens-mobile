@@ -6,23 +6,26 @@ import 'design_page_bridge.dart';
 /// The dollar axis and bar ratios are derived entirely with integer cents.
 class DashboardChartScale {
   DashboardChartScale(Iterable<DashboardChartBar> bars)
-    : upperCents = _upper(bars) {
-    intervalCents = upperCents ~/ BigInt.from(4);
-  }
+    : intervalCents = _interval(bars),
+      maximumCents = bars.fold<BigInt>(
+        BigInt.zero,
+        (value, bar) => bar.totalCents > value ? bar.totalCents : value,
+      );
 
-  final BigInt upperCents;
-  late final BigInt intervalCents;
+  final BigInt intervalCents;
+  final BigInt maximumCents;
+  BigInt get upperCents =>
+      (maximumCents ~/ intervalCents + BigInt.one) * intervalCents;
 
-  static BigInt _upper(Iterable<DashboardChartBar> bars) {
+  static BigInt _interval(Iterable<DashboardChartBar> bars) {
     final maximum = bars.fold<BigInt>(
       BigInt.zero,
       (value, bar) => bar.totalCents > value ? bar.totalCents : value,
     );
     if (maximum == BigInt.zero) return BigInt.from(100);
-    final padded =
-        (maximum * BigInt.from(115) + BigInt.from(99)) ~/ BigInt.from(100);
+    final target = (maximum + BigInt.from(3)) ~/ BigInt.from(4);
     var power = BigInt.one;
-    while (BigInt.from(20) * power < padded) {
+    while (BigInt.from(10) * power < target) {
       power *= BigInt.from(10);
     }
     for (final multiple in [
@@ -32,13 +35,14 @@ class DashboardChartScale {
       BigInt.from(10),
     ]) {
       final interval = multiple * power;
-      if (BigInt.from(4) * interval >= padded) return BigInt.from(4) * interval;
+      if (interval >= target) return interval;
     }
     throw StateError('No chart interval');
   }
 
   List<BigInt> get ticks => [
-    for (var i = 0; i <= 4; i++) intervalCents * BigInt.from(i),
+    for (var tick = BigInt.zero; tick <= upperCents; tick += intervalCents)
+      tick,
   ];
 
   /// JS only receives a bounded ratio, never a monetary floating point value.
@@ -126,7 +130,7 @@ class DashboardChartRenderer {
   };
   const svg = document.querySelector('svg[data-el-chart="dashboard-trends"]');
   if (!svg || !Array.isArray(payload.bars) || payload.bars.length < 1 || payload.bars.length > 5 ||
-      !Array.isArray(payload.ticks) || payload.ticks.length !== 5 || !isCurrent()) return false;
+      !Array.isArray(payload.ticks) || payload.ticks.length < 2 || !isCurrent()) return false;
   const summary = [
     ['dashboard_text_026', payload.usefulTotal + ' Useful'],
     ['dashboard_text_027', payload.wasteTotal + ' Waste']
@@ -150,7 +154,7 @@ class DashboardChartRenderer {
   const yTitle = element('text', {x: 4, y: 14, class: 'el-chart-title'}, 'Cost (USD)');
   root.appendChild(yTitle);
   payload.ticks.forEach((tick, index) => {
-    const y = baseline - index * plotHeight / 4;
+    const y = baseline - index * plotHeight / (payload.ticks.length - 1);
     root.appendChild(element('line', {x1: plotLeft, x2: plotRight, y1: y, y2: y,
       class: index === 0 ? 'el-chart-baseline' : 'el-chart-grid'}));
     root.appendChild(element('text', {x: gutter, y: y + 4, 'text-anchor': 'end',

@@ -126,7 +126,7 @@ CloudPeakDemand peak([List<CloudResearchTip>? tips]) => CloudPeakDemand(
 );
 
 void main() {
-  test('card, tips and chip render with the approved text', () async {
+  test('card and tips render without a metadata chip', () async {
     final out = await render({
       'on': snapshot(
         TipsPage.efficiency,
@@ -150,9 +150,11 @@ void main() {
         'On those days, Austin Energy asks customers to save energy from 1 to 7 pm.',
       ),
     );
-    expect(on, contains('"Use fans." (austinenergy.com) '));
-    expect(on, contains('"Delay the dryer." (austinenergy.com) '));
-    expect(on, contains('Peak demand day'));
+    expect(on, contains('"Use fans."'));
+    expect(on, contains('"Delay the dryer."'));
+    expect(on.where((t) => t == '(austinenergy.com) '), hasLength(2));
+    expect(on, isNot(contains('Peak demand day')));
+    expect(hasAttr(out['on']!, 'data-el-peak-demand-trigger'), isFalse);
     expect(on.where((t) => t == 'Source'), hasLength(3));
     expect(on.indexOf('Peak demand days') < on.indexOf('Your devices'), isTrue);
     expect(on.any((t) => t.contains(r'$')), isFalse);

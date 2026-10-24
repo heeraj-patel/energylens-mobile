@@ -131,10 +131,7 @@ class LiveDevicesCardRenderer {
       : state === 'idle'
       ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#fffbeb] el-waste-ink border border-[#fde68a]'
       : 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-surface-container-high text-on-surface-variant border border-outline-variant/50';
-    const dot = document.createElement('span');
-    dot.className = state === 'active' ? 'w-1 h-1 rounded-full bg-[#059669]'
-      : state === 'idle' ? 'w-1 h-1 rounded-full bg-[#d97706]' : 'w-1 h-1 rounded-full bg-on-surface-variant';
-    status.replaceChildren(dot, document.createTextNode(stateText));
+    status.textContent = stateText;
     clone.setAttribute('data-el-device-state', state);
     };
     setState(initialState);

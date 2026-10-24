@@ -214,7 +214,7 @@ void main() {
     );
   });
 
-  test('home card, chips, cost line, alerts and attribution render', () async {
+  test('home card, cost line, alerts and attribution render', () async {
     final ends = DateTime.utc(2026, 10, 24, 3);
     final out = await render({
       'us': snapshot(
@@ -254,16 +254,19 @@ void main() {
 
     final us = texts(out['us']!);
     expect(us, contains('Your home'));
-    expect(us, contains('"Close blinds during the day." (www.pge.com) '));
+    expect(us, contains('"Close blinds during the day."'));
+    expect(us, contains('(www.pge.com) '));
     expect(us.any((t) => t.startsWith('Heat Advisory until ')), isTrue);
-    expect(us, contains('Hot spell'));
+    expect(us, isNot(contains('Hot spell')));
+    expect(hasAttr(out['us']!, 'data-el-weather-trigger'), isFalse);
     expect(
       us,
       contains(
         'On your plan, each kWh moved out of 4 PM-9:30 PM saves \$0.0834.',
       ),
     );
-    expect(us, contains('"Pre-cool before the peak." (www.sce.com) '));
+    expect(us, contains('"Pre-cool before the peak."'));
+    expect(us, contains('(www.sce.com) '));
     expect(us.where((t) => t == 'Source'), hasLength(3));
     expect(us.any((t) => t.contains('days in a row')), isFalse);
     expect(us.any((t) => t.contains('No measured use')), isFalse);
@@ -291,7 +294,7 @@ void main() {
     expect(texts(out['absent']!), contains('Pre-cool the home'));
   });
 
-  test('every trigger renders its chip on the device tip', () async {
+  test('every trigger keeps device advice without a metadata chip', () async {
     final cases = {
       for (final trigger in ['heat_alert', 'cold_alert', 'hot_run', 'cold_run'])
         trigger: snapshot(
@@ -312,7 +315,9 @@ void main() {
     };
     for (final entry in labels.entries) {
       final nodes = out[entry.key]!;
-      expect(texts(nodes), contains(entry.value), reason: entry.key);
+      expect(texts(nodes), isNot(contains(entry.value)), reason: entry.key);
+      expect(texts(nodes), contains('Pre-cool the home'), reason: entry.key);
+      expect(hasAttr(nodes, 'data-el-weather-trigger'), isFalse);
       expect(hasAttr(nodes, 'data-el-weather-cost'), isFalse);
       expect(texts(nodes).any((t) => t.contains('No measured use')), isFalse);
     }

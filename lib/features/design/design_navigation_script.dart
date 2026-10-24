@@ -152,7 +152,7 @@ String buildDesignNavigationScript(String page) {
         } else if ((page === 'perks_tips' || page.startsWith('tips_')) &&
                    button.closest('[role="tablist"]')) {
           if (label === 'Programs') route = 'perks_tips';
-          else if (label === 'Efficiency') route = 'tips_efficiency';
+          else if (label === 'General Tips') route = 'tips_efficiency';
           else if (label === 'Care & Upgrades') route = 'tips_care_upgrades';
           else if (label === 'Knowledge') route = 'tips_knowledge';
         } else if (page.startsWith('settings')) {

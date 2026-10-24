@@ -253,13 +253,18 @@ class TipsPageRenderer {
     const research = document.createElement('p');
     research.className = detailClass;
     research.setAttribute('data-el-research-source', '');
-    research.textContent = '"' + text + '" (' + host + ') ';
+    research.textContent = '"' + text + '"';
+    const provider = document.createElement('span');
+    provider.className = 'block mt-space-xs text-[12px] text-on-surface-variant';
+    provider.textContent = '(' + host + ') ';
     const sourceLink = document.createElement('a');
     sourceLink.href = url;
     sourceLink.target = '_blank';
     sourceLink.rel = 'noopener noreferrer';
+    sourceLink.className = 'text-primary underline underline-offset-2';
     sourceLink.textContent = 'Source';
-    research.append(sourceLink);
+    provider.append(sourceLink);
+    research.append(provider);
     return research;
   };
   if (payload.page === 'tips_efficiency' && payload.weather) {
@@ -284,11 +289,12 @@ class TipsPageRenderer {
       const line = document.createElement('p');
       line.className = detailClass;
       line.setAttribute('data-el-weather-alert', '');
-      line.textContent = alert.line + ' ';
+      line.textContent = alert.line;
       const alertLink = document.createElement('a');
       alertLink.href = alert.url;
       alertLink.target = '_blank';
       alertLink.rel = 'noopener noreferrer';
+      alertLink.className = 'block mt-space-xs text-[12px] text-primary underline underline-offset-2';
       alertLink.textContent = 'Source';
       line.append(alertLink);
       group.append(line);
@@ -362,15 +368,10 @@ class TipsPageRenderer {
     return true;
   }
   if (payload.page !== 'perks_tips') {
-    const fuelLabels = {natural_gas: 'Gas', propane: 'Propane', electricity: 'Electric'};
     const hints = {
       confirm_model: name => 'Add the model number to get advice for this ' + (name || 'appliance') + '.',
       add_gas_rate: () => 'Add your gas rate in Settings to see costs.',
     };
-    const yours = document.createElement('h2');
-    yours.className = headingClass;
-    yours.textContent = 'Your devices';
-    mount.append(yours);
     const groups = new Map();
     for (const row of rows) {
       if (!groups.has(row.applianceId)) groups.set(row.applianceId, []);
@@ -393,13 +394,6 @@ class TipsPageRenderer {
       applianceTitle.textContent = first.applianceName;
       label.append(icon, applianceTitle);
       header.append(label);
-      const chipText = (items.find(item => item.monthlySavings) || {}).monthlySavings || fuelLabels[first.fuel];
-      if (chipText) {
-        const chip = document.createElement('span');
-        chip.className = 'px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-semibold text-[11px]';
-        chip.textContent = chipText;
-        header.append(chip);
-      }
       group.append(header);
       const list = document.createElement('div');
       list.className = 'flex flex-col gap-1.5';
@@ -431,20 +425,6 @@ class TipsPageRenderer {
         const hint = row.state === 'candidate' && hints[row.nextQuestion];
         detail.textContent = hint ? hint(row.applianceName) : row.explanation;
         body.append(detail);
-        if (row.weatherChip) {
-          const trigger = document.createElement('span');
-          trigger.className = 'px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-semibold text-[11px]';
-          trigger.setAttribute('data-el-weather-trigger', '');
-          trigger.textContent = row.weatherChip;
-          body.append(trigger);
-        }
-        if (row.peakChip) {
-          const peak = document.createElement('span');
-          peak.className = 'px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-semibold text-[11px]';
-          peak.setAttribute('data-el-peak-demand-trigger', '');
-          peak.textContent = row.peakChip;
-          body.append(peak);
-        }
         if (row.weatherCost) {
           const cost = document.createElement('p');
           cost.className = detailClass;
@@ -455,22 +435,11 @@ class TipsPageRenderer {
         if ((payload.page === 'tips_care_upgrades' || row.isWeather || row.peakChip) && row.researchText && row.researchUrl) {
           body.append(researchRow(row.researchText, row.researchHost, row.researchUrl));
         }
-        if (row.monthlySavings) {
-          const savings = document.createElement('span');
-          savings.className = 'px-2 py-0.5 rounded-full bg-secondary-container el-useful-ink text-[11px] font-semibold flex-shrink-0';
-          savings.textContent = row.monthlySavings;
-          body.append(savings);
-        }
         card.append(body);
         list.append(card);
       }
       mount.append(group);
     }
-    const examples = document.createElement('h2');
-    examples.className = headingClass;
-    examples.setAttribute('data-el-live-examples', '');
-    examples.textContent = 'Examples';
-    mount.after(examples);
     notifyTipsChanged();
     return true;
   }
@@ -518,12 +487,6 @@ class TipsPageRenderer {
       body.append(name);
     }
     body.append(detail);
-    if (payload.page !== 'perks_tips' && row.monthlySavings) {
-      const savings = document.createElement('span');
-      savings.className = 'px-2 py-0.5 rounded-full bg-secondary-container el-useful-ink text-[11px] font-semibold flex-shrink-0';
-      savings.textContent = row.monthlySavings;
-      body.append(savings);
-    }
     if (payload.page === 'perks_tips' && row.benefit) {
       const benefit = document.createElement('p');
       benefit.className = 'font-body-md text-body-md text-primary font-semibold text-[13px] mt-space-xs';

@@ -33,7 +33,7 @@ DashboardTopSavingsBindings? prepareDashboardTopSavingsBindings(
   return DashboardTopSavingsBindings([
     DesignTextBinding(
       'dashboard_text_014',
-      '-${_money(move.monthlySavings)}/mo',
+      '${_money(move.monthlySavings)}/mo',
     ),
     DesignTextBinding('dashboard_text_015', move.name),
     DesignTextBinding('dashboard_text_016', detail),
@@ -41,7 +41,7 @@ DashboardTopSavingsBindings? prepareDashboardTopSavingsBindings(
 }
 
 String _money(CloudEnergyMoney value) {
-  final amount = double.parse(value.amount).toStringAsFixed(2);
+  final amount = double.parse(value.amount).abs().toStringAsFixed(2);
   return value.currency == 'USD' ? '\$$amount' : '${value.currency} $amount';
 }
 
