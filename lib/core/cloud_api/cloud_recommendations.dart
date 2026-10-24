@@ -23,6 +23,10 @@ const _ruleIds = {
   'water_heater.gas_cost',
   'water_heater.gas_efficiency_check',
   'space_heater.gas_schedule',
+  'furnace.gas_filter_care',
+  'boiler.gas_service_care',
+  'water_heater.gas_temperature',
+  'range.gas_cooking',
   'general.gather_information',
 };
 const _nextQuestions = {

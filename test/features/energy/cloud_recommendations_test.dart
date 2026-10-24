@@ -375,6 +375,35 @@ void main() {
     expect(parsed.actions.map((item) => item.ruleId), ruleIds);
   });
 
+  test('accepts the four gas care and cooking rule IDs', () {
+    const cases = {
+      'furnace.gas_filter_care': ['care', 'heating_care'],
+      'boiler.gas_service_care': ['care', 'heating_care'],
+      'water_heater.gas_temperature': ['care', 'water_heating_care'],
+      'range.gas_cooking': ['general', 'cooking_gas'],
+    };
+    final parsed = CloudRecommendationBatch.fromJson(
+      {
+        'actions': [
+          for (final e in cases.entries)
+            {
+              ...action(),
+              'rule_id': e.key,
+              'tip_category': e.value[0],
+              'benefit_group': e.value[1],
+            },
+        ],
+        'as_of': '2026-10-01T12:00:00Z',
+      },
+      {appliance},
+    );
+    expect(parsed.actions.map((item) => item.ruleId), cases.keys);
+    expect(
+      parsed.actions.map((item) => item.tipCategory.name),
+      ['care', 'care', 'care', 'general'],
+    );
+  });
+
   test('accepts household_size as a next question', () {
     final parsed = CloudRecommendation.fromJson(
       {
