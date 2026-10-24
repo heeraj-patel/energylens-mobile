@@ -1564,7 +1564,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Set up later'), findsNothing);
+    expect(find.text('Set up later'), findsOneWidget);
     expect(find.text('Link paired hub to home'), findsNothing);
     await tester.tap(find.text('Pair with hub'));
     await tester.pumpAndSettle();
@@ -1708,7 +1708,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(credentials.pairingClaims, 1);
     expect(claimRequests, 0);
-    expect(find.text('Set up later'), findsNothing);
+    expect(find.text('Set up later'), findsOneWidget);
     cloud.close();
   });
 

@@ -212,12 +212,46 @@ class _CloudHarness {
 }
 
 void main() {
+  testWidgets('onboarding can reach Dashboard before entering a pairing code', (
+    tester,
+  ) async {
+    final cloud = _CloudHarness();
+    addTearDown(cloud.cloud.close);
+    var linked = false;
+    await tester.pumpWidget(
+      StatefulBuilder(
+        builder: (context, setState) => MaterialApp(
+          home: linked
+              ? const Scaffold(body: Text('Dashboard'))
+              : DiscoveryScreen(
+                  api: _Api(),
+                  credentials: _Credentials(),
+                  cloudHome: _home,
+                  cloudApi: cloud.cloud,
+                  accountId: 'account-onboarding-skip',
+                  newHomeOnboarding: true,
+                  onCloudHubLinked: () => setState(() => linked = true),
+                ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pair with hub'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('pairingCode')), findsOneWidget);
+    await tester.tap(find.text('Set up later'));
+    await tester.pumpAndSettle();
+    expect(cloud.claimRequests, 0);
+    expect(find.text('Dashboard'), findsOneWidget);
+  });
+
   testWidgets(
     'paired onboarding action opens code before claim and reaches Dashboard',
     (tester) async {
       FlutterSecureStorage.setMockInitialValues({});
       await const FlutterSecureStorage().delete(key: 'hub_claim_pending_v1');
       final cloud = _CloudHarness();
+      final api = _Api();
       addTearDown(cloud.cloud.close);
       final credentials = _Credentials()
         ..pairing = const StoredPairingCredential(
@@ -233,7 +267,7 @@ void main() {
             home: linked
                 ? const Scaffold(body: Text('Dashboard'))
                 : DiscoveryScreen(
-                    api: _Api(),
+                    api: api,
                     credentials: credentials,
                     cloudHome: _home,
                     cloudApi: cloud.cloud,
@@ -259,6 +293,7 @@ void main() {
       expect(find.byKey(const Key('pairingCode')), findsNothing);
       expect(credentials.localClaims, 1);
       expect(cloud.claimRequests, 1);
+      expect(api.scans, 1);
       expect(linked, isTrue);
       expect(find.text('Dashboard'), findsOneWidget);
     },

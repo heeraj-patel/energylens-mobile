@@ -121,6 +121,12 @@ void main() {
       );
       await tester.pumpAndSettle();
       final button = find.byKey(const Key('deleteHubButton'));
+      expect(
+        find.text(
+          'Removes this hub from your EnergyLens home. It does not erase the physical hub.',
+        ),
+        findsOneWidget,
+      );
       expect(tester.widget<TextButton>(button).onPressed, isNotNull);
       await tester.tap(button);
       await tester.pump();

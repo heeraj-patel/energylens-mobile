@@ -125,7 +125,7 @@ PairingDetails _details() => PairingDetails.fromJson({
 });
 
 void main() {
-  testWidgets('setup later appears only after a failed onboarding pair', (
+  testWidgets('setup later is available throughout onboarding pairing', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(800, 1200);
@@ -146,7 +146,10 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Set up later'), findsNothing);
+    expect(find.text('Set up later'), findsOneWidget);
+    await tester.tap(find.text('Set up later'));
+    expect(dashboardRequested, isTrue);
+    dashboardRequested = false;
     expect(find.byType(TextField), findsOneWidget);
     expect(find.byKey(const Key('pairingAddress')), findsNothing);
     expect(find.byKey(const Key('pairingSecret')), findsNothing);

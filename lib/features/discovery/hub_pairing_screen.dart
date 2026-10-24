@@ -31,7 +31,6 @@ class _HubPairingScreenState extends State<HubPairingScreen> {
   static final _codeFormat = RegExp(r'^[0-9A-HJKMNP-TV-Z]{6}$');
   final _code = TextEditingController();
   bool _busy = false;
-  bool _pairingFailed = false;
   String? _error;
 
   Future<void> _pair() async {
@@ -40,14 +39,12 @@ class _HubPairingScreenState extends State<HubPairingScreen> {
     if (!_codeFormat.hasMatch(code)) {
       setState(() {
         _error = 'Enter the 6-character code from your hub.';
-        _pairingFailed = false;
       });
       return;
     }
     setState(() {
       _busy = true;
       _error = null;
-      _pairingFailed = false;
     });
     try {
       final cloud = widget.cloudApi;
@@ -73,7 +70,6 @@ class _HubPairingScreenState extends State<HubPairingScreen> {
         hubId: resolution.localHubId,
         enrollmentSecret: resolution.enrollmentSecret,
       );
-      _pairingFailed = true;
       await widget.credentials.claimAndStore(
         details,
         clientId: clientId,
@@ -83,7 +79,6 @@ class _HubPairingScreenState extends State<HubPairingScreen> {
     } catch (error) {
       if (mounted) {
         setState(() {
-          _pairingFailed = true;
           _error = error is PairingException
               ? error.message
               : internalErrorMessage;
@@ -132,9 +127,7 @@ class _HubPairingScreenState extends State<HubPairingScreen> {
             onPressed: _busy ? null : _pair,
             child: const Text('Verify and pair'),
           ),
-          if (_pairingFailed &&
-              _error != null &&
-              widget.onSetUpLater != null) ...[
+          if (widget.onSetUpLater != null) ...[
             const SizedBox(height: 8),
             TextButton(
               onPressed: _busy ? null : widget.onSetUpLater,

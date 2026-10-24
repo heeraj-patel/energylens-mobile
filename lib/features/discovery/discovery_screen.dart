@@ -103,7 +103,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   CloudHubClaimFlow? _claimFlow;
   bool _claimBusy = false;
   bool _deleteHubBusy = false;
-  bool _claimFailed = false;
   bool _claimedThisSession = false;
   String? _claimMessage;
   HubOwnership? _cloudOwnership;
@@ -300,13 +299,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     final sessionGeneration = cloud.session.generation;
     bool current() =>
         mounted &&
+        (!widget.newHomeOnboarding || !_onboardingFinished) &&
         _pairingScope?.identity == scope.identity &&
         cloud.session.generation == sessionGeneration &&
         identical(widget.api, api) &&
         identical(widget.credentials, credentials);
     setState(() {
       _claimBusy = true;
-      _claimFailed = false;
       _claimMessage = null;
     });
     try {
@@ -328,7 +327,21 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           _hubConnected = false;
         }
       });
-      await _restore(autoScan: autoScanAfterClaim);
+      // Cloud ownership can precede the hub's next connection publication.
+      // The hub publishes on a one-minute cadence, so allow one full interval.
+      for (var attempt = 0; attempt < 16; attempt++) {
+        if (!current()) return false;
+        await _restore(autoScan: autoScanAfterClaim);
+        if (!current()) return false;
+        if (_paired &&
+            _hubConnected &&
+            _pairedOwnershipEpoch == ownership.ownershipEpoch) {
+          break;
+        }
+        final published = _cloudOwnership?.connection;
+        if (attempt == 15 || (published != null && published.isFresh)) break;
+        await Future<void>.delayed(const Duration(seconds: 4));
+      }
       if (!current() ||
           !_paired ||
           !_hubConnected ||
@@ -341,7 +354,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     } on CloudApiException catch (error) {
       if (mounted) {
         setState(() {
-          _claimFailed = true;
           _claimMessage = error.statusCode == 409
               ? 'Cloud could not link this hub. It may already belong to a home. Check ownership before trying again.'
               : internalErrorMessage;
@@ -350,14 +362,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     } on PairingException catch (error) {
       if (mounted) {
         setState(() {
-          _claimFailed = true;
           _claimMessage = error.message;
         });
       }
     } catch (_) {
       if (mounted) {
         setState(() {
-          _claimFailed = true;
           _claimMessage = internalErrorMessage;
         });
       }
@@ -861,6 +871,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     if (!await _openPairing() || !mounted) return;
     if (!await _claimHub(autoScanAfterClaim: false) || !mounted) return;
     if (widget.newHomeOnboarding) {
+      if (_onboardingFinished) return;
+      await _search();
+      if (!mounted || _onboardingFinished) return;
       _notifyCloudHubLinked();
     } else if (widget.returnToSettingsAfterPairing) {
       Navigator.of(context).pop();
@@ -2406,6 +2419,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             ],
             if (widget.cloudHome != null && widget.cloudApi != null) ...[
               const SizedBox(height: 8),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Removes this hub from your EnergyLens home. It does not erase the physical hub.',
+                ),
+              ),
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton(
@@ -2447,13 +2466,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     key: const Key('hubClaimMessage'),
                   ),
                 ),
-              if (widget.newHomeOnboarding && _claimFailed) ...[
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: _claimBusy ? null : _notifyCloudHubLinked,
-                  child: const Text('Set up later'),
-                ),
-              ],
+            ],
+            if (widget.newHomeOnboarding && !_onboardingFinished) ...[
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: _notifyCloudHubLinked,
+                child: const Text('Set up later'),
+              ),
             ],
             if (!_cloudHubOwned && (!_paired || _developerMode)) ...[
               if (!_paired)

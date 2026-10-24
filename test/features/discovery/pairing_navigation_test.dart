@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:energylens_mobile/core/cloud_api/cloud_api_client.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_home.dart';
 import 'package:energylens_mobile/core/cloud_api/cloud_hub_claim.dart';
+import 'package:energylens_mobile/core/cloud_api/cloud_hub_claim_flow.dart';
 import 'package:energylens_mobile/core/cloud_auth/cloud_auth.dart';
 import 'package:energylens_mobile/features/discovery/discovery_api.dart';
 import 'package:energylens_mobile/features/discovery/discovery_credentials.dart';
@@ -136,11 +137,13 @@ class _Api extends DiscoveryApi {
 }
 
 class _CloudHarness {
-  _CloudHarness({this.finishResponse});
+  _CloudHarness({this.finishResponse, this.connectionHintAfterHubLists = 0});
   final Completer<http.Response>? finishResponse;
+  final int connectionHintAfterHubLists;
   final String homeId = _homeId;
   bool owned = false;
   int resolutions = 0;
+  int hubLists = 0;
   late final cloud = CloudApiClient(
     session: CloudSession(
       config: const CloudAuthConfig(
@@ -155,6 +158,7 @@ class _CloudHarness {
     ),
     client: MockClient((request) async {
       if (request.url.path == '/v1/homes/$homeId/hubs') {
+        hubLists++;
         return http.Response(
           jsonEncode({
             'hubs': owned
@@ -165,14 +169,15 @@ class _CloudHarness {
                       'home_id': homeId,
                       'ownership_epoch': 2,
                       'version': 1,
-                      'connection': {
-                        'https_origin': 'https://192.168.1.20:8787',
-                        'certificate_sha256': 'a' * 64,
-                        'expires_at': DateTime.now()
-                            .toUtc()
-                            .add(const Duration(minutes: 5))
-                            .toIso8601String(),
-                      },
+                      if (hubLists > connectionHintAfterHubLists)
+                        'connection': {
+                          'https_origin': 'https://192.168.1.20:8787',
+                          'certificate_sha256': 'a' * 64,
+                          'expires_at': DateTime.now()
+                              .toUtc()
+                              .add(const Duration(minutes: 5))
+                              .toIso8601String(),
+                        },
                     },
                   ]
                 : [],
@@ -352,6 +357,7 @@ void main() {
     'successful pairing routes by entry context and failures stay put',
     (tester) async {
       FlutterSecureStorage.setMockInitialValues({});
+      await const FlutterSecureStorage().delete(key: 'hub_claim_pending_v1');
 
       final ordinary = _CloudHarness();
       final ordinaryApi = _Api();
@@ -371,6 +377,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       await _pair(tester);
+      for (var attempt = 0; attempt < 50 && !ordinary.owned; attempt++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      await tester.pumpAndSettle();
       expect(ordinaryCredentials.localClaims, 1);
       expect(ordinary.owned, isTrue);
       expect(ordinaryApi.scans, 1);
@@ -385,8 +395,8 @@ void main() {
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
-      final onboarding = _CloudHarness();
-      final onboardingApi = _Api();
+      final onboarding = _CloudHarness(connectionHintAfterHubLists: 3);
+      final onboardingApi = _Api()..scanGate = Completer<void>();
       final onboardingStore = _Store();
       addTearDown(onboarding.cloud.close);
       var linked = false;
@@ -426,10 +436,21 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await _pair(tester);
-      expect(linked, isTrue);
+      await tester.tap(find.text('Pair with hub'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('pairingCode')), 'PQR234');
+      await tester.tap(find.text('Verify and pair'));
+      for (var attempt = 0; attempt < 20 && onboardingApi.scans == 0;
+          attempt++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
       expect(onboarding.owned, isTrue);
-      expect(onboardingApi.scans, 0);
+      expect(onboarding.hubLists, greaterThan(3));
+      expect(onboardingApi.scans, 1);
+      expect(linked, isFalse);
+      onboardingApi.scanGate!.complete();
+      await tester.pumpAndSettle();
+      expect(linked, isTrue);
       expect(find.text('Add device'), findsOneWidget);
       await tester.tap(find.text('Add device'));
       await tester.pumpAndSettle();
@@ -446,7 +467,7 @@ void main() {
             .onPressed,
         isNotNull,
       );
-      expect(onboardingApi.scans, 1);
+      expect(onboardingApi.scans, 2);
       expect(onboardingApi.ownerClaims, 1);
 
       await tester.pumpWidget(const SizedBox.shrink());
@@ -466,7 +487,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Scan for plugs'), findsOneWidget);
       expect(find.text('Pair with hub'), findsNothing);
-      expect(onboardingApi.scans, 2);
+      expect(onboardingApi.scans, 3);
       expect(onboardingApi.ownerClaims, 1);
 
       await tester.tap(find.byKey(const Key('deleteHubButton')));
@@ -541,4 +562,57 @@ void main() {
       expect(find.byKey(const Key('hubClaimMessage')), findsOneWidget);
     },
   );
+
+  testWidgets('setup later cancels a pending connection hint retry', (
+    tester,
+  ) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    await CloudHubClaimFlow.invalidatePendingClaims();
+    final harness = _CloudHarness(connectionHintAfterHubLists: 999);
+    final api = _Api();
+    addTearDown(harness.cloud.close);
+    var handoffs = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoveryScreen(
+          api: api,
+          credentials: _Credentials(_Store()),
+          cloudHome: _home,
+          cloudApi: harness.cloud,
+          accountId: 'account-skip-during-retry',
+          newHomeOnboarding: true,
+          onCloudHubLinked: () => handoffs++,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pair with hub'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('pairingCode')), 'PQR234');
+    await tester.tap(find.text('Verify and pair'));
+    for (var attempt = 0; attempt < 50 && harness.hubLists < 3; attempt++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(harness.owned, isTrue);
+    expect(harness.hubLists, greaterThanOrEqualTo(3));
+    expect(api.scans, 0);
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(DiscoveryScreen),
+        matching: find.text('Set up later'),
+      ),
+    );
+    await tester.pump();
+    expect(handoffs, 1);
+    final listsAtSkip = harness.hubLists;
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(harness.hubLists, listsAtSkip);
+    expect(api.scans, 0);
+    expect(handoffs, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    await CloudHubClaimFlow.invalidatePendingClaims();
+  });
 }
