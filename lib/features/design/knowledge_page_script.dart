@@ -60,6 +60,11 @@ String buildKnowledgePageScript() {
         existing.append(card);
         cards.set(entry.id, card);
       }
+      const emptyNotice = document.createElement('p');
+      emptyNotice.setAttribute('data-el-empty-articles', '');
+      emptyNotice.className = 'font-body-md text-body-md text-on-surface-variant text-[13px] p-space-sm rounded-lg bg-surface-container-low border border-surface-container-high/80';
+      emptyNotice.textContent = 'No relevant information available to display. Check back later.';
+      existing.append(emptyNotice);
       const normalize = (value) => value.toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
       const stopWords = new Set(['the', 'and', 'for', 'what', 'where', 'when', 'why', 'how', 'my', 'does', 'are', 'can', 'could', 'with']);
       const near = (word, term) => {
@@ -79,6 +84,7 @@ String buildKnowledgePageScript() {
       const visible = () => {
         const query = normalize(input.value);
         const terms = query.split(' ').filter((word) => word.length > 2 && !stopWords.has(word));
+        let hasVisibleEntry = false;
         for (const id of pilotIds) {
           const card = cards.get(id);
           if (card) card.hidden = !entries.some((entry) => entry.id === id);
@@ -93,12 +99,14 @@ String buildKnowledgePageScript() {
             (terms.length > 0 && terms.every((term) => words.some((word) => near(word, term))));
           card.hidden = !matched;
           if (matched) {
+            hasVisibleEntry = true;
             const exact = label.includes(query) ? 100 : 0;
             const related = aliases.some((alias) => alias.includes(query)) ? 45 : 0;
             const overlap = terms.filter((term) => words.some((word) => near(word, term))).length;
             card.style.order = String(-(exact + related + overlap * 10));
           }
         }
+        emptyNotice.hidden = hasVisibleEntry;
       };
       input.addEventListener('input', (event) => {
         event.stopImmediatePropagation();

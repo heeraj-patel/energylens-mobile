@@ -124,6 +124,17 @@ void main() {
     expect(source.estimateCalls, 0);
   });
 
+  test('empty home inventory produces an empty Tips snapshot', () async {
+    final source = FakeSource(inventory: (_) async => [])..actions = [];
+    final result = await TipsDomainRepository(source)
+        .fetch(homeA, TipsPage.perksTips);
+
+    expect(result, isNotNull);
+    expect(result!.applianceNames, isEmpty);
+    expect(result.recommendations, isEmpty);
+    expect(result.programs!.programs, isEmpty);
+  });
+
   test('efficiency keeps operating cost separate from savings', () async {
     final source = FakeSource();
     source.actions = [

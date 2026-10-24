@@ -249,6 +249,15 @@ class TipsPageRenderer {
   };
   const headingClass = 'text-xs font-bold uppercase tracking-wider text-slate-500 font-label-md';
   const detailClass = 'font-body-md text-body-md text-on-surface-variant text-[13px] mt-space-xs';
+  const emptyArticleMessage = 'No relevant information available to display. Check back later.';
+  let renderedArticleCount = 0;
+  const emptyArticleNotice = () => {
+    const notice = document.createElement('p');
+    notice.setAttribute('data-el-empty-articles', '');
+    notice.className = 'font-body-md text-body-md text-on-surface-variant text-[13px] p-space-sm rounded-lg bg-surface-container-low border border-surface-container-high/80';
+    notice.textContent = emptyArticleMessage;
+    return notice;
+  };
   const researchRow = (text, host, url) => {
     const research = document.createElement('p');
     research.className = detailClass;
@@ -318,6 +327,7 @@ class TipsPageRenderer {
       body.append(researchRow(tip.text, tip.host, tip.url));
       card.append(body);
       tipList.append(card);
+      renderedArticleCount++;
     });
     group.append(tipList);
     mount.append(group);
@@ -359,11 +369,13 @@ class TipsPageRenderer {
       body.append(researchRow(tip.text, tip.host, tip.url));
       card.append(body);
       tipList.append(card);
+      renderedArticleCount++;
     });
     group.append(tipList);
     mount.append(group);
   }
   if (!rows.length) {
+    if (renderedArticleCount === 0) mount.append(emptyArticleNotice());
     notifyTipsChanged();
     return true;
   }
@@ -437,6 +449,7 @@ class TipsPageRenderer {
         }
         card.append(body);
         list.append(card);
+        renderedArticleCount++;
       }
       mount.append(group);
     }
@@ -495,6 +508,7 @@ class TipsPageRenderer {
     }
     card.append(body);
     list.append(card);
+    renderedArticleCount++;
     if (payload.page === 'perks_tips') timedCards.push({card, expiresAt: row.expiresAt});
   }
   notifyTipsChanged();

@@ -365,7 +365,7 @@ final class DiscoveryNavigationUITests: XCTestCase {
     app.launchArguments = ["--energylens-reset-sign-in"]
     app.launch()
 
-    let usernameField = app.textFields["Username"]
+    let usernameField = app.textFields["User ID"]
     let passwordField = app.descendants(matching: .any)
       .matching(NSPredicate(format: "label == %@", "Password"))
       .firstMatch

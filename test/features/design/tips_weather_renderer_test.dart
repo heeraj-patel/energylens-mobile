@@ -100,14 +100,14 @@ const result = {};
 for (const [name, entry] of Object.entries(scripts)) {
   const mount = new Element('mount');
   const document = {
-    getElementById: id => id === 'el-live-tips' ? mount : null,
+    getElementById: id => id === entry.mountId ? mount : null,
     createElement: tag => new Element(tag),
     querySelectorAll: () => [],
   };
   const context = {document, Event: class { constructor(type) { this.type = type; } }, Date: {now: () => 0},
     setTimeout: () => 0,
-    window: {__energyLensTextBindingContext: {homeId: '11111111-1111-4111-8111-111111111111', page: 'tips_efficiency', generation: 3}}};
-  const accepted = vm.runInNewContext(entry, context);
+    window: {__energyLensTextBindingContext: {homeId: '11111111-1111-4111-8111-111111111111', page: entry.page, generation: 3}}};
+  const accepted = vm.runInNewContext(entry.script, context);
   result[name] = {accepted, nodes: flat(mount)};
 }
 process.stdout.write(JSON.stringify(result));
@@ -120,10 +120,26 @@ Future<Map<String, List<Map<String, dynamic>>>> render(
   addTearDown(() => dir.deleteSync(recursive: true));
   final scripts = {
     for (final entry in cases.entries)
-      entry.key: const TipsPageRenderer().script(
-        const DesignPageTicket(home, 'tips_efficiency', 3),
-        entry.value,
-      ),
+      entry.key: {
+        'page': switch (entry.value.page) {
+          TipsPage.perksTips => 'perks_tips',
+          TipsPage.efficiency => 'tips_efficiency',
+          TipsPage.careUpgrades => 'tips_care_upgrades',
+        },
+        'mountId': switch (entry.value.page) {
+          TipsPage.perksTips => 'el-live-programs',
+          TipsPage.efficiency => 'el-live-tips',
+          TipsPage.careUpgrades => 'el-live-care',
+        },
+        'script': const TipsPageRenderer().script(
+          DesignPageTicket(home, switch (entry.value.page) {
+            TipsPage.perksTips => 'perks_tips',
+            TipsPage.efficiency => 'tips_efficiency',
+            TipsPage.careUpgrades => 'tips_care_upgrades',
+          }, 3),
+          entry.value,
+        ),
+      },
   };
   final scriptsFile = File('${dir.path}/scripts.json')
     ..writeAsStringSync(jsonEncode(scripts));
@@ -329,5 +345,36 @@ void main() {
       snapshot(TipsPage.perksTips, weather: weather()),
     );
     expect(script, contains('"weather":null'));
+  });
+
+  test('empty article feeds show the approved empty state', () async {
+    final out = await render({
+      'programs': snapshot(TipsPage.perksTips),
+      'general': snapshot(TipsPage.efficiency),
+      'care': snapshot(TipsPage.careUpgrades),
+      'populated': snapshot(
+        TipsPage.efficiency,
+        recommendations: [deviceTip(null)],
+      ),
+    });
+
+    for (final key in ['programs', 'general', 'care']) {
+      expect(
+        texts(out[key]!),
+        contains(
+          'No relevant information available to display. Check back later.',
+        ),
+        reason: key,
+      );
+      expect(hasAttr(out[key]!, 'data-el-empty-articles'), isTrue, reason: key);
+    }
+    expect(
+      texts(out['populated']!),
+      isNot(
+        contains(
+          'No relevant information available to display. Check back later.',
+        ),
+      ),
+    );
   });
 }

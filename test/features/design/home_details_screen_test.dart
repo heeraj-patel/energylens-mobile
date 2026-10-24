@@ -170,6 +170,7 @@ void main() {
       var name = 'Original Home';
       var version = 1;
       var writes = 0;
+      String? notifiedHomeName;
       final client = MockClient((request) async {
         expect(request.headers['authorization'], 'Bearer owner-token');
         final path = request.url.path;
@@ -266,6 +267,7 @@ void main() {
                       api: _api(client),
                       homeId: _homeId,
                       isCurrentHome: () => true,
+                      onHomeNameChanged: (value) => notifiedHomeName = value,
                     ),
                   ),
                 );
@@ -287,6 +289,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(writes, 1);
       expect(result, true);
+      expect(notifiedHomeName, 'Updated Home');
       expect(find.text('Open'), findsOneWidget);
     },
   );

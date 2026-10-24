@@ -31,6 +31,7 @@ class Element {
     }
     return result;
   }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
 }
 
 function page(packaged, live, care = false) {
@@ -39,6 +40,11 @@ function page(packaged, live, care = false) {
   const groupB = feed.appendChild(new Element());
   const liveGroup = feed.appendChild(new Element());
   for (const group of [groupA, groupB, liveGroup]) group.setAttribute('data-el-tip-group', '');
+  let emptyNotice = null;
+  if (live === 0) {
+    emptyNotice = liveGroup.appendChild(new Element());
+    emptyNotice.setAttribute('data-el-empty-articles', '');
+  }
   const add = (group, count, prefix) => {
     for (let index = 0; index < count; index++) {
       const item = group.appendChild(new Element());
@@ -66,7 +72,7 @@ function page(packaged, live, care = false) {
   }
   const visible = () => feed.querySelectorAll('[data-el-tip-item]')
     .filter(item => !item.hidden).map(item => item.textContent);
-  return {feed, groupA, groupB, liveGroup, ids, visible, add};
+  return {feed, groupA, groupB, liveGroup, emptyNotice, ids, visible, add};
 }
 
 test('keeps the full list visible through ten items', () => {
@@ -74,6 +80,8 @@ test('keeps the full list visible through ten items', () => {
     const p = page(count, 0);
     assert.equal(p.visible().length, count);
     assert.equal(p.ids['tips-pagination-footer'].hidden, true);
+    assert.equal(p.liveGroup.hidden, false);
+    if (p.emptyNotice) assert.equal(p.emptyNotice.hidden, false);
   }
 });
 

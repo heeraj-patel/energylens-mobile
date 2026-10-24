@@ -138,7 +138,7 @@ class EnergyLensApp extends StatelessWidget {
                       ),
               homeBuilder: (cloudHome, signOut, changeHome, cloudApi) =>
                   DesignShell(
-                    homeName: cloudHome?.name ?? 'The Miller Home',
+                    homeName: cloudHome?.name ?? '',
                     settingsApi: cloudApi,
                     onSignOut: signOut,
                     onChangeHome: changeHome,

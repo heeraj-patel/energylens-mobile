@@ -210,6 +210,28 @@ void main() {
     },
   );
 
+  test('empty home inventory produces an empty Efficiency snapshot', () async {
+    final source = _Source(
+      inventoryRead: (_) async => [],
+      estimatesRead: (_) async => CloudEstimateBatch(
+        estimates: const [],
+        asOf: DateTime.utc(2026, 10, 6),
+      ),
+      recommendationsRead: (_) async => CloudRecommendationBatch(
+        const [],
+        DateTime.utc(2026, 10, 6),
+      ),
+    );
+
+    final snapshot = await EfficiencyDomainRepository(source)
+        .fetch(homeA, EfficiencyPage.overview);
+
+    expect(snapshot, isNotNull);
+    expect(snapshot!.operatingEstimates, isEmpty);
+    expect(snapshot.recommendations, isEmpty);
+    expect(snapshot.applianceNames, isEmpty);
+  });
+
   test('rejects inconsistent household scope before appliance reads', () async {
     final source = _Source(
       trendsRead: (home) async =>

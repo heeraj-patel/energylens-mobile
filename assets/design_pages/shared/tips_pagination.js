@@ -28,9 +28,10 @@
       item.style.display = item.hidden ? 'none' : '';
     }
     for (const group of feed.querySelectorAll('[data-el-tip-group]')) {
-      const hasVisibleItem = Array.from(group.querySelectorAll('[data-el-tip-item]'))
-        .some(item => visible.has(item));
-      group.hidden = !hasVisibleItem;
+      const groupItems = Array.from(group.querySelectorAll('[data-el-tip-item]'));
+      const hasVisibleItem = groupItems.some(item => visible.has(item));
+      const hasEmptyNotice = Boolean(group.querySelector('[data-el-empty-articles]'));
+      group.hidden = groupItems.length > 0 ? !hasVisibleItem : !hasEmptyNotice;
       group.style.display = group.hidden ? 'none' : '';
     }
     footer.hidden = items.length <= 10;

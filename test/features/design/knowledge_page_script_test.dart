@@ -82,14 +82,27 @@ function cardFor(id) {
   return card;
 }
 for (let n = 1; n <= 3; n++) list.append(cardFor(`faq-${n}-content`));
-const input = {value:'', addEventListener() {}};
-const document = {querySelector: () => input, getElementById: id => nodes[id]};
+const input = {value:'', listeners:{}, addEventListener(name, fn) { this.listeners[name] = fn; }};
+const document = {
+  querySelector: () => input,
+  getElementById: id => nodes[id],
+  createElement: tag => ({tag, attrs:{}, hidden:false, setAttribute(key, value) { this.attrs[key] = value; }}),
+};
 const routes = [], answers = [];
 const window = {EnergyLensNavigation:{postMessage: value => routes.push(value)}, EnergyLensKnowledge:{postMessage: value => answers.push(value)}};
 assert.equal(vm.runInNewContext(script, {document, window, EnergyLensKnowledge:window.EnergyLensKnowledge}), true);
-assert.equal(list.cards.length, 35);
+assert.equal(list.cards.filter(card => card.trigger).length, 35);
+const emptyNotice = list.cards.find(card => card.tag === 'p');
+assert.equal(emptyNotice.textContent, 'No relevant information available to display. Check back later.');
+assert.equal(emptyNotice.hidden, true);
+input.value = 'no matching knowledge';
+input.listeners.input({stopImmediatePropagation() {}});
+assert.equal(emptyNotice.hidden, false);
+input.value = 'kilowatt-hour';
+input.listeners.input({stopImmediatePropagation() {}});
+assert.equal(emptyNotice.hidden, true);
 function click(id) {
-  const trigger = list.cards.map(card => card.trigger).find(node => node.getAttribute('data-el-knowledge-id') === id);
+  const trigger = list.cards.map(card => card.trigger).filter(Boolean).find(node => node.getAttribute('data-el-knowledge-id') === id);
   assert.ok(trigger, id);
   const event = {target:{closest: () => trigger}, prevented:false, stopped:false, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; }};
   list.listeners.click(event);

@@ -87,7 +87,7 @@ class DesignShell extends StatefulWidget {
     this.localPilot = false,
     this.localDeviceLifecycle,
     this.deviceDataRefresh,
-    this.homeName = 'The Miller Home',
+    this.homeName = '',
   });
 
   final VoidCallback? onSignOut;
@@ -219,6 +219,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
   static const _localSettingsStore = LocalPilotSettingsStore();
   static EnergyCategories? _sessionCategories;
   late LocalPilotSettings _localSettings;
+  late String _homeName = widget.homeName;
 
   String get _pageStateHomeId {
     final context = widget.designContextCoordinator?.context;
@@ -314,6 +315,9 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
           widget.designContextCoordinator,
         ) ||
         oldWidget.homeName != widget.homeName) {
+      if (oldWidget.homeName != widget.homeName) {
+        _homeName = widget.homeName;
+      }
       _pageReads.useCoordinator(widget.designContextCoordinator);
       unawaited(_loadPage());
     }
@@ -1091,7 +1095,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     }
     final script = _bindingRenderer.updateScript(
       ticket,
-      selectedHomeNameBindings(page, widget.homeName),
+      selectedHomeNameBindings(page, _homeName),
     );
     if (script == null) return;
     try {
@@ -1602,7 +1606,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
           api: widget.settingsApi,
           accountId: context.accountId,
           homeId: context.homeId,
-          homeName: widget.homeName,
+          homeName: _homeName,
           name: fields['name'] as String,
           manufacturer: fields['manufacturer'] as String,
           model: fields['model'] as String,
@@ -2189,6 +2193,9 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
             api: api,
             homeId: current.homeId,
             isCurrentHome: stillCurrent,
+            onHomeNameChanged: (name) {
+              if (stillCurrent()) setState(() => _homeName = name);
+            },
           ),
         ),
       );

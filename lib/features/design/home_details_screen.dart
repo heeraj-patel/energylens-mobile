@@ -12,11 +12,13 @@ class HomeDetailsScreen extends StatefulWidget {
     required this.api,
     required this.homeId,
     required this.isCurrentHome,
+    this.onHomeNameChanged,
   });
 
   final CloudApiClient api;
   final String homeId;
   final bool Function() isCurrentHome;
+  final ValueChanged<String>? onHomeNameChanged;
 
   @override
   State<HomeDetailsScreen> createState() => _HomeDetailsScreenState();
@@ -92,6 +94,9 @@ class _HomeDetailsScreenState extends State<HomeDetailsScreen> {
           idempotencyKey: newCloudIdempotencyKey(),
         );
         if (!mounted || !widget.isCurrentHome() || after == null) return;
+        if (after.home.name != before.home.name) {
+          widget.onHomeNameChanged?.call(after.home.name);
+        }
         homeSaved = true;
       }
       if (!_hasPropane && _gasRate.text.trim().isNotEmpty) {

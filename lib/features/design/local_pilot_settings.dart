@@ -174,7 +174,10 @@ class _LocalPilotSettingsEditorState extends State<LocalPilotSettingsEditor> {
 }
 
 String buildLocalPilotSettingsScript(String page, LocalPilotSettings settings) {
-  final homeName = jsonEncode(settings.homeName);
+  final selectedHomeName = settings.homeName == 'The Miller Home'
+      ? ''
+      : settings.homeName;
+  final homeName = jsonEncode(selectedHomeName);
   final ownerName = jsonEncode(settings.ownerName);
   final postalCode = jsonEncode(settings.postalCode);
   return '''

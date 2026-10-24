@@ -28,6 +28,16 @@ void main() {
     expect(reopened.postalCode, '60601');
   });
 
+  test('legacy demo home name is not rendered in the page header', () {
+    const settings = LocalPilotSettings(
+      homeName: 'The Miller Home',
+      ownerName: 'Alex Miller',
+      postalCode: '',
+    );
+    final script = buildLocalPilotSettingsScript('dashboard', settings);
+    expect(script, isNot(contains('The Miller Home')));
+  });
+
   testWidgets('home editor returns entered name and ZIP code', (tester) async {
     LocalPilotSettings? saved;
     const initial = LocalPilotSettings(

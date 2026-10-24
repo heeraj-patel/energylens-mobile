@@ -746,6 +746,7 @@ void main() {
           'assets/design_pages/shared/chrome.js',
         );
         expect(chrome, contains('window.EnergyLensChrome'));
+        expect(chrome, isNot(contains('config.homeName')));
         for (final pageId in _pageIds) {
           final html = await rootBundle.loadString(
             'assets/design_pages/$pageId/app.html',
@@ -771,7 +772,7 @@ void main() {
           ]) {
             expect(id, startsWith('${pageId}_'), reason: pageId);
           }
-          expect(config['homeName'], 'The Miller Home');
+          expect(config['homeName'], isEmpty);
           expect(config['tabLabels'], <String>[
             'Dashboard',
             'Devices',
