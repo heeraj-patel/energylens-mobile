@@ -228,11 +228,13 @@ String _withApprovedLabelChanges(String html, String pageId) {
     return html
         .replaceFirst('Home Name', 'Home Name Edit')
         .replaceFirst('Zipcode (Tariff Zone)', 'Zipcode (Tariff Zone) Edit')
+        .replaceFirst('mark_email_read', 'download')
+        .replaceFirst('forward_to_inbox', 'download')
         .replaceFirst(
           'Email report with useful cost, wastage, trends and breakdowns.',
-          'Email a report for selected devices.',
+          'Download a report for selected devices.',
         )
-        .replaceFirst('✉ Email Report Now', 'Email Report Now');
+        .replaceFirst('✉ Email Report Now', 'Download Report');
   }
   if (const {
     'efficiency_away',

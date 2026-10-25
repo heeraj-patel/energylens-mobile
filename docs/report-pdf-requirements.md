@@ -2,15 +2,15 @@
 
 ## Existing report path
 
-Mobile creates an authenticated, owner-scoped Cloud preview for 1–25 selected appliances. Cloud stores an immutable snapshot for 24 hours and computes freshness on read. The preview has a SHA-256 digest. Email Report Now separately requires 1–5 valid recipients, explicit one-time approval of that digest, and confirmed provider acceptance. PDF use does not create a delivery request or change that email path.
+Mobile creates an authenticated, owner-scoped Cloud preview for 1–25 selected appliances. Cloud stores an immutable snapshot for 24 hours and computes freshness on read. The preview has a SHA-256 digest. Email delivery separately requires 1–5 valid recipients, explicit one-time approval of that digest, and confirmed provider acceptance. PDF use does not create a delivery request or change that email path.
 
 Cloud's typed `reports.Preview` is the PDF source. Mobile's preview model intentionally displays a subset of v2 fields, so PDF rendering must not serialize that model. Cloud's existing fixed email HTML supplies the report's established prose and meaningful v2 estimate, measurement, recommendation, scope, and assumption content. Internal IDs, hashes, and source details that the established email copy does not expose remain in the stored snapshot; exposing additional customer copy requires owner review.
 
 ## Approved mobile flow and copy
 
-On the existing saved report preview, show **View PDF** and **Save or share PDF** when the preview is current. Both request the exact saved preview digest. Show **Preparing PDF…** while downloading. On preparation failure show **Couldn’t prepare the PDF. Try again.** The in-app viewer uses **View PDF** as its title and offers **Save or share PDF**. Its built-in print and share actions are disabled. The system share chooser supplies its own native destination labels. Dismissing that chooser does not show a failure or a success claim.
+Settings uses **Download Report** to open the private report screen. After the user selects 1–25 devices, **Preview PDF** creates the saved preview and immediately opens its PDF using the exact snapshot digest. The saved preview also shows **View PDF** and **Save or share PDF** when it is current. Show **Preparing PDF…** while creating or downloading. On preparation failure show **Couldn’t prepare the PDF. Try again.** The in-app viewer uses **View PDF** as its title and offers **Save or share PDF**. Its built-in print and share actions are disabled. The system share chooser supplies its own native destination labels. Dismissing that chooser does not show a failure or a success claim.
 
-Email recipients and approval are never required for PDF viewing or sharing. Existing email wording and behavior stay intact. A stale preview disables PDF actions; a 404, digest mismatch, expiry, or scope change cannot expose a PDF.
+Email recipients and approval are never required for PDF viewing or sharing. Email delivery behavior stays intact. A stale preview disables PDF actions; a 404, digest mismatch, expiry, or scope change cannot expose a PDF.
 
 The open viewer listens for verified home scope changes and Cloud session generation changes. It hides and dismisses itself immediately on either loss, including the route that does not have an auxiliary lifecycle.
 

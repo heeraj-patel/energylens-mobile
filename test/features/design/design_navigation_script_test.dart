@@ -482,7 +482,7 @@ for (const [page, script] of Object.entries(scripts)) {
     assert.deepEqual(routes, ['tips_efficiency']);
   } else if (page === 'settings') {
     assert.equal(click('Manage Devices'), true);
-    assert.equal(click('Email Report Now', {id: 'email-btn'}), true);
+    assert.equal(click('Download Report', {id: 'email-btn'}), true);
     assert.equal(click('Edit', {action: 'settings_action_edit_home'}), true);
     assert.deepEqual(routes, ['settings_manage_devices', 'report_preview', 'edit_home_details']);
   } else {

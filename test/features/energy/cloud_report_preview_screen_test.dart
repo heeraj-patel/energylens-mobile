@@ -209,7 +209,7 @@ void main() {
     await tester.tap(find.byKey(const Key('reportAppliance-$seededId')));
     await tester.tap(find.byKey(const Key('reportAppliance-$applianceId')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Create private preview'));
+    await tester.tap(find.text('Preview PDF'));
     await tester.pumpAndSettle();
     expect(posted, [applianceId, seededId]);
     expect(reads, 1);
@@ -233,7 +233,6 @@ void main() {
     final deliveryPosts = <http.Request>[];
     String? deliveryReadbackState;
     var staleReadback = false;
-    var previewReads = 0;
     final api = _api(
       MockClient((request) async {
         expect(request.headers['authorization'], 'Bearer owner-token');
@@ -278,7 +277,6 @@ void main() {
         }
         if (request.url.path.endsWith('/reports/preview') ||
             request.url.path.endsWith('/reports/previews/$previewId')) {
-          if (request.method == 'GET') previewReads++;
           final body = _preview();
           body['stale'] = staleReadback;
           if (request.method == 'GET' && deliveryReadbackState != null) {
@@ -323,7 +321,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('reportAppliance-$applianceId')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Create private preview'));
+    await tester.tap(find.text('Preview PDF'));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('reportStatus')), findsOneWidget);
     expect(deliveryPosts, isEmpty);
@@ -464,7 +462,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('reportAppliance-$applianceId')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Create private preview'));
+    await tester.tap(find.text('Preview PDF'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const Key('reportRecipients')));
     await tester.enterText(
@@ -535,7 +533,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('reportAppliance-$applianceId')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Create private preview'));
+      await tester.tap(find.text('Preview PDF'));
       await tester.pump();
       expect(reads, 1);
       await lifecycle.selectVerifiedHome(accountB, home.id);
@@ -590,7 +588,7 @@ void main() {
     },
   );
 
-  testWidgets('PDF action uses approved progress and error copy', (
+  testWidgets('one selected device opens PDF and reports preparation errors', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(900, 1800);
@@ -622,12 +620,17 @@ void main() {
           );
         }
         if (request.url.path.endsWith('/reports/preview')) {
+          expect(
+            (jsonDecode(request.body) as Map<String, dynamic>)['appliance_ids'],
+            [applianceId],
+          );
           return http.Response(jsonEncode(_preview()), 201);
         }
         if (request.url.path.endsWith('/reports/previews/$previewId')) {
           return http.Response(jsonEncode(_preview()), 200);
         }
         if (request.url.path.endsWith('/reports/previews/$previewId/pdf')) {
+          expect(request.headers['x-report-snapshot-sha256'], 'a' * 64);
           return pendingPDF.future;
         }
         fail('Unexpected request: ${request.url.path}');
@@ -641,14 +644,28 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('reportAppliance-$applianceId')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Create private preview'));
-    await tester.pumpAndSettle();
+    await tester.tap(find.text('Preview PDF'));
+    await tester.pump();
+    expect(find.text('Preparing PDF…'), findsOneWidget);
     expect(find.text('View PDF'), findsOneWidget);
     expect(find.text('Save or share PDF'), findsOneWidget);
+    pendingPDF.complete(
+      http.Response(
+        '%PDF-test',
+        200,
+        headers: {'content-type': 'application/pdf'},
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(PdfPreview), findsOneWidget);
+    Navigator.of(tester.element(find.byType(PdfPreview))).pop();
+    await tester.pumpAndSettle();
+
+    pendingPDF = Completer<http.Response>();
     await tester.ensureVisible(find.byKey(const Key('viewReportPDF')));
     await tester.tap(find.byKey(const Key('viewReportPDF')));
     await tester.pump();
-    expect(find.text('Preparing PDF…'), findsOneWidget);
     pendingPDF.complete(http.Response('{"code":"preview_stale"}', 409));
     await tester.pumpAndSettle();
     expect(find.text('Couldn’t prepare the PDF. Try again.'), findsOneWidget);

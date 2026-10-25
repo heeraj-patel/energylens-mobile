@@ -128,7 +128,7 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
     }
   }
 
-  Future<void> _create() async {
+  Future<void> _createAndViewPDF() async {
     if (!_hasVerifiedScope ||
         _appliances == null ||
         _selected.isEmpty ||
@@ -137,10 +137,12 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
     }
     setState(() {
       _busy = true;
+      _pdfPreparing = true;
       _error = null;
       _preview = null;
       _resetApproval();
     });
+    var previewCreated = false;
     try {
       final owned = _appliances!.map((a) => a.id.toLowerCase()).toSet();
       final selected = _selected.toList()..sort();
@@ -163,28 +165,51 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
         );
         preview = snapshot?.preview;
       }
-      if (preview == null || !mounted || !_hasVerifiedScope) return;
-      if (mounted) {
-        setState(() {
-          _preview = preview;
-          _key = newCloudIdempotencyKey();
-          _resetApproval();
-        });
+      if (preview == null) {
+        if (mounted && _hasVerifiedScope) {
+          setState(() => _error = 'Couldn’t prepare the PDF. Try again.');
+        }
+        return;
       }
+      if (!mounted || !_hasVerifiedScope) return;
+      previewCreated = true;
+      setState(() {
+        _preview = preview;
+        _key = newCloudIdempotencyKey();
+        _resetApproval();
+      });
+      if (preview.isStale) {
+        setState(
+          () => _error = 'This preview changed or expired. Create a new preview and try again.',
+        );
+        return;
+      }
+      await _openPDF(preview, share: false);
     } on CloudApiException catch (error) {
       if (!mounted || !_hasVerifiedScope) return;
       setState(
-        () => _error = switch (error.statusCode) {
-          409 => 'This request key was used for another selection. Change the selection and try again.',
-          _ => internalErrorMessage,
-        },
+        () => _error = previewCreated
+            ? 'Couldn’t prepare the PDF. Try again.'
+            : switch (error.statusCode) {
+                409 => 'This request key was used for another selection. Change the selection and try again.',
+                _ => internalErrorMessage,
+              },
       );
     } catch (_) {
       if (mounted && _hasVerifiedScope) {
-        setState(() => _error = internalErrorMessage);
+        setState(
+          () => _error = previewCreated
+              ? 'Couldn’t prepare the PDF. Try again.'
+              : internalErrorMessage,
+        );
       }
     } finally {
-      if (mounted && _hasVerifiedScope) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _pdfPreparing = false;
+        });
+      }
     }
   }
 
@@ -229,49 +254,53 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
     }
   }
 
+  Future<void> _openPDF(
+    CloudReportPreview preview, {
+    required bool share,
+  }) async {
+    final homeId = widget.home.id;
+    final previewId = preview.id;
+    final digest = preview.snapshotSha256;
+    final sessionGeneration = widget.api.session.generation;
+    final bytes = await widget.api.reportPDF(homeId, previewId, digest);
+    if (!mounted ||
+        !_hasVerifiedScope ||
+        widget.home.id != homeId ||
+        widget.api.session.generation != sessionGeneration ||
+        _preview?.id != previewId ||
+        _preview?.snapshotSha256 != digest) {
+      return;
+    }
+    if (share) {
+      await Printing.sharePdf(bytes: bytes, filename: 'energylens-report.pdf');
+    } else {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => _ReportPDFScreen(
+            bytes: bytes,
+            api: widget.api,
+            lifecycle: widget.lifecycle,
+            accountId: widget.accountId,
+            homeId: homeId,
+            sessionGeneration: sessionGeneration,
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _preparePDF({required bool share}) async {
     final preview = _preview;
     if (_busy || !_hasVerifiedScope || preview == null || preview.isStale) {
       return;
     }
-    final homeId = widget.home.id;
-    final previewId = preview.id;
-    final digest = preview.snapshotSha256;
-    final sessionGeneration = widget.api.session.generation;
     setState(() {
       _busy = true;
       _pdfPreparing = true;
       _error = null;
     });
     try {
-      final bytes = await widget.api.reportPDF(homeId, previewId, digest);
-      if (!mounted ||
-          !_hasVerifiedScope ||
-          widget.home.id != homeId ||
-          widget.api.session.generation != sessionGeneration ||
-          _preview?.id != previewId ||
-          _preview?.snapshotSha256 != digest) {
-        return;
-      }
-      if (share) {
-        await Printing.sharePdf(
-          bytes: bytes,
-          filename: 'energylens-report.pdf',
-        );
-      } else {
-        await Navigator.of(context).push<void>(
-          MaterialPageRoute<void>(
-            builder: (_) => _ReportPDFScreen(
-              bytes: bytes,
-              api: widget.api,
-              lifecycle: widget.lifecycle,
-              accountId: widget.accountId,
-              homeId: homeId,
-              sessionGeneration: sessionGeneration,
-            ),
-          ),
-        );
-      }
+      await _openPDF(preview, share: share);
     } catch (_) {
       if (mounted && _hasVerifiedScope) {
         setState(() => _error = 'Couldn’t prepare the PDF. Try again.');
@@ -440,11 +469,12 @@ class _CloudReportPreviewScreenState extends State<CloudReportPreviewScreen> {
                         ),
                     const SizedBox(height: 12),
                     FilledButton(
+                      key: const Key('previewReportPDF'),
                       onPressed:
                           _busy || _selected.isEmpty || _selected.length > 25
                           ? null
-                          : _create,
-                      child: const Text('Create private preview'),
+                          : _createAndViewPDF,
+                      child: const Text('Preview PDF'),
                     ),
                     if (_preview case final preview?) ...[
                       const SizedBox(height: 24),

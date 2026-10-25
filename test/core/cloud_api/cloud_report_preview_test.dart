@@ -131,7 +131,7 @@ void main() {
     );
   });
 
-  test('accepts a scoped Datawiz resolution and rejects mixed evidence', () {
+  test('accepts scoped Datawiz resolution with tariff or national rate', () {
     final resolved = payload();
     final refs = [
       {'id': appliance, 'kind': 'datawiz_resolution', 'revision': 1},
@@ -144,6 +144,18 @@ void main() {
         appliance,
       }).items.single.estimate!.energyKwh,
       '0',
+    );
+    final nationalRate = payload();
+    ((nationalRate['items'] as List).single['estimate']
+        as Map)['source_refs'] = [
+      refs.first,
+      {'id': appliance, 'kind': 'national_rate', 'revision': 1},
+    ];
+    expect(
+      CloudReportPreview.fromJson(nationalRate, home, {
+        appliance,
+      }).items.single.estimate!.sourceRefs,
+      contains('national rate revision 1 (${appliance.substring(0, 8)})'),
     );
     for (final badRefs in [
       [
