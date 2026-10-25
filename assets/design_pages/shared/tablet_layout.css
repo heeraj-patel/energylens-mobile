@@ -157,11 +157,11 @@
   /* Dashboard: banner, then paired cards. */
   body[data-el-page="dashboard"] main > div:first-of-type > :nth-child(n+2) { grid-column: span 3; }
 
-  /* Devices: summary beside the filters, devices in three columns. */
-  body[data-el-page="devices"] main > div:first-of-type > :nth-child(1),
+  /* Devices: keep the heading and feed full-width, with adjacent summary/filters and pagination/action rows. */
   body[data-el-page="devices"] main > div:first-of-type > :nth-child(2),
-  body[data-el-page="devices"] main > div:first-of-type > :nth-child(4),
-  body[data-el-page="devices"] main > div:first-of-type > :nth-child(5) { grid-column: span 3; }
+  body[data-el-page="devices"] main > div:first-of-type > :nth-child(3),
+  body[data-el-page="devices"] main > div:first-of-type > :nth-child(5),
+  body[data-el-page="devices"] main > div:first-of-type > :nth-child(6) { grid-column: span 3; }
   body[data-el-page="devices"] #devices-list-controls { align-self: start; }
   body[data-el-page="devices"] #devices-feed {
     display: grid;
