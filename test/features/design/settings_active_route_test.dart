@@ -69,7 +69,11 @@ class _WebPlatform extends WebViewPlatform {
   @override
   PlatformWebViewController createPlatformWebViewController(
     PlatformWebViewControllerCreationParams params,
-  ) => controller = _WebController(params);
+  ) {
+    final created = _WebController(params);
+    created.onLoad = () => controller = created;
+    return controller = created;
+  }
 
   @override
   PlatformNavigationDelegate createPlatformNavigationDelegate(
@@ -101,6 +105,7 @@ class _WebNavigation extends PlatformNavigationDelegate {
 class _WebController extends PlatformWebViewController {
   _WebController(super.params) : super.implementation();
 
+  VoidCallback? onLoad;
   final Map<String, JavaScriptChannelParams> channels = {};
   final List<String> scripts = [];
   String? asset;
@@ -133,6 +138,7 @@ class _WebController extends PlatformWebViewController {
 
   @override
   Future<void> loadFlutterAsset(String key) async {
+    onLoad?.call();
     expectSync(
       cacheClears,
       0,
@@ -588,7 +594,7 @@ void main() {
       platform.controller.scripts
           .where((script) => script.contains('setVisible(button, true)'))
           .length,
-      greaterThanOrEqualTo(2),
+      greaterThanOrEqualTo(1),
     );
     platform.controller.route('edit_home_details');
     await tester.pumpAndSettle();

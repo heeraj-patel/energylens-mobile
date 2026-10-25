@@ -258,6 +258,22 @@ class TipsPageRenderer {
     notice.textContent = emptyArticleMessage;
     return notice;
   };
+  const syncCareSectionEmptyStates = () => {
+    if (payload.page !== 'tips_care_upgrades') return;
+    const panel = document.getElementById('tab-panel-upgrades');
+    if (!panel) return;
+    for (const section of panel.children) {
+      if (section === mount || !section.hasAttribute('data-el-tip-group')) continue;
+      const list = section.lastElementChild;
+      if (!list) continue;
+      const existing = list.querySelector('[data-el-empty-articles]');
+      if (list.querySelector('[data-el-tip-item]')) {
+        existing?.remove();
+      } else if (!existing) {
+        list.append(emptyArticleNotice());
+      }
+    }
+  };
   const researchRow = (text, host, url) => {
     const research = document.createElement('p');
     research.className = detailClass;
@@ -375,7 +391,11 @@ class TipsPageRenderer {
     mount.append(group);
   }
   if (!rows.length) {
-    if (renderedArticleCount === 0) mount.append(emptyArticleNotice());
+    if (payload.page === 'tips_care_upgrades') {
+      syncCareSectionEmptyStates();
+    } else if (renderedArticleCount === 0) {
+      mount.append(emptyArticleNotice());
+    }
     notifyTipsChanged();
     return true;
   }
@@ -453,6 +473,7 @@ class TipsPageRenderer {
       }
       mount.append(group);
     }
+    syncCareSectionEmptyStates();
     notifyTipsChanged();
     return true;
   }

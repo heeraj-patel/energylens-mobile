@@ -263,6 +263,9 @@ void main() {
     await tester.enterText(find.byKey(const Key('pairingCode')), 'PQR234');
     await tester.tap(find.text('Verify and pair'));
     await tester.pump();
+    expect(find.text('Pairing…'), findsOneWidget);
+    expect(find.text('Wait 20 to 30 seconds to pair.'), findsOneWidget);
+    expect(find.byKey(const Key('pairingProgressIndicator')), findsOneWidget);
     expect(
       tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
       isNull,
@@ -273,6 +276,9 @@ void main() {
       tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
       isNotNull,
     );
+    expect(find.text('Pairing…'), findsNothing);
+    expect(find.text('Wait 20 to 30 seconds to pair.'), findsNothing);
+    expect(find.byKey(const Key('pairingProgressIndicator')), findsNothing);
   });
 
   test('owned pairing requires matching owner, hub and epoch', () async {

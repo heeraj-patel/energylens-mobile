@@ -290,7 +290,7 @@ void main() {
       us,
       isNot(contains('Data Source: Environment and Climate Change Canada')),
     );
-    expect(us.indexOf('Your home') < us.indexOf('Your devices'), isTrue);
+    expect(us.indexOf('Your home') < us.indexOf('Air conditioner'), isTrue);
 
     final ca = texts(out['ca']!);
     expect(ca.any((t) => t.startsWith('Heat warning until ')), isTrue);
@@ -306,7 +306,7 @@ void main() {
       expect(hasAttr(nodes, 'data-el-weather-alert'), isFalse, reason: key);
       expect(hasAttr(nodes, 'data-el-weather-card'), isFalse, reason: key);
     }
-    expect(texts(out['alertOnly']!), contains('Your devices'));
+    expect(texts(out['alertOnly']!), contains('Air conditioner'));
     expect(texts(out['absent']!), contains('Pre-cool the home'));
   });
 
@@ -358,7 +358,7 @@ void main() {
       ),
     });
 
-    for (final key in ['programs', 'general', 'care']) {
+    for (final key in ['programs', 'general']) {
       expect(
         texts(out[key]!),
         contains(
@@ -368,6 +368,15 @@ void main() {
       );
       expect(hasAttr(out[key]!, 'data-el-empty-articles'), isTrue, reason: key);
     }
+    expect(
+      texts(out['care']!),
+      isNot(
+        contains(
+          'No relevant information available to display. Check back later.',
+        ),
+      ),
+    );
+    expect(hasAttr(out['care']!, 'data-el-empty-articles'), isFalse);
     expect(
       texts(out['populated']!),
       isNot(

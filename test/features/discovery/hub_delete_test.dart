@@ -76,6 +76,10 @@ void main() {
   testWidgets(
     'Delete requires concrete selected Cloud ownership and prevents double submit',
     (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       final pending = Completer<http.Response>();
       final requests = <http.Request>[];
       var listed = true;
@@ -126,6 +130,10 @@ void main() {
           'Removes this hub from your EnergyLens home. It does not erase the physical hub.',
         ),
         findsOneWidget,
+      );
+      expect(
+        tester.getTopLeft(button).dy,
+        lessThan(tester.getTopLeft(find.text('Detected plugs')).dy),
       );
       expect(tester.widget<TextButton>(button).onPressed, isNotNull);
       await tester.tap(button);

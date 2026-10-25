@@ -42,6 +42,7 @@ class _HubPairingScreenState extends State<HubPairingScreen> {
       });
       return;
     }
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _busy = true;
       _error = null;
@@ -125,8 +126,31 @@ class _HubPairingScreenState extends State<HubPairingScreen> {
           const SizedBox(height: 16),
           FilledButton(
             onPressed: _busy ? null : _pair,
-            child: const Text('Verify and pair'),
+            child: Text(_busy ? 'Pairing…' : 'Verify and pair'),
           ),
+          if (_busy) ...[
+            const SizedBox(height: 12),
+            Semantics(
+              key: const Key('pairingProgressStatus'),
+              container: true,
+              liveRegion: true,
+              label: 'Pairing in progress. Wait 20 to 30 seconds to pair.',
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(
+                      key: Key('pairingProgressIndicator'),
+                      strokeWidth: 2.5,
+                    ),
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(child: Text('Wait 20 to 30 seconds to pair.')),
+                ],
+              ),
+            ),
+          ],
           if (widget.onSetUpLater != null) ...[
             const SizedBox(height: 8),
             TextButton(

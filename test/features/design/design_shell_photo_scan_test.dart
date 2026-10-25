@@ -13,7 +13,11 @@ class _WebPlatform extends WebViewPlatform {
   @override
   PlatformWebViewController createPlatformWebViewController(
     PlatformWebViewControllerCreationParams params,
-  ) => controller = _WebController(params);
+  ) {
+    final created = _WebController(params);
+    created.onLoad = () => controller = created;
+    return controller = created;
+  }
 
   @override
   PlatformNavigationDelegate createPlatformNavigationDelegate(
@@ -43,6 +47,7 @@ class _WebNavigation extends PlatformNavigationDelegate {
 
 class _WebController extends PlatformWebViewController {
   _WebController(super.params) : super.implementation();
+  VoidCallback? onLoad;
   final Map<String, JavaScriptChannelParams> channels = {};
   _WebNavigation? navigation;
   String? asset;
@@ -70,6 +75,7 @@ class _WebController extends PlatformWebViewController {
   Future<void> clearCache() async {}
   @override
   Future<void> loadFlutterAsset(String key) async {
+    onLoad?.call();
     asset = key;
     navigation?.onFinished?.call('file:///$key');
   }
@@ -174,7 +180,8 @@ void main() {
 
   testWidgets('scan publishes the five extracted field states', (tester) async {
     final capture = _Capture()
-      ..text = 'SAMSUNG\nMODEL: RF28R7351SR/AA\nSERIAL: K12345678\n'
+      ..text =
+          'SAMSUNG\nMODEL: RF28R7351SR/AA\nSERIAL: K12345678\n'
           'FCC ID: A3LWRF555\nIC: 649E-WRF555';
     final platform = await _scanPage(tester, capture);
     platform.controller.capture('camera');
@@ -185,8 +192,10 @@ void main() {
     expect(scripts.first, contains('?.clear()'));
     expect(
       scripts.last,
-      contains('"model":true,"brand":true,"serial":true,'
-          '"fccId":true,"icId":true'),
+      contains(
+        '"model":true,"brand":true,"serial":true,'
+        '"fccId":true,"icId":true',
+      ),
     );
     expect(capture.discardCalls, 1);
   });

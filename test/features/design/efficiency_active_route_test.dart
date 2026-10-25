@@ -141,7 +141,12 @@ class _WebPlatform extends WebViewPlatform {
   @override
   PlatformWebViewController createPlatformWebViewController(
     PlatformWebViewControllerCreationParams params,
-  ) => controller = _WebController(params);
+  ) {
+    final created = _WebController(params);
+    created.onLoad = () => controller = created;
+    return controller = created;
+  }
+
   @override
   PlatformNavigationDelegate createPlatformNavigationDelegate(
     PlatformNavigationDelegateCreationParams params,
@@ -166,6 +171,7 @@ class _WebNavigation extends PlatformNavigationDelegate {
 
 class _WebController extends PlatformWebViewController {
   _WebController(super.params) : super.implementation();
+  VoidCallback? onLoad;
   final channels = <String, JavaScriptChannelParams>{};
   final scripts = <String>[];
   String? asset;
@@ -186,6 +192,7 @@ class _WebController extends PlatformWebViewController {
   ) async => navigation = handler as _WebNavigation;
   @override
   Future<void> loadFlutterAsset(String key) async {
+    onLoad?.call();
     asset = key;
     scripts.clear();
     navigation?.onFinished?.call('file:///$key');

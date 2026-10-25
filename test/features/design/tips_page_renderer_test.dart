@@ -337,19 +337,51 @@ class Element {
   append(...nodes) { for (const node of nodes) { node.parent = this; this.children.push(node); } }
   replaceChildren() { this.children = []; }
   setAttribute(key, value) { this.attributes[key] = value; }
+  hasAttribute(key) { return Object.hasOwn(this.attributes, key); }
+  querySelector(selector) {
+    const match = selector.match(/^\[([^\]]+)\]$/);
+    for (const child of this.children) {
+      if (match && child.hasAttribute(match[1])) return child;
+      const nested = child.querySelector(selector);
+      if (nested) return nested;
+    }
+    return null;
+  }
   dispatchEvent(event) { this.events.push(event.type); }
   after(node) { node.parent = null; node.sibling = true; this.siblings.push(node); }
   remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); this.parent = null; if (this.sibling) this.siblings.splice(this.siblings.indexOf(this), 1); }
   get isConnected() { return !!this.parent; }
+  get lastElementChild() { return this.children.at(-1) || null; }
 }
-function render(page, script, generation = 3, startMs = Date.UTC(2026, 9, 13, 11, 59, 59)) {
+function render(page, script, generation = 3, startMs = Date.UTC(2026, 9, 13, 11, 59, 59), careCounts = {care: 1, upgrade: 1}) {
   const mount = new Element('mount');
   mount.siblings = Element.prototype.siblings = [];
   const packaged = new Element('packaged-example');
+  let carePanel = null;
+  const careLists = {};
+  if (page === 'tips_care_upgrades') {
+    carePanel = new Element('panel');
+    carePanel.append(mount);
+    for (const category of ['care', 'upgrade']) {
+      const section = new Element('section');
+      section.setAttribute('data-el-tip-group', '');
+      const header = new Element('header');
+      const list = new Element('list');
+      for (let i = 0; i < careCounts[category]; i++) {
+        const article = new Element('article');
+        article.setAttribute('data-el-tip-item', '');
+        list.append(article);
+      }
+      section.append(header, list);
+      carePanel.append(section);
+      careLists[category] = list;
+    }
+  }
   const timers = [];
   let nowMs = startMs;
   const document = {
-    getElementById: id => id === ({perks_tips:'el-live-programs', tips_efficiency:'el-live-tips', tips_care_upgrades:'el-live-care'})[page] ? mount : null,
+    getElementById: id => id === ({perks_tips:'el-live-programs', tips_efficiency:'el-live-tips', tips_care_upgrades:'el-live-care'})[page]
+      ? mount : id === 'tab-panel-upgrades' ? carePanel : null,
     createElement: tag => new Element(tag),
     querySelectorAll: () => mount.siblings.filter(node => Object.hasOwn(node.attributes, 'data-el-live-examples')),
   };
@@ -357,7 +389,7 @@ function render(page, script, generation = 3, startMs = Date.UTC(2026, 9, 13, 11
     setTimeout: (fn, delay) => timers.push({fn, at: nowMs + delay}),
     window: {__energyLensTextBindingContext: {homeId:'11111111-1111-4111-8111-111111111111', page, generation}}};
   const accepted = vm.runInNewContext(script, context);
-  return {accepted, mount, packaged, siblings: mount.siblings, advanceTo: target => {
+  return {accepted, mount, packaged, careLists, siblings: mount.siblings, advanceTo: target => {
     nowMs = target;
     for (const timer of timers.splice(0).filter(item => item.at <= target)) timer.fn();
   }};
@@ -433,6 +465,15 @@ const empty = render('tips_care_upgrades', scripts.empty);
 assert.equal(empty.mount.children.length, 0);
 assert.equal(empty.siblings.length, 0);
 assert.deepEqual(empty.mount.events, ['energylens:tips-changed']);
+const hasEmptyNotice = list => list.children.some(child => Object.hasOwn(child.attributes, 'data-el-empty-articles'));
+assert.equal(hasEmptyNotice(empty.careLists.care), false);
+assert.equal(hasEmptyNotice(empty.careLists.upgrade), false);
+const emptyCare = render('tips_care_upgrades', scripts.empty, 3, undefined, {care: 0, upgrade: 1});
+assert.equal(hasEmptyNotice(emptyCare.careLists.care), true);
+assert.equal(hasEmptyNotice(emptyCare.careLists.upgrade), false);
+const emptyUpgrade = render('tips_care_upgrades', scripts.empty, 3, undefined, {care: 1, upgrade: 0});
+assert.equal(hasEmptyNotice(emptyUpgrade.careLists.care), false);
+assert.equal(hasEmptyNotice(emptyUpgrade.careLists.upgrade), true);
 assert.equal(render('perks_tips', scripts.programs, 4).accepted, false);
 assert.equal(render('tips_efficiency', scripts.programs).accepted, false);
 ''');

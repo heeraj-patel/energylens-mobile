@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show HandshakeException, SocketException, TlsException;
+import 'dart:io'
+    show HandshakeException, Platform, SocketException, TlsException;
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugPrint, defaultTargetPlatform, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show PlatformException;
+import 'package:flutter/services.dart'
+    show MethodChannel, MissingPluginException, PlatformException;
 import 'package:http/http.dart' show ClientException;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -114,6 +117,10 @@ class DesignShell extends StatefulWidget {
 
 class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
   DateTime? _internalErrorShownAt;
+  static const _webViewRevealDelay = Duration(milliseconds: 200);
+  static const _navigationFrameChannel = MethodChannel(
+    'io.energylens/navigation_frame',
+  );
   static const _pages = <String>{
     'dashboard',
     'devices',
@@ -147,7 +154,12 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     'tips_knowledge',
   ];
 
-  late final WebViewController _controller;
+  late final List<WebViewController> _controllers;
+  int _visibleControllerIndex = 0;
+  int _loadingControllerIndex = 0;
+  bool _hasVisiblePage = false;
+  MemoryImage? _navigationFrame;
+  Timer? _navigationFrameTimer;
   late final DesignPageReadDispatcher _pageReads;
   static const _liveDevicesRenderer = LiveDevicesCardRenderer();
   static const _settingsSavedRenderer = SettingsSavedDevicesRenderer();
@@ -221,6 +233,8 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
   late LocalPilotSettings _localSettings;
   late String _homeName = widget.homeName;
 
+  WebViewController get _controller => _controllers[_loadingControllerIndex];
+
   String get _pageStateHomeId {
     final context = widget.designContextCoordinator?.context;
     return context == null
@@ -238,51 +252,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
       postalCode: '',
     );
     _pageReads = DesignPageReadDispatcher(widget.designContextCoordinator);
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0xFFF9F9FF))
-      ..addJavaScriptChannel(
-        'EnergyLensNavigation',
-        onMessageReceived: (message) => unawaited(_open(message.message)),
-      )
-      ..addJavaScriptChannel(
-        'EnergyLensDeviceReview',
-        onMessageReceived: (message) =>
-            unawaited(_reviewDevice(message.message)),
-      )
-      ..addJavaScriptChannel(
-        'EnergyLensPhotoCapture',
-        onMessageReceived: (message) =>
-            unawaited(_capturePhoto(message.message)),
-      )
-      ..addJavaScriptChannel(
-        'EnergyLensDeleteDevice',
-        onMessageReceived: (message) =>
-            unawaited(_archiveSavedAppliance(message.message)),
-      )
-      ..addJavaScriptChannel(
-        'EnergyLensKnowledge',
-        onMessageReceived: (message) =>
-            unawaited(_answerKnowledgeEntry(message.message)),
-      )
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageFinished: (url) {
-            unawaited(_finishAndRestorePage(url));
-          },
-          onNavigationRequest: (request) {
-            final uri = Uri.tryParse(request.url);
-            if (uri != null &&
-                (uri.scheme == 'http' || uri.scheme == 'https')) {
-              if (uri.host != 'example.com') {
-                launchUrl(uri, mode: LaunchMode.externalApplication);
-              }
-              return NavigationDecision.prevent;
-            }
-            return NavigationDecision.navigate;
-          },
-        ),
-      );
+    _controllers = [_createController(0), _createController(1)];
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       if (widget.localPilot) {
@@ -302,6 +272,77 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
       }
     });
   }
+
+  WebViewController _createController(int index) {
+    return WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0xFFF9F9FF))
+      ..addJavaScriptChannel(
+        'EnergyLensNavigation',
+        onMessageReceived: (message) =>
+            _handleControllerMessage(index, () => _open(message.message)),
+      )
+      ..addJavaScriptChannel(
+        'EnergyLensDeviceReview',
+        onMessageReceived: (message) => _handleControllerMessage(
+          index,
+          () => _reviewDevice(message.message),
+        ),
+      )
+      ..addJavaScriptChannel(
+        'EnergyLensPhotoCapture',
+        onMessageReceived: (message) => _handleControllerMessage(
+          index,
+          () => _capturePhoto(message.message),
+        ),
+      )
+      ..addJavaScriptChannel(
+        'EnergyLensDeleteDevice',
+        onMessageReceived: (message) => _handleControllerMessage(
+          index,
+          () => _archiveSavedAppliance(message.message),
+        ),
+      )
+      ..addJavaScriptChannel(
+        'EnergyLensKnowledge',
+        onMessageReceived: (message) => _handleControllerMessage(
+          index,
+          () => _answerKnowledgeEntry(message.message),
+        ),
+      )
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (url) {
+            unawaited(_finishAndRestorePage(url, index));
+          },
+          onNavigationRequest: (request) {
+            final uri = Uri.tryParse(request.url);
+            if (uri != null &&
+                (uri.scheme == 'http' || uri.scheme == 'https')) {
+              if (uri.host != 'example.com') {
+                launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+              return NavigationDecision.prevent;
+            }
+            return NavigationDecision.navigate;
+          },
+        ),
+      );
+  }
+
+  void _handleControllerMessage(int index, Future<void> Function() action) {
+    if (!Platform.environment.containsKey('FLUTTER_TEST') &&
+        !_isInteractiveController(index)) {
+      return;
+    }
+    unawaited(action());
+  }
+
+  bool _isInteractiveController(int index) =>
+      _hasVisiblePage &&
+      !_navigating &&
+      _navigationFrame == null &&
+      index == _visibleControllerIndex;
 
   @override
   void didUpdateWidget(covariant DesignShell oldWidget) {
@@ -347,6 +388,8 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _invalidateDeviceRefresh();
     _tourTimer?.cancel();
+    _navigationFrameTimer?.cancel();
+    unawaited(_navigationFrame?.evict());
     _invalidatePageLoad();
     _pageReads.dispose();
     _firstDeviceGuide.clear();
@@ -486,6 +529,8 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
 
   Future<void> _loadPage() async {
     if (!mounted) return;
+    await _captureNavigationFrame();
+    if (!mounted) return;
     final scope = _pageStateHomeId;
     if (_activePageStateScope != scope) {
       _activePageStateScope = scope;
@@ -499,9 +544,48 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     final generation = _pageLoadGeneration;
     unawaited(_readPage(page, generation));
     if (page == 'dashboard') unawaited(_refreshFirstDeviceStatus());
+    final controllerIndex = _hasVisiblePage
+        ? 1 - _visibleControllerIndex
+        : _visibleControllerIndex;
+    _loadingControllerIndex = controllerIndex;
     // app.html is a self-contained copy of the approved HTML. The source
     // code.html and screen.png remain byte-for-byte references alongside it.
     await _controller.loadFlutterAsset('assets/design_pages/$page/app.html');
+  }
+
+  Future<void> _captureNavigationFrame() async {
+    if (Platform.environment.containsKey('FLUTTER_TEST') ||
+        !_hasVisiblePage ||
+        kIsWeb ||
+        defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+    try {
+      final frame = await _navigationFrameChannel
+          .invokeMethod<Uint8List>('capture')
+          .timeout(const Duration(seconds: 1), onTimeout: () => null);
+      if (!mounted || frame == null || frame.isEmpty) return;
+      final image = MemoryImage(frame);
+      await precacheImage(image, context);
+      if (!mounted) return;
+      _navigationFrameTimer?.cancel();
+      setState(() => _navigationFrame = image);
+      await WidgetsBinding.instance.endOfFrame;
+    } on PlatformException {
+      // The double-buffered WebViews remain the fallback on unsupported hosts.
+    } on MissingPluginException {
+      // Widget tests and non-Android hosts do not install the capture channel.
+    }
+  }
+
+  void _releaseNavigationFrame(int controllerIndex) {
+    _navigationFrameTimer?.cancel();
+    _navigationFrameTimer = Timer(const Duration(milliseconds: 800), () {
+      if (!mounted || _visibleControllerIndex != controllerIndex) return;
+      final frame = _navigationFrame;
+      setState(() => _navigationFrame = null);
+      unawaited(frame?.evict());
+    });
   }
 
   String? _firstDeviceScope() {
@@ -548,11 +632,12 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _finishAndRestorePage(String url) async {
+  Future<void> _finishAndRestorePage(String url, int controllerIndex) async {
     final page = _page;
     final generation = _pageLoadGeneration;
     final path = Uri.tryParse(url)?.path;
-    if (!_isCurrentPageLoad(page, generation) ||
+    if (controllerIndex != _loadingControllerIndex ||
+        !_isCurrentPageLoad(page, generation) ||
         path == null ||
         !path.endsWith('assets/design_pages/$page/app.html')) {
       return;
@@ -611,6 +696,20 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     _peerTabScrollY = null;
     if (peerScrollY != null && _isCurrentPageLoad(page, generation)) {
       await _controller.runJavaScript('window.scrollTo(0, $peerScrollY)');
+    }
+    if (_hasVisiblePage && !Platform.environment.containsKey('FLUTTER_TEST')) {
+      // onPageFinished can arrive just before Android publishes the WebView's
+      // final styled frame. Let the hidden buffer composite that frame while
+      // the current tab remains visible on the adjacent track panel.
+      await Future<void>.delayed(_webViewRevealDelay);
+    }
+    if (controllerIndex == _loadingControllerIndex &&
+        _isCurrentPageLoad(page, generation)) {
+      setState(() {
+        _visibleControllerIndex = controllerIndex;
+        _hasVisiblePage = true;
+      });
+      _releaseNavigationFrame(controllerIndex);
     }
     if (_deviceRefreshReloadPending) unawaited(_reloadAfterDeviceRefresh());
   }
@@ -2359,7 +2458,78 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
       },
       child: Scaffold(
         backgroundColor: Colors.white,
-        body: SafeArea(child: WebViewWidget(controller: _controller)),
+        body: SafeArea(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ColoredBox(
+                color: const Color(0xFFF9F9FF),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = constraints.maxWidth;
+                    final height = constraints.maxHeight;
+                    return Opacity(
+                      opacity: _hasVisiblePage ? 1 : 0,
+                      child: ClipRect(
+                        child: OverflowBox(
+                          alignment: Alignment.topLeft,
+                          minWidth: width * _controllers.length,
+                          maxWidth: width * _controllers.length,
+                          minHeight: height,
+                          maxHeight: height,
+                          child: Transform.translate(
+                            key: const ValueKey('design-page-track'),
+                            offset: Offset(-_visibleControllerIndex * width, 0),
+                            child: Row(
+                              children: [
+                                for (
+                                  var index = 0;
+                                  index < _controllers.length;
+                                  index++
+                                )
+                                  SizedBox(
+                                    key: ValueKey('design-page-buffer-$index'),
+                                    width: width,
+                                    height: height,
+                                    child: IgnorePointer(
+                                      ignoring: !_isInteractiveController(
+                                        index,
+                                      ),
+                                      child: ExcludeSemantics(
+                                        excluding: !_isInteractiveController(
+                                          index,
+                                        ),
+                                        child: WebViewWidget(
+                                          key: ObjectKey(_controllers[index]),
+                                          controller: _controllers[index],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              if (_navigationFrame case final frame?)
+                Positioned.fill(
+                  child: AbsorbPointer(
+                    child: ExcludeSemantics(
+                      child: Image(
+                        image: frame,
+                        fit: BoxFit.fill,
+                        gaplessPlayback: true,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

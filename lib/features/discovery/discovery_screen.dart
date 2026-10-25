@@ -2417,23 +2417,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 ],
               ),
             ],
-            if (widget.cloudHome != null && widget.cloudApi != null) ...[
-              const SizedBox(height: 8),
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Removes this hub from your EnergyLens home. It does not erase the physical hub.',
-                ),
-              ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  key: const Key('deleteHubButton'),
-                  onPressed: _deletableHub == null ? null : _deleteHub,
-                  child: const Text('Delete'),
-                ),
-              ),
-            ],
             if (widget.cloudHome != null &&
                 widget.cloudApi != null &&
                 (!_paired || (!_claimedThisSession && !_cloudHubOwned)) &&
@@ -2535,6 +2518,23 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 internalErrorMessage,
                 key: const Key('hubAccessMessage'),
                 style: TextStyle(color: theme.colorScheme.error),
+              ),
+            ],
+            if (widget.cloudHome != null && widget.cloudApi != null) ...[
+              const SizedBox(height: 24),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Removes this hub from your EnergyLens home. It does not erase the physical hub.',
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  key: const Key('deleteHubButton'),
+                  onPressed: _deletableHub == null ? null : _deleteHub,
+                  child: const Text('Delete'),
+                ),
               ),
             ],
             ..._detectedResults(theme),
