@@ -145,6 +145,45 @@ void main() {
     },
   );
 
+  test('registration keeps the Cloud reason for 4xx but not for 5xx', () async {
+    for (final (status, body, expected) in [
+      (
+        429,
+        '{"code":"rate_limited","message":"too many registration requests","request_id":"r","details":{}}',
+        'too many registration requests',
+      ),
+      (
+        400,
+        '{"code":"invalid_request","message":"invalid username or password"}',
+        'invalid username or password',
+      ),
+      (400, 'not json', null),
+      (
+        503,
+        '{"code":"auth_unavailable","message":"authentication temporarily unavailable"}',
+        null,
+      ),
+    ]) {
+      final client = CloudLocalAuthClient(
+        baseUrl: _config.apiUrl,
+        client: MockClient((_) async => http.Response(body, status)),
+      )..credentialMethod = 'username_password';
+      await expectLater(
+        client.requestRegistration('alice', 'long password 123'),
+        throwsA(
+          isA<CloudLocalAuthException>()
+              .having((error) => error.statusCode, 'statusCode', status)
+              .having(
+                (error) => error.serverMessage,
+                'serverMessage',
+                expected,
+              ),
+        ),
+      );
+      client.close();
+    }
+  });
+
   test('auth capability selection prefers email and suppresses contradictory signup', () {
     const config = CloudAuthConfig(
       issuer: '',

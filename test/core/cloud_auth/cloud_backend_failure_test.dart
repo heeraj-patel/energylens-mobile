@@ -492,6 +492,47 @@ void main() {
       });
     }
 
+    for (final (status, message, shown) in [
+      (
+        429,
+        'too many registration requests',
+        'Too many registration requests.',
+      ),
+      (400, 'invalid username or password', 'Invalid username or password.'),
+      (
+        400,
+        'client address could not be determined',
+        'Client address could not be determined.',
+      ),
+    ]) {
+      testWidgets('registration shows the Cloud reason for $status $message', (
+        tester,
+      ) async {
+        await register(
+          tester,
+          _Registration()
+            ..error = CloudLocalAuthException(status, serverMessage: message),
+        );
+        expect(find.text(shown), findsOneWidget);
+        expect(find.text(internalErrorMessage), findsNothing);
+      });
+    }
+
+    testWidgets('registration keeps 5xx generic despite a Cloud message', (
+      tester,
+    ) async {
+      await register(
+        tester,
+        _Registration()
+          ..error = const CloudLocalAuthException(
+            503,
+            serverMessage: 'authentication temporarily unavailable',
+          ),
+      );
+      expect(find.text(internalErrorMessage), findsOneWidget);
+      expect(find.textContaining('temporarily'), findsNothing);
+    });
+
     testWidgets('registration shows duplicate-user message for 409', (
       tester,
     ) async {

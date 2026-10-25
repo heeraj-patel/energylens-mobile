@@ -95,13 +95,7 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
         if (error.statusCode == 400 || error.statusCode == 422) {
           _remoteAttempted = false;
         }
-        setState(
-          () => _error = error.statusCode == 409
-              ? 'User Id exists, please login'
-              : isInputRejectionStatus(error.statusCode)
-              ? 'Could not submit the request. Try again.'
-              : internalErrorMessage,
-        );
+        setState(() => _error = _registrationErrorMessage(error));
       }
     } catch (_) {
       if (mounted) {
@@ -114,6 +108,21 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
         setState(() => _busy = false);
       }
     }
+  }
+
+  // Client errors (4xx) show Cloud's own reason; 5xx and 404 stay generic.
+  static String _registrationErrorMessage(CloudLocalAuthException error) {
+    final status = error.statusCode;
+    final message = error.serverMessage;
+    if (status == 409) return 'User Id exists, please login';
+    if (status >= 400 && status < 500 && status != 404 && message != null) {
+      final sentence = message[0].toUpperCase() + message.substring(1);
+      return sentence.endsWith('.') ? sentence : '$sentence.';
+    }
+    if (isInputRejectionStatus(status)) {
+      return 'Could not submit the request. Try again.';
+    }
+    return internalErrorMessage;
   }
 
   @override

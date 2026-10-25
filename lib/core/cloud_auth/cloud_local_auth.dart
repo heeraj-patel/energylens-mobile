@@ -9,9 +9,13 @@ class CloudLocalAuthException implements Exception {
   const CloudLocalAuthException(
     this.statusCode, {
     this.invalidCredentials400 = false,
+    this.serverMessage,
   });
   final int statusCode;
   final bool invalidCredentials400;
+
+  /// The `message` of a 4xx Cloud error envelope, when one was returned.
+  final String? serverMessage;
   bool get invalidCredentials => statusCode == 401 || invalidCredentials400;
 }
 
@@ -155,15 +159,22 @@ class CloudLocalAuthClient
         .timeout(const Duration(seconds: 15));
     if (response.statusCode != status) {
       var invalidCredentials400 = false;
-      if (path == 'login' &&
-          credentialMethod == 'username_password' &&
-          response.statusCode == 400) {
+      String? serverMessage;
+      if (response.statusCode >= 400 && response.statusCode < 500) {
         try {
           final body = jsonDecode(response.body);
-          invalidCredentials400 =
-              body is Map<String, dynamic> &&
-              body['code'] == 'invalid_request' &&
-              body['message'] == 'invalid username or password';
+          if (body is Map<String, dynamic> &&
+              body['code'] is String &&
+              body['message'] is String &&
+              (body['message'] as String).trim().isNotEmpty) {
+            serverMessage = (body['message'] as String).trim();
+            invalidCredentials400 =
+                path == 'login' &&
+                credentialMethod == 'username_password' &&
+                response.statusCode == 400 &&
+                body['code'] == 'invalid_request' &&
+                serverMessage == 'invalid username or password';
+          }
         } on FormatException {
           // Malformed error responses remain internal failures.
         }
@@ -171,6 +182,7 @@ class CloudLocalAuthClient
       throw CloudLocalAuthException(
         response.statusCode,
         invalidCredentials400: invalidCredentials400,
+        serverMessage: serverMessage,
       );
     }
     return response;
