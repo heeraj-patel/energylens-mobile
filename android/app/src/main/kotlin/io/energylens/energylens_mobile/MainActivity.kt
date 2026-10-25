@@ -38,6 +38,7 @@ class MainActivity : FlutterActivity() {
             webView.height,
             Bitmap.Config.ARGB_8888,
         )
+        bitmap.eraseColor(0xFFF9F9FF.toInt())
         webView.draw(Canvas(bitmap))
         returnBitmap(result, bitmap)
     }
@@ -60,14 +61,14 @@ class MainActivity : FlutterActivity() {
 
     private fun returnBitmap(result: MethodChannel.Result, bitmap: Bitmap) {
         Thread {
-            val png = bitmap.toPng()
-            runOnUiThread { result.success(png) }
+            val jpeg = bitmap.toJpeg()
+            runOnUiThread { result.success(jpeg) }
         }.start()
     }
 
-    private fun Bitmap.toPng(): ByteArray {
+    private fun Bitmap.toJpeg(): ByteArray {
         val output = ByteArrayOutputStream()
-        compress(Bitmap.CompressFormat.PNG, 100, output)
+        compress(Bitmap.CompressFormat.JPEG, 80, output)
         recycle()
         return output.toByteArray()
     }

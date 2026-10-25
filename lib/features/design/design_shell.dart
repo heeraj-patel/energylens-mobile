@@ -117,7 +117,7 @@ class DesignShell extends StatefulWidget {
 
 class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
   DateTime? _internalErrorShownAt;
-  static const _webViewRevealDelay = Duration(milliseconds: 200);
+  static const _paintReadyTimeout = Duration(milliseconds: 150);
   static const _navigationFrameChannel = MethodChannel(
     'io.energylens/navigation_frame',
   );
@@ -159,7 +159,8 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
   int _loadingControllerIndex = 0;
   bool _hasVisiblePage = false;
   MemoryImage? _navigationFrame;
-  Timer? _navigationFrameTimer;
+  Future<void>? _navigationCapture;
+  Completer<void>? _paintReady;
   late final DesignPageReadDispatcher _pageReads;
   static const _liveDevicesRenderer = LiveDevicesCardRenderer();
   static const _settingsSavedRenderer = SettingsSavedDevicesRenderer();
@@ -304,6 +305,13 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
         ),
       )
       ..addJavaScriptChannel(
+        'EnergyLensPaintReady',
+        onMessageReceived: (_) {
+          final ready = _paintReady;
+          if (ready != null && !ready.isCompleted) ready.complete();
+        },
+      )
+      ..addJavaScriptChannel(
         'EnergyLensKnowledge',
         onMessageReceived: (message) => _handleControllerMessage(
           index,
@@ -388,7 +396,6 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _invalidateDeviceRefresh();
     _tourTimer?.cancel();
-    _navigationFrameTimer?.cancel();
     unawaited(_navigationFrame?.evict());
     _invalidatePageLoad();
     _pageReads.dispose();
@@ -529,8 +536,9 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
 
   Future<void> _loadPage() async {
     if (!mounted) return;
-    await _captureNavigationFrame();
-    if (!mounted) return;
+    // The capture reads the visible buffer; the load below targets the other.
+    final capture = _captureNavigationFrame();
+    _navigationCapture = capture;
     final scope = _pageStateHomeId;
     if (_activePageStateScope != scope) {
       _activePageStateScope = scope;
@@ -550,7 +558,10 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     _loadingControllerIndex = controllerIndex;
     // app.html is a self-contained copy of the approved HTML. The source
     // code.html and screen.png remain byte-for-byte references alongside it.
-    await _controller.loadFlutterAsset('assets/design_pages/$page/app.html');
+    await Future.wait([
+      _controller.loadFlutterAsset('assets/design_pages/$page/app.html'),
+      capture,
+    ]);
   }
 
   Future<void> _captureNavigationFrame() async {
@@ -568,7 +579,6 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
       final image = MemoryImage(frame);
       await precacheImage(image, context);
       if (!mounted) return;
-      _navigationFrameTimer?.cancel();
       setState(() => _navigationFrame = image);
       await WidgetsBinding.instance.endOfFrame;
     } on PlatformException {
@@ -579,8 +589,7 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
   }
 
   void _releaseNavigationFrame(int controllerIndex) {
-    _navigationFrameTimer?.cancel();
-    _navigationFrameTimer = Timer(const Duration(milliseconds: 800), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _visibleControllerIndex != controllerIndex) return;
       final frame = _navigationFrame;
       setState(() => _navigationFrame = null);
@@ -699,9 +708,9 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
     }
     if (_hasVisiblePage && !Platform.environment.containsKey('FLUTTER_TEST')) {
       // onPageFinished can arrive just before Android publishes the WebView's
-      // final styled frame. Let the hidden buffer composite that frame while
-      // the current tab remains visible on the adjacent track panel.
-      await Future<void>.delayed(_webViewRevealDelay);
+      // final styled frame; wait for two animation frames in the hidden buffer.
+      await _awaitPaintReady(controllerIndex);
+      await _navigationCapture;
     }
     if (controllerIndex == _loadingControllerIndex &&
         _isCurrentPageLoad(page, generation)) {
@@ -712,6 +721,22 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
       _releaseNavigationFrame(controllerIndex);
     }
     if (_deviceRefreshReloadPending) unawaited(_reloadAfterDeviceRefresh());
+  }
+
+  Future<void> _awaitPaintReady(int controllerIndex) async {
+    final ready = Completer<void>();
+    _paintReady = ready;
+    try {
+      await _controllers[controllerIndex].runJavaScript(
+        'requestAnimationFrame(function(){requestAnimationFrame(function(){'
+        'EnergyLensPaintReady.postMessage("")})})',
+      );
+      await ready.future.timeout(_paintReadyTimeout);
+    } catch (_) {
+      // A missed signal reveals the page after the timeout.
+    } finally {
+      if (identical(_paintReady, ready)) _paintReady = null;
+    }
   }
 
   Future<void> _capturePageState() async {
