@@ -594,7 +594,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Submit'), findsOneWidget);
-    expect(find.text('Create account'), findsNothing);
+    expect(find.text('Create account'), findsOneWidget);
     await tester.enterText(
       find.byKey(const Key('localSignInEmail')),
       'person@example.com',

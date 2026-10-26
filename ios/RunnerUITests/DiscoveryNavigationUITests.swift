@@ -372,6 +372,8 @@ final class DiscoveryNavigationUITests: XCTestCase {
     let submit = app.buttons["Submit"]
     XCTAssertTrue(usernameField.waitForExistence(timeout: 300), "Sign-in form did not render")
     XCTAssertTrue(passwordField.exists, "Password field did not render")
+    XCTAssertTrue(app.buttons["Forgot password"].waitForExistence(timeout: 30))
+    XCTAssertTrue(app.buttons["Create account"].exists)
     let startupError = app.descendants(matching: .any)
       .matching(NSPredicate(format: "label == %@", "Internal Error, Try again later"))
       .firstMatch

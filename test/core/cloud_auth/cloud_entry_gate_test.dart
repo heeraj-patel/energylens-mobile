@@ -138,6 +138,79 @@ String pendingFirstHomeDraft() => jsonEncode({
 });
 
 void main() {
+  testWidgets('login actions remain visible while capabilities load', (
+    tester,
+  ) async {
+    const localConfig = CloudAuthConfig(
+      issuer: '',
+      audience: '',
+      clientId: '',
+      redirectUrl: '',
+      apiUrl: 'https://api.example',
+      localAuthEnabled: true,
+    );
+    final response = Completer<http.Response>();
+    final local = CloudLocalAuthClient(
+      baseUrl: localConfig.apiUrl,
+      client: MockClient((_) async => http.Response('', 404)),
+    );
+    final session = CloudSession(
+      config: localConfig,
+      store: Store()..tokens = null,
+      authenticator: Auth(),
+      localAuth: local,
+    );
+    final api = CloudApiClient(
+      session: session,
+      client: MockClient(
+        (request) => request.url.path == '/v1/auth/config'
+            ? response.future
+            : Future.value(http.Response('', 404)),
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CloudEntryGate(
+          session: session,
+          api: api,
+          homeBuilder: (_, _, _, _) => const Text('Private Home'),
+        ),
+      ),
+    );
+    expect(find.text('User ID'), findsOneWidget);
+    expect(find.text('Password'), findsOneWidget);
+    expect(find.text('Submit'), findsOneWidget);
+    expect(find.text('Forgot password'), findsOneWidget);
+    expect(find.text('Create account'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, 'Create account'))
+          .onPressed,
+      isNull,
+    );
+
+    response.complete(
+      http.Response(
+        '{"schema_version":1,"methods":["username_password"],'
+        '"registration_enabled":true,"email_verification_required":false,'
+        '"password_recovery_enabled":true,"session_logout_revokes_access":true}',
+        200,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('User ID'), findsOneWidget);
+    expect(find.text('Forgot password'), findsOneWidget);
+    expect(find.text('Create account'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, 'Create account'))
+          .onPressed,
+      isNotNull,
+    );
+    api.close();
+    local.close();
+  });
+
   testWidgets('contradictory signup capabilities keep email sign-in usable', (
     tester,
   ) async {
@@ -212,9 +285,15 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Email ID'), findsOneWidget);
-    expect(find.text('Create account'), findsNothing);
-    expect(find.text('Forgot password?'), findsOneWidget);
+    expect(find.text('User ID'), findsOneWidget);
+    expect(find.text('Create account'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, 'Create account'))
+          .onPressed,
+      isNull,
+    );
+    expect(find.text('Forgot password'), findsOneWidget);
     await tester.enterText(find.byType(TextField).first, 'person@example.com');
     await tester.enterText(
       find.byType(TextField).last,
@@ -455,7 +534,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('Email ID'), findsOneWidget);
+    expect(find.text('User ID'), findsOneWidget);
     expect(find.text('Password'), findsOneWidget);
     expect(find.text('Submit'), findsOneWidget);
     await tester.tap(find.text('Submit'));
@@ -488,7 +567,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('Email ID'), findsOneWidget);
+    expect(find.text('User ID'), findsOneWidget);
     await tester.tap(find.text('Submit'));
     await tester.pumpAndSettle();
     expect(find.text('Internal Error, Try again later'), findsOneWidget);
@@ -527,7 +606,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Email ID'), findsOneWidget);
+      expect(find.text('User ID'), findsOneWidget);
       expect(find.text('Password'), findsOneWidget);
       expect(find.text('Submit'), findsOneWidget);
       expect(find.text('Internal Error, Try again later'), findsNothing);
@@ -582,7 +661,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(capabilities, 1);
-      expect(find.text('Email ID'), findsOneWidget);
+      expect(find.text('User ID'), findsOneWidget);
+      expect(find.text('Forgot password'), findsOneWidget);
+      expect(find.text('Create account'), findsOneWidget);
       expect(find.text('Internal Error, Try again later'), findsOneWidget);
       await tester.tap(find.text('Submit'));
       await tester.pumpAndSettle();
@@ -691,7 +772,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(capabilities, 2);
     expect(session.credentialMethod, 'username_password');
-    expect(find.text('Forgot password?'), findsOneWidget);
+    expect(find.text('Forgot password'), findsOneWidget);
     expect(login?.body, contains('"username":"nik"'));
     expect(find.text('Invalid username or password.'), findsOneWidget);
     expect(
@@ -701,7 +782,7 @@ void main() {
           ?.text,
       'nik',
     );
-    await tester.tap(find.text('Forgot password?'));
+    await tester.tap(find.text('Forgot password'));
     await tester.pumpAndSettle();
     expect(find.text('User ID'), findsOneWidget);
     expect(find.text('Request reset link'), findsNothing);
@@ -808,7 +889,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Forgot password?'));
+    await tester.tap(find.text('Forgot password'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('recoveryUserId')), ' ALICE ');
     await tester.enterText(
@@ -922,7 +1003,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Forgot password?'));
+        await tester.tap(find.text('Forgot password'));
         await tester.pumpAndSettle();
         await tester.enterText(
           find.byKey(const Key('recoveryUserId')),

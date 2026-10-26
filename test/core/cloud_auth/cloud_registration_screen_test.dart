@@ -193,7 +193,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Submit'), findsOneWidget);
-    expect(find.text('Create account'), findsNothing);
+    expect(find.text('Create account'), findsOneWidget);
     expect(store.saves, 0);
     api.close();
   });
@@ -243,9 +243,15 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Email ID'), findsOneWidget);
-    expect(find.text('Forgot password?'), findsOneWidget);
-    expect(find.text('Create account'), findsNothing);
+    expect(find.text('User ID'), findsOneWidget);
+    expect(find.text('Forgot password'), findsOneWidget);
+    expect(find.text('Create account'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, 'Create account'))
+          .onPressed,
+      isNull,
+    );
     api.close();
     local.close();
   });

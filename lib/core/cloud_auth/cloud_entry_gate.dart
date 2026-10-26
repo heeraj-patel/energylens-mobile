@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/material.dart';
@@ -37,6 +38,19 @@ bool _isClientConfigUsable(CloudAuthConfig config) {
       (pin.isEmpty ||
           (config.isDevAuthConfigured &&
               RegExp(r'^[0-9a-f]{64}$').hasMatch(pin)));
+}
+
+void _recordAuthDiagnostic(String phase, Object error) {
+  if (!kDebugMode) return;
+  try {
+    File('${Directory.systemTemp.path}/energylens-auth-restore.log')
+        .writeAsStringSync(
+          'phase=$phase type=${error.runtimeType} error=$error\n',
+          mode: FileMode.append,
+        );
+  } catch (_) {
+    // Diagnostics must not affect authentication.
+  }
 }
 
 class CloudEntryGate extends StatefulWidget {
@@ -270,6 +284,7 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
 
   Future<void> _restore() async {
     final epoch = _lifecycleEpoch;
+    var phase = 'capabilities';
     if (!_clientConfigUsable) {
       if (mounted) setState(() => _busy = false);
       return;
@@ -277,9 +292,15 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
     try {
       await _loadCapabilities(epoch);
       if (!mounted || epoch != _lifecycleEpoch) return;
+      phase = 'access_token';
       final token = await _session.accessToken();
+      phase = 'validate';
       if (token != null) await _validate();
-    } catch (_) {
+    } catch (error) {
+      _recordAuthDiagnostic(phase, error);
+      if (kDebugMode) {
+        debugPrint('Cloud auth startup failed: $error');
+      }
       if (mounted && epoch == _lifecycleEpoch) {
         setState(() => _submitError = true);
       }
@@ -382,7 +403,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
           }
         });
       }
-    } catch (_) {
+    } catch (error) {
+      _recordAuthDiagnostic('validate', error);
       if (!mounted || epoch != _lifecycleEpoch) return;
       _invalidateDesignContext();
       if (mounted) {
@@ -925,11 +947,8 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                               ? const [AutofillHints.email]
                               : const [AutofillHints.username],
                           textInputAction: TextInputAction.next,
-                          decoration: InputDecoration(
-                            labelText:
-                                _session.credentialMethod == 'email_password'
-                                ? 'Email ID'
-                                : 'User ID',
+                          decoration: const InputDecoration(
+                            labelText: 'User ID',
                           ),
                         ),
                         TextField(
@@ -983,71 +1002,72 @@ class _CloudEntryGateState extends State<CloudEntryGate> {
                           const SizedBox(height: 8),
                           Text(_message!, textAlign: TextAlign.center),
                         ],
-                        if (!_busy &&
-                            _capabilitiesReady &&
-                            _session.config.isLocalAuthConfigured &&
-                            _session.localAuth != null &&
-                            _session.credentialMethod != 'oidc') ...[
-                          if (_capabilities?.passwordRecoveryEnabled == true &&
-                              (_session.credentialMethod == 'email_password' ||
-                                  _session.credentialMethod ==
-                                      'username_password'))
-                            TextButton(
-                              onPressed: () {
-                                _localPassword.clear();
-                                Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
-                                    builder: (_) => CloudRecoveryScreen(
-                                      service: _session.localAuth!,
-                                      usernameMode:
-                                          _session.credentialMethod ==
-                                          'username_password',
-                                      linkOrigin:
-                                          _session.config.localAuthLinkOrigin,
-                                      initialEmail: _localEmail.text,
-                                      onEmailChanged: (email) =>
-                                          _localEmail.text = email,
-                                      onResetSuccess: _signInAfterRecovery,
-                                      diagnosticSink:
-                                          widget.recoveryDiagnosticSink,
+                        TextButton(
+                          onPressed:
+                              !_busy &&
+                                  _capabilitiesReady &&
+                                  _session.config.isLocalAuthConfigured &&
+                                  _session.localAuth != null &&
+                                  _session.credentialMethod != 'oidc' &&
+                                  _capabilities?.passwordRecoveryEnabled == true
+                              ? () {
+                                  _localPassword.clear();
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => CloudRecoveryScreen(
+                                        service: _session.localAuth!,
+                                        usernameMode:
+                                            _session.credentialMethod ==
+                                            'username_password',
+                                        linkOrigin:
+                                            _session.config.localAuthLinkOrigin,
+                                        initialEmail: _localEmail.text,
+                                        onEmailChanged: (email) =>
+                                            _localEmail.text = email,
+                                        onResetSuccess: _signInAfterRecovery,
+                                        diagnosticSink:
+                                            widget.recoveryDiagnosticSink,
+                                      ),
                                     ),
-                                  ),
-                                );
-                              },
-                              child: const Text('Forgot password?'),
-                            ),
-                        ],
-                        if (!_busy &&
-                            _capabilitiesReady &&
-                            _capabilities?.registrationEnabled == true &&
-                            _session.credentialMethod == 'username_password' &&
-                            (widget.registrationService != null ||
-                                _session.localAuth != null)) ...[
-                          const SizedBox(height: 8),
-                          TextButton(
-                            onPressed: () {
-                              _localPassword.clear();
-                              final epoch = _lifecycleEpoch;
-                              final sessionGeneration = _session.generation;
-                              Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => CloudRegistrationScreen(
-                                    service:
-                                        widget.registrationService ??
-                                        _session.localAuth!,
-                                    onUsernameRegistered: _registerAndSignIn,
-                                    isCurrent: () =>
-                                        mounted &&
-                                        epoch == _lifecycleEpoch &&
-                                        sessionGeneration ==
-                                            _session.generation,
-                                  ),
-                                ),
-                              );
-                            },
-                            child: const Text('Create account'),
-                          ),
-                        ],
+                                  );
+                                }
+                              : null,
+                          child: const Text('Forgot password'),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed:
+                              !_busy &&
+                                  _capabilitiesReady &&
+                                  _capabilities?.registrationEnabled == true &&
+                                  _session.credentialMethod ==
+                                      'username_password' &&
+                                  (widget.registrationService != null ||
+                                      _session.localAuth != null)
+                              ? () {
+                                  _localPassword.clear();
+                                  final epoch = _lifecycleEpoch;
+                                  final sessionGeneration = _session.generation;
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => CloudRegistrationScreen(
+                                        service:
+                                            widget.registrationService ??
+                                            _session.localAuth!,
+                                        onUsernameRegistered:
+                                            _registerAndSignIn,
+                                        isCurrent: () =>
+                                            mounted &&
+                                            epoch == _lifecycleEpoch &&
+                                            sessionGeneration ==
+                                                _session.generation,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              : null,
+                          child: const Text('Create account'),
+                        ),
                       ],
                     ),
                   ),
