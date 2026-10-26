@@ -124,7 +124,10 @@
     align-items: start;
   }
   body[data-el-tab="efficiency"] .tab-panel > * { margin: 0 !important; }
-  body[data-el-tab="efficiency"] .tab-panel > :first-child { grid-column: 1 / -1; }
+  body[data-el-tab="efficiency"] .tab-panel > [data-el-eff-copy],
+  body[data-el-tab="efficiency"] .tab-panel > [data-el-eff-copy] + * {
+    grid-column: 1 / -1;
+  }
 
   body[data-el-page="devices"] #devices-feed {
     display: grid;
@@ -185,6 +188,17 @@
     gap: 24px;
     align-items: start;
   }
+  body[data-el-tab="tips"] #tab-panel-efficiency > .el-tips-section-title,
+  body[data-el-tab="tips"] #tab-panel-efficiency > #el-live-tips {
+    grid-column: 1 / -1;
+  }
+  body[data-el-tab="tips"] #el-live-tips:not(:empty) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+    align-items: start;
+  }
+  body[data-el-tab="tips"] #el-live-tips > * { margin: 0 !important; }
 
   /* Settings: panels in two columns. */
   body[data-el-tab="settings"] main > div:first-of-type > :nth-child(2) { max-width: 560px; }
