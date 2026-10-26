@@ -158,6 +158,7 @@ class _CloudRegistrationScreenState extends State<CloudRegistrationScreen> {
                         textInputAction: TextInputAction.next,
                         decoration: InputDecoration(
                           labelText: 'Password',
+                          helperText: 'Atleast 8 characters long',
                           suffixIcon: IconButton(
                             tooltip: _showPassword
                                 ? 'Hide password'

@@ -122,6 +122,14 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(home: CloudRegistrationScreen(service: service)),
     );
+    expect(find.text('Atleast 8 characters long'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('registrationPassword')))
+          .decoration
+          ?.helperText,
+      'Atleast 8 characters long',
+    );
     await tester.enterText(
       find.byKey(const Key('registrationUserId')),
       'alice',
