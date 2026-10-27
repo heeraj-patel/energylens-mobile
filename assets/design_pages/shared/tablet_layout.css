@@ -129,6 +129,15 @@
     grid-column: 1 / -1;
   }
 
+  /* Let the selected equipment method set the height above monitored devices. */
+  body[data-el-tab="settings"] #view-devices:not(.hidden) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+  }
+  body[data-el-tab="settings"] #view-devices > * { min-width: 0; margin: 0 !important; }
+
   body[data-el-page="devices"] #devices-feed {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -160,9 +169,9 @@
   /* Dashboard: banner, then paired cards. */
   body[data-el-page="dashboard"] main > div:first-of-type > :nth-child(n+2) { grid-column: span 3; }
 
-  /* Devices: keep the heading and feed full-width, with adjacent summary/filters and pagination/action rows. */
+  /* Devices: keep the summary and list controls in the same column above the feed. */
   body[data-el-page="devices"] main > div:first-of-type > :nth-child(2),
-  body[data-el-page="devices"] main > div:first-of-type > :nth-child(3),
+  body[data-el-page="devices"] main > div:first-of-type > :nth-child(3) { grid-column: 1 / -1; }
   body[data-el-page="devices"] main > div:first-of-type > :nth-child(5),
   body[data-el-page="devices"] main > div:first-of-type > :nth-child(6) { grid-column: span 3; }
   body[data-el-page="devices"] #devices-list-controls { align-self: start; }
@@ -200,7 +209,7 @@
   }
   body[data-el-tab="tips"] #el-live-tips > * { margin: 0 !important; }
 
-  /* Settings: panels in two columns. */
+  /* Settings: profile panels may pair; device setup starts with a full-width selector. */
   body[data-el-tab="settings"] main > div:first-of-type > :nth-child(2) { max-width: 560px; }
   body[data-el-tab="settings"] [id^="view-"]:not(.hidden) {
     display: grid;
@@ -209,8 +218,9 @@
     align-items: start;
   }
   body[data-el-tab="settings"] [id^="view-"] > * { margin: 0 !important; }
-  body[data-el-tab="settings"] #view-devices > :first-child { grid-column: 1; grid-row: 1 / span 2; }
-  body[data-el-tab="settings"] #view-devices > :not(:first-child) { grid-column: 2; }
+  body[data-el-tab="settings"] #view-devices:not(.hidden) {
+    grid-template-columns: minmax(0, 1fr);
+  }
 
   /* Knowledge: questions in two columns, wrapping instead of truncating. */
   body[data-el-tab="tips"] div:not(.hidden):has(> div > [data-faq-trigger]) {

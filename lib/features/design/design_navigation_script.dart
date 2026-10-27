@@ -71,8 +71,9 @@ String buildDesignNavigationScript(String page) {
           send('report_preview');
           return;
         }
-        if (page === 'settings_manage_devices' &&
-            action === 'settings_manage_devices_action_005') {
+        if (['settings_manage_devices', 'settings_manual_device_entry',
+             'settings_photo_scan_onboarding'].includes(page) &&
+            action === page + '_action_005') {
           event.preventDefault();
           event.stopImmediatePropagation();
           if (typeof window.selectOnboardingMethod === 'function') {
@@ -158,7 +159,7 @@ String buildDesignNavigationScript(String page) {
         } else if (page.startsWith('settings')) {
           if (label === 'Profile & Reports') route = 'settings';
           else if (label === 'Manage Devices') route = 'settings_manage_devices';
-          else if (label.startsWith('Auto Scan')) route = 'settings_manage_devices';
+          else if (label.startsWith('Auto Scan')) route = 'discover_devices';
           else if (label.startsWith('Photo Scan') || label.startsWith('Snap Photo')) route = 'settings_photo_scan_onboarding';
           else if (label.startsWith('Manual Form') || label.startsWith('Type In Manual')) route = 'settings_manual_device_entry';
           else if (label === 'Sign Out') route = 'sign_out';

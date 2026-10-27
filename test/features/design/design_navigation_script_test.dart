@@ -267,12 +267,10 @@ for (const [page, script] of Object.entries(scripts)) {
       group: 'kitchen', category: 'dishwasher', room: 'Laundry'
     }]);
     assert.deepEqual(photos, []);
-    if (page === 'settings_manage_devices') {
-      click(page + '_action_005');
-    }
   }
-  assert.deepEqual(routes, page === 'settings_manage_devices' ? ['discover_devices'] : []);
-  assert.deepEqual(selectedMethods, page === 'settings_manage_devices' ? ['scan'] : []);
+  click(page + '_action_005');
+  assert.deepEqual(routes, ['discover_devices']);
+  assert.deepEqual(selectedMethods, ['scan']);
 }
 ''',
         file.path,

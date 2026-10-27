@@ -2221,22 +2221,23 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
         return;
       }
       if (widget.localPilot && !widget.designTour) {
-        if (_page != 'settings_manage_devices' ||
+        if (!_settingsDevicePages.contains(_page) ||
             widget.onDiscoverDevices == null) {
           return;
         }
+        final page = _page;
         final generation = _pageLoadGeneration;
         await widget.onDiscoverDevices!();
-        if (_isCurrentPageLoad('settings_manage_devices', generation)) {
+        if (_isCurrentPageLoad(page, generation)) {
           _localInventory = null;
-          await _refreshLocalInventory('settings_manage_devices', generation);
+          await _refreshLocalInventory(page, generation);
         }
         return;
       }
       final context = widget.designContextCoordinator?.context;
       final lifecycle = widget.onboardingLifecycle;
       final discover = widget.onDiscoverDevices;
-      if (_page != 'settings_manage_devices' ||
+      if (!_settingsDevicePages.contains(_page) ||
           context == null ||
           context.mode != DesignContextMode.household ||
           lifecycle == null ||
@@ -2244,13 +2245,14 @@ class _DesignShellState extends State<DesignShell> with WidgetsBindingObserver {
           !lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
         return;
       }
+      final page = _page;
       final generation = _pageLoadGeneration;
       await discover();
-      if (_isCurrentPageLoad('settings_manage_devices', generation) &&
+      if (_isCurrentPageLoad(page, generation) &&
           identical(widget.designContextCoordinator?.context, context) &&
           lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
-        await _refreshSavedAppliances('settings_manage_devices', generation);
-        if (_isCurrentPageLoad('settings_manage_devices', generation) &&
+        await _refreshSavedAppliances(page, generation);
+        if (_isCurrentPageLoad(page, generation) &&
             identical(widget.designContextCoordinator?.context, context) &&
             lifecycle.isVerifiedScope(context.accountId, context.homeId)) {
           await _refreshFirstDeviceStatus();

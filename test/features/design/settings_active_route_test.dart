@@ -280,7 +280,7 @@ void main() {
     expect(paths, contains('/v1/homes/$_homeId/questions'));
   });
 
-  testWidgets('local Settings device management opens discovery', (
+  testWidgets('all Settings equipment methods open discovery', (
     tester,
   ) async {
     final platform = _WebPlatform();
@@ -297,15 +297,18 @@ void main() {
     await tester.pump();
     platform.controller.route('settings');
     await tester.pumpAndSettle();
-    platform.controller.route('settings_manage_devices');
-    await tester.pumpAndSettle();
-    expect(
-      platform.controller.asset,
-      'assets/design_pages/settings_manage_devices/app.html',
-    );
-    platform.controller.route('discover_devices');
-    await tester.pumpAndSettle();
-    expect(discoveryOpens, 1);
+    for (final page in [
+      'settings_manage_devices',
+      'settings_manual_device_entry',
+      'settings_photo_scan_onboarding',
+    ]) {
+      platform.controller.route(page);
+      await tester.pumpAndSettle();
+      expect(platform.controller.asset, 'assets/design_pages/$page/app.html');
+      platform.controller.route('discover_devices');
+      await tester.pumpAndSettle();
+    }
+    expect(discoveryOpens, 3);
   });
 
   testWidgets('Dashboard Add device opens discovery directly', (tester) async {
