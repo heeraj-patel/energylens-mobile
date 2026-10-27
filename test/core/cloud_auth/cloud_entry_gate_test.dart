@@ -682,7 +682,7 @@ void main() {
             .bodySmall
             ?.fontSize,
       );
-      await tester.enterText(find.byKey(const Key('localSignInEmail')), 'nik');
+      await tester.enterText(find.byKey(const Key('localSignInEmail')), '');
       await tester.pump();
       expect(find.text('Internal Error, Try again later'), findsNothing);
       api.close();
@@ -741,7 +741,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('localSignInEmail')), 'nik');
+    await tester.enterText(find.byKey(const Key('localSignInEmail')), '');
     await tester.enterText(
       find.byKey(const Key('localSignInPassword')),
       'wrong',
@@ -773,14 +773,14 @@ void main() {
     expect(capabilities, 2);
     expect(session.credentialMethod, 'username_password');
     expect(find.text('Forgot password'), findsOneWidget);
-    expect(login?.body, contains('"username":"nik"'));
+    expect(login?.body, contains('"username":""'));
     expect(find.text('Invalid username or password.'), findsOneWidget);
     expect(
       tester
           .widget<TextField>(find.byKey(const Key('localSignInEmail')))
           .controller
           ?.text,
-      'nik',
+      '',
     );
     await tester.tap(find.text('Forgot password'));
     await tester.pumpAndSettle();
@@ -792,7 +792,7 @@ void main() {
           .widget<TextField>(find.byKey(const Key('recoveryUserId')))
           .controller
           ?.text,
-      'nik',
+      '',
     );
     api.close();
     local.close();

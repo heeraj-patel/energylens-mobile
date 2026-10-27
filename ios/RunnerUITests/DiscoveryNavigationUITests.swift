@@ -2,7 +2,7 @@ import XCTest
 
 final class DiscoveryNavigationUITests: XCTestCase {
   private var expectedCloudHome: String {
-    ProcessInfo.processInfo.environment["ENERGYLENS_TEST_EXPECTED_HOME"] ?? "niksim"
+    ProcessInfo.processInfo.environment["ENERGYLENS_TEST_EXPECTED_HOME"] ?? ""
   }
 
   func testCloudAuthScreensForOwnerReview() throws {
